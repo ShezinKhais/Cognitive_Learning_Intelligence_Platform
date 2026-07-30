@@ -1,0 +1,50 @@
+# Environment
+.env
+.env.local
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+
+# Teams
+teams-app/build/
+teams-app/*.zip
+.teams/
+
+# Data and downloaded model weights.
+# Keep /models/ root-anchored; a bare "models/" also matches backend/app/models/.
+*.db
+*.sqlite3
+uploads/
+storage/
+/models/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/

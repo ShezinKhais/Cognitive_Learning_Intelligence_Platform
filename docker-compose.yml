@@ -1,0 +1,22 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: clip-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: clip
+      POSTGRES_PASSWORD: clip_dev_password
+      POSTGRES_DB: clip
+    ports:
+      - "5432:5432"
+    volumes:
+      - clip_pgdata:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clip -d clip"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  clip_pgdata:

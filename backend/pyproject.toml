@@ -1,0 +1,43 @@
+[project]
+name = "clip-backend"
+version = "0.1.0"
+description = "C.L.I.P — Cognitive Learning Intelligence Platform (backend)"
+requires-python = ">=3.11,<3.14"
+
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.30",
+    "alembic>=1.14",
+    "pgvector>=0.3",
+    "python-multipart>=0.0.12",   # file uploads
+    "passlib[bcrypt]>=1.7",       # dev-mode auth only; Entra SSO replaces this
+    "pyjwt>=2.9",
+    "httpx>=0.27",
+    "openai>=1.54",               # points at Ollama's OpenAI-compatible endpoint
+    "pypdf>=5.1",                 # PDF extraction
+    "python-pptx>=1.0",           # PPTX extraction
+    "python-docx>=1.1",           # DOCX extraction
+    "rapidfuzz>=3.10",            # match Teams display names against the admin roster
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+    "httpx>=0.27",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

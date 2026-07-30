@@ -1,0 +1,22 @@
+# Normalise line endings so mixed Windows/macOS/Linux machines don't produce
+# whole-file diffs. Everything is stored as LF in the repository.
+* text=auto eol=lf
+
+# Windows-only scripts need CRLF to run.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files must never be normalised or diffed as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+
+# Generated; collapse in pull request diffs.
+package-lock.json linguist-generated=true

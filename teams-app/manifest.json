@@ -1,0 +1,94 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.17",
+  "version": "0.1.0",
+  "id": "${{TEAMS_APP_ID}}",
+  "developer": {
+    "name": "CSIT321 Team 4 — University of Wollongong in Dubai",
+    "websiteUrl": "https://github.com/Spy125/Cognitive_Learning_Intelligence_Platform",
+    "privacyUrl": "${{BASE_URL}}/privacy",
+    "termsOfUseUrl": "${{BASE_URL}}/terms"
+  },
+  "name": {
+    "short": "CLIP",
+    "full": "Cognitive Learning Intelligence Platform"
+  },
+  "description": {
+    "short": "AI engagement assistant for live online classes.",
+    "full": "C.L.I.P provides real-time engagement indicators, AI-generated comprehension checkpoints grounded in lecturer-approved material, and a Socratic learning assistant. Privacy-first: no raw video, audio, transcripts or biometric data is ever stored. Human-in-the-loop: the lecturer retains all teaching decisions."
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "accentColor": "#6264A7",
+
+  "staticTabs": [
+    {
+      "entityId": "clip.student",
+      "name": "My Learning",
+      "contentUrl": "${{BASE_URL}}/student",
+      "scopes": ["personal"]
+    },
+    {
+      "entityId": "clip.lecturer",
+      "name": "Dashboard",
+      "contentUrl": "${{BASE_URL}}/lecturer",
+      "scopes": ["personal"]
+    },
+    {
+      "entityId": "clip.admin",
+      "name": "Administration",
+      "contentUrl": "${{BASE_URL}}/admin",
+      "scopes": ["personal"]
+    }
+  ],
+
+  "configurableTabs": [
+    {
+      "configurationUrl": "${{BASE_URL}}/config",
+      "scopes": ["groupChat"],
+      "context": ["meetingSidePanel", "meetingChatTab", "meetingDetailsTab"],
+      "supportedSharePointHosts": []
+    }
+  ],
+
+  "bots": [
+    {
+      "botId": "${{BOT_ID}}",
+      "scopes": ["personal", "groupChat"],
+      "supportsFiles": false,
+      "isNotificationOnly": false
+    }
+  ],
+
+  "permissions": ["identity", "messageTeamMembers"],
+
+  "devicePermissions": ["media"],
+
+  "webApplicationInfo": {
+    "id": "${{BOT_ID}}",
+    "resource": "https://RscBasedStoreApp"
+  },
+
+  "authorization": {
+    "permissions": {
+      "resourceSpecific": [
+        {
+          "name": "OnlineMeeting.ReadBasic.Chat",
+          "type": "Application"
+        },
+        {
+          "name": "OnlineMeetingParticipant.Read.Chat",
+          "type": "Application"
+        },
+        {
+          "name": "OnlineMeetingNotification.Send.Chat",
+          "type": "Application"
+        }
+      ]
+    }
+  },
+
+  "validDomains": ["${{BASE_DOMAIN}}"]
+}
