@@ -1,6 +1,6 @@
 """Identity, consent and administration contracts.
 
-Owners: authentication and RBAC — Cyber 1. Administrator console — Cyber 2.
+Owners: authentication and RBAC (Cyber 1). Administrator console (Cyber 2).
 """
 
 from __future__ import annotations
@@ -63,7 +63,8 @@ class ConsentOut(BaseModel):
 class TimetableImportResult(BaseModel):
     """Result of an administrator uploading a timetable CSV or XLSX.
 
-    Structured data in, structured data out. Deliberately no OCR path.
+    CSV and XLSX are parsed as structured data. There is no OCR path, because a
+    misread digit would silently assign a student to the wrong session.
     """
 
     rows_read: int

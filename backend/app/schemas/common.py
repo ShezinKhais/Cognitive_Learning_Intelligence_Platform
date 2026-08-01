@@ -29,8 +29,8 @@ class ErrorResponse(BaseModel):
 
 
 class Page(BaseModel, Generic[T]):
-    """Offset pagination. Cursor pagination is deliberately not used; no endpoint
-    is expected to exceed a few thousand rows for a single course."""
+    """Offset pagination. No endpoint is expected to exceed a few thousand rows
+    for a single course, so cursors are not worth the complexity."""
 
     items: list[T]
     total: int

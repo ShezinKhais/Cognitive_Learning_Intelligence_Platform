@@ -1,8 +1,8 @@
 """Authentication, consent and administration routes.
 
 Contract frozen in Phase 1. Handler bodies are owned by:
-  Cyber 1 — authentication, consent
-  Cyber 2 — administrator console
+  Cyber 1: authentication, consent
+  Cyber 2: administrator console
 """
 
 from __future__ import annotations

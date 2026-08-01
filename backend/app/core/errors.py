@@ -21,7 +21,7 @@ log = logging.getLogger("clip.errors")
 
 
 class ClipError(Exception):
-    """Base class for errors we raise deliberately.
+    """Base class for errors the application raises itself.
 
     `code` is a stable machine-readable string. The frontend switches on it, so
     changing one is a breaking API change.
@@ -29,6 +29,10 @@ class ClipError(Exception):
 
     status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR
     code: str = "INTERNAL_ERROR"
+
+    # Server errors get a stack trace because they are bugs. Subclasses that
+    # represent an expected condition turn this off.
+    log_traceback: bool = True
 
     def __init__(self, message: str, detail: dict[str, Any] | None = None) -> None:
         super().__init__(message)
@@ -83,10 +87,15 @@ class ServiceUnavailableError(ClipError):
 
 
 class NotImplementedYetError(ClipError):
-    """A route whose contract is frozen but whose owner has not built it yet."""
+    """A route whose contract is frozen but whose owner has not built it yet.
+
+    Expected during development, so it logs a single line rather than a stack
+    trace. Most routes are stubs right now and tracebacks would drown the log.
+    """
 
     status_code = status.HTTP_501_NOT_IMPLEMENTED
     code = "NOT_IMPLEMENTED"
+    log_traceback = False
 
 
 def not_implemented(owner: str, phase: str) -> NotImplementedYetError:
@@ -107,7 +116,10 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ClipError)
     async def _clip_error(request: Request, exc: ClipError) -> JSONResponse:
         if exc.status_code >= 500:
-            log.exception("%s: %s", exc.code, exc.message)
+            if exc.log_traceback:
+                log.exception("%s: %s", exc.code, exc.message)
+            else:
+                log.info("%s: %s", exc.code, exc.message)
         return JSONResponse(
             status_code=exc.status_code,
             content=_envelope(request, exc.code, exc.message, exc.detail),

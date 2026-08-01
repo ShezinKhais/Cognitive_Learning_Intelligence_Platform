@@ -32,7 +32,7 @@ export default function App() {
             ) : health ? (
               <span className="text-success">{health.status}</span>
             ) : (
-              <span className="text-muted-foreground">checking…</span>
+              <span className="text-muted-foreground">checking</span>
             )}
           </Row>
           {health && (

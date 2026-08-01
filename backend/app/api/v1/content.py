@@ -1,9 +1,9 @@
 """Lecture material and question routes.
 
 Contract frozen in Phase 1. Handler bodies are owned by:
-  AI 1    — upload processing, extraction, question generation
-  Cyber 2 — review actions
-  BBIS    — persistence and queries
+  AI 1:    upload processing, extraction, question generation
+  Cyber 2: review actions
+  BBIS:    persistence and queries
 """
 
 from __future__ import annotations

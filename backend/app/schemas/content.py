@@ -1,7 +1,7 @@
 """Lecture material and question contracts.
 
-Owners: extraction and generation — AI 1. Review interface — Cyber 2.
-Persistence — BBIS.
+Owners: extraction and generation (AI 1). Review interface (Cyber 2).
+Persistence (BBIS).
 """
 
 from __future__ import annotations

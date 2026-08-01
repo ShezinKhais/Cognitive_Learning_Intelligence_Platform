@@ -1018,7 +1018,7 @@
         "type": "object"
       },
       "TimetableImportResult": {
-        "description": "Result of an administrator uploading a timetable CSV or XLSX.\n\nStructured data in, structured data out. Deliberately no OCR path.",
+        "description": "Result of an administrator uploading a timetable CSV or XLSX.\n\nCSV and XLSX are parsed as structured data. There is no OCR path, because a\nmisread digit would silently assign a student to the wrong session.",
         "properties": {
           "conflicts": {
             "items": {

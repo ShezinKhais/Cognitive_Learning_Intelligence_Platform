@@ -1,7 +1,7 @@
 """Live session, response and analytics contracts.
 
-Owners: session lifecycle and delivery — General CS. Persistence — BBIS.
-Scoring — Cyber 1. Classification — AI 1.
+Owners: session lifecycle and delivery (General CS). Persistence (BBIS).
+Scoring (Cyber 1). Classification (AI 1).
 """
 
 from __future__ import annotations

@@ -1,10 +1,10 @@
 """Live session, response and analytics routes.
 
 Contract frozen in Phase 1. Handler bodies are owned by:
-  General CS — session lifecycle, question delivery
-  BBIS       — persistence and dashboard queries
-  AI 1       — scoring and classification
-  Cyber 1    — engagement scoring, alerts
+  General CS: session lifecycle, question delivery
+  BBIS:       persistence and dashboard queries
+  AI 1:       scoring and classification
+  Cyber 1:    engagement scoring, alerts
 """
 
 from __future__ import annotations

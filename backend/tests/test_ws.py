@@ -39,6 +39,15 @@ def test_socket_rejects_an_unverified_token(client: TestClient) -> None:
     assert exc.value.code == 4001
 
 
+def test_socket_rejects_a_malformed_auth_payload(client: TestClient) -> None:
+    """An auth event missing its token is malformed, not merely unauthorised."""
+    with pytest.raises(WebSocketDisconnect) as exc:  # noqa: PT012
+        with client.websocket_connect("/ws/session") as ws:
+            ws.send_json({"type": ClientEventType.AUTH.value, "data": {}})
+            ws.receive_json()
+    assert exc.value.code == 4400
+
+
 class _FakeSocket:
     def __init__(self, fail: bool = False) -> None:
         self.sent: list[dict] = []

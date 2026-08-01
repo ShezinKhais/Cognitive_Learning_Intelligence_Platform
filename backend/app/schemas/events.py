@@ -13,8 +13,8 @@ do not need changing later.
 Privacy
 -------
 `signal.attention` carries derived numbers only: a gaze ratio and a speaking
-boolean. Raw frames and audio never leave the student's device, and there is
-deliberately no event type capable of transporting them.
+boolean. Raw frames and audio never leave the student's device, and no event
+type is capable of carrying them.
 """
 
 from __future__ import annotations

@@ -15,10 +15,12 @@ Closing codes
 4001  authentication required or failed
 4003  not permitted to join this session
 4400  malformed event
+4408  no auth event arrived within the timeout
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime
 from uuid import UUID
@@ -41,12 +43,19 @@ router = APIRouter()
 CLOSE_UNAUTHENTICATED = 4001
 CLOSE_FORBIDDEN = 4003
 CLOSE_BAD_EVENT = 4400
+CLOSE_AUTH_TIMEOUT = 4408
 
+# A socket that connects and then says nothing would otherwise hold a slot open
+# for the lifetime of the process.
 AUTH_TIMEOUT_SECONDS = 10
 
 
 async def _send(websocket: WebSocket, event_type: ServerEventType, data: dict) -> None:
-    """Send outside a session context, before a room has been joined."""
+    """Send a connection-scoped message.
+
+    seq is 0 because these are not part of a session's ordered stream; clients
+    only track gaps in events that carry a non-zero seq.
+    """
     event = ServerEvent(type=event_type, seq=0, ts=datetime.now(UTC), data=data)
     await websocket.send_json(event.model_dump(mode="json"))
 
@@ -58,7 +67,11 @@ async def _authenticate(websocket: WebSocket) -> tuple[UUID, UUID | None] | None
     `app.api.deps.get_principal`. Until that lands this rejects every
     connection, so no socket can appear authenticated when it is not.
     """
-    raw = await websocket.receive_json()
+    try:
+        raw = await asyncio.wait_for(websocket.receive_json(), AUTH_TIMEOUT_SECONDS)
+    except TimeoutError:
+        await websocket.close(code=CLOSE_AUTH_TIMEOUT, reason="no auth event received")
+        return None
 
     # Peek at the type before validating the payload so a non-auth first event
     # is reported as an auth failure rather than a malformed one.
