@@ -1,0 +1,119 @@
+"""WebSocket handshake and protocol.
+
+The hub itself is exercised directly rather than through a socket, so these run
+without a server or a database.
+"""
+
+from uuid import uuid4
+
+import pytest
+from fastapi.testclient import TestClient
+from fastapi.websockets import WebSocketDisconnect
+
+from app.realtime.hub import Connection, SessionHub
+from app.schemas.events import ClientEventType, ServerEventType
+
+
+def test_socket_rejects_a_non_auth_first_event(client: TestClient) -> None:
+    with pytest.raises(WebSocketDisconnect) as exc:  # noqa: PT012
+        with client.websocket_connect("/ws/session") as ws:
+            ws.send_json({"type": ClientEventType.PING.value, "data": {}})
+            ws.receive_json()
+    assert exc.value.code == 4001
+
+
+def test_socket_rejects_a_malformed_event(client: TestClient) -> None:
+    with pytest.raises(WebSocketDisconnect) as exc:  # noqa: PT012
+        with client.websocket_connect("/ws/session") as ws:
+            ws.send_json({"type": "not-a-real-event"})
+            ws.receive_json()
+    assert exc.value.code == 4400
+
+
+def test_socket_rejects_an_unverified_token(client: TestClient) -> None:
+    """Fails closed until token verification is implemented."""
+    with pytest.raises(WebSocketDisconnect) as exc:  # noqa: PT012
+        with client.websocket_connect("/ws/session") as ws:
+            ws.send_json({"type": ClientEventType.AUTH.value, "data": {"token": "anything"}})
+            ws.receive_json()
+    assert exc.value.code == 4001
+
+
+class _FakeSocket:
+    def __init__(self, fail: bool = False) -> None:
+        self.sent: list[dict] = []
+        self.fail = fail
+
+    async def send_json(self, payload: dict) -> None:
+        if self.fail:
+            raise ConnectionResetError("client gone")
+        self.sent.append(payload)
+
+
+async def test_sequence_numbers_increase_per_session() -> None:
+    """Clients detect dropped messages by watching for a gap in seq."""
+    hub = SessionHub()
+    session = uuid4()
+
+    seqs = [hub.build(session, ServerEventType.PONG, {}).seq for _ in range(3)]
+    assert seqs == [1, 2, 3]
+
+    other = uuid4()
+    assert hub.build(other, ServerEventType.PONG, {}).seq == 1
+
+
+async def test_broadcast_reaches_everyone_in_the_room() -> None:
+    hub = SessionHub()
+    session = uuid4()
+    sockets = [_FakeSocket() for _ in range(3)]
+    for socket in sockets:
+        await hub.join(Connection(socket, uuid4(), session))  # type: ignore[arg-type]
+
+    delivered = await hub.broadcast(session, ServerEventType.SESSION_STATE, {"status": "active"})
+
+    assert delivered == 3
+    assert hub.participant_count(session) == 3
+    for socket in sockets:
+        assert socket.sent[0]["type"] == "session.state"
+
+
+async def test_one_dead_connection_does_not_stop_the_broadcast() -> None:
+    """A student losing wifi must not prevent the other 39 getting a question."""
+    hub = SessionHub()
+    session = uuid4()
+    good, dead = _FakeSocket(), _FakeSocket(fail=True)
+    await hub.join(Connection(good, uuid4(), session))  # type: ignore[arg-type]
+    await hub.join(Connection(dead, uuid4(), session))  # type: ignore[arg-type]
+
+    delivered = await hub.broadcast(session, ServerEventType.QUESTION_DELIVERED, {})
+
+    assert delivered == 1
+    assert hub.participant_count(session) == 1  # the dead one was evicted
+
+
+async def test_targeted_send_is_private() -> None:
+    """Attention prompts go to one student and must not leak to the class."""
+    hub = SessionHub()
+    session = uuid4()
+    target_id = uuid4()
+    target, bystander = _FakeSocket(), _FakeSocket()
+    await hub.join(Connection(target, target_id, session))  # type: ignore[arg-type]
+    await hub.join(Connection(bystander, uuid4(), session))  # type: ignore[arg-type]
+
+    sent = await hub.send_to_user(session, target_id, ServerEventType.PROMPT_ATTENTION, {})
+
+    assert sent is True
+    assert len(target.sent) == 1
+    assert bystander.sent == []
+
+
+async def test_leaving_empties_the_room() -> None:
+    hub = SessionHub()
+    session = uuid4()
+    connection = Connection(_FakeSocket(), uuid4(), session)  # type: ignore[arg-type]
+
+    await hub.join(connection)
+    assert hub.participant_count(session) == 1
+
+    await hub.leave(connection)
+    assert hub.participant_count(session) == 0
