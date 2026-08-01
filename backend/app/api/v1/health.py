@@ -88,7 +88,7 @@ async def _check_ollama() -> DependencyStatus:
     response_model=ReadinessResponse,
     responses={503: {"description": "A required dependency is unavailable."}},
 )
-async def ready(db: DbSession, response: Response) -> ReadinessResponse:
+async def ready(db: DbSession, response: Response, settings: AppSettings) -> ReadinessResponse:
     database, ollama = await asyncio.gather(_check_database(db), _check_ollama())
 
     # Ollama is reported but does not gate readiness: the live session loop
@@ -98,6 +98,12 @@ async def ready(db: DbSession, response: Response) -> ReadinessResponse:
 
     if not ready_now:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+
+    if settings.is_production:
+        # The endpoint has to stay unauthenticated for a load balancer, but the
+        # failure detail names internal components and exception types. Report
+        # up or down, and leave the diagnosis to the logs.
+        dependencies = [DependencyStatus(name=d.name, ok=d.ok) for d in dependencies]
 
     return ReadinessResponse(
         ready=ready_now,

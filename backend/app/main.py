@@ -31,6 +31,10 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    # Interactive docs describe every route, parameter and schema. That is what
+    # we want during development and an inventory for an attacker in production.
+    expose_docs = not settings.is_production
+
     app = FastAPI(
         title="C.L.I.P API",
         description=(
@@ -40,8 +44,9 @@ def create_app() -> FastAPI:
         ),
         version="0.1.0",
         lifespan=lifespan,
-        openapi_url=f"{API_V1}/openapi.json",
-        docs_url="/docs",
+        openapi_url=f"{API_V1}/openapi.json" if expose_docs else None,
+        docs_url="/docs" if expose_docs else None,
+        redoc_url="/redoc" if expose_docs else None,
     )
 
     # Only the Vite dev server needs this. A Teams tab is an iframe served from
