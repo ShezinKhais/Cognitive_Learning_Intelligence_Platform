@@ -48,6 +48,33 @@ def test_socket_rejects_a_malformed_auth_payload(client: TestClient) -> None:
     assert exc.value.code == 4400
 
 
+@pytest.mark.parametrize(
+    ("label", "send"),
+    [
+        ("json array", lambda ws: ws.send_json(["hello"])),
+        ("json string", lambda ws: ws.send_json("hello")),
+        ("json null", lambda ws: ws.send_json(None)),
+        ("not json", lambda ws: ws.send_text("<html>")),
+        ("binary frame", lambda ws: ws.send_bytes(b"\x00\x01")),
+    ],
+)
+def test_a_first_frame_that_is_not_a_json_object_closes_cleanly(
+    client: TestClient, label: str, send
+) -> None:
+    """None of these may reach the handler as a server fault.
+
+    Each one used to escape uncaught — AttributeError on the array, string and
+    null, JSONDecodeError on the text, KeyError on the binary frame — so any
+    unauthenticated caller could raise an exception inside the handler with a
+    single frame. They are protocol errors and close 4400 like any other.
+    """
+    with pytest.raises(WebSocketDisconnect) as exc:  # noqa: PT012
+        with client.websocket_connect("/ws/session") as ws:
+            send(ws)
+            ws.receive_json()
+    assert exc.value.code == 4400, label
+
+
 class _FakeSocket:
     def __init__(self, fail: bool = False) -> None:
         self.sent: list[dict] = []

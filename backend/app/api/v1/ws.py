@@ -21,8 +21,10 @@ Closing codes
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -60,6 +62,35 @@ async def _send(websocket: WebSocket, event_type: ServerEventType, data: dict) -
     await websocket.send_json(event.model_dump(mode="json"))
 
 
+async def _receive_event(websocket: WebSocket) -> dict[str, Any] | None:
+    """Receive one frame and return it as a JSON object, or None if it is not one.
+
+    Everything past this point may assume it holds a dict. `receive_json` cannot
+    give that guarantee: a binary frame raises KeyError, a text frame that is not
+    JSON raises JSONDecodeError, and a valid JSON scalar or array returns
+    something that has no `.get`. All three are protocol errors from an
+    unauthenticated caller, so they are decoded here into a single None the
+    caller turns into a close code, rather than escaping as a server fault.
+
+    Raises WebSocketDisconnect when the peer has gone, which callers must let
+    through: there is no socket left to send a close frame on.
+    """
+    message = await websocket.receive()
+    if message["type"] == "websocket.disconnect":
+        raise WebSocketDisconnect(message.get("code", 1005), message.get("reason"))
+
+    text = message.get("text")
+    if text is None:  # binary frame; the protocol is JSON text only
+        return None
+
+    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
+    return raw if isinstance(raw, dict) else None
+
+
 async def _authenticate(websocket: WebSocket) -> tuple[UUID, UUID | None] | None:
     """Read and validate the opening `auth` event.
 
@@ -68,9 +99,15 @@ async def _authenticate(websocket: WebSocket) -> tuple[UUID, UUID | None] | None
     connection, so no socket can appear authenticated when it is not.
     """
     try:
-        raw = await asyncio.wait_for(websocket.receive_json(), AUTH_TIMEOUT_SECONDS)
+        raw = await asyncio.wait_for(_receive_event(websocket), AUTH_TIMEOUT_SECONDS)
     except TimeoutError:
         await websocket.close(code=CLOSE_AUTH_TIMEOUT, reason="no auth event received")
+        return None
+    except WebSocketDisconnect:
+        return None
+
+    if raw is None:
+        await websocket.close(code=CLOSE_BAD_EVENT, reason="malformed event")
         return None
 
     # Peek at the type before validating the payload so a non-auth first event
@@ -114,7 +151,18 @@ async def session_socket(websocket: WebSocket) -> None:
         )
 
         while True:
-            raw = await websocket.receive_json()
+            raw = await _receive_event(websocket)
+            if raw is None:
+                # Same tolerance as a bad payload below: a student's socket must
+                # survive one corrupt frame rather than dropping them from the
+                # lecture, so this reports and keeps listening.
+                await _send(
+                    websocket,
+                    ServerEventType.ERROR,
+                    {"code": "MALFORMED_EVENT", "detail": "expected a JSON object"},
+                )
+                continue
+
             try:
                 event_type, _payload = parse_client_event(raw)
             except PydanticValidationError as exc:
