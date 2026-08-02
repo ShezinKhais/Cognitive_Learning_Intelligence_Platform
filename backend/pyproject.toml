@@ -1,7 +1,7 @@
 [project]
 name = "clip-backend"
 version = "0.1.0"
-description = "C.L.I.P — Cognitive Learning Intelligence Platform (backend)"
+description = "C.L.I.P backend. Cognitive Learning Intelligence Platform."
 requires-python = ">=3.11,<3.14"
 
 dependencies = [

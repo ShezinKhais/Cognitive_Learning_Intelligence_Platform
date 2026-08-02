@@ -1,18 +1,13 @@
 import { useEffect, useState } from 'react'
 
-interface Health {
-  status: string
-  env: string
-  teams_configured: boolean
-}
+import { apiGet, type Health } from './api'
 
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch('/api/health')
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+    apiGet<Health>('/health')
       .then(setHealth)
       .catch((e: Error) => setError(e.message))
   }, [])
@@ -38,6 +33,7 @@ export default function App() {
           {health && (
             <>
               <Row label="Environment">{health.env}</Row>
+              <Row label="Version">{health.version}</Row>
               <Row label="Teams">
                 {health.teams_configured ? 'configured' : 'not configured'}
               </Row>

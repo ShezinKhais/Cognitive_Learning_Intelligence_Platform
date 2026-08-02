@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "id": "${{TEAMS_APP_ID}}",
   "developer": {
-    "name": "CSIT321 Team 4 — University of Wollongong in Dubai",
+    "name": "CSIT321 Team 4, University of Wollongong in Dubai",
     "websiteUrl": "https://github.com/Spy125/Cognitive_Learning_Intelligence_Platform",
     "privacyUrl": "${{BASE_URL}}/privacy",
     "termsOfUseUrl": "${{BASE_URL}}/terms"
