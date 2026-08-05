@@ -245,7 +245,7 @@ def clean_text(text: str) -> str:
     if len(text) < 200:
         words = text.split()
         n = len(words)
-        for size in range(n // 2, 1, -1):
+        for size in range(n // 2, 0, -1):
             if words[:size] == words[n - size :]:
                 return " ".join(words[: n - size])
     return text
