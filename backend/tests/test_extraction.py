@@ -13,9 +13,9 @@ import pytest
 from app.core.errors import ValidationError
 from app.services.extraction import (
     ContentChunk,
+    ExtractedElement,
     chunk_elements,
     clean_text,
-    ExtractedElement,
     process_material,
     validate_file,
 )
