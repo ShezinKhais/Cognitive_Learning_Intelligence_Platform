@@ -6,6 +6,8 @@ raw stack trace breaks it. These tests pin the shape.
 
 from fastapi.testclient import TestClient
 
+from app.main import create_app
+
 
 def _assert_envelope(body: dict) -> None:
     assert set(body) == {"error", "request_id"}
@@ -95,3 +97,29 @@ def test_request_id_appears_in_error_bodies(client: TestClient) -> None:
     """Without this a user reporting an error has nothing to quote."""
     response = client.get("/api/v1/nope", headers={"X-Request-ID": "trace-me"})
     assert response.json()["request_id"] == "trace-me"
+
+
+def test_a_crash_is_traceable_and_says_nothing_else() -> None:
+    """The 500 path runs in ServerErrorMiddleware, outside the middleware that
+    stamps the header, so it has to carry the id itself. It is also the one
+    response most likely to hold a driver message or a stack trace.
+
+    Built on its own app rather than the session fixture: adding a route to the
+    shared one would put it in the contract every later test checks.
+    """
+    crashing = create_app()
+
+    @crashing.get("/api/v1/__crash")
+    async def crash() -> None:
+        raise RuntimeError("asyncpg: password authentication failed for user 'clip'")
+
+    with TestClient(crashing, raise_server_exceptions=False) as client:
+        response = client.get("/api/v1/__crash", headers={"X-Request-ID": "trace-me"})
+
+    assert response.status_code == 500
+    assert response.headers["X-Request-ID"] == "trace-me"
+    assert response.json()["request_id"] == "trace-me"
+
+    body = response.text
+    for leak in ("asyncpg", "password", "Traceback", "RuntimeError"):
+        assert leak not in body, f"a 500 leaked {leak!r}"
