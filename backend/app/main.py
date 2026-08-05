@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from contextlib import asynccontextmanager
 
@@ -19,6 +20,19 @@ configure_logging(settings.clip_log_level)
 log = logging.getLogger("clip")
 
 API_V1 = "/api/v1"
+
+# An inbound request id is reflected in a response header and formatted into
+# every log line for that request, so it has to look like something we could
+# have generated. Without this a caller can put a newline in the header and
+# write their own lines into the log, which is the one record we keep.
+REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,64}")
+
+
+def resolve_request_id(inbound: str | None) -> str:
+    """Return the caller's id if it is safe to trust, otherwise a fresh one."""
+    if inbound and REQUEST_ID.fullmatch(inbound):
+        return inbound
+    return str(uuid.uuid4())
 
 
 @asynccontextmanager
@@ -64,9 +78,10 @@ def create_app() -> FastAPI:
     async def request_id(request: Request, call_next):
         """Tag every request so a user-visible error can be traced to a log line.
 
-        Honours an inbound X-Request-ID so a trace survives the Teams proxy.
+        Honours an inbound X-Request-ID so a trace survives the Teams proxy,
+        but only when it passes resolve_request_id.
         """
-        rid = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        rid = resolve_request_id(request.headers.get("X-Request-ID"))
         request.state.request_id = rid
         token = request_id_var.set(rid)
         try:

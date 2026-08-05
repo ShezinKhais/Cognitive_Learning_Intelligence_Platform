@@ -4,6 +4,8 @@ Development is permissive on purpose. These pin what changes in production so a
 convenience does not survive into deployment.
 """
 
+from uuid import UUID
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -52,6 +54,32 @@ def test_readiness_hides_internals_in_production(production_client: TestClient) 
     for dependency in response.json()["dependencies"]:
         assert dependency["detail"] is None, "production readiness leaks failure detail"
         assert dependency["latency_ms"] is None
+
+
+def test_a_plausible_request_id_is_honoured(client: TestClient) -> None:
+    """A trace started upstream should survive into our logs."""
+    response = client.get("/api/v1/health", headers={"X-Request-ID": "teams-proxy-abc123"})
+    assert response.headers["X-Request-ID"] == "teams-proxy-abc123"
+
+
+@pytest.mark.parametrize(
+    ("label", "value"),
+    [
+        ("newline", "ok\nLOG [forged] ADMIN LOGIN SUCCEEDED user=attacker"),
+        ("carriage return", "ok\r\nSet-Cookie: session=stolen"),
+        ("too long", "a" * 200),
+        ("markup", "<script>alert(1)</script>"),
+        ("empty", ""),
+    ],
+)
+def test_a_hostile_request_id_is_replaced(client: TestClient, label: str, value: str) -> None:
+    """The id is echoed in a header and formatted into every log line for the
+    request, so an unvalidated one lets a caller forge log entries."""
+    response = client.get("/api/v1/health", headers={"X-Request-ID": value})
+    echoed = response.headers["X-Request-ID"]
+
+    assert echoed != value, label
+    assert UUID(echoed), f"{label}: expected a generated uuid"
 
 
 def test_health_never_reveals_secrets(client: TestClient) -> None:

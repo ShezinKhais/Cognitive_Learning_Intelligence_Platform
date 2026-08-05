@@ -63,10 +63,16 @@ class SessionHub:
         log.info("user %s left session %s", connection.user_id, connection.session_id)
 
     def forget_session(self, session_id: UUID) -> None:
-        """Drop a finished session's sequence counter.
+        """Drop a finished session's room and sequence counter.
 
-        Called when a session ends. Without it `_seq` keeps one entry per
-        session for the lifetime of the process.
+        Owner: General CS, Phase 3. Nothing calls this yet because the session
+        lifecycle arrives with the scheduler. Until then `_seq` keeps one entry
+        per session for the life of the process, which is a slow leak rather
+        than a correctness problem.
+
+        Call it only once a session has genuinely ended. `leave` already drops
+        an empty room, and clearing the counter while a session is still
+        running restarts seq at 1, which clients read as a gap.
         """
         self._rooms.pop(session_id, None)
         self._seq.pop(session_id, None)
@@ -113,20 +119,29 @@ class SessionHub:
         self, session_id: UUID, user_id: UUID, event_type: ServerEventType, data: dict
     ) -> bool:
         """Targeted delivery, used for private attention prompts and per-student
-        feedback. Nothing here is visible to other students."""
+        feedback. Nothing here is visible to other students.
+
+        A student can hold more than one connection at once: Teams open in the
+        desktop app and in a browser tab, or a reconnect whose predecessor has
+        not been evicted yet. All of them receive the event. Stopping at the
+        first would send an attention prompt to whichever socket the set
+        happened to yield first, which may be the stale one, and report success.
+        """
         event = self.build(session_id, event_type, data)
         payload = event.model_dump(mode="json")
 
         async with self._lock:
             targets = [c for c in self._rooms.get(session_id, ()) if c.user_id == user_id]
 
+        delivered = 0
         for connection in targets:
             try:
                 await connection.websocket.send_json(payload)
-                return True
+                delivered += 1
             except Exception:
+                log.warning("targeted send failed for user %s, dropping", user_id)
                 await self.leave(connection)
-        return False
+        return delivered > 0
 
 
 hub = SessionHub()
