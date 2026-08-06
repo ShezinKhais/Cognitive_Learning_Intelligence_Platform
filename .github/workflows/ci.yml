@@ -2,7 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - Hunain-Phase-1
+      - Nour-Phase-1
+      - Aliyeh-Phase-1
+      - Luna-Phase-1
+      - Shezin-Phase-1
   pull_request:
 
 jobs:
