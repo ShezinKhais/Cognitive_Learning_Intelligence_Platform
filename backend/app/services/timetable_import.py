@@ -78,16 +78,14 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
         if reader.fieldnames is None:
             raise ValidationError("File has no header row.", {"filename": filename})
         rows = [
-            {(k or "").strip().lower(): (v or "").strip() for k, v in row.items()}
-            for row in reader
+            {(k or "").strip().lower(): (v or "").strip() for k, v in row.items()} for row in reader
         ]
     elif ext == "xlsx":
         try:
             wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
         except Exception as exc:
             raise ValidationError(
-                "Could not read this file as .xlsx. It may be corrupt or not a real "
-                "Excel file.",
+                "Could not read this file as .xlsx. It may be corrupt or not a real Excel file.",
                 {"filename": filename},
             ) from exc
         ws = wb.active
