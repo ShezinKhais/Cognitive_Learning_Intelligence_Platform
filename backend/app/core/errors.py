@@ -105,7 +105,9 @@ def not_implemented(owner: str, phase: str) -> NotImplementedYetError:
     )
 
 
-def _envelope(request: Request, code: str, message: str, detail: dict[str, Any]) -> dict:
+def _envelope(
+    request: Request, code: str, message: str, detail: dict[str, Any]
+) -> dict:
     return {
         "error": {"code": code, "message": message, "detail": detail},
         "request_id": getattr(request.state, "request_id", None),
@@ -126,22 +128,36 @@ def register_error_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(RequestValidationError)
-    async def _validation(request: Request, exc: RequestValidationError) -> JSONResponse:
+    async def _validation(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
         # Pydantic's errors contain exception objects that json cannot encode.
         errors = [
-            {"loc": list(e.get("loc", [])), "msg": e.get("msg", ""), "type": e.get("type", "")}
+            {
+                "loc": list(e.get("loc", [])),
+                "msg": e.get("msg", ""),
+                "type": e.get("type", ""),
+            }
             for e in exc.errors()
         ]
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content=_envelope(
-                request, "VALIDATION_ERROR", "Request validation failed", {"errors": errors}
+                request,
+                "VALIDATION_ERROR",
+                "Request validation failed",
+                {"errors": errors},
             ),
         )
 
     @app.exception_handler(StarletteHTTPException)
     async def _http(request: Request, exc: StarletteHTTPException) -> JSONResponse:
-        codes = {401: "UNAUTHENTICATED", 403: "FORBIDDEN", 404: "NOT_FOUND", 405: "NOT_ALLOWED"}
+        codes = {
+            401: "UNAUTHENTICATED",
+            403: "FORBIDDEN",
+            404: "NOT_FOUND",
+            405: "NOT_ALLOWED",
+        }
         return JSONResponse(
             status_code=exc.status_code,
             content=_envelope(
@@ -155,5 +171,7 @@ def register_error_handlers(app: FastAPI) -> None:
         log.exception("Unhandled error on %s %s", request.method, request.url.path)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content=_envelope(request, "INTERNAL_ERROR", "An unexpected error occurred", {}),
+            content=_envelope(
+                request, "INTERNAL_ERROR", "An unexpected error occurred", {}
+            ),
         )

@@ -57,4 +57,6 @@ def test_readiness_hides_internals_in_production(production_client: TestClient) 
 def test_health_never_reveals_secrets(client: TestClient) -> None:
     body = client.get("/api/v1/health").json()
     assert set(body) == {"status", "env", "version", "teams_configured"}
-    assert isinstance(body["teams_configured"], bool), "must be a flag, never the credential"
+    assert isinstance(body["teams_configured"], bool), (
+        "must be a flag, never the credential"
+    )

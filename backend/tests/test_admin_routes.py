@@ -14,7 +14,9 @@ TIMETABLE_CSV = (
     b"CSIT101,Dr. Orumchian,Monday,10:00,12:00,Room 4\n"
 )
 
-ROSTER_CSV = b"student_email,student_name,course_code\na.student@uni.test,A Student,CSIT321\n"
+ROSTER_CSV = (
+    b"student_email,student_name,course_code\na.student@uni.test,A Student,CSIT321\n"
+)
 
 
 def test_timetable_upload_reports_conflicts(as_admin):

@@ -15,7 +15,9 @@ T = TypeVar("T")
 
 
 class ErrorBody(BaseModel):
-    code: str = Field(description="Stable machine-readable code. Switch on this, not on message.")
+    code: str = Field(
+        description="Stable machine-readable code. Switch on this, not on message."
+    )
     message: str = Field(description="Human-readable, safe to show a user.")
     detail: dict[str, Any] = Field(default_factory=dict)
 

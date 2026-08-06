@@ -9,7 +9,9 @@ INSECURE_SECRET_KEY = "change-me-in-production"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     # Application
     clip_env: str = "development"
@@ -17,7 +19,9 @@ class Settings(BaseSettings):
     clip_log_level: str = "INFO"
 
     # Database
-    database_url: str = "postgresql+asyncpg://clip:clip_dev_password@localhost:5432/clip"
+    database_url: str = (
+        "postgresql+asyncpg://clip:clip_dev_password@localhost:5432/clip"
+    )
 
     # LLM
     ollama_base_url: str = "http://localhost:11434/v1"
@@ -74,7 +78,11 @@ class Settings(BaseSettings):
 
     @property
     def upload_extensions(self) -> set[str]:
-        return {e.strip().lower() for e in self.allowed_upload_extensions.split(",") if e.strip()}
+        return {
+            e.strip().lower()
+            for e in self.allowed_upload_extensions.split(",")
+            if e.strip()
+        }
 
 
 @lru_cache

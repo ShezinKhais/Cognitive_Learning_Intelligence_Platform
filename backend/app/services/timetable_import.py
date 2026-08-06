@@ -31,7 +31,14 @@ from app.core.errors import ValidationError
 # as an upload that references someone who was never enrolled).
 FUZZY_MATCH_THRESHOLD = 88  # rapidfuzz score, 0-100. Below this: unmatched.
 
-REQUIRED_TIMETABLE_COLUMNS = {"course_code", "lecturer", "day", "start_time", "end_time", "room"}
+REQUIRED_TIMETABLE_COLUMNS = {
+    "course_code",
+    "lecturer",
+    "day",
+    "start_time",
+    "end_time",
+    "room",
+}
 REQUIRED_ROSTER_COLUMNS = {"student_email", "student_name", "course_code"}
 
 
@@ -78,7 +85,8 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
         if reader.fieldnames is None:
             raise ValidationError("File has no header row.", {"filename": filename})
         rows = [
-            {(k or "").strip().lower(): (v or "").strip() for k, v in row.items()} for row in reader
+            {(k or "").strip().lower(): (v or "").strip() for k, v in row.items()}
+            for row in reader
         ]
     elif ext == "xlsx":
         try:
@@ -93,7 +101,9 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
         try:
             header = [str(c).strip().lower() if c is not None else "" for c in next(it)]
         except StopIteration:
-            raise ValidationError("File has no header row.", {"filename": filename}) from None
+            raise ValidationError(
+                "File has no header row.", {"filename": filename}
+            ) from None
         rows = []
         for raw_row in it:
             if all(c is None for c in raw_row):
@@ -111,7 +121,9 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
         )
 
     if not rows:
-        raise ValidationError("File has a header but no data rows.", {"filename": filename})
+        raise ValidationError(
+            "File has a header but no data rows.", {"filename": filename}
+        )
 
     return rows
 
@@ -216,7 +228,12 @@ def parse_roster(filename: str, raw: bytes) -> tuple[list[RosterRow], int]:
             )
 
         parsed.append(
-            RosterRow(student_email=email, student_name=name, course_code=course_code, row_number=i)
+            RosterRow(
+                student_email=email,
+                student_name=name,
+                course_code=course_code,
+                row_number=i,
+            )
         )
 
     return parsed, len(rows)
@@ -231,7 +248,9 @@ def detect_timetable_conflicts(rows: list[TimetableRow]) -> list[str]:
     conflicts: list[str] = []
 
     def overlaps(a: TimetableRow, b: TimetableRow) -> bool:
-        return a.day == b.day and a.start_time < b.end_time and b.start_time < a.end_time
+        return (
+            a.day == b.day and a.start_time < b.end_time and b.start_time < a.end_time
+        )
 
     for i, a in enumerate(rows):
         for b in rows[i + 1 :]:

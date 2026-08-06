@@ -32,7 +32,9 @@ def test_every_server_event_declares_a_payload() -> None:
     )
 
 
-@pytest.mark.parametrize("model", [m for m in SERVER_PAYLOADS.values() if m is not None])
+@pytest.mark.parametrize(
+    "model", [m for m in SERVER_PAYLOADS.values() if m is not None]
+)
 def test_server_payloads_are_models(model: type[BaseModel]) -> None:
     assert issubclass(model, BaseModel)
     assert model.model_fields, f"{model.__name__} has no fields"
@@ -52,7 +54,12 @@ def test_attention_signal_carries_indicators_not_media() -> None:
     the README stops being true.
     """
     fields = set(AttentionSignalPayload.model_fields)
-    assert fields == {"gaze_on_screen_ratio", "face_present", "speaking", "window_seconds"}
+    assert fields == {
+        "gaze_on_screen_ratio",
+        "face_present",
+        "speaking",
+        "window_seconds",
+    }
 
 
 def test_room_status_reports_activity_not_content() -> None:
@@ -60,7 +67,9 @@ def test_room_status_reports_activity_not_content() -> None:
     they said."""
     fields = set(RoomStatusPayload.model_fields)
     assert "speaking_now" in fields
-    assert not any(w in f for f in fields for w in ("transcript", "text", "audio", "content"))
+    assert not any(
+        w in f for f in fields for w in ("transcript", "text", "audio", "content")
+    )
 
 
 def test_payloads_are_validated_not_just_the_envelope() -> None:
@@ -84,7 +93,9 @@ def test_payloads_are_validated_not_just_the_envelope() -> None:
     assert payload.selected_option == 2
 
     with pytest.raises(ValidationError):
-        parse_client_event({"type": "answer.submit", "data": {"question_id": "not-a-uuid"}})
+        parse_client_event(
+            {"type": "answer.submit", "data": {"question_id": "not-a-uuid"}}
+        )
 
     with pytest.raises(ValidationError):
         parse_client_event({"type": "definitely.not.an.event", "data": {}})

@@ -94,7 +94,8 @@ class AuthPayload(BaseModel):
     token: str
     session_id: UUID | None = None
     last_seq: int | None = Field(
-        default=None, description="Highest seq already received. Triggers replay on reconnect."
+        default=None,
+        description="Highest seq already received. Triggers replay on reconnect.",
     )
 
 
@@ -118,7 +119,9 @@ class AttentionSignalPayload(BaseModel):
 
     gaze_on_screen_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
     face_present: bool | None = None
-    speaking: bool | None = Field(default=None, description="Voice activity, not speech content.")
+    speaking: bool | None = Field(
+        default=None, description="Voice activity, not speech content."
+    )
     window_seconds: float = Field(description="Period these values summarise.")
 
 
@@ -155,7 +158,9 @@ class SessionStatePayload(BaseModel):
 class QuestionDeliveredPayload(BaseModel):
     question_id: UUID
     prompt: str
-    options: list[str] | None = Field(default=None, description="Null for free-text questions.")
+    options: list[str] | None = Field(
+        default=None, description="Null for free-text questions."
+    )
     closes_at: datetime
     window_seconds: int
     source_slide: int | None = None
@@ -187,7 +192,9 @@ class AnswerReceiptPayload(BaseModel):
 
 class FeedbackResultPayload(BaseModel):
     question_id: UUID
-    correct: bool | None = Field(default=None, description="Null while free text is classifying.")
+    correct: bool | None = Field(
+        default=None, description="Null while free text is classifying."
+    )
     explanation: str | None = None
     source_slide: int | None = None
 
@@ -217,7 +224,9 @@ class AlertRaisedPayload(BaseModel):
     alert_id: UUID
     kind: AlertKind
     message: str
-    reason: str = Field(description="Plain-language justification. Required, never empty.")
+    reason: str = Field(
+        description="Plain-language justification. Required, never empty."
+    )
     confidence: float = Field(ge=0.0, le=1.0)
 
 
@@ -257,7 +266,9 @@ class ErrorPayload(BaseModel):
 
 class ServerEvent(BaseModel):
     type: ServerEventType
-    seq: int = Field(description="Monotonic per session. Clients use it to detect gaps.")
+    seq: int = Field(
+        description="Monotonic per session. Clients use it to detect gaps."
+    )
     ts: datetime
     data: dict[str, Any] = Field(default_factory=dict)
 

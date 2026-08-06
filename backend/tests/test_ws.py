@@ -34,7 +34,9 @@ def test_socket_rejects_an_unverified_token(client: TestClient) -> None:
     """Fails closed until token verification is implemented."""
     with pytest.raises(WebSocketDisconnect) as exc:  # noqa: PT012
         with client.websocket_connect("/ws/session") as ws:
-            ws.send_json({"type": ClientEventType.AUTH.value, "data": {"token": "anything"}})
+            ws.send_json(
+                {"type": ClientEventType.AUTH.value, "data": {"token": "anything"}}
+            )
             ws.receive_json()
     assert exc.value.code == 4001
 
@@ -105,7 +107,9 @@ async def test_broadcast_reaches_everyone_in_the_room() -> None:
     for socket in sockets:
         await hub.join(Connection(socket, uuid4(), session))  # type: ignore[arg-type]
 
-    delivered = await hub.broadcast(session, ServerEventType.SESSION_STATE, {"status": "active"})
+    delivered = await hub.broadcast(
+        session, ServerEventType.SESSION_STATE, {"status": "active"}
+    )
 
     assert delivered == 3
     assert hub.participant_count(session) == 3
@@ -136,7 +140,9 @@ async def test_targeted_send_is_private() -> None:
     await hub.join(Connection(target, target_id, session))  # type: ignore[arg-type]
     await hub.join(Connection(bystander, uuid4(), session))  # type: ignore[arg-type]
 
-    sent = await hub.send_to_user(session, target_id, ServerEventType.PROMPT_ATTENTION, {})
+    sent = await hub.send_to_user(
+        session, target_id, ServerEventType.PROMPT_ATTENTION, {}
+    )
 
     assert sent is True
     assert len(target.sent) == 1
