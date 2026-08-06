@@ -83,14 +83,21 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
         text = raw.decode("utf-8-sig", errors="strict")
         reader = csv.DictReader(io.StringIO(text))
         if reader.fieldnames is None:
-            raise ValidationError("File has no header row.", {"filename": filename})
+            raise ValidationError(
+                "File has no header row.", {"filename": filename}
+            )
         rows = [
-            {(k or "").strip().lower(): (v or "").strip() for k, v in row.items()}
+            {
+                (k or "").strip().lower(): (v or "").strip()
+                for k, v in row.items()
+            }
             for row in reader
         ]
     elif ext == "xlsx":
         try:
-            wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+            wb = openpyxl.load_workbook(
+                io.BytesIO(raw), read_only=True, data_only=True
+            )
         except Exception as exc:
             raise ValidationError(
                 "Could not read this file as .xlsx. It may be corrupt or not a real Excel file.",
@@ -99,7 +106,10 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
         ws = wb.active
         it = ws.iter_rows(values_only=True)
         try:
-            header = [str(c).strip().lower() if c is not None else "" for c in next(it)]
+            header = [
+                str(c).strip().lower() if c is not None else ""
+                for c in next(it)
+            ]
         except StopIteration:
             raise ValidationError(
                 "File has no header row.", {"filename": filename}
@@ -144,7 +154,9 @@ def _parse_time(value: str, row_number: int, column: str) -> time:
     )
 
 
-def parse_timetable(filename: str, raw: bytes) -> tuple[list[TimetableRow], int]:
+def parse_timetable(
+    filename: str, raw: bytes
+) -> tuple[list[TimetableRow], int]:
     """Parse a timetable CSV/XLSX. Returns (rows, rows_read).
 
     Raises ValidationError on the first structural problem (bad header, bad
@@ -159,7 +171,10 @@ def parse_timetable(filename: str, raw: bytes) -> tuple[list[TimetableRow], int]
     if missing:
         raise ValidationError(
             f"Timetable file is missing required columns: {', '.join(sorted(missing))}.",
-            {"missing_columns": sorted(missing), "found_columns": sorted(header_cols)},
+            {
+                "missing_columns": sorted(missing),
+                "found_columns": sorted(header_cols),
+            },
         )
 
     parsed: list[TimetableRow] = []
@@ -208,7 +223,10 @@ def parse_roster(filename: str, raw: bytes) -> tuple[list[RosterRow], int]:
     if missing:
         raise ValidationError(
             f"Roster file is missing required columns: {', '.join(sorted(missing))}.",
-            {"missing_columns": sorted(missing), "found_columns": sorted(header_cols)},
+            {
+                "missing_columns": sorted(missing),
+                "found_columns": sorted(header_cols),
+            },
         )
 
     parsed: list[RosterRow] = []
@@ -224,7 +242,8 @@ def parse_roster(filename: str, raw: bytes) -> tuple[list[RosterRow], int]:
             )
         if not name or not course_code:
             raise ValidationError(
-                f"Row {i}: student_name and course_code are required.", {"row": i}
+                f"Row {i}: student_name and course_code are required.",
+                {"row": i},
             )
 
         parsed.append(
@@ -249,7 +268,9 @@ def detect_timetable_conflicts(rows: list[TimetableRow]) -> list[str]:
 
     def overlaps(a: TimetableRow, b: TimetableRow) -> bool:
         return (
-            a.day == b.day and a.start_time < b.end_time and b.start_time < a.end_time
+            a.day == b.day
+            and a.start_time < b.end_time
+            and b.start_time < a.end_time
         )
 
     for i, a in enumerate(rows):
@@ -273,7 +294,9 @@ def detect_timetable_conflicts(rows: list[TimetableRow]) -> list[str]:
 
 
 def match_names(
-    candidates: list[str], known: list[str], threshold: int = FUZZY_MATCH_THRESHOLD
+    candidates: list[str],
+    known: list[str],
+    threshold: int = FUZZY_MATCH_THRESHOLD,
 ) -> tuple[list[str], dict[str, str]]:
     """Fuzzy-match uploaded names against a known roster (e.g. Teams display names).
 
