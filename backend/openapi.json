@@ -1172,6 +1172,7 @@
   "paths": {
     "/api/v1/admin/roster": {
       "post": {
+        "description": "CSV or XLSX only, same reasoning as /timetable: no OCR path.\n\nTODO(Cyber 2 + BBIS): swap `known_students = []` for a real query against\nenrolled students once the models exist, and persist matched rows as\nroster/enrollment records instead of just counting them.",
         "operationId": "import_roster_api_v1_admin_roster_post",
         "requestBody": {
           "content": {
@@ -1213,7 +1214,7 @@
     },
     "/api/v1/admin/timetable": {
       "post": {
-        "description": "CSV or XLSX only. Structured data is parsed, never OCR'd.",
+        "description": "CSV or XLSX only. Structured data is parsed, never OCR'd.\n\nTODO(Cyber 2 + BBIS): once Session/Lecturer ORM models exist, replace the\n`known_lecturers = []` placeholder below with a real query, and persist\n`rows` as Session rows instead of just counting them. Until then this\nvalidates, parses and reports conflicts without writing anything \u2014\nstill useful on its own for an admin sanity-checking a file before the\nwrite path exists.",
         "operationId": "import_timetable_api_v1_admin_timetable_post",
         "requestBody": {
           "content": {
