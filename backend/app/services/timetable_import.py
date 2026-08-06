@@ -79,6 +79,7 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
     """
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
+    
     if ext == "csv":
         text = raw.decode("utf-8-sig", errors="strict")
         reader = csv.DictReader(io.StringIO(text))
@@ -93,6 +94,7 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
             }
             for row in reader
         ]
+        
     elif ext == "xlsx":
         try:
             wb = openpyxl.load_workbook(

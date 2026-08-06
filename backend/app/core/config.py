@@ -1,6 +1,7 @@
 """Application settings, loaded from environment (.env in development)."""
 
 from functools import lru_cache
+from urllib.parse import urlparse
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -41,9 +42,9 @@ class Settings(BaseSettings):
     comprehension_alert_min_respondents: int = 5
     dynamic_prompt_max_per_student: int = 3
 
-    # Uploads
+    # Uploads (Includes CSV and XLSX for admin timetable/roster imports)
     max_upload_bytes: int = 52_428_800
-    allowed_upload_extensions: str = "pdf,pptx,docx,txt"
+    allowed_upload_extensions: str = "pdf,pptx,docx,txt,csv,xlsx"
 
     # Retention (UAE PDPL)
     data_retention_days: int = 90
@@ -65,8 +66,16 @@ class Settings(BaseSettings):
         problems = []
         if self.clip_secret_key == INSECURE_SECRET_KEY:
             problems.append("CLIP_SECRET_KEY is still the default")
-        if "clip_dev_password" in self.database_url:
-            problems.append("DATABASE_URL still uses the development password")
+
+        # Parse DATABASE_URL for thorough production checks
+        parsed_db = urlparse(self.database_url)
+        db_password = parsed_db.password or ""
+        db_host = parsed_db.hostname or ""
+
+        if not db_password or db_password in {"clip_dev_password", "postgres", "password", "admin", "root"}:
+            problems.append("DATABASE_URL uses a missing, default, or weak password")
+        if db_host in {"localhost", "127.0.0.1", "0.0.0.0"}:
+            problems.append("DATABASE_URL points to localhost in production")
 
         if problems:
             raise ValueError("Refusing to start in production: " + "; ".join(problems))
