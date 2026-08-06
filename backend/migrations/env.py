@@ -13,8 +13,19 @@ config = context.config
 from app.core.config import get_settings
 config.set_main_option("sqlalchemy.url", get_settings().database_url)
 from app.core.database import Base
-from app.models.material import Material  # noqa: F401
 from app.models.course import Course  # noqa: F401
+from app.models.material import Material  # noqa: F401
+from app.models.user import User  # noqa: F401
+from app.models.student import Student  # noqa: F401
+from app.models.session import Session  # noqa: F401
+from app.models.audit_log import AuditLog  # noqa: F401
+from app.models.rag_chunk import RagChunk  # noqa: F401
+from app.models.question import Question  # noqa: F401
+from app.models.engagement_record import EngagementRecord  # noqa: F401
+from app.models.dynamic_prompt import DynamicPrompt  # noqa: F401
+from app.models.breakout_room import BreakoutRoom  # noqa: F401
+from app.models.student_response import StudentResponse  # noqa: F401
+from app.models.comprehension_result import ComprehensionResult  # noqa: F401
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:
