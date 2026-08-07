@@ -14,6 +14,7 @@ from app.auth.store import (
 from app.core.config import get_settings
 from app.core.security import create_access_token
 from app.schemas.identity import Role
+
 from .dev_credentials import ADMIN_PASSWORD, LECTURER_PASSWORD, STUDENT_PASSWORD
 
 
