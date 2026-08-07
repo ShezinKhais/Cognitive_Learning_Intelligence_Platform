@@ -4,7 +4,7 @@
       "Body_import_roster_api_v1_admin_roster_post": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           }
@@ -18,7 +18,7 @@
       "Body_import_timetable_api_v1_admin_timetable_post": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           }
@@ -32,7 +32,7 @@
       "Body_upload_material_api_v1_materials_post": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           }
