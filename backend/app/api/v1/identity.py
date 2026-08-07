@@ -135,9 +135,7 @@ async def record_consent(payload: ConsentRequest, principal: CurrentUser) -> Con
 
 
 @admin.post("/timetable", response_model=TimetableImportResult)
-async def import_timetable(
-    file: UploadFile, principal: CurrentUser
-) -> TimetableImportResult:
+async def import_timetable(file: UploadFile, principal: CurrentUser) -> TimetableImportResult:
     """CSV or XLSX only. Structured data is parsed, never OCR'd.
 
     TODO(Cyber 2 + BBIS): replace known_lecturers with a real query and persist
@@ -160,9 +158,7 @@ async def import_timetable(
 
 
 @admin.post("/roster", response_model=TimetableImportResult)
-async def import_roster(
-    file: UploadFile, principal: CurrentUser
-) -> TimetableImportResult:
+async def import_roster(file: UploadFile, principal: CurrentUser) -> TimetableImportResult:
     """CSV or XLSX only. Structured data is parsed, never OCR'd."""
     raw = await file.read()
     rows, rows_read = parse_roster(file.filename or "", raw)

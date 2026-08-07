@@ -21,18 +21,15 @@ ADMIN_ID = UUID("33333333-3333-3333-3333-333333333333")
 # Prototype-only credentials. The repository stores only their hashes and is
 # disabled completely in production. These are documented so the team can test.
 DEV_STUDENT_PASSWORD_HASH = (
-    "pbkdf2_sha256$600000$QcKKGcvq3iTHPqYPKj0ePw==$"
-    "TY1Ln5kfviWL4GOQrqVgXcW0VttV_qKFKNqsQF_nHSA="
+    "pbkdf2_sha256$600000$QcKKGcvq3iTHPqYPKj0ePw==$TY1Ln5kfviWL4GOQrqVgXcW0VttV_qKFKNqsQF_nHSA="
 )
 
 DEV_LECTURER_PASSWORD_HASH = (
-    "pbkdf2_sha256$600000$1Vnxp8VqRirlbn6ik6zhWA==$"
-    "RDJFpsJRXtMQkSsKUDv6RD2a54_v-pXmnsto-uPiu70="
+    "pbkdf2_sha256$600000$1Vnxp8VqRirlbn6ik6zhWA==$RDJFpsJRXtMQkSsKUDv6RD2a54_v-pXmnsto-uPiu70="
 )
 
 DEV_ADMIN_PASSWORD_HASH = (
-    "pbkdf2_sha256$600000$GcIiUKdjqP1oOIC-QSP_Ng==$"
-    "1F7aKH4Yn895ka2991JZxbcGIO3zwmsQgYcWlsZwNdk="
+    "pbkdf2_sha256$600000$GcIiUKdjqP1oOIC-QSP_Ng==$1F7aKH4Yn895ka2991JZxbcGIO3zwmsQgYcWlsZwNdk="
 )
 MAX_FAILED_LOGIN_ATTEMPTS = 5
 

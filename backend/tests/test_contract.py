@@ -89,6 +89,4 @@ def test_bearer_security_is_documented(client: TestClient) -> None:
     assert scheme["scheme"] == "bearer"
     assert "security" not in spec["paths"]["/api/v1/auth/login"]["post"]
     assert spec["paths"]["/api/v1/auth/me"]["get"]["security"] == [{"BearerAuth": []}]
-    assert spec["paths"]["/api/v1/admin/timetable"]["post"]["security"] == [
-        {"BearerAuth": []}
-    ]
+    assert spec["paths"]["/api/v1/admin/timetable"]["post"]["security"] == [{"BearerAuth": []}]

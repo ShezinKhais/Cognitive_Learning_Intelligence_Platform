@@ -64,7 +64,6 @@ def create_app() -> FastAPI:
         redoc_url="/redoc" if expose_docs else None,
     )
 
-
     # Expose the resolved settings to security code that must keep the fixed
     # get_principal(request) signature.
     app.state.settings = settings
@@ -112,9 +111,7 @@ def create_app() -> FastAPI:
             description=app.description,
             routes=app.routes,
         )
-        security_schemes = schema.setdefault("components", {}).setdefault(
-            "securitySchemes", {}
-        )
+        security_schemes = schema.setdefault("components", {}).setdefault("securitySchemes", {})
         security_schemes["BearerAuth"] = {
             "type": "http",
             "scheme": "bearer",

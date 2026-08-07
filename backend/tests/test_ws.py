@@ -40,8 +40,6 @@ def test_socket_rejects_an_invalid_token(client: TestClient) -> None:
     assert exc.value.code == 4001
 
 
-
-
 def test_socket_accepts_a_valid_token(client: TestClient) -> None:
     from app.auth.store import STUDENT_ID
 
