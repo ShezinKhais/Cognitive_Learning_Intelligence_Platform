@@ -12,7 +12,7 @@ from fastapi.websockets import WebSocketDisconnect
 
 from app.realtime.hub import Connection, SessionHub
 from app.schemas.events import ClientEventType, ServerEventType
-from tests.dev_credentials import STUDENT_PASSWORD
+from .dev_credentials import STUDENT_PASSWORD
 
 
 def test_socket_rejects_a_non_auth_first_event(client: TestClient) -> None:
