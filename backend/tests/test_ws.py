@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from fastapi.websockets import WebSocketDisconnect
 
-from app.realtime.hub import Connection, SessionHub
+from app.realtime.hub import MAX_TRACKED_SESSIONS, Connection, SessionHub
 from app.schemas.events import ClientEventType, ServerEventType
 
 
@@ -202,6 +202,30 @@ async def test_forget_session_clears_the_counter() -> None:
     hub.forget_session(session)
 
     assert hub.build(session, ServerEventType.PONG, {}).seq == 1
+
+
+async def test_sequence_counters_stop_growing_at_the_ceiling() -> None:
+    """forget_session has no caller until Phase 3, so the map has to bound
+    itself rather than trust one."""
+    hub = SessionHub()
+    for _ in range(MAX_TRACKED_SESSIONS + 50):
+        hub.build(uuid4(), ServerEventType.PONG, {})
+
+    assert hub.tracked_session_count() <= MAX_TRACKED_SESSIONS
+
+
+async def test_a_live_session_keeps_its_counter_when_the_ceiling_is_reached() -> None:
+    """Evicting a session that still has listeners would restart its seq at 1,
+    and every client watching reads that as a gap. Idle counters go first."""
+    hub = SessionHub()
+    live = uuid4()
+    await hub.join(Connection(_FakeSocket(), uuid4(), live))  # type: ignore[arg-type]
+    assert hub.build(live, ServerEventType.PONG, {}).seq == 1
+
+    for _ in range(MAX_TRACKED_SESSIONS + 50):
+        hub.build(uuid4(), ServerEventType.PONG, {})
+
+    assert hub.build(live, ServerEventType.PONG, {}).seq == 2
 
 
 async def test_leaving_empties_the_room() -> None:

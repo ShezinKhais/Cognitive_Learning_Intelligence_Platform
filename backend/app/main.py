@@ -35,9 +35,12 @@ def resolve_request_id(inbound: str | None) -> str:
     return str(uuid.uuid4())
 
 
+DEV_ORIGIN = "http://localhost:5173"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if settings.teams_configured:
+    if get_settings().teams_configured:
         log.warning("Teams credentials set but the adapter is not implemented yet")
     else:
         log.info("Running without Teams integration")
@@ -45,6 +48,10 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    # Read at call time rather than at import, so the environment a test sets up
+    # is the environment the app is built from.
+    settings = get_settings()
+
     # Interactive docs describe every route, parameter and schema. That is what
     # we want during development and an inventory for an attacker in production.
     expose_docs = not settings.is_production
@@ -65,14 +72,20 @@ def create_app() -> FastAPI:
 
     # Only the Vite dev server needs this. A Teams tab is an iframe served from
     # our own origin, so its requests are same-origin and never preflight.
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["http://localhost:5173"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-        expose_headers=["X-Request-ID"],
-    )
+    #
+    # Not registered in production. Leaving it on would let any page a browser
+    # happens to be serving on that port send credentialed requests to the real
+    # API and read the replies, in exchange for a convenience nothing in a
+    # deployed build uses.
+    if not settings.is_production:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=[DEV_ORIGIN],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+            expose_headers=["X-Request-ID"],
+        )
 
     @app.middleware("http")
     async def request_id(request: Request, call_next):
