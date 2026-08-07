@@ -245,7 +245,15 @@ def clean_text(text: str) -> str:
     if len(text) < 200:
         words = text.split()
         n = len(words)
-        for size in range(n // 2, 0, -1):
+        # case 1: the whole line is one phrase said exactly twice, e.g.
+        # "Overview Overview" or "Data Mining Data Mining". safe to halve.
+        if n % 2 == 0:
+            half = n // 2
+            if words[:half] == words[half:]:
+                return " ".join(words[:half])
+        # case 2: a 2+ word chunk repeats at the end (docling overlap),
+        # e.g. "The Global Education Crisis The Global Education".
+        for size in range(n // 2, 1, -1):
             if words[:size] == words[n - size :]:
                 return " ".join(words[: n - size])
     return text
