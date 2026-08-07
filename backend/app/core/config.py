@@ -2,7 +2,10 @@
 
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+INSECURE_SECRET_KEY = "change-me-in-production-use-32-plus-bytes"
 
 
 class Settings(BaseSettings):
@@ -10,8 +13,10 @@ class Settings(BaseSettings):
 
     # Application
     clip_env: str = "development"
-    clip_secret_key: str = "change-me-in-production"
+    clip_secret_key: str = "change-me-in-production-use-32-plus-bytes"
     clip_log_level: str = "INFO"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60
 
     # Database
     database_url: str = "postgresql+asyncpg://clip:clip_dev_password@localhost:5432/clip"
@@ -40,6 +45,32 @@ class Settings(BaseSettings):
 
     # Retention (UAE PDPL)
     data_retention_days: int = 90
+
+    @property
+    def is_production(self) -> bool:
+        return self.clip_env.lower() in {"production", "prod"}
+
+    @model_validator(mode="after")
+    def _reject_unsafe_production_config(self) -> "Settings":
+        """Fail at startup rather than serving a class with a known-bad config.
+
+        A default signing key means anyone can forge a token for any student.
+        Discovering that during a demo is worse than refusing to boot.
+        """
+        if not self.is_production:
+            return self
+
+        problems = []
+        if self.clip_secret_key == INSECURE_SECRET_KEY:
+            problems.append("CLIP_SECRET_KEY is still the default")
+        if self.jwt_algorithm != "HS256":
+            problems.append("JWT_ALGORITHM must be HS256")
+        if "clip_dev_password" in self.database_url:
+            problems.append("DATABASE_URL still uses the development password")
+
+        if problems:
+            raise ValueError("Refusing to start in production: " + "; ".join(problems))
+        return self
 
     @property
     def teams_configured(self) -> bool:
