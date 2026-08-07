@@ -76,7 +76,10 @@ def test_clean_keeps_real_titles_that_repeat_a_word():
     # must NOT be truncated (the bug Shezin found).
     assert clean_text("Networks of Networks") == "Networks of Networks"
     assert clean_text("Business Intelligence for Business") == "Business Intelligence for Business"
-    assert clean_text("Deep Learning for Deep Understanding") == "Deep Learning for Deep Understanding"
+    assert (
+        clean_text("Deep Learning for Deep Understanding")
+        == "Deep Learning for Deep Understanding"
+    )
 
 
 # --- chunking ---------------------------------------------------------------
