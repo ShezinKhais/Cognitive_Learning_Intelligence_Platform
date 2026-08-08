@@ -105,9 +105,7 @@ def not_implemented(owner: str, phase: str) -> NotImplementedYetError:
     )
 
 
-def _envelope(
-    request: Request, code: str, message: str, detail: dict[str, Any]
-) -> dict:
+def _envelope(request: Request, code: str, message: str, detail: dict[str, Any]) -> dict:
     return {
         "error": {"code": code, "message": message, "detail": detail},
         "request_id": getattr(request.state, "request_id", None),
@@ -128,9 +126,7 @@ def register_error_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(RequestValidationError)
-    async def _validation(
-        request: Request, exc: RequestValidationError
-    ) -> JSONResponse:
+    async def _validation(request: Request, exc: RequestValidationError) -> JSONResponse:
         # Pydantic's errors contain exception objects that json cannot encode.
         errors = [
             {
@@ -171,7 +167,5 @@ def register_error_handlers(app: FastAPI) -> None:
         log.exception("Unhandled error on %s %s", request.method, request.url.path)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content=_envelope(
-                request, "INTERNAL_ERROR", "An unexpected error occurred", {}
-            ),
+            content=_envelope(request, "INTERNAL_ERROR", "An unexpected error occurred", {}),
         )

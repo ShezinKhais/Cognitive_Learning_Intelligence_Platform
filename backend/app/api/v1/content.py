@@ -26,9 +26,7 @@ router = APIRouter(prefix="/materials", tags=["content"])
 
 
 @router.post("", response_model=MaterialOut, status_code=status.HTTP_202_ACCEPTED)
-async def upload_material(
-    file: UploadFile, principal: CurrentUser, db: DbSession
-) -> MaterialOut:
+async def upload_material(file: UploadFile, principal: CurrentUser, db: DbSession) -> MaterialOut:
     """Accepts PDF, PPTX, DOCX or TXT.
 
     Returns 202 immediately: processing runs in the background and reports
@@ -45,9 +43,7 @@ async def list_materials(
 
 
 @router.get("/{material_id}", response_model=MaterialOut)
-async def get_material(
-    material_id: UUID, principal: CurrentUser, db: DbSession
-) -> MaterialOut:
+async def get_material(material_id: UUID, principal: CurrentUser, db: DbSession) -> MaterialOut:
     raise not_implemented("BBIS", "Phase 2")
 
 

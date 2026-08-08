@@ -10,9 +10,7 @@ INSECURE_SECRET_KEY = "change-me-in-production"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # Application
     clip_env: str = "development"
@@ -20,9 +18,7 @@ class Settings(BaseSettings):
     clip_log_level: str = "INFO"
 
     # Database
-    database_url: str = (
-        "postgresql+asyncpg://clip:clip_dev_password@localhost:5432/clip"
-    )
+    database_url: str = "postgresql+asyncpg://clip:clip_dev_password@localhost:5432/clip"
 
     # LLM
     ollama_base_url: str = "http://localhost:11434/v1"
@@ -72,7 +68,13 @@ class Settings(BaseSettings):
         db_password = parsed_db.password or ""
         db_host = parsed_db.hostname or ""
 
-        if not db_password or db_password in {"clip_dev_password", "postgres", "password", "admin", "root"}:
+        if not db_password or db_password in {
+            "clip_dev_password",
+            "postgres",
+            "password",
+            "admin",
+            "root",
+        }:
             problems.append("DATABASE_URL uses a missing, default, or weak password")
         if db_host in {"localhost", "127.0.0.1", "0.0.0.0"}:
             problems.append("DATABASE_URL points to localhost in production")
@@ -87,11 +89,7 @@ class Settings(BaseSettings):
 
     @property
     def upload_extensions(self) -> set[str]:
-        return {
-            e.strip().lower()
-            for e in self.allowed_upload_extensions.split(",")
-            if e.strip()
-        }
+        return {e.strip().lower() for e in self.allowed_upload_extensions.split(",") if e.strip()}
 
 
 @lru_cache

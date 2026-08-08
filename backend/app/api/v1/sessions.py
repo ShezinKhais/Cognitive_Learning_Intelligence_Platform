@@ -36,31 +36,23 @@ async def create_session(
 
 
 @router.get("", response_model=Page[SessionOut])
-async def list_sessions(
-    principal: CurrentUser, db: DbSession, page: Paginated
-) -> Page[SessionOut]:
+async def list_sessions(principal: CurrentUser, db: DbSession, page: Paginated) -> Page[SessionOut]:
     raise not_implemented("BBIS", "Phase 3")
 
 
 @router.get("/{session_id}", response_model=SessionOut)
-async def get_session(
-    session_id: UUID, principal: CurrentUser, db: DbSession
-) -> SessionOut:
+async def get_session(session_id: UUID, principal: CurrentUser, db: DbSession) -> SessionOut:
     raise not_implemented("BBIS", "Phase 3")
 
 
 @router.post("/{session_id}/start", response_model=SessionOut)
-async def start_session(
-    session_id: UUID, principal: CurrentUser, db: DbSession
-) -> SessionOut:
+async def start_session(session_id: UUID, principal: CurrentUser, db: DbSession) -> SessionOut:
     """Blocked until the session has approved questions staged."""
     raise not_implemented("General CS", "Phase 3")
 
 
 @router.post("/{session_id}/end", response_model=SessionOut)
-async def end_session(
-    session_id: UUID, principal: CurrentUser, db: DbSession
-) -> SessionOut:
+async def end_session(session_id: UUID, principal: CurrentUser, db: DbSession) -> SessionOut:
     raise not_implemented("General CS", "Phase 3")
 
 

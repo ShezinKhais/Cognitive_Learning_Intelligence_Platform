@@ -24,9 +24,7 @@ log = logging.getLogger("clip.realtime")
 
 
 class Connection:
-    def __init__(
-        self, websocket: WebSocket, user_id: UUID, session_id: UUID | None
-    ) -> None:
+    def __init__(self, websocket: WebSocket, user_id: UUID, session_id: UUID | None) -> None:
         self.websocket = websocket
         self.user_id = user_id
         self.session_id = session_id
@@ -80,9 +78,7 @@ class SessionHub:
         self._seq[session_id] += 1
         return self._seq[session_id]
 
-    def build(
-        self, session_id: UUID, event_type: ServerEventType, data: dict
-    ) -> ServerEvent:
+    def build(self, session_id: UUID, event_type: ServerEventType, data: dict) -> ServerEvent:
         return ServerEvent(
             type=event_type,
             seq=self.next_seq(session_id),
@@ -90,9 +86,7 @@ class SessionHub:
             data=data,
         )
 
-    async def broadcast(
-        self, session_id: UUID, event_type: ServerEventType, data: dict
-    ) -> int:
+    async def broadcast(self, session_id: UUID, event_type: ServerEventType, data: dict) -> int:
         """Send to everyone in a session. Returns the number of recipients.
 
         A send failure removes the connection rather than aborting the
@@ -124,9 +118,7 @@ class SessionHub:
         payload = event.model_dump(mode="json")
 
         async with self._lock:
-            targets = [
-                c for c in self._rooms.get(session_id, ()) if c.user_id == user_id
-            ]
+            targets = [c for c in self._rooms.get(session_id, ()) if c.user_id == user_id]
 
         for connection in targets:
             try:

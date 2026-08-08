@@ -51,12 +51,8 @@ def build_events() -> dict:
             "client": ClientEvent.model_json_schema(),
             "server": ServerEvent.model_json_schema(),
         },
-        "client_events": {
-            event.value: _schema(model) for event, model in CLIENT_PAYLOADS.items()
-        },
-        "server_events": {
-            event.value: _schema(model) for event, model in SERVER_PAYLOADS.items()
-        },
+        "client_events": {event.value: _schema(model) for event, model in CLIENT_PAYLOADS.items()},
+        "server_events": {event.value: _schema(model) for event, model in SERVER_PAYLOADS.items()},
     }
 
 

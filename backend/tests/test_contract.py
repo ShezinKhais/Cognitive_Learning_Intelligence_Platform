@@ -63,9 +63,7 @@ def test_engagement_reports_confidence_and_available_signals(
 ) -> None:
     """A low-signal student must be reportable as 'insufficient data' rather
     than 'disengaged', which needs both of these fields."""
-    engagement = client.get("/api/v1/openapi.json").json()["components"]["schemas"][
-        "EngagementOut"
-    ]
+    engagement = client.get("/api/v1/openapi.json").json()["components"]["schemas"]["EngagementOut"]
     assert "confidence" in engagement["properties"]
     assert "signals_available" in engagement["properties"]
 

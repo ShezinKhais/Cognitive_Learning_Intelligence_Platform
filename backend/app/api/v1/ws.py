@@ -127,9 +127,7 @@ async def _authenticate(websocket: WebSocket) -> tuple[UUID, UUID | None] | None
         await websocket.close(code=CLOSE_BAD_EVENT, reason="malformed auth payload")
         return None
 
-    await websocket.close(
-        code=CLOSE_UNAUTHENTICATED, reason="token verification not implemented"
-    )
+    await websocket.close(code=CLOSE_UNAUTHENTICATED, reason="token verification not implemented")
     return None
 
 

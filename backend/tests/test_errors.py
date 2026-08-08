@@ -41,9 +41,7 @@ def test_authentication_is_checked_before_anything_else(client: TestClient) -> N
     Every stub sits behind the auth dependency, so 401 comes first and 501 is
     unreachable until Cyber 1 lands token validation.
     """
-    response = client.get(
-        "/api/v1/sessions", headers={"Authorization": "Bearer nonsense"}
-    )
+    response = client.get("/api/v1/sessions", headers={"Authorization": "Bearer nonsense"})
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "UNAUTHENTICATED"
 

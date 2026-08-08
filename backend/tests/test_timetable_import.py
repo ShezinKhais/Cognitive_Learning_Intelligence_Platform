@@ -55,9 +55,7 @@ def test_rejects_empty_file():
 
 
 def test_rejects_missing_required_column():
-    raw = (
-        b"course_code,lecturer,day,start_time,end_time\nCSIT321,X,Monday,09:00,11:00\n"
-    )
+    raw = b"course_code,lecturer,day,start_time,end_time\nCSIT321,X,Monday,09:00,11:00\n"
     with pytest.raises(ValidationError, match="missing required columns"):
         parse_timetable("timetable.csv", raw)
 

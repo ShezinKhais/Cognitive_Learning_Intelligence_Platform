@@ -79,27 +79,18 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
     """
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
-    
     if ext == "csv":
         text = raw.decode("utf-8-sig", errors="strict")
         reader = csv.DictReader(io.StringIO(text))
         if reader.fieldnames is None:
-            raise ValidationError(
-                "File has no header row.", {"filename": filename}
-            )
+            raise ValidationError("File has no header row.", {"filename": filename})
         rows = [
-            {
-                (k or "").strip().lower(): (v or "").strip()
-                for k, v in row.items()
-            }
-            for row in reader
+            {(k or "").strip().lower(): (v or "").strip() for k, v in row.items()} for row in reader
         ]
-        
+
     elif ext == "xlsx":
         try:
-            wb = openpyxl.load_workbook(
-                io.BytesIO(raw), read_only=True, data_only=True
-            )
+            wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
         except Exception as exc:
             raise ValidationError(
                 "Could not read this file as .xlsx. It may be corrupt or not a real Excel file.",
@@ -108,14 +99,9 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
         ws = wb.active
         it = ws.iter_rows(values_only=True)
         try:
-            header = [
-                str(c).strip().lower() if c is not None else ""
-                for c in next(it)
-            ]
+            header = [str(c).strip().lower() if c is not None else "" for c in next(it)]
         except StopIteration:
-            raise ValidationError(
-                "File has no header row.", {"filename": filename}
-            ) from None
+            raise ValidationError("File has no header row.", {"filename": filename}) from None
         rows = []
         for raw_row in it:
             if all(c is None for c in raw_row):
@@ -133,9 +119,7 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
         )
 
     if not rows:
-        raise ValidationError(
-            "File has a header but no data rows.", {"filename": filename}
-        )
+        raise ValidationError("File has a header but no data rows.", {"filename": filename})
 
     return rows
 
@@ -156,9 +140,7 @@ def _parse_time(value: str, row_number: int, column: str) -> time:
     )
 
 
-def parse_timetable(
-    filename: str, raw: bytes
-) -> tuple[list[TimetableRow], int]:
+def parse_timetable(filename: str, raw: bytes) -> tuple[list[TimetableRow], int]:
     """Parse a timetable CSV/XLSX. Returns (rows, rows_read).
 
     Raises ValidationError on the first structural problem (bad header, bad
@@ -269,11 +251,7 @@ def detect_timetable_conflicts(rows: list[TimetableRow]) -> list[str]:
     conflicts: list[str] = []
 
     def overlaps(a: TimetableRow, b: TimetableRow) -> bool:
-        return (
-            a.day == b.day
-            and a.start_time < b.end_time
-            and b.start_time < a.end_time
-        )
+        return a.day == b.day and a.start_time < b.end_time and b.start_time < a.end_time
 
     for i, a in enumerate(rows):
         for b in rows[i + 1 :]:

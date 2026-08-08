@@ -24,9 +24,7 @@ def _api_base() -> str:
 
 @pytest.mark.skipif(not API_TS.exists(), reason="frontend not present")
 def test_frontend_base_path_matches_the_backend() -> None:
-    assert _api_base() == API_V1, (
-        f"frontend calls {_api_base()} but the backend serves {API_V1}"
-    )
+    assert _api_base() == API_V1, f"frontend calls {_api_base()} but the backend serves {API_V1}"
 
 
 @pytest.mark.skipif(not API_TS.exists(), reason="frontend not present")

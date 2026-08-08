@@ -36,9 +36,7 @@ async def _check_database(db: DbSession) -> DependencyStatus:
     started = time.perf_counter()
     try:
         await db.execute(text("select 1"))
-        extensions = (
-            (await db.execute(text("select extname from pg_extension"))).scalars().all()
-        )
+        extensions = (await db.execute(text("select extname from pg_extension"))).scalars().all()
         missing = {"vector", "pg_trgm"} - set(extensions)
         if missing:
             return DependencyStatus(
@@ -69,9 +67,7 @@ async def _check_ollama() -> DependencyStatus:
         async with httpx.AsyncClient(timeout=3.0) as client:
             response = await client.get(f"{base}/api/tags")
             response.raise_for_status()
-            installed = {
-                m["name"].split(":")[0] for m in response.json().get("models", [])
-            }
+            installed = {m["name"].split(":")[0] for m in response.json().get("models", [])}
         wanted = {
             settings.ollama_model.split(":")[0],
             settings.embedding_model.split(":")[0],
@@ -95,9 +91,7 @@ async def _check_ollama() -> DependencyStatus:
     response_model=ReadinessResponse,
     responses={503: {"description": "A required dependency is unavailable."}},
 )
-async def ready(
-    db: DbSession, response: Response, settings: AppSettings
-) -> ReadinessResponse:
+async def ready(db: DbSession, response: Response, settings: AppSettings) -> ReadinessResponse:
     database, ollama = await asyncio.gather(_check_database(db), _check_ollama())
 
     # Ollama is reported but does not gate readiness: the live session loop
