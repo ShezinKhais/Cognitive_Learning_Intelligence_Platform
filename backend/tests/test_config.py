@@ -24,7 +24,6 @@ def test_production_rejects_the_default_secret_key() -> None:
         Settings(clip_env="production", database_url="postgresql+asyncpg://u:p@h/db")
 
 
-
 def test_production_rejects_the_development_database_password() -> None:
     with pytest.raises(ValueError, match="missing, default, or weak password"):
         Settings(
