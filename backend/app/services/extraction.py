@@ -187,17 +187,25 @@ def read_pptx(path: str) -> list[ExtractedElement]:
     """PPTX reader. python-pptx already gives clean, slide-scoped text, so
     docling adds nothing here."""
     from pptx import Presentation
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+
+    def walk(shapes, page, els):
+        """Yield text from shapes, stepping inside groups so their text
+        is not lost (a plain shape loop skips grouped content)."""
+        parts = []
+        for shape in shapes:
+            if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+                parts.extend(walk(shape.shapes, page, els))
+            elif shape.has_text_frame and shape.text_frame.text.strip():
+                parts.append(shape.text_frame.text)
+            elif shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+                els.append(ExtractedElement("image", "[image on slide]", page))
+        return parts
 
     els = []
     for i, slide in enumerate(Presentation(path).slides):
-        parts = []
-        for shape in slide.shapes:
-            if shape.has_text_frame and shape.text_frame.text.strip():
-                parts.append(shape.text_frame.text)
-            elif shape.shape_type == 13:  # 13 = picture
-                els.append(ExtractedElement("image", "[image on slide]", i + 1))
+        parts = walk(slide.shapes, i + 1, els)
         if parts:
-            # first text box on a slide is nearly always the title
             els.append(ExtractedElement("heading", clean_text(parts[0]), i + 1))
             if len(parts) > 1:
                 body = "\n".join(parts[1:])
@@ -206,17 +214,29 @@ def read_pptx(path: str) -> list[ExtractedElement]:
 
 
 def read_docx(path: str) -> list[ExtractedElement]:
-    """DOCX reader. Word styles tell us which paragraphs are headings."""
+    """DOCX reader. Word styles tell us which paragraphs are headings.
+
+    Also pulls text out of tables, which python-docx keeps separate from
+    paragraphs (so a plain paragraph loop misses them entirely).
+    """
     from docx import Document
 
+    doc = Document(path)
     els = []
-    for para in Document(path).paragraphs:
+
+    for para in doc.paragraphs:
         if not para.text.strip():
             continue
         style = (para.style.name or "").lower()
         el_type = "heading" if style.startswith("heading") or style == "title" else "text"
-        # docx has no fixed pages, so everything is page 1. documented limit.
         els.append(ExtractedElement(el_type, clean_text(para.text), 1))
+
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [c.text.strip() for c in row.cells if c.text.strip()]
+            if cells:
+                els.append(ExtractedElement("table", clean_text(" | ".join(cells)), 1))
+
     return els
 
 
