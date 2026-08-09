@@ -166,10 +166,25 @@ def read_pdf_docling(path: str) -> list[ExtractedElement]:
     return els
 
 
-def read_pdf_pypdf(path: str) -> list[ExtractedElement]:
-    """Fallback PDF reader. Lenient: opens malformed files docling refuses.
+def looks_letter_spaced(text: str) -> bool:
+    """Detect pypdf's letter-spacing corruption on designed decks.
 
-    Known to mangle designed decks, so only used when docling fails.
+    pypdf turns styled text into single characters separated by spaces,
+    e.g. "The Global" becomes "T h e  G l o b a l". We spot this by
+    checking what fraction of "words" are a single character.
+    """
+    words = text.split()
+    if len(words) < 20:
+        return False
+    singles = sum(1 for w in words if len(w) == 1)
+    return singles / len(words) > 0.4
+
+
+def read_pdf_pypdf(path: str) -> list[ExtractedElement]:
+    """Default PDF reader (Option B). Lightweight, installs everywhere.
+
+    Known to mangle designed decks (letter-spacing), so callers should run
+    looks_letter_spaced() on the output and upgrade to docling if available.
     """
     from pypdf import PdfReader
 
@@ -324,13 +339,26 @@ def extract(path: str, ext: str) -> tuple[list[ExtractedElement], str, list[str]
     warnings: list[str] = []
 
     if ext == "pdf":
-        try:
-            return read_pdf_docling(path), "docling", warnings
-        except Exception as exc:
-            # docling refuses malformed PDFs that pypdf tolerates
-            log.warning("docling failed on %s, falling back to pypdf: %s", path, exc)
-            warnings.append("Document is malformed; extracted with the fallback parser.")
-            return read_pdf_pypdf(path), "pypdf-fallback", warnings
+        # Option B: pypdf is the default (light, installs everywhere).
+        elements = read_pdf_pypdf(path)
+        joined = " ".join(e.content for e in elements if e.el_type != "image")
+
+        # quality guard: if pypdf produced letter-spaced garbage, try to
+        # upgrade to docling. this only helps if docling is installed.
+        if looks_letter_spaced(joined):
+            try:
+                from docling.document_converter import DocumentConverter  # noqa: F401
+
+                log.info("pypdf output looks corrupted on %s, upgrading to docling", path)
+                return read_pdf_docling(path), "docling", warnings
+            except ImportError:
+                warnings.append(
+                    "This PDF uses styled text that the default parser reads poorly. "
+                    "Install the 'extraction' extra (docling) for better results."
+                )
+                return elements, "pypdf-low-quality", warnings
+
+        return elements, "pypdf", warnings
 
     if ext == "pptx":
         return read_pptx(path), "python-pptx", warnings

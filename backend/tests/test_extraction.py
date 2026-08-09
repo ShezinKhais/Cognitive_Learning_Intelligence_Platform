@@ -128,7 +128,7 @@ def test_txt_end_to_end(tmp_path):
 @pytest.mark.skipif(not (SAMPLES / "lecture.pdf").exists(), reason="sample not committed")
 def test_pdf_end_to_end():
     result = process_material(str(SAMPLES / "lecture.pdf"), material_id=1)
-    assert result.parser_used in ("docling", "pypdf-fallback")
+    assert result.parser_used in ("pypdf", "docling", "pypdf-low-quality")
     assert result.page_count > 0
     assert result.chunks
     # the letter-spacing bug that pypdf produces on designed decks
