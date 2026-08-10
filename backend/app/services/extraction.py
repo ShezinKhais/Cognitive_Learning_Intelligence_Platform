@@ -25,6 +25,7 @@ PDFs that pypdf reads fine (observed on one real file).
 from __future__ import annotations
 
 import logging
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -56,8 +57,8 @@ class ExtractedElement:
 class ContentChunk:
     """A chunk ready to be embedded and stored. SDD: RAG_Chunk."""
 
-    chunk_id: int
-    material_id: int  # SDD: Source_material_id
+    chunk_id: uuid.UUID  # matches rag_chunk.chunk_id (UUID)
+    material_id: uuid.UUID  # SDD: Source_material_id, matches rag_chunk (UUID)
     chunk_text: str  # SDD: Chunk_text
     source_page: int  # not in the SDD table, but QuestionOut.source_slide
     # needs it to render "see slide 3" in feedback
@@ -71,7 +72,7 @@ class ProcessingResult:
     breaking change for BBIS (persistence) and for question generation.
     """
 
-    material_id: int
+    material_id: uuid.UUID
     elements: list[ExtractedElement] = field(default_factory=list)
     chunks: list[ContentChunk] = field(default_factory=list)
     page_count: int = 0
@@ -296,7 +297,7 @@ def clean_text(text: str) -> str:
 
 def chunk_elements(
     elements: list[ExtractedElement],
-    material_id: int,
+    material_id: uuid.UUID,
     size: int = 500,
     overlap: int = 100,
 ) -> list[ContentChunk]:
@@ -307,7 +308,6 @@ def chunk_elements(
     That is what makes retrieval and "see slide 3" work.
     """
     chunks: list[ContentChunk] = []
-    cid = 0
     current_heading = ""
 
     for el in elements:
@@ -323,8 +323,7 @@ def chunk_elements(
         for start in range(0, len(text), step):
             piece = text[start : start + size]
             if piece.strip():
-                chunks.append(ContentChunk(cid, material_id, piece, el.page))
-                cid += 1
+                chunks.append(ContentChunk(uuid.uuid4(), material_id, piece, el.page))
 
     return chunks
 
@@ -370,7 +369,9 @@ def extract(path: str, ext: str) -> tuple[list[ExtractedElement], str, list[str]
     raise ValidationError(f"Unsupported file format: .{ext}", {"received": ext})
 
 
-def process_material(path: str, material_id: int, max_bytes: int = 52_428_800) -> ProcessingResult:
+def process_material(
+    path: str, material_id: uuid.UUID, max_bytes: int = 52_428_800
+) -> ProcessingResult:
     """Entry point. Validate, extract, clean, chunk.
 
     Called by POST /api/v1/materials. Embedding and storage happen after this,
