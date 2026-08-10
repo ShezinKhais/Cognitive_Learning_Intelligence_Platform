@@ -1,8 +1,16 @@
 /** Shared API and authentication helpers. */
+
 export const API_BASE = '/api/v1'
+
 const ACCESS_TOKEN_KEY = 'clip_access_token'
 
 export type Role = 'student' | 'lecturer' | 'admin'
+
+export type ConsentType =
+  | 'terms'
+  | 'engagement_monitoring'
+  | 'camera'
+  | 'microphone'
 
 export interface Health {
   status: string
@@ -23,13 +31,26 @@ export interface CurrentUser {
   email: string
   full_name: string
   role: Role
-  consents: Array<'terms' | 'engagement_monitoring' | 'camera' | 'microphone'>
+  consents: ConsentType[]
 }
 
 export interface ConsentResponse {
-  consent_type: 'terms' | 'engagement_monitoring' | 'camera' | 'microphone'
+  consent_type: ConsentType
   granted: boolean
   recorded_at: string
+}
+
+export interface ConsentChoice {
+  consent_type: ConsentType
+  granted: boolean
+}
+
+export interface ConsentBatchRequest {
+  consents: ConsentChoice[]
+}
+
+export interface ConsentBatchResponse {
+  consents: ConsentResponse[]
 }
 
 export interface TimetableImportResult {
@@ -62,6 +83,7 @@ export class ApiError extends Error {
 
   constructor(status: number, code: string, message: string) {
     super(message)
+    this.name = 'ApiError'
     this.status = status
     this.code = code
   }
@@ -70,13 +92,15 @@ export class ApiError extends Error {
 async function readErrorEnvelope(response: Response): Promise<ApiError> {
   let code = 'HTTP_ERROR'
   let message = `HTTP ${response.status}`
+
   try {
     const body = await response.json()
     code = body?.error?.code ?? code
     message = body?.error?.message ?? message
   } catch {
-    // A proxy or dead server may not return the application's JSON envelope.
+    // A proxy or unavailable server may not return the application's JSON envelope.
   }
+
   return new ApiError(response.status, code, message)
 }
 
@@ -86,24 +110,44 @@ async function request<T>(
   authenticated = false,
 ): Promise<T> {
   const headers = new Headers(options.headers)
+
   if (authenticated) {
     const token = getAccessToken()
+
     if (!token) {
-      throw new ApiError(401, 'UNAUTHENTICATED', 'Login is required.')
+      throw new ApiError(
+        401,
+        'UNAUTHENTICATED',
+        'Login is required.',
+      )
     }
+
     headers.set('Authorization', `Bearer ${token}`)
   }
 
-  if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
+  if (
+    options.body &&
+    !(options.body instanceof FormData) &&
+    !headers.has('Content-Type')
+  ) {
     headers.set('Content-Type', 'application/json')
   }
 
-  const response = await fetch(apiUrl(path), { ...options, headers })
+  const response = await fetch(apiUrl(path), {
+    ...options,
+    headers,
+  })
+
   if (!response.ok) {
     const error = await readErrorEnvelope(response)
-    if (response.status === 401) clearAccessToken()
+
+    if (response.status === 401) {
+      clearAccessToken()
+    }
+
     throw error
   }
+
   return response.json() as Promise<T>
 }
 
@@ -111,10 +155,16 @@ export function apiGet<T>(path: string): Promise<T> {
   return request<T>(path)
 }
 
-export function login(email: string, password: string): Promise<LoginResponse> {
+export function login(
+  email: string,
+  password: string,
+): Promise<LoginResponse> {
   return request<LoginResponse>('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({
+      email,
+      password,
+    }),
   })
 }
 
@@ -122,15 +172,48 @@ export function getCurrentUser(): Promise<CurrentUser> {
   return request<CurrentUser>('/auth/me', {}, true)
 }
 
+/**
+ * Existing single-consent helper.
+ *
+ * Keep this temporarily so existing tests or callers do not break.
+ * The consent page will move to saveConsents() once the backend
+ * accepts an atomic batch.
+ */
 export function recordConsent(
-  consentType: ConsentResponse['consent_type'],
+  consentType: ConsentType,
   granted: boolean,
 ): Promise<ConsentResponse> {
   return request<ConsentResponse>(
     '/auth/consent',
     {
       method: 'POST',
-      body: JSON.stringify({ consent_type: consentType, granted }),
+      body: JSON.stringify({
+        consent_type: consentType,
+        granted,
+      }),
+    },
+    true,
+  )
+}
+
+/**
+ * Save all consent choices in one request.
+ *
+ * The backend still needs to be updated to accept this payload
+ * atomically before ConsentPage starts using this function.
+ */
+export function saveConsents(
+  consents: ConsentChoice[],
+): Promise<ConsentBatchResponse> {
+  const payload: ConsentBatchRequest = {
+    consents,
+  }
+
+  return request<ConsentBatchResponse>(
+    '/auth/consent',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
     },
     true,
   )
@@ -142,5 +225,13 @@ export async function apiUploadFile(
 ): Promise<TimetableImportResult> {
   const formData = new FormData()
   formData.append('file', file)
-  return request<TimetableImportResult>(path, { method: 'POST', body: formData }, true)
+
+  return request<TimetableImportResult>(
+    path,
+    {
+      method: 'POST',
+      body: formData,
+    },
+    true,
+  )
 }

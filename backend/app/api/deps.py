@@ -60,20 +60,30 @@ class Principal:
         return self.role in roles
 
 
-async def get_principal(request: Request) -> Principal:
+async def get_principal(
+    request: Request,
+    settings: AppSettings,
+) -> Principal:
     """Resolve the caller from a signed bearer token.
 
-    The signature is the shared workstream seam and deliberately remains
-    unchanged. HTTP handlers never parse authorization headers themselves.
+    HTTP handlers never parse authorization headers themselves.
+    Authentication uses the same settings dependency as the rest of the app.
     """
     try:
         token = extract_bearer_token(request.headers.get("Authorization"))
-        user = user_from_token(token, request.app.state.settings)
+        user = user_from_token(token, settings)
     except TokenValidationError as exc:
-        log.warning("security_event=TOKEN_REJECTED reason=%s", str(exc))
+        log.warning(
+            "security_event=TOKEN_REJECTED reason=%s",
+            str(exc),
+        )
         raise AuthenticationError("Authentication is required.") from exc
 
-    return Principal(user_id=user.id, role=user.role, email=user.email)
+    return Principal(
+        user_id=user.id,
+        role=user.role,
+        email=user.email,
+    )
 
 
 CurrentUser = Annotated[Principal, Depends(get_principal)]

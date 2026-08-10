@@ -13,9 +13,8 @@ class Settings(BaseSettings):
 
     # Application
     clip_env: str = "development"
-    clip_secret_key: str = "change-me-in-production-use-32-plus-bytes"
+    clip_secret_key: str = INSECURE_SECRET_KEY
     clip_log_level: str = "INFO"
-    jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
 
     # Database
@@ -63,8 +62,6 @@ class Settings(BaseSettings):
         problems = []
         if self.clip_secret_key == INSECURE_SECRET_KEY:
             problems.append("CLIP_SECRET_KEY is still the default")
-        if self.jwt_algorithm != "HS256":
-            problems.append("JWT_ALGORITHM must be HS256")
         if "clip_dev_password" in self.database_url:
             problems.append("DATABASE_URL still uses the development password")
 

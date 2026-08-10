@@ -7,7 +7,7 @@ changing the route contracts, JWT format or role guards.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from threading import RLock
 from uuid import UUID
 
@@ -18,8 +18,8 @@ STUDENT_ID = UUID("11111111-1111-1111-1111-111111111111")
 LECTURER_ID = UUID("22222222-2222-2222-2222-222222222222")
 ADMIN_ID = UUID("33333333-3333-3333-3333-333333333333")
 
-# Prototype-only credentials. The repository stores only their hashes and is
-# disabled completely in production. These are documented so the team can test.
+# Prototype-only credentials. The repository stores only password hashes.
+# Development identities are disabled completely in production.
 DEV_STUDENT_PASSWORD_HASH = (
     "pbkdf2_sha256$600000$QcKKGcvq3iTHPqYPKj0ePw==$TY1Ln5kfviWL4GOQrqVgXcW0VttV_qKFKNqsQF_nHSA="
 )
@@ -31,7 +31,9 @@ DEV_LECTURER_PASSWORD_HASH = (
 DEV_ADMIN_PASSWORD_HASH = (
     "pbkdf2_sha256$600000$GcIiUKdjqP1oOIC-QSP_Ng==$1F7aKH4Yn895ka2991JZxbcGIO3zwmsQgYcWlsZwNdk="
 )
+
 MAX_FAILED_LOGIN_ATTEMPTS = 5
+ACCOUNT_LOCK_DURATION = timedelta(minutes=15)
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,46 +57,98 @@ class ConsentRecord:
 class InMemoryUserRepository:
     def __init__(self, users: list[UserRecord]) -> None:
         self._by_id = {user.id: user for user in users}
+
         self._by_email = {user.email.lower(): user for user in users}
+
         self._failed_attempts: dict[UUID, int] = {}
-        self._locked: set[UUID] = set()
+        self._locked_until: dict[UUID, datetime] = {}
         self._lock = RLock()
 
-    def get_by_email(self, email: str) -> UserRecord | None:
+    def get_by_email(
+        self,
+        email: str,
+    ) -> UserRecord | None:
         return self._by_email.get(email.strip().lower())
 
-    def get_by_id(self, user_id: UUID) -> UserRecord | None:
+    def get_by_id(
+        self,
+        user_id: UUID,
+    ) -> UserRecord | None:
         return self._by_id.get(user_id)
 
-    def is_locked(self, user_id: UUID) -> bool:
+    def is_locked(
+        self,
+        user_id: UUID,
+    ) -> bool:
         with self._lock:
-            return user_id in self._locked
+            locked_until = self._locked_until.get(user_id)
 
-    def record_failed_login(self, user_id: UUID) -> bool:
-        """Increment failures and return True when the account becomes locked."""
+            if locked_until is None:
+                return False
+
+            if datetime.now(UTC) >= locked_until:
+                self._locked_until.pop(
+                    user_id,
+                    None,
+                )
+                self._failed_attempts.pop(
+                    user_id,
+                    None,
+                )
+                return False
+
+            return True
+
+    def record_failed_login(
+        self,
+        user_id: UUID,
+    ) -> bool:
+        """Increment failures and report whether the account became locked."""
         with self._lock:
-            count = self._failed_attempts.get(user_id, 0) + 1
+            count = (
+                self._failed_attempts.get(
+                    user_id,
+                    0,
+                )
+                + 1
+            )
+
             self._failed_attempts[user_id] = count
+
             if count >= MAX_FAILED_LOGIN_ATTEMPTS:
-                self._locked.add(user_id)
+                self._locked_until[user_id] = datetime.now(UTC) + ACCOUNT_LOCK_DURATION
                 return True
+
             return False
 
-    def reset_failed_logins(self, user_id: UUID) -> None:
+    def reset_failed_logins(
+        self,
+        user_id: UUID,
+    ) -> None:
         with self._lock:
-            self._failed_attempts.pop(user_id, None)
-            self._locked.discard(user_id)
+            self._failed_attempts.pop(
+                user_id,
+                None,
+            )
+            self._locked_until.pop(
+                user_id,
+                None,
+            )
 
     def reset_security_state(self) -> None:
-        """Test helper; production persistence will move this state to PostgreSQL."""
+        """Test helper for the temporary in-memory implementation."""
         with self._lock:
             self._failed_attempts.clear()
-            self._locked.clear()
+            self._locked_until.clear()
 
 
 class InMemoryConsentRepository:
     def __init__(self) -> None:
-        self._records: dict[tuple[UUID, ConsentType], ConsentRecord] = {}
+        self._records: dict[
+            tuple[UUID, ConsentType],
+            ConsentRecord,
+        ] = {}
+
         self._lock = RLock()
 
     def record(
@@ -109,18 +163,59 @@ class InMemoryConsentRepository:
             user_id=user_id,
             consent_type=consent_type,
             granted=granted,
-            recorded_at=recorded_at or datetime.now(UTC),
+            recorded_at=(recorded_at or datetime.now(UTC)),
         )
+
         with self._lock:
             self._records[(user_id, consent_type)] = record
+
         return record
 
-    def granted_for(self, user_id: UUID) -> set[ConsentType]:
+    def record_many(
+        self,
+        user_id: UUID,
+        consents: list[tuple[ConsentType, bool]],
+        *,
+        recorded_at: datetime | None = None,
+    ) -> list[ConsentRecord]:
+        """Save multiple consent decisions together."""
+        timestamp = recorded_at or datetime.now(UTC)
+
+        records = [
+            ConsentRecord(
+                user_id=user_id,
+                consent_type=consent_type,
+                granted=granted,
+                recorded_at=timestamp,
+            )
+            for consent_type, granted in consents
+        ]
+
+        updates = {
+            (
+                record.user_id,
+                record.consent_type,
+            ): record
+            for record in records
+        }
+
+        with self._lock:
+            self._records.update(updates)
+
+        return records
+
+    def granted_for(
+        self,
+        user_id: UUID,
+    ) -> set[ConsentType]:
         with self._lock:
             return {
                 consent_type
-                for (record_user, consent_type), record in self._records.items()
-                if record_user == user_id and record.granted
+                for (
+                    record_user,
+                    consent_type,
+                ), record in self._records.items()
+                if (record_user == user_id and record.granted)
             }
 
     def clear(self) -> None:
@@ -155,12 +250,16 @@ def _build_dev_users() -> list[UserRecord]:
 
 
 _DEV_USERS = InMemoryUserRepository(_build_dev_users())
+
 _EMPTY_USERS = InMemoryUserRepository([])
+
 _CONSENTS = InMemoryConsentRepository()
 
 
-def get_user_repository(settings: Settings) -> InMemoryUserRepository:
-    """Development identities are unavailable when the app is in production."""
+def get_user_repository(
+    settings: Settings,
+) -> InMemoryUserRepository:
+    """Development identities are unavailable in production."""
     return _EMPTY_USERS if settings.is_production else _DEV_USERS
 
 

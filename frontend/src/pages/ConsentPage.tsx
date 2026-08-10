@@ -5,7 +5,8 @@ import { useNavigate } from 'react-router'
 import {
   ApiError,
   getCurrentUser,
-  recordConsent,
+  saveConsents,
+  type ConsentChoice,
   type CurrentUser,
 } from '../api'
 
@@ -13,6 +14,7 @@ export default function ConsentPage() {
   const navigate = useNavigate()
 
   const [user, setUser] = useState<CurrentUser | null>(null)
+
   const [terms, setTerms] = useState(false)
   const [monitoring, setMonitoring] = useState(false)
   const [camera, setCamera] = useState(false)
@@ -27,20 +29,37 @@ export default function ConsentPage() {
 
     getCurrentUser()
       .then((currentUser) => {
-        if (cancelled) return
+        if (cancelled) {
+          return
+        }
 
         setUser(currentUser)
+
         setTerms(currentUser.consents.includes('terms'))
-        setMonitoring(
-          currentUser.consents.includes('engagement_monitoring'),
-        )
-        setCamera(currentUser.consents.includes('camera'))
-        setMicrophone(currentUser.consents.includes('microphone'))
+
+        if (currentUser.role === 'student') {
+          setMonitoring(
+            currentUser.consents.includes(
+              'engagement_monitoring',
+            ),
+          )
+          setCamera(
+            currentUser.consents.includes('camera'),
+          )
+          setMicrophone(
+            currentUser.consents.includes('microphone'),
+          )
+        }
       })
       .catch((caught) => {
-        if (cancelled) return
+        if (cancelled) {
+          return
+        }
 
-        if (caught instanceof ApiError && caught.status === 401) {
+        if (
+          caught instanceof ApiError &&
+          caught.status === 401
+        ) {
           navigate('/login', { replace: true })
           return
         }
@@ -52,7 +71,9 @@ export default function ConsentPage() {
         )
       })
       .finally(() => {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+        }
       })
 
     return () => {
@@ -60,7 +81,7 @@ export default function ConsentPage() {
     }
   }, [navigate])
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent) {
     event.preventDefault()
 
     if (!user) {
@@ -69,7 +90,9 @@ export default function ConsentPage() {
     }
 
     if (!terms) {
-      setError('You must accept the terms before continuing.')
+      setError(
+        'You must accept the terms before continuing.',
+      )
       return
     }
 
@@ -77,21 +100,44 @@ export default function ConsentPage() {
     setError(null)
 
     try {
-      // All roles accept the platform terms.
-      await recordConsent('terms', true)
+      let consents: ConsentChoice[]
 
-      // Only students provide engagement, camera and microphone consent.
       if (user.role === 'student') {
-        await recordConsent('engagement_monitoring', monitoring)
-        await recordConsent('camera', camera)
-        await recordConsent('microphone', microphone)
+        consents = [
+          {
+            consent_type: 'terms',
+            granted: true,
+          },
+          {
+            consent_type: 'engagement_monitoring',
+            granted: monitoring,
+          },
+          {
+            consent_type: 'camera',
+            granted: camera,
+          },
+          {
+            consent_type: 'microphone',
+            granted: microphone,
+          },
+        ]
+      } else {
+        consents = [
+          {
+            consent_type: 'terms',
+            granted: true,
+          },
+        ]
       }
 
-      if (user.role === 'admin') {
-        navigate('/admin', { replace: true })
-      } else {
-        navigate('/', { replace: true })
-      }
+      await saveConsents(consents)
+
+      navigate(
+        user.role === 'admin' ? '/admin' : '/',
+        {
+          replace: true,
+        },
+      )
     } catch (caught) {
       setError(
         caught instanceof ApiError
@@ -105,16 +151,19 @@ export default function ConsentPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen grid place-items-center">
-        Loading your account…
+      <main className="mx-auto max-w-2xl px-6 py-12">
+        <p>Loading your account...</p>
       </main>
     )
   }
 
   if (!user) {
     return (
-      <main className="min-h-screen grid place-items-center p-8">
-        <p role="alert" className="text-critical">
+      <main className="mx-auto max-w-2xl px-6 py-12">
+        <p
+          role="alert"
+          className="text-critical"
+        >
           {error ?? 'Could not load your account.'}
         </p>
       </main>
@@ -124,58 +173,64 @@ export default function ConsentPage() {
   const isStudent = user.role === 'student'
 
   return (
-    <main className="min-h-screen grid place-items-center p-8">
+    <main className="mx-auto max-w-2xl px-6 py-12">
       <form
         onSubmit={submit}
-        className="w-full max-w-xl rounded-xl border border-border bg-card p-6"
+        className="rounded-xl border border-border bg-card p-6 shadow-sm"
       >
-        <h1 className="text-xl font-bold">
+        <h1 className="text-2xl font-semibold">
           Terms and privacy
         </h1>
 
         {isStudent ? (
           <p className="mt-2 text-sm text-muted-foreground">
-            Engagement monitoring, camera indicators and microphone
-            indicators are optional and can be accepted separately.
+            Engagement monitoring, camera indicators and
+            microphone indicators are optional. You can choose
+            each permission separately.
           </p>
         ) : (
           <p className="mt-2 text-sm text-muted-foreground">
-            Your role only requires acceptance of the C.L.I.P terms and
-            privacy notice. Student monitoring permissions do not apply to
-            your account.
+            Your role only requires acceptance of the C.L.I.P
+            terms and privacy notice. Student monitoring
+            permissions do not apply to your account.
           </p>
         )}
 
-        <Choice
-          label="I accept the C.L.I.P terms and privacy notice"
-          checked={terms}
-          onChange={setTerms}
-        />
+        <div className="mt-6 space-y-4">
+          <Choice
+            label="I accept the C.L.I.P terms and privacy notice"
+            checked={terms}
+            onChange={setTerms}
+          />
 
-        {isStudent && (
-          <>
-            <Choice
-              label="Allow engagement monitoring"
-              checked={monitoring}
-              onChange={setMonitoring}
-            />
+          {isStudent && (
+            <>
+              <Choice
+                label="Allow engagement monitoring"
+                checked={monitoring}
+                onChange={setMonitoring}
+              />
 
-            <Choice
-              label="Allow camera-derived indicators"
-              checked={camera}
-              onChange={setCamera}
-            />
+              <Choice
+                label="Allow camera-derived indicators"
+                checked={camera}
+                onChange={setCamera}
+              />
 
-            <Choice
-              label="Allow microphone voice-activity indicators"
-              checked={microphone}
-              onChange={setMicrophone}
-            />
-          </>
-        )}
+              <Choice
+                label="Allow microphone voice-activity indicators"
+                checked={microphone}
+                onChange={setMicrophone}
+              />
+            </>
+          )}
+        </div>
 
         {error && (
-          <p role="alert" className="mt-4 text-sm text-critical">
+          <p
+            role="alert"
+            className="mt-4 text-sm text-critical"
+          >
             {error}
           </p>
         )}
@@ -185,7 +240,7 @@ export default function ConsentPage() {
           disabled={saving}
           className="mt-6 rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-50"
         >
-          {saving ? 'Saving…' : 'Accept and continue'}
+          {saving ? 'Saving...' : 'Accept and continue'}
         </button>
       </form>
     </main>
@@ -202,12 +257,16 @@ function Choice({
   onChange: (checked: boolean) => void
 }) {
   return (
-    <label className="mt-4 flex items-start gap-3 rounded-lg bg-muted p-3 text-sm">
+    <label className="flex items-start gap-3">
       <input
         type="checkbox"
         checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
+        onChange={(event) =>
+          onChange(event.target.checked)
+        }
+        className="mt-1"
       />
+
       <span>{label}</span>
     </label>
   )

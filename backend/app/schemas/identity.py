@@ -10,7 +10,7 @@ from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class Role(StrEnum):
@@ -20,8 +20,12 @@ class Role(StrEnum):
 
 
 class ConsentType(StrEnum):
-    """Granular. Declining one must never block the others, and declining
-    camera or microphone must never lower an engagement score."""
+    """Independent consent choices.
+
+    Declining one consent must never automatically block another.
+    Declining camera or microphone consent must never lower an
+    engagement score.
+    """
 
     TERMS = "terms"
     ENGAGEMENT_MONITORING = "engagement_monitoring"
@@ -50,6 +54,12 @@ class UserOut(BaseModel):
 
 
 class ConsentRequest(BaseModel):
+    """One consent decision.
+
+    Kept for backwards compatibility with the existing
+    POST /auth/consent endpoint.
+    """
+
     consent_type: ConsentType
     granted: bool
 
@@ -60,11 +70,34 @@ class ConsentOut(BaseModel):
     recorded_at: datetime
 
 
+class ConsentBatchRequest(BaseModel):
+    """A group of consent decisions that must be saved atomically."""
+
+    consents: list[ConsentRequest] = Field(
+        min_length=1,
+        max_length=len(ConsentType),
+    )
+
+    @model_validator(mode="after")
+    def reject_duplicate_consent_types(self) -> ConsentBatchRequest:
+        consent_types = [consent.consent_type for consent in self.consents]
+
+        if len(consent_types) != len(set(consent_types)):
+            raise ValueError("Each consent type may appear only once.")
+
+        return self
+
+
+class ConsentBatchOut(BaseModel):
+    consents: list[ConsentOut]
+
+
 class TimetableImportResult(BaseModel):
     """Result of an administrator uploading a timetable CSV or XLSX.
 
-    CSV and XLSX are parsed as structured data. There is no OCR path, because a
-    misread digit would silently assign a student to the wrong session.
+    CSV and XLSX are parsed as structured data. There is no OCR path,
+    because a misread digit could silently assign a student to the
+    wrong session.
     """
 
     rows_read: int

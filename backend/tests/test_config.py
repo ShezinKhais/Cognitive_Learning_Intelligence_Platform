@@ -21,7 +21,10 @@ def test_development_tolerates_defaults() -> None:
 
 def test_production_rejects_the_default_secret_key() -> None:
     with pytest.raises(ValueError, match="CLIP_SECRET_KEY"):
-        Settings(clip_env="production", database_url="postgresql+asyncpg://u:p@h/db")
+        Settings(
+            clip_env="production",
+            database_url="postgresql+asyncpg://u:p@h/db",
+        )
 
 
 def test_production_rejects_the_development_database_password() -> None:
@@ -29,7 +32,7 @@ def test_production_rejects_the_development_database_password() -> None:
         Settings(
             clip_env="production",
             clip_secret_key="a-real-key",
-            database_url="postgresql+asyncpg://clip:clip_dev_password@localhost:5432/clip",
+            database_url=("postgresql+asyncpg://clip:clip_dev_password@localhost:5432/clip"),
         )
 
 
@@ -44,7 +47,15 @@ def test_production_starts_when_configured_properly() -> None:
 
 def test_log_records_carry_the_request_id() -> None:
     """Without this, an ID in an error body cannot be found in the logs."""
-    record = logging.LogRecord("clip", logging.INFO, __file__, 1, "msg", None, None)
+    record = logging.LogRecord(
+        "clip",
+        logging.INFO,
+        __file__,
+        1,
+        "msg",
+        None,
+        None,
+    )
 
     token = request_id_var.set("trace-me")
     try:
@@ -55,8 +66,13 @@ def test_log_records_carry_the_request_id() -> None:
     assert record.request_id == "trace-me"
 
 
-def test_request_id_does_not_leak_between_requests(client: TestClient) -> None:
-    first = client.get("/api/v1/health", headers={"X-Request-ID": "one"})
+def test_request_id_does_not_leak_between_requests(
+    client: TestClient,
+) -> None:
+    first = client.get(
+        "/api/v1/health",
+        headers={"X-Request-ID": "one"},
+    )
     second = client.get("/api/v1/health")
 
     assert first.headers["X-Request-ID"] == "one"
@@ -65,5 +81,4 @@ def test_request_id_does_not_leak_between_requests(client: TestClient) -> None:
 
 def test_jwt_defaults() -> None:
     settings = Settings()
-    assert settings.jwt_algorithm == "HS256"
     assert settings.access_token_expire_minutes == 60

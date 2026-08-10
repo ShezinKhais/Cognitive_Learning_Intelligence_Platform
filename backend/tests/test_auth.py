@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
@@ -64,6 +64,24 @@ def test_five_wrong_passwords_lock_the_development_account(client: TestClient) -
 
     still_blocked = _login(client, "student@clip.example.com", STUDENT_PASSWORD)
     assert still_blocked.status_code == 401
+
+
+def test_locked_account_unlocks_after_lock_period(client: TestClient) -> None:
+    settings = get_settings()
+    repository = get_user_repository(settings)
+
+    for _ in range(5):
+        response = _login(client, "student@clip.example.com", "wrong-password")
+        assert response.status_code == 401
+
+    assert repository.is_locked(STUDENT_ID)
+
+    repository._locked_until[STUDENT_ID] = datetime.now(UTC) - timedelta(seconds=1)
+
+    assert not repository.is_locked(STUDENT_ID)
+
+    response = _login(client, "student@clip.example.com", STUDENT_PASSWORD)
+    assert response.status_code == 200
 
 
 def test_missing_invalid_and_malformed_tokens_return_401(client: TestClient) -> None:
