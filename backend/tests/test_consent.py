@@ -27,7 +27,9 @@ def _token(
     return response.json()["access_token"]
 
 
-def _student_token(client: TestClient) -> str:
+def _student_token(
+    client: TestClient,
+) -> str:
     return _token(
         client,
         "student@clip.example.com",
@@ -35,7 +37,9 @@ def _student_token(client: TestClient) -> str:
     )
 
 
-def _admin_token(client: TestClient) -> str:
+def _admin_token(
+    client: TestClient,
+) -> str:
     return _token(
         client,
         "admin@clip.example.com",
@@ -43,7 +47,9 @@ def _admin_token(client: TestClient) -> str:
     )
 
 
-def _lecturer_token(client: TestClient) -> str:
+def _lecturer_token(
+    client: TestClient,
+) -> str:
     return _token(
         client,
         "lecturer@clip.example.com",
@@ -51,7 +57,9 @@ def _lecturer_token(client: TestClient) -> str:
     )
 
 
-def _headers(token: str) -> dict[str, str]:
+def _headers(
+    token: str,
+) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {token}",
     }
@@ -60,7 +68,7 @@ def _headers(token: str) -> dict[str, str]:
 def test_consent_can_be_granted_and_appears_in_me(
     client: TestClient,
 ) -> None:
-    """The original single-consent endpoint remains supported."""
+    """The original single-consent payload remains supported."""
     token = _student_token(client)
 
     response = client.post(
@@ -89,7 +97,10 @@ def test_one_consent_can_be_revoked_without_changing_another(
 ) -> None:
     token = _student_token(client)
 
-    for consent_type in ("camera", "microphone"):
+    for consent_type in (
+        "camera",
+        "microphone",
+    ):
         response = client.post(
             "/api/v1/auth/consent",
             headers=_headers(token),
@@ -127,7 +138,7 @@ def test_student_can_save_all_consent_choices_in_one_batch(
     token = _student_token(client)
 
     response = client.post(
-        "/api/v1/auth/consents",
+        "/api/v1/auth/consent",
         headers=_headers(token),
         json={
             "consents": [
@@ -163,6 +174,7 @@ def test_student_can_save_all_consent_choices_in_one_batch(
     )
 
     assert me.status_code == 200
+
     assert me.json()["consents"] == [
         "engagement_monitoring",
         "microphone",
@@ -176,7 +188,7 @@ def test_duplicate_consent_types_are_rejected_without_saving(
     token = _student_token(client)
 
     response = client.post(
-        "/api/v1/auth/consents",
+        "/api/v1/auth/consent",
         headers=_headers(token),
         json={
             "consents": [
@@ -209,7 +221,7 @@ def test_admin_cannot_submit_student_monitoring_consents(
     token = _admin_token(client)
 
     response = client.post(
-        "/api/v1/auth/consents",
+        "/api/v1/auth/consent",
         headers=_headers(token),
         json={
             "consents": [
@@ -234,7 +246,7 @@ def test_lecturer_cannot_submit_student_monitoring_consents(
     token = _lecturer_token(client)
 
     response = client.post(
-        "/api/v1/auth/consents",
+        "/api/v1/auth/consent",
         headers=_headers(token),
         json={
             "consents": [
@@ -257,7 +269,7 @@ def test_batch_consent_requires_authentication(
     client: TestClient,
 ) -> None:
     response = client.post(
-        "/api/v1/auth/consents",
+        "/api/v1/auth/consent",
         json={
             "consents": [
                 {

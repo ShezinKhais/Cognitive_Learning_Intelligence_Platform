@@ -22,7 +22,10 @@ from app.core.errors import (
     ConsentRequiredError,
     PermissionError_,
 )
-from app.core.security import TokenValidationError, extract_bearer_token
+from app.core.security import (
+    TokenValidationError,
+    extract_bearer_token,
+)
 from app.schemas.identity import ConsentType, Role
 
 log = logging.getLogger("clip.security")
@@ -47,11 +50,16 @@ Paginated = Annotated[Pagination, Depends(Pagination)]
 class Principal:
     """The authenticated caller.
 
-    Populated by the auth dependency below. Handlers should depend on this
-    rather than reading headers themselves.
+    Populated by the authentication dependency below. Handlers should depend
+    on this rather than reading authorization headers themselves.
     """
 
-    def __init__(self, user_id: UUID, role: Role, email: str) -> None:
+    def __init__(
+        self,
+        user_id: UUID,
+        role: Role,
+        email: str,
+    ) -> None:
         self.user_id = user_id
         self.role = role
         self.email = email
@@ -71,7 +79,10 @@ async def get_principal(
     """
     try:
         token = extract_bearer_token(request.headers.get("Authorization"))
-        user = user_from_token(token, settings)
+        user = user_from_token(
+            token,
+            settings,
+        )
     except TokenValidationError as exc:
         log.warning(
             "security_event=TOKEN_REJECTED reason=%s",
@@ -86,13 +97,18 @@ async def get_principal(
     )
 
 
-CurrentUser = Annotated[Principal, Depends(get_principal)]
+CurrentUser = Annotated[
+    Principal,
+    Depends(get_principal),
+]
 
 
 def require_roles(*roles: Role):
     """Require one of the supplied roles for a route or router."""
 
-    async def _guard(principal: CurrentUser) -> Principal:
+    async def _guard(
+        principal: CurrentUser,
+    ) -> Principal:
         if not principal.is_(*roles):
             log.warning(
                 "security_event=ACCESS_DENIED user_id=%s actual_role=%s required_roles=%s",
@@ -100,31 +116,44 @@ def require_roles(*roles: Role):
                 principal.role.value,
                 ",".join(role.value for role in roles),
             )
+
             raise PermissionError_(
                 "Your role does not permit this action.",
-                {"required": [r.value for r in roles], "actual": principal.role.value},
+                {
+                    "required": [role.value for role in roles],
+                    "actual": principal.role.value,
+                },
             )
+
         return principal
 
     return _guard
 
 
-def require_consents(*consents: ConsentType):
-    """Require explicitly granted consent without merging consent categories."""
+def require_consents(
+    *consents: ConsentType,
+):
+    """Require explicitly granted consent without merging categories."""
 
-    async def _guard(principal: CurrentUser) -> Principal:
+    async def _guard(
+        principal: CurrentUser,
+    ) -> Principal:
         granted = get_consent_repository().granted_for(principal.user_id)
+
         missing = [consent for consent in consents if consent not in granted]
+
         if missing:
             log.warning(
                 "security_event=ACCESS_DENIED user_id=%s missing_consents=%s",
                 principal.user_id,
                 ",".join(consent.value for consent in missing),
             )
+
             raise ConsentRequiredError(
                 "Required consent has not been granted.",
                 {"missing": [consent.value for consent in missing]},
             )
+
         return principal
 
     return _guard

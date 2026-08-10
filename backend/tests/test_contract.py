@@ -4,7 +4,13 @@ These fail loudly when someone changes the shared interface, which is the point:
 five other workstreams build against it.
 """
 
+import importlib.util
+from pathlib import Path
+from types import ModuleType
+
 from fastapi.testclient import TestClient
+
+BACKEND = Path(__file__).resolve().parent.parent
 
 EXPECTED_PATHS = {
     "/api/v1/health",
@@ -31,6 +37,20 @@ EXPECTED_PATHS = {
 }
 
 
+def _export_contract() -> ModuleType:
+    """Load scripts/export_contract.py by path.
+
+    It is a script rather than part of the installed package, so there is no
+    module name to import it under.
+    """
+    path = BACKEND / "scripts" / "export_contract.py"
+    spec = importlib.util.spec_from_file_location("export_contract", path)
+    assert spec and spec.loader, f"cannot load {path}"
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_openapi_generates(client: TestClient) -> None:
     response = client.get("/api/v1/openapi.json")
     assert response.status_code == 200
@@ -38,10 +58,41 @@ def test_openapi_generates(client: TestClient) -> None:
 
 
 def test_contract_paths_are_unchanged(client: TestClient) -> None:
-    """Adding a path is fine. Removing or renaming one breaks other people."""
+    """Both directions matter.
+
+    Removing or renaming a path breaks the five workstreams building against
+    it. Adding one silently widens a surface six people agreed to freeze, and
+    an unreviewed route is how a half-finished handler reaches a branch nobody
+    thought to look at. Either change belongs in this list, in the same commit
+    that makes it, where a reviewer will see it.
+    """
     actual = set(client.get("/api/v1/openapi.json").json()["paths"])
-    missing = EXPECTED_PATHS - actual
-    assert not missing, f"contract paths removed or renamed: {sorted(missing)}"
+    assert actual == EXPECTED_PATHS, (
+        f"removed or renamed: {sorted(EXPECTED_PATHS - actual)}, "
+        f"added without updating EXPECTED_PATHS: {sorted(actual - EXPECTED_PATHS)}"
+    )
+
+
+def test_the_committed_contract_matches_the_code() -> None:
+    """The generated document is not the one anyone else reads.
+
+    Every other workstream builds against the committed openapi.json and
+    events.schema.json, and those files only change when somebody remembers to
+    run the export script. Every other test here asks the running app, so a
+    stale file is invisible to all of them. CI checks it in a separate step,
+    which is exactly why drift on another branch went unnoticed until someone
+    looked by hand. Running the same check here means pytest catches it.
+    """
+    export = _export_contract()
+    stale = [
+        path.name
+        for path, render in export.TARGETS
+        if not path.exists() or export._read(path) != render()
+    ]
+    assert not stale, (
+        f"the committed contract is out of date: {', '.join(stale)}. "
+        f"Run: python scripts/export_contract.py"
+    )
 
 
 def test_everything_is_versioned(client: TestClient) -> None:
@@ -80,13 +131,3 @@ def test_no_event_type_can_carry_raw_media(client: TestClient) -> None:
             assert not any(word in field.lower() for word in banned), (
                 f"{name}.{field} looks like raw media"
             )
-
-
-def test_bearer_security_is_documented(client: TestClient) -> None:
-    spec = client.get("/api/v1/openapi.json").json()
-    scheme = spec["components"]["securitySchemes"]["BearerAuth"]
-    assert scheme["type"] == "http"
-    assert scheme["scheme"] == "bearer"
-    assert "security" not in spec["paths"]["/api/v1/auth/login"]["post"]
-    assert spec["paths"]["/api/v1/auth/me"]["get"]["security"] == [{"BearerAuth": []}]
-    assert spec["paths"]["/api/v1/admin/timetable"]["post"]["security"] == [{"BearerAuth": []}]

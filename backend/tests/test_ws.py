@@ -10,8 +10,15 @@ import pytest
 from fastapi.testclient import TestClient
 from fastapi.websockets import WebSocketDisconnect
 
-from app.realtime.hub import Connection, SessionHub
-from app.schemas.events import ClientEventType, ServerEventType
+from app.realtime.hub import (
+    MAX_TRACKED_SESSIONS,
+    Connection,
+    SessionHub,
+)
+from app.schemas.events import (
+    ClientEventType,
+    ServerEventType,
+)
 
 from .dev_credentials import STUDENT_PASSWORD
 
@@ -168,7 +175,7 @@ def test_socket_rejects_a_malformed_auth_payload(
         ),
         (
             "not json",
-            lambda ws: ws.send_text(""),
+            lambda ws: ws.send_text("<html>"),
         ),
         (
             "binary frame",
@@ -457,6 +464,59 @@ async def test_forget_session_clears_the_counter() -> None:
             {},
         ).seq
         == 1
+    )
+
+
+async def test_sequence_counters_stop_growing_at_the_ceiling() -> None:
+    """Idle session counters must remain bounded."""
+    hub = SessionHub()
+
+    for _ in range(MAX_TRACKED_SESSIONS + 50):
+        hub.build(
+            uuid4(),
+            ServerEventType.PONG,
+            {},
+        )
+
+    assert hub.tracked_session_count() <= MAX_TRACKED_SESSIONS
+
+
+async def test_a_live_session_keeps_its_counter_when_the_ceiling_is_reached() -> None:
+    """A live session must not lose its sequence counter."""
+    hub = SessionHub()
+    live = uuid4()
+
+    await hub.join(
+        Connection(
+            _FakeSocket(),
+            uuid4(),
+            live,
+        )
+    )  # type: ignore[arg-type]
+
+    assert (
+        hub.build(
+            live,
+            ServerEventType.PONG,
+            {},
+        ).seq
+        == 1
+    )
+
+    for _ in range(MAX_TRACKED_SESSIONS + 50):
+        hub.build(
+            uuid4(),
+            ServerEventType.PONG,
+            {},
+        )
+
+    assert (
+        hub.build(
+            live,
+            ServerEventType.PONG,
+            {},
+        ).seq
+        == 2
     )
 
 

@@ -125,7 +125,7 @@
         "type": "object"
       },
       "ConsentBatchRequest": {
-        "description": "A group of consent decisions that must be saved atomically.",
+        "description": "A group of consent decisions saved as one operation.",
         "properties": {
           "consents": {
             "items": {
@@ -1197,13 +1197,6 @@
         "title": "ValidationError",
         "type": "object"
       }
-    },
-    "securitySchemes": {
-      "BearerAuth": {
-        "bearerFormat": "JWT",
-        "scheme": "bearer",
-        "type": "http"
-      }
     }
   },
   "info": {
@@ -1249,11 +1242,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "summary": "Import Roster",
         "tags": [
           "admin"
@@ -1296,11 +1284,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "summary": "Import Timetable",
         "tags": [
           "admin"
@@ -1309,13 +1292,21 @@
     },
     "/api/v1/auth/consent": {
       "post": {
-        "description": "Record one independent, revocable consent decision.",
+        "description": "Record one consent decision or an atomic batch.",
         "operationId": "record_consent_api_v1_auth_consent_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ConsentRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ConsentRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ConsentBatchRequest"
+                  }
+                ],
+                "title": "Payload"
               }
             }
           },
@@ -1326,7 +1317,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConsentOut"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ConsentOut"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ConsentBatchOut"
+                    }
+                  ],
+                  "title": "Response Record Consent Api V1 Auth Consent Post"
                 }
               }
             },
@@ -1343,59 +1342,7 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "summary": "Record Consent",
-        "tags": [
-          "auth"
-        ]
-      }
-    },
-    "/api/v1/auth/consents": {
-      "post": {
-        "description": "Record multiple consent choices as one operation.",
-        "operationId": "record_consents_api_v1_auth_consents_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ConsentBatchRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConsentBatchOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "summary": "Record Consents",
         "tags": [
           "auth"
         ]
@@ -1457,11 +1404,6 @@
             "description": "Successful Response"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "summary": "Me",
         "tags": [
           "auth"
@@ -1539,11 +1481,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "summary": "List Materials",
         "tags": [
           "content"
@@ -1584,11 +1521,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "summary": "Upload Material",
         "tags": [
           "content"
@@ -1632,11 +1564,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "summary": "Get Material",
         "tags": [
           "content"
@@ -1703,11 +1630,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "summary": "List Questions",
         "tags": [
           "content"
@@ -1772,11 +1694,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "summary": "Review Question",
         "tags": [
           "content"
@@ -1835,11 +1752,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "summary": "Bulk Review Questions",
         "tags": [
           "content"
@@ -1920,11 +1832,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "summary": "List Sessions",
         "tags": [
           "sessions"
@@ -1964,11 +1871,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "summary": "Create Session",
         "tags": [
           "sessions"
@@ -2012,11 +1914,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "summary": "Get Session",
         "tags": [
           "sessions"
@@ -2064,11 +1961,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "summary": "Session Alerts",
         "tags": [
           "sessions"
@@ -2112,11 +2004,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "summary": "End Session",
         "tags": [
           "sessions"
@@ -2165,11 +2052,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "summary": "Session Engagement",
         "tags": [
           "sessions"
@@ -2228,11 +2110,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "summary": "Deliver Question",
         "tags": [
           "sessions"
@@ -2299,11 +2176,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "summary": "List Responses",
         "tags": [
           "sessions"
@@ -2348,11 +2220,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "summary": "Start Session",
         "tags": [
           "sessions"
@@ -2406,11 +2273,6 @@
             "description": "Validation Error"
           }
         },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
         "summary": "Student Summary",
         "tags": [
           "sessions"

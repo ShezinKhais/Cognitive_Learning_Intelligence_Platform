@@ -4,6 +4,7 @@
       "properties": {
         "client_elapsed_ms": {
           "description": "Time from delivery to submit, measured on the client.",
+          "minimum": 0,
           "title": "Client Elapsed Ms",
           "type": "integer"
         },
@@ -11,6 +12,7 @@
           "anyOf": [
             {
               "maxLength": 4000,
+              "minLength": 1,
               "type": "string"
             },
             {
@@ -28,6 +30,7 @@
         "selected_option": {
           "anyOf": [
             {
+              "minimum": 0,
               "type": "integer"
             },
             {
@@ -50,6 +53,7 @@
         "last_seq": {
           "anyOf": [
             {
+              "minimum": 0,
               "type": "integer"
             },
             {
@@ -74,6 +78,7 @@
           "title": "Session Id"
         },
         "token": {
+          "maxLength": 4096,
           "title": "Token",
           "type": "string"
         }
@@ -108,6 +113,8 @@
       "description": "Student's one-tap confirmation of which breakout room they are in.\n\nThis is the authoritative mapping, not a correction to one.",
       "properties": {
         "room_label": {
+          "maxLength": 100,
+          "minLength": 1,
           "title": "Room Label",
           "type": "string"
         }
@@ -162,6 +169,8 @@
         },
         "window_seconds": {
           "description": "Period these values summarise.",
+          "exclusiveMinimum": 0.0,
+          "maximum": 3600.0,
           "title": "Window Seconds",
           "type": "number"
         }

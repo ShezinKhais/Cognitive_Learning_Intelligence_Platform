@@ -78,8 +78,8 @@ async def login(
     repository = get_user_repository(settings)
     user = repository.get_by_email(str(payload.email))
 
-    # Always perform password verification so unknown emails do not
-    # return noticeably faster than known accounts.
+    # Always verify a password hash so unknown emails do not return
+    # noticeably faster than known accounts.
     password_hash = user.password_hash if user is not None else DUMMY_PASSWORD_HASH
 
     password_valid = verify_password(
@@ -103,7 +103,7 @@ async def login(
 
         log.warning(
             "security_event=%s user_id=%s reason=invalid_credentials",
-            "ACCOUNT_LOCKED" if locked else "LOGIN_FAILED",
+            ("ACCOUNT_LOCKED" if locked else "LOGIN_FAILED"),
             user.id,
         )
 
@@ -167,19 +167,69 @@ async def me(
 
 @auth.post(
     "/consent",
-    response_model=ConsentOut,
+    response_model=ConsentOut | ConsentBatchOut,
     status_code=status.HTTP_201_CREATED,
 )
 async def record_consent(
-    payload: ConsentRequest,
+    payload: ConsentRequest | ConsentBatchRequest,
     principal: CurrentUser,
-) -> ConsentOut:
-    """Record one independent, revocable consent decision."""
+) -> ConsentOut | ConsentBatchOut:
+    """Record one consent decision or an atomic batch."""
 
-    # Student monitoring permissions do not apply to lecturers/admins.
+    if isinstance(
+        payload,
+        ConsentBatchRequest,
+    ):
+        if principal.role != Role.STUDENT:
+            invalid_types = [
+                consent.consent_type.value
+                for consent in payload.consents
+                if consent.consent_type != ConsentType.TERMS
+            ]
+
+            if invalid_types:
+                raise PermissionError_(
+                    ("Student monitoring permissions do not apply to this role."),
+                    {
+                        "invalid_consent_types": invalid_types,
+                    },
+                )
+
+        repository = get_consent_repository()
+
+        records = repository.record_many(
+            principal.user_id,
+            [
+                (
+                    consent.consent_type,
+                    consent.granted,
+                )
+                for consent in payload.consents
+            ],
+        )
+
+        for record in records:
+            log.info(
+                "security_event=%s user_id=%s consent_type=%s",
+                ("CONSENT_GRANTED" if record.granted else "CONSENT_REVOKED"),
+                principal.user_id,
+                record.consent_type.value,
+            )
+
+        return ConsentBatchOut(
+            consents=[
+                ConsentOut(
+                    consent_type=(record.consent_type),
+                    granted=record.granted,
+                    recorded_at=(record.recorded_at),
+                )
+                for record in records
+            ]
+        )
+
     if principal.role != Role.STUDENT and payload.consent_type != ConsentType.TERMS:
         raise PermissionError_(
-            "Student monitoring permissions do not apply to this role.",
+            ("Student monitoring permissions do not apply to this role."),
             {"invalid_consent_types": [payload.consent_type.value]},
         )
 
@@ -191,7 +241,7 @@ async def record_consent(
 
     log.info(
         "security_event=%s user_id=%s consent_type=%s",
-        ("CONSENT_GRANTED" if payload.granted else "CONSENT_REVOKED"),
+        ("CONSENT_GRANTED" if record.granted else "CONSENT_REVOKED"),
         principal.user_id,
         payload.consent_type.value,
     )
@@ -200,66 +250,6 @@ async def record_consent(
         consent_type=record.consent_type,
         granted=record.granted,
         recorded_at=record.recorded_at,
-    )
-
-
-@auth.post(
-    "/consents",
-    response_model=ConsentBatchOut,
-    status_code=status.HTTP_201_CREATED,
-)
-async def record_consents(
-    payload: ConsentBatchRequest,
-    principal: CurrentUser,
-) -> ConsentBatchOut:
-    """Record multiple consent choices as one operation."""
-
-    # Admins and lecturers only have platform terms.
-    if principal.role != Role.STUDENT:
-        invalid_types = [
-            consent.consent_type.value
-            for consent in payload.consents
-            if consent.consent_type != ConsentType.TERMS
-        ]
-
-        if invalid_types:
-            raise PermissionError_(
-                ("Student monitoring permissions do not apply to this role."),
-                {
-                    "invalid_consent_types": invalid_types,
-                },
-            )
-
-    repository = get_consent_repository()
-
-    records = repository.record_many(
-        principal.user_id,
-        [
-            (
-                consent.consent_type,
-                consent.granted,
-            )
-            for consent in payload.consents
-        ],
-    )
-
-    for record in records:
-        log.info(
-            "security_event=%s user_id=%s consent_type=%s",
-            ("CONSENT_GRANTED" if record.granted else "CONSENT_REVOKED"),
-            principal.user_id,
-            record.consent_type.value,
-        )
-
-    return ConsentBatchOut(
-        consents=[
-            ConsentOut(
-                consent_type=record.consent_type,
-                granted=record.granted,
-                recorded_at=record.recorded_at,
-            )
-            for record in records
-        ]
     )
 
 
@@ -295,7 +285,7 @@ async def import_timetable(
         rows_read=rows_read,
         sessions_created=0,
         conflicts=conflicts,
-        unmatched_lecturers=unmatched_lecturers,
+        unmatched_lecturers=(unmatched_lecturers),
         unmatched_students=[],
     )
 
@@ -331,7 +321,7 @@ async def import_roster(
         sessions_created=0,
         conflicts=[],
         unmatched_lecturers=[],
-        unmatched_students=unmatched_students,
+        unmatched_students=(unmatched_students),
     )
 
 

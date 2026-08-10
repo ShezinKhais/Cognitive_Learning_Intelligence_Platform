@@ -1,7 +1,7 @@
 """Live session WebSocket endpoint.
 
-## Protocol
-
+Protocol
+--------
 The client opens the socket and must send an `auth` event first. Anything else
 before authentication closes the connection. On success the server replies
 `ready`, after which the connection is joined to its session room.
@@ -10,8 +10,8 @@ Every server message carries a `seq` that increases monotonically within a
 session. Clients track the highest seq they have seen and send it as `last_seq`
 when reconnecting.
 
-## Closing codes
-
+Closing codes
+-------------
 4001  authentication required or failed
 4003  not permitted to join this session
 4400  malformed event
@@ -72,7 +72,6 @@ async def _send(
         ts=datetime.now(UTC),
         data=data,
     )
-
     await websocket.send_json(event.model_dump(mode="json"))
 
 
@@ -180,7 +179,6 @@ async def _authenticate(
             "security_event=TOKEN_REJECTED transport=websocket reason=%s",
             str(exc),
         )
-
         await websocket.close(
             code=CLOSE_UNAUTHENTICATED,
             reason="authentication failed",
@@ -196,12 +194,11 @@ def _session_access_allowed(
 ) -> bool:
     """Authorize access to a requested live session.
 
-    Phase 1 intentionally fails closed when a specific session is requested.
-    Authentication proves who the caller is but does not prove membership in
-    an arbitrary session.
+    Phase 1 fails closed when a specific session is requested because
+    authentication proves identity but does not yet prove session membership.
 
-    This temporary check will later be replaced with the BBIS-backed session
-    membership lookup during integration.
+    BBIS-backed session membership replaces this temporary check during
+    integration.
     """
     if session_id is None:
         return True
@@ -236,7 +233,7 @@ async def session_socket(
 
     user_id, session_id = identity
 
-    # A valid JWT is not enough to authorize an arbitrary session.
+    # A valid JWT alone does not authorize an arbitrary session.
     if not _session_access_allowed(
         user_id,
         session_id,
@@ -302,8 +299,7 @@ async def session_socket(
                 )
                 continue
 
-            # answer.submit, prompt.ack, signal.attention and room.confirm
-            # are connected to their handlers in Phase 3.
+            # These handlers are connected in Phase 3.
             await _send(
                 websocket,
                 ServerEventType.ERROR,

@@ -71,7 +71,7 @@ class ConsentOut(BaseModel):
 
 
 class ConsentBatchRequest(BaseModel):
-    """A group of consent decisions that must be saved atomically."""
+    """A group of consent decisions saved as one operation."""
 
     consents: list[ConsentRequest] = Field(
         min_length=1,
@@ -79,7 +79,9 @@ class ConsentBatchRequest(BaseModel):
     )
 
     @model_validator(mode="after")
-    def reject_duplicate_consent_types(self) -> ConsentBatchRequest:
+    def reject_duplicate_consent_types(
+        self,
+    ) -> ConsentBatchRequest:
         consent_types = [consent.consent_type for consent in self.consents]
 
         if len(consent_types) != len(set(consent_types)):

@@ -40,8 +40,8 @@ def test_validation_failure_is_serialisable(client: TestClient) -> None:
 def test_authentication_is_checked_before_anything_else(client: TestClient) -> None:
     """Unauthenticated callers must not learn which routes exist or are stubs.
 
-    Every protected stub sits behind the auth dependency, so 401 comes first
-    and implementation details remain hidden from unauthenticated callers.
+    Every stub sits behind the auth dependency, so 401 comes first and 501 is
+    unreachable until Cyber 1 lands token validation.
     """
     response = client.get("/api/v1/sessions", headers={"Authorization": "Bearer nonsense"})
     assert response.status_code == 401
@@ -73,7 +73,7 @@ def test_every_stub_reports_an_owner(as_lecturer: TestClient) -> None:
 
 
 def test_unauthenticated_requests_are_rejected(client: TestClient) -> None:
-    """Every protected route must fail closed without a valid token."""
+    """Every protected route must fail closed while auth is unimplemented."""
     for path in (
         "/api/v1/auth/me",
         "/api/v1/materials",
