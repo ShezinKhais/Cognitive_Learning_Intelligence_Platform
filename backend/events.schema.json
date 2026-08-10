@@ -1,0 +1,812 @@
+{
+  "client_events": {
+    "answer.submit": {
+      "properties": {
+        "client_elapsed_ms": {
+          "description": "Time from delivery to submit, measured on the client.",
+          "minimum": 0,
+          "title": "Client Elapsed Ms",
+          "type": "integer"
+        },
+        "free_text": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Free Text"
+        },
+        "question_id": {
+          "format": "uuid",
+          "title": "Question Id",
+          "type": "string"
+        },
+        "selected_option": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Option"
+        }
+      },
+      "required": [
+        "question_id",
+        "client_elapsed_ms"
+      ],
+      "title": "AnswerSubmitPayload",
+      "type": "object"
+    },
+    "auth": {
+      "properties": {
+        "last_seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Highest seq already received. Triggers replay on reconnect.",
+          "title": "Last Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "token": {
+          "maxLength": 4096,
+          "title": "Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "token"
+      ],
+      "title": "AuthPayload",
+      "type": "object"
+    },
+    "ping": null,
+    "prompt.ack": {
+      "properties": {
+        "dismissed": {
+          "default": false,
+          "title": "Dismissed",
+          "type": "boolean"
+        },
+        "prompt_id": {
+          "format": "uuid",
+          "title": "Prompt Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt_id"
+      ],
+      "title": "PromptAckPayload",
+      "type": "object"
+    },
+    "room.confirm": {
+      "description": "Student's one-tap confirmation of which breakout room they are in.\n\nThis is the authoritative mapping, not a correction to one.",
+      "properties": {
+        "room_label": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Room Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "room_label"
+      ],
+      "title": "RoomConfirmPayload",
+      "type": "object"
+    },
+    "signal.attention": {
+      "description": "Derived indicators only. Computed on the student's device.",
+      "properties": {
+        "face_present": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Face Present"
+        },
+        "gaze_on_screen_ratio": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gaze On Screen Ratio"
+        },
+        "speaking": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Voice activity, not speech content.",
+          "title": "Speaking"
+        },
+        "window_seconds": {
+          "description": "Period these values summarise.",
+          "exclusiveMinimum": 0.0,
+          "maximum": 3600.0,
+          "title": "Window Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "window_seconds"
+      ],
+      "title": "AttentionSignalPayload",
+      "type": "object"
+    }
+  },
+  "description": "C.L.I.P WebSocket contract. Every message is {type, data}; server messages also carry seq and ts. seq increases monotonically per session so clients can detect gaps and request replay.",
+  "envelopes": {
+    "client": {
+      "$defs": {
+        "ClientEventType": {
+          "enum": [
+            "auth",
+            "ping",
+            "answer.submit",
+            "prompt.ack",
+            "signal.attention",
+            "room.confirm"
+          ],
+          "title": "ClientEventType",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "data": {
+          "additionalProperties": true,
+          "title": "Data",
+          "type": "object"
+        },
+        "type": {
+          "$ref": "#/$defs/ClientEventType"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "ClientEvent",
+      "type": "object"
+    },
+    "server": {
+      "$defs": {
+        "ServerEventType": {
+          "enum": [
+            "ready",
+            "pong",
+            "session.state",
+            "question.delivered",
+            "question.closed",
+            "answer.receipt",
+            "feedback.result",
+            "prompt.attention",
+            "engagement.update",
+            "alert.raised",
+            "material.progress",
+            "room.status",
+            "error"
+          ],
+          "title": "ServerEventType",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "data": {
+          "additionalProperties": true,
+          "title": "Data",
+          "type": "object"
+        },
+        "seq": {
+          "description": "Monotonic per session. Clients use it to detect gaps.",
+          "title": "Seq",
+          "type": "integer"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/ServerEventType"
+        }
+      },
+      "required": [
+        "type",
+        "seq",
+        "ts"
+      ],
+      "title": "ServerEvent",
+      "type": "object"
+    }
+  },
+  "server_events": {
+    "alert.raised": {
+      "$defs": {
+        "AlertKind": {
+          "enum": [
+            "topic_difficulty",
+            "student_disengagement",
+            "breakout_inactive"
+          ],
+          "title": "AlertKind",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "alert_id": {
+          "format": "uuid",
+          "title": "Alert Id",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "kind": {
+          "$ref": "#/$defs/AlertKind"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Plain-language justification. Required, never empty.",
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "alert_id",
+        "kind",
+        "message",
+        "reason",
+        "confidence"
+      ],
+      "title": "AlertRaisedPayload",
+      "type": "object"
+    },
+    "answer.receipt": {
+      "description": "Immediate acknowledgement that a submission was stored.\n\nSent before any scoring. Free-text classification takes around 11 seconds\nfor a full cohort, so the student must see confirmation now rather than\nwaiting for a result.",
+      "properties": {
+        "accepted": {
+          "title": "Accepted",
+          "type": "boolean"
+        },
+        "question_id": {
+          "format": "uuid",
+          "title": "Question Id",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Set when accepted is false.",
+          "title": "Reason"
+        },
+        "received_at": {
+          "format": "date-time",
+          "title": "Received At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question_id",
+        "accepted",
+        "received_at"
+      ],
+      "title": "AnswerReceiptPayload",
+      "type": "object"
+    },
+    "engagement.update": {
+      "$defs": {
+        "EngagementStatus": {
+          "enum": [
+            "engaged",
+            "at_risk",
+            "disengaged",
+            "insufficient_data"
+          ],
+          "title": "EngagementStatus",
+          "type": "string"
+        }
+      },
+      "description": "Engagement only. Comprehension is a separate concept and is never merged\ninto this number.",
+      "properties": {
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score"
+        },
+        "status": {
+          "$ref": "#/$defs/EngagementStatus"
+        }
+      },
+      "required": [
+        "status",
+        "confidence"
+      ],
+      "title": "EngagementUpdatePayload",
+      "type": "object"
+    },
+    "error": {
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "title": "ErrorPayload",
+      "type": "object"
+    },
+    "feedback.result": {
+      "properties": {
+        "correct": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Null while free text is classifying.",
+          "title": "Correct"
+        },
+        "explanation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Explanation"
+        },
+        "question_id": {
+          "format": "uuid",
+          "title": "Question Id",
+          "type": "string"
+        },
+        "source_slide": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Slide"
+        }
+      },
+      "required": [
+        "question_id"
+      ],
+      "title": "FeedbackResultPayload",
+      "type": "object"
+    },
+    "material.progress": {
+      "$defs": {
+        "MaterialStage": {
+          "enum": [
+            "validating",
+            "extracting",
+            "chunking",
+            "embedding",
+            "generating",
+            "done",
+            "failed"
+          ],
+          "title": "MaterialStage",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "material_id": {
+          "format": "uuid",
+          "title": "Material Id",
+          "type": "string"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message"
+        },
+        "percent": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Percent",
+          "type": "integer"
+        },
+        "stage": {
+          "$ref": "#/$defs/MaterialStage"
+        }
+      },
+      "required": [
+        "material_id",
+        "stage",
+        "percent"
+      ],
+      "title": "MaterialProgressPayload",
+      "type": "object"
+    },
+    "pong": null,
+    "prompt.attention": {
+      "description": "A private nudge to one student. Never visible to the class, and it does\nnot contribute to comprehension, only to engagement and presence.",
+      "properties": {
+        "escalation": {
+          "default": 1,
+          "description": "Which consecutive prompt this is for the student.",
+          "minimum": 1,
+          "title": "Escalation",
+          "type": "integer"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "prompt_id": {
+          "format": "uuid",
+          "title": "Prompt Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt_id",
+        "message",
+        "expires_at"
+      ],
+      "title": "AttentionPromptPayload",
+      "type": "object"
+    },
+    "question.closed": {
+      "$defs": {
+        "QuestionCloseReason": {
+          "enum": [
+            "window_elapsed",
+            "lecturer_closed",
+            "session_ended"
+          ],
+          "title": "QuestionCloseReason",
+          "type": "string"
+        }
+      },
+      "description": "The response window has shut. Students stop being able to answer; the\nlecturer panel switches from a countdown to results.",
+      "properties": {
+        "eligible": {
+          "title": "Eligible",
+          "type": "integer"
+        },
+        "question_id": {
+          "format": "uuid",
+          "title": "Question Id",
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/QuestionCloseReason"
+        },
+        "respondents": {
+          "title": "Respondents",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "question_id",
+        "reason",
+        "respondents",
+        "eligible"
+      ],
+      "title": "QuestionClosedPayload",
+      "type": "object"
+    },
+    "question.delivered": {
+      "properties": {
+        "closes_at": {
+          "format": "date-time",
+          "title": "Closes At",
+          "type": "string"
+        },
+        "options": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Null for free-text questions.",
+          "title": "Options"
+        },
+        "prompt": {
+          "title": "Prompt",
+          "type": "string"
+        },
+        "question_id": {
+          "format": "uuid",
+          "title": "Question Id",
+          "type": "string"
+        },
+        "source_slide": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Slide"
+        },
+        "window_seconds": {
+          "title": "Window Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "question_id",
+        "prompt",
+        "closes_at",
+        "window_seconds"
+      ],
+      "title": "QuestionDeliveredPayload",
+      "type": "object"
+    },
+    "ready": {
+      "description": "Handshake complete. The client may start sending events.",
+      "properties": {
+        "resumed_from_seq": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Set when the server replayed missed events.",
+          "title": "Resumed From Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "user_id": {
+          "format": "uuid",
+          "title": "User Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "user_id"
+      ],
+      "title": "ReadyPayload",
+      "type": "object"
+    },
+    "room.status": {
+      "$defs": {
+        "RoomStatus": {
+          "description": "UNKNOWN is distinct from QUIET: absent data is not evidence of silence.",
+          "enum": [
+            "active",
+            "quiet",
+            "needs_attention",
+            "unknown"
+          ],
+          "title": "RoomStatus",
+          "type": "string"
+        }
+      },
+      "description": "Breakout room activity, derived from voice-activity detection and task\ninteraction. Carries no audio, no transcript and no speech content.",
+      "properties": {
+        "members": {
+          "title": "Members",
+          "type": "integer"
+        },
+        "room_label": {
+          "title": "Room Label",
+          "type": "string"
+        },
+        "silence_seconds": {
+          "title": "Silence Seconds",
+          "type": "integer"
+        },
+        "speaking_now": {
+          "description": "How many members are currently speaking.",
+          "title": "Speaking Now",
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/RoomStatus"
+        },
+        "task_interactions": {
+          "default": 0,
+          "title": "Task Interactions",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "room_label",
+        "status",
+        "members",
+        "speaking_now",
+        "silence_seconds"
+      ],
+      "title": "RoomStatusPayload",
+      "type": "object"
+    },
+    "session.state": {
+      "$defs": {
+        "SessionStatus": {
+          "enum": [
+            "prepared",
+            "active",
+            "ending",
+            "ended",
+            "cancelled"
+          ],
+          "title": "SessionStatus",
+          "type": "string"
+        }
+      },
+      "description": "Sent on join and whenever the session changes state, so a client that\nconnects late renders the right thing without polling.",
+      "properties": {
+        "active_question_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Active Question Id"
+        },
+        "participant_count": {
+          "title": "Participant Count",
+          "type": "integer"
+        },
+        "questions_delivered": {
+          "default": 0,
+          "title": "Questions Delivered",
+          "type": "integer"
+        },
+        "session_id": {
+          "format": "uuid",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/SessionStatus"
+        }
+      },
+      "required": [
+        "session_id",
+        "status",
+        "participant_count"
+      ],
+      "title": "SessionStatePayload",
+      "type": "object"
+    }
+  },
+  "version": "1.0"
+}

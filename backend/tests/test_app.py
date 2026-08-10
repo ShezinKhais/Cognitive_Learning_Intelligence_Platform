@@ -1,18 +1,43 @@
 from fastapi.testclient import TestClient
 
 from app.core.config import Settings
-from app.main import app
-
-client = TestClient(app)
 
 
-def test_app_boots_and_reports_health() -> None:
-    response = client.get("/health")
+def test_health(client: TestClient) -> None:
+    response = client.get("/api/v1/health")
     assert response.status_code == 200
 
     body = response.json()
     assert body["status"] == "ok"
+    assert body["version"]
     assert isinstance(body["teams_configured"], bool)
+
+
+def test_readiness_reports_each_dependency(client: TestClient) -> None:
+    """Readiness must name what is broken, not just fail.
+
+    Returns 503 when Postgres is unreachable, which is why this passes with or
+    without a database running.
+    """
+    response = client.get("/api/v1/ready")
+    assert response.status_code in (200, 503)
+
+    body = response.json()
+    names = {d["name"] for d in body["dependencies"]}
+    assert names == {"postgres", "ollama"}
+    assert body["ready"] is (response.status_code == 200)
+
+    for dependency in body["dependencies"]:
+        if not dependency["ok"]:
+            assert dependency["detail"], "a failed dependency must explain why"
+
+
+def test_ollama_does_not_gate_readiness(client: TestClient) -> None:
+    """The live session serves pre-generated questions, so a model being down
+    degrades the service rather than stopping it."""
+    body = client.get("/api/v1/ready").json()
+    postgres = next(d for d in body["dependencies"] if d["name"] == "postgres")
+    assert body["ready"] == postgres["ok"]
 
 
 def test_teams_requires_all_three_credentials() -> None:

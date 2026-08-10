@@ -1,13 +1,13 @@
 [project]
 name = "clip-backend"
 version = "0.1.0"
-description = "C.L.I.P — Cognitive Learning Intelligence Platform (backend)"
+description = "C.L.I.P backend. Cognitive Learning Intelligence Platform."
 requires-python = ">=3.11,<3.14"
 
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
-    "pydantic>=2.9",
+    "pydantic[email]>=2.9",
     "pydantic-settings>=2.6",
     "sqlalchemy[asyncio]>=2.0",
     "asyncpg>=0.30",
@@ -41,3 +41,4 @@ select = ["E", "F", "I", "UP", "B", "ASYNC"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"

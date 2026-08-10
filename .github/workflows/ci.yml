@@ -1,14 +1,9 @@
 name: CI
 
 on:
+  # Every branch, not just main: six people working in parallel need their work
+  # checked before it reaches a pull request.
   push:
-    branches:
-      - main
-      - Hunain-Phase-1
-      - Nour-Phase-1
-      - Aliyeh-Phase-1
-      - Luna-Phase-1
-      - Shezin-Phase-1
   pull_request:
 
 jobs:
@@ -17,16 +12,49 @@ jobs:
     defaults:
       run:
         working-directory: backend
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: clip
+          POSTGRES_PASSWORD: clip_dev_password
+          POSTGRES_DB: clip_test
+        ports:
+          - 5432:5432
+        # Without a health check the job starts testing while Postgres is still
+        # initialising, which fails intermittently rather than consistently.
+        options: >-
+          --health-cmd "pg_isready -U clip -d clip_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://clip:clip_dev_password@localhost:5432/clip_test
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
+
+      - name: Create extensions
+        # A service container does not run init-db.sql, so the extensions our
+        # schema depends on have to be created explicitly.
+        run: |
+          PGPASSWORD=clip_dev_password psql -h localhost -U clip -d clip_test \
+            -c "CREATE EXTENSION IF NOT EXISTS vector;" \
+            -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" \
+            -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest -q
+      - name: API contract is in sync with the code
+        run: python scripts/export_contract.py --check
 
   frontend:
     runs-on: ubuntu-latest
