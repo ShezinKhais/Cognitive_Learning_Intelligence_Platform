@@ -165,7 +165,12 @@ def register_error_handlers(app: FastAPI) -> None:
     async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
         # Never leak a stack trace or driver message to a student's browser.
         log.exception("Unhandled error on %s %s", request.method, request.url.path)
+        request_id = getattr(request.state, "request_id", None)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content=_envelope(request, "INTERNAL_ERROR", "An unexpected error occurred", {}),
+            # This handler runs in ServerErrorMiddleware, which sits outside the
+            # middleware that stamps the header, so without this a 500 is the
+            # one response a client cannot tie back to a log line.
+            headers={"X-Request-ID": request_id} if request_id else None,
         )

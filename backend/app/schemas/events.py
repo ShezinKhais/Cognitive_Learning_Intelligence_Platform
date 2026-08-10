@@ -24,9 +24,21 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.session import EngagementStatus, SessionStatus
+
+# Client to server fields are the one part of this contract an unauthenticated
+# or hostile caller controls, so the string ones are bounded here. Without a
+# limit a single frame can carry megabytes into whatever stores it in Phase 3.
+MAX_TOKEN_LENGTH = 4096
+MAX_FREE_TEXT_LENGTH = 4000
+MAX_ROOM_LABEL_LENGTH = 100
+
+# An attention window is a summary of the last few seconds. An hour is already
+# far past anything the client sends and rules out a value that would swamp a
+# per-second average.
+MAX_ATTENTION_WINDOW_SECONDS = 3600.0
 
 
 class QuestionCloseReason(StrEnum):
@@ -91,22 +103,42 @@ class ServerEventType(StrEnum):
 
 
 class AuthPayload(BaseModel):
-    token: str
+    # The first frame an unauthenticated socket sends, so both fields are
+    # bounded before anything reads them.
+    token: str = Field(max_length=MAX_TOKEN_LENGTH)
     session_id: UUID | None = None
     last_seq: int | None = Field(
         default=None,
+        ge=0,
         description="Highest seq already received. Triggers replay on reconnect.",
     )
 
 
 class AnswerSubmitPayload(BaseModel):
     question_id: UUID
-    # Exactly one is set. MCQ ships first; free text is added over the same path.
-    selected_option: int | None = None
-    free_text: str | None = Field(default=None, max_length=4000)
+    # Exactly one is set, enforced below. MCQ ships first; free text is added
+    # over the same path.
+    selected_option: int | None = Field(default=None, ge=0)
+    # min_length matters as much as max: an empty string satisfies "exactly one
+    # is set" while carrying no answer at all.
+    free_text: str | None = Field(default=None, min_length=1, max_length=MAX_FREE_TEXT_LENGTH)
     client_elapsed_ms: int = Field(
-        description="Time from delivery to submit, measured on the client."
+        ge=0, description="Time from delivery to submit, measured on the client."
     )
+
+    @model_validator(mode="after")
+    def _exactly_one_answer(self) -> AnswerSubmitPayload:
+        """A submission with neither field is not an answer, and one with both
+        has no defined meaning.
+
+        The comment above claimed this invariant without enforcing it, which
+        left the Phase 3 handler to discover an empty submission at scoring
+        time and decide what a half-answered question counts as.
+        """
+        answered = (self.selected_option is not None) + (self.free_text is not None)
+        if answered != 1:
+            raise ValueError("set exactly one of selected_option or free_text")
+        return self
 
 
 class PromptAckPayload(BaseModel):
@@ -120,7 +152,11 @@ class AttentionSignalPayload(BaseModel):
     gaze_on_screen_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
     face_present: bool | None = None
     speaking: bool | None = Field(default=None, description="Voice activity, not speech content.")
-    window_seconds: float = Field(description="Period these values summarise.")
+    window_seconds: float = Field(
+        gt=0.0,
+        le=MAX_ATTENTION_WINDOW_SECONDS,
+        description="Period these values summarise.",
+    )
 
 
 class RoomConfirmPayload(BaseModel):
@@ -129,7 +165,7 @@ class RoomConfirmPayload(BaseModel):
     This is the authoritative mapping, not a correction to one.
     """
 
-    room_label: str
+    room_label: str = Field(min_length=1, max_length=MAX_ROOM_LABEL_LENGTH)
 
 
 class ClientEvent(BaseModel):

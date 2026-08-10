@@ -103,6 +103,62 @@ def test_events_without_a_payload_parse_cleanly() -> None:
     assert payload is None
 
 
+@pytest.mark.parametrize(
+    ("label", "data"),
+    [
+        ("neither field set", {}),
+        ("both fields set", {"selected_option": 1, "free_text": "also this"}),
+        ("negative elapsed time", {"selected_option": 1, "client_elapsed_ms": -5}),
+        ("negative option index", {"selected_option": -1}),
+        ("free text over the cap", {"free_text": "x" * 4001}),
+        ("empty free text", {"free_text": ""}),
+    ],
+)
+def test_an_answer_must_carry_exactly_one_answer(label: str, data: dict) -> None:
+    """The 'exactly one is set' comment was only a comment.
+
+    Nothing rejected a submission with neither field or with both, so the
+    Phase 3 handler would have met an empty answer at scoring time and had to
+    invent a meaning for it.
+    """
+    from pydantic import ValidationError
+
+    from app.schemas.events import parse_client_event
+
+    payload = {
+        "question_id": "11111111-1111-1111-1111-111111111111",
+        "client_elapsed_ms": 4200,
+        **data,
+    }
+    with pytest.raises(ValidationError):
+        parse_client_event({"type": "answer.submit", "data": payload})
+
+
+@pytest.mark.parametrize(
+    ("label", "event", "data"),
+    [
+        ("oversized token", "auth", {"token": "t" * 5000}),
+        ("negative last_seq", "auth", {"token": "t", "last_seq": -1}),
+        ("oversized room label", "room.confirm", {"room_label": "r" * 200}),
+        ("empty room label", "room.confirm", {"room_label": ""}),
+        ("zero attention window", "signal.attention", {"window_seconds": 0}),
+        ("negative attention window", "signal.attention", {"window_seconds": -1}),
+    ],
+)
+def test_client_supplied_values_are_bounded(label: str, event: str, data: dict) -> None:
+    """These are the fields a hostile or buggy client controls.
+
+    auth arrives before anything is authenticated, and an unbounded string on
+    any of them is a frame that can carry megabytes into whatever stores it.
+    """
+    from pydantic import ValidationError
+
+    from app.schemas.events import parse_client_event
+
+    with pytest.raises(ValidationError):
+        parse_client_event({"type": event, "data": data})
+
+
 def test_answer_receipt_is_separate_from_the_result() -> None:
     """Classification takes about 11 seconds for a full cohort, so submission
     must be acknowledged before scoring completes."""

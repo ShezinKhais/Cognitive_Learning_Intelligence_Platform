@@ -4,6 +4,8 @@ Development is permissive on purpose. These pin what changes in production so a
 convenience does not survive into deployment.
 """
 
+from uuid import UUID
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -15,10 +17,12 @@ from app.main import create_app
 def production_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     production = Settings(
         clip_env="production",
-        clip_secret_key="a-real-key",
-        database_url="postgresql+asyncpg://clip:s3cret@db:5432/clip",
+        clip_secret_key="k" * 32,
+        database_url="postgresql+asyncpg://clip:Xq7-tunnel-marmot-93@db:5432/clip",
     )
-    monkeypatch.setattr("app.main.settings", production)
+    # create_app reads its settings when it is called, so this has to be in
+    # place before the call and is what decides how the app is assembled.
+    monkeypatch.setattr("app.main.get_settings", lambda: production)
     monkeypatch.setattr("app.api.v1.health.get_settings", lambda: production)
 
     app = create_app()
@@ -52,6 +56,51 @@ def test_readiness_hides_internals_in_production(production_client: TestClient) 
     for dependency in response.json()["dependencies"]:
         assert dependency["detail"] is None, "production readiness leaks failure detail"
         assert dependency["latency_ms"] is None
+
+
+def test_a_plausible_request_id_is_honoured(client: TestClient) -> None:
+    """A trace started upstream should survive into our logs."""
+    response = client.get("/api/v1/health", headers={"X-Request-ID": "teams-proxy-abc123"})
+    assert response.headers["X-Request-ID"] == "teams-proxy-abc123"
+
+
+@pytest.mark.parametrize(
+    ("label", "value"),
+    [
+        ("newline", "ok\nLOG [forged] ADMIN LOGIN SUCCEEDED user=attacker"),
+        ("carriage return", "ok\r\nSet-Cookie: session=stolen"),
+        ("too long", "a" * 200),
+        ("markup", "<script>alert(1)</script>"),
+        ("empty", ""),
+    ],
+)
+def test_a_hostile_request_id_is_replaced(client: TestClient, label: str, value: str) -> None:
+    """The id is echoed in a header and formatted into every log line for the
+    request, so an unvalidated one lets a caller forge log entries."""
+    response = client.get("/api/v1/health", headers={"X-Request-ID": value})
+    echoed = response.headers["X-Request-ID"]
+
+    assert echoed != value, label
+    assert UUID(echoed), f"{label}: expected a generated uuid"
+
+
+def test_the_dev_origin_is_allowed_in_development(client: TestClient) -> None:
+    """The Vite dev server is a different origin, so without this nothing on
+    localhost:5173 can call the API at all."""
+    response = client.get("/api/v1/health", headers={"Origin": "http://localhost:5173"})
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:5173"
+
+
+def test_the_dev_origin_is_refused_in_production(production_client: TestClient) -> None:
+    """A deployed build is served from its own origin and never needs this.
+
+    Left on, it means any page a browser happens to be serving on port 5173 can
+    send credentialed requests to the real API and read the replies, which is a
+    strange thing to hand out for a convenience production does not use.
+    """
+    response = production_client.get("/api/v1/health", headers={"Origin": "http://localhost:5173"})
+    assert "access-control-allow-origin" not in response.headers
+    assert "access-control-allow-credentials" not in response.headers
 
 
 def test_health_never_reveals_secrets(client: TestClient) -> None:

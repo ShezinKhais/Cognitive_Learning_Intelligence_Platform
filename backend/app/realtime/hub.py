@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -21,6 +21,14 @@ from fastapi import WebSocket
 from app.schemas.events import ServerEvent, ServerEventType
 
 log = logging.getLogger("clip.realtime")
+
+# One small int per session, held so a reconnecting client can be told whether
+# it missed anything. forget_session is the intended way to drop an entry, but
+# nothing calls it until the session lifecycle lands in Phase 3, so the map
+# needs a ceiling of its own rather than trusting a caller that does not exist.
+# A single lecturer never approaches this; reaching it means something is
+# creating sessions that never end, which is worth a log line.
+MAX_TRACKED_SESSIONS = 1024
 
 
 class Connection:
@@ -41,7 +49,9 @@ class SessionHub:
 
     def __init__(self) -> None:
         self._rooms: dict[UUID, set[Connection]] = defaultdict(set)
-        self._seq: dict[UUID, int] = defaultdict(int)
+        # Ordered so the least recently used counter is the first eviction
+        # candidate once the map reaches MAX_TRACKED_SESSIONS.
+        self._seq: OrderedDict[UUID, int] = OrderedDict()
         self._lock = asyncio.Lock()
 
     async def join(self, connection: Connection) -> None:
@@ -63,10 +73,15 @@ class SessionHub:
         log.info("user %s left session %s", connection.user_id, connection.session_id)
 
     def forget_session(self, session_id: UUID) -> None:
-        """Drop a finished session's sequence counter.
+        """Drop a finished session's room and sequence counter.
 
-        Called when a session ends. Without it `_seq` keeps one entry per
-        session for the lifetime of the process.
+        Owner: General CS, Phase 3. Nothing calls this yet because the session
+        lifecycle arrives with the scheduler, which is why `next_seq` enforces
+        a ceiling instead of relying on it.
+
+        Call it only once a session has genuinely ended. `leave` already drops
+        an empty room, and clearing the counter while a session is still
+        running restarts seq at 1, which clients read as a gap.
         """
         self._rooms.pop(session_id, None)
         self._seq.pop(session_id, None)
@@ -74,9 +89,38 @@ class SessionHub:
     def participant_count(self, session_id: UUID) -> int:
         return len(self._rooms.get(session_id, ()))
 
+    def tracked_session_count(self) -> int:
+        """How many sequence counters are held. Exposed so the ceiling is
+        observable rather than something only the logs know about."""
+        return len(self._seq)
+
     def next_seq(self, session_id: UUID) -> int:
-        self._seq[session_id] += 1
-        return self._seq[session_id]
+        counter = self._seq.get(session_id, 0) + 1
+        self._seq[session_id] = counter
+        self._seq.move_to_end(session_id)
+        if len(self._seq) > MAX_TRACKED_SESSIONS:
+            self._evict_idle_counter()
+        return counter
+
+    def _evict_idle_counter(self) -> None:
+        """Drop the counter of the session that has been quiet longest.
+
+        Only sessions with nobody connected are eligible. Evicting a live one
+        would restart its seq at 1, and every client watching that stream would
+        read the restart as a gap, so an oversized map is the better failure.
+        """
+        idle = next((s for s in self._seq if not self._rooms.get(s)), None)
+        if idle is not None:
+            del self._seq[idle]
+            log.info("dropped the sequence counter for idle session %s", idle)
+            return
+
+        log.warning(
+            "%d sessions are tracked and every one has live connections, so the %d ceiling "
+            "cannot be enforced; sessions are being created faster than they end",
+            len(self._seq),
+            MAX_TRACKED_SESSIONS,
+        )
 
     def build(self, session_id: UUID, event_type: ServerEventType, data: dict) -> ServerEvent:
         return ServerEvent(
@@ -113,20 +157,29 @@ class SessionHub:
         self, session_id: UUID, user_id: UUID, event_type: ServerEventType, data: dict
     ) -> bool:
         """Targeted delivery, used for private attention prompts and per-student
-        feedback. Nothing here is visible to other students."""
+        feedback. Nothing here is visible to other students.
+
+        A student can hold more than one connection at once: Teams open in the
+        desktop app and in a browser tab, or a reconnect whose predecessor has
+        not been evicted yet. All of them receive the event. Stopping at the
+        first would send an attention prompt to whichever socket the set
+        happened to yield first, which may be the stale one, and report success.
+        """
         event = self.build(session_id, event_type, data)
         payload = event.model_dump(mode="json")
 
         async with self._lock:
             targets = [c for c in self._rooms.get(session_id, ()) if c.user_id == user_id]
 
+        delivered = 0
         for connection in targets:
             try:
                 await connection.websocket.send_json(payload)
-                return True
+                delivered += 1
             except Exception:
+                log.warning("targeted send failed for user %s, dropping", user_id)
                 await self.leave(connection)
-        return False
+        return delivered > 0
 
 
 hub = SessionHub()

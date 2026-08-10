@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from fastapi.websockets import WebSocketDisconnect
 
-from app.realtime.hub import Connection, SessionHub
+from app.realtime.hub import MAX_TRACKED_SESSIONS, Connection, SessionHub
 from app.schemas.events import ClientEventType, ServerEventType
 
 
@@ -63,8 +63,8 @@ def test_a_first_frame_that_is_not_a_json_object_closes_cleanly(
 ) -> None:
     """None of these may reach the handler as a server fault.
 
-    Each one used to escape uncaught — AttributeError on the array, string and
-    null, JSONDecodeError on the text, KeyError on the binary frame — so any
+    Each one used to escape uncaught: AttributeError on the array, string and
+    null, JSONDecodeError on the text, KeyError on the binary frame. Any
     unauthenticated caller could raise an exception inside the handler with a
     single frame. They are protocol errors and close 4400 like any other.
     """
@@ -141,6 +141,91 @@ async def test_targeted_send_is_private() -> None:
     assert sent is True
     assert len(target.sent) == 1
     assert bystander.sent == []
+
+
+async def test_targeted_send_reaches_every_connection_a_student_holds() -> None:
+    """Teams on the desktop and in a tab is two sockets for one student.
+
+    Delivering to only the first means an attention prompt can land on a stale
+    connection while the call still reports success.
+    """
+    hub = SessionHub()
+    session = uuid4()
+    student = uuid4()
+    desktop, browser = _FakeSocket(), _FakeSocket()
+    await hub.join(Connection(desktop, student, session))  # type: ignore[arg-type]
+    await hub.join(Connection(browser, student, session))  # type: ignore[arg-type]
+
+    sent = await hub.send_to_user(session, student, ServerEventType.PROMPT_ATTENTION, {})
+
+    assert sent is True
+    assert len(desktop.sent) == 1
+    assert len(browser.sent) == 1
+
+
+async def test_targeted_send_reports_failure_when_the_only_socket_is_dead() -> None:
+    hub = SessionHub()
+    session = uuid4()
+    student = uuid4()
+    await hub.join(Connection(_FakeSocket(fail=True), student, session))  # type: ignore[arg-type]
+
+    sent = await hub.send_to_user(session, student, ServerEventType.PROMPT_ATTENTION, {})
+
+    assert sent is False
+    assert hub.participant_count(session) == 0  # the dead one was evicted
+
+
+async def test_an_emptied_room_keeps_its_sequence_counter() -> None:
+    """Everyone dropping out briefly must not restart seq at 1.
+
+    Clients track the highest seq they have seen, so a reset reads as a gap.
+    """
+    hub = SessionHub()
+    session = uuid4()
+    connection = Connection(_FakeSocket(), uuid4(), session)  # type: ignore[arg-type]
+
+    await hub.join(connection)
+    hub.build(session, ServerEventType.PONG, {})
+    hub.build(session, ServerEventType.PONG, {})
+    await hub.leave(connection)
+
+    assert hub.participant_count(session) == 0
+    assert hub.build(session, ServerEventType.PONG, {}).seq == 3
+
+
+async def test_forget_session_clears_the_counter() -> None:
+    """The Phase 3 session-end hook. Only safe once a session has ended."""
+    hub = SessionHub()
+    session = uuid4()
+    hub.build(session, ServerEventType.PONG, {})
+
+    hub.forget_session(session)
+
+    assert hub.build(session, ServerEventType.PONG, {}).seq == 1
+
+
+async def test_sequence_counters_stop_growing_at_the_ceiling() -> None:
+    """forget_session has no caller until Phase 3, so the map has to bound
+    itself rather than trust one."""
+    hub = SessionHub()
+    for _ in range(MAX_TRACKED_SESSIONS + 50):
+        hub.build(uuid4(), ServerEventType.PONG, {})
+
+    assert hub.tracked_session_count() <= MAX_TRACKED_SESSIONS
+
+
+async def test_a_live_session_keeps_its_counter_when_the_ceiling_is_reached() -> None:
+    """Evicting a session that still has listeners would restart its seq at 1,
+    and every client watching reads that as a gap. Idle counters go first."""
+    hub = SessionHub()
+    live = uuid4()
+    await hub.join(Connection(_FakeSocket(), uuid4(), live))  # type: ignore[arg-type]
+    assert hub.build(live, ServerEventType.PONG, {}).seq == 1
+
+    for _ in range(MAX_TRACKED_SESSIONS + 50):
+        hub.build(uuid4(), ServerEventType.PONG, {})
+
+    assert hub.build(live, ServerEventType.PONG, {}).seq == 2
 
 
 async def test_leaving_empties_the_room() -> None:
