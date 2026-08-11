@@ -76,7 +76,7 @@ class ProcessingResult:
     elements: list[ExtractedElement] = field(default_factory=list)
     chunks: list[ContentChunk] = field(default_factory=list)
     page_count: int = 0
-    parser_used: str = ""  # "docling" | "pypdf-fallback" | "python-pptx" | ...
+    parser_used: str = ""  # "pypdf" | "docling" | "pypdf-low-quality" | "python-pptx" | ...
     warnings: list[str] = field(default_factory=list)
 
 
@@ -309,12 +309,18 @@ def chunk_elements(
     """
     chunks: list[ContentChunk] = []
     current_heading = ""
+    heading_page = None  # page the current heading belongs to
 
     for el in elements:
         if el.el_type == "image":
             continue
+        # a heading only applies to text on its own page - reset when the page
+        # changes so a page-1 heading does not leak onto page-9 text.
+        if el.page != heading_page:
+            current_heading = ""
         if el.el_type == "heading":
             current_heading = el.content
+            heading_page = el.page
             continue
 
         text = f"{current_heading}\n{el.content}" if current_heading else el.content
@@ -391,7 +397,10 @@ def process_material(
     page_count = max((e.page for e in elements), default=0)
 
     image_only = sum(1 for e in elements if e.el_type == "image")
-    if image_only and parser == "pypdf-fallback":
+    text_elements = sum(1 for e in elements if e.el_type != "image")
+    # warn when a file is mostly/entirely images with no readable text - the
+    # lecturer gets nothing useful and should know (e.g. a scanned PDF).
+    if image_only and text_elements == 0:
         warnings.append(f"{image_only} page(s) contained no readable text and were skipped.")
 
     log.info(

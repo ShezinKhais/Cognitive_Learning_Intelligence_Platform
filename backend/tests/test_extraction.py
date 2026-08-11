@@ -111,6 +111,19 @@ def test_heading_is_prefixed_to_following_text():
     assert "Planetary Boundaries" in chunks[0].chunk_text
 
 
+def test_heading_does_not_leak_across_pages():
+    # regression: a heading on page 1 must NOT attach to text on a later page
+    els = [
+        ExtractedElement("heading", "Chapter 1", 1),
+        ExtractedElement("text", "intro text", 1),
+        ExtractedElement("text", "unrelated body on page 9", 9),
+    ]
+    chunks = chunk_elements(els, material_id=uuid.uuid4())
+    page9 = [c for c in chunks if c.source_page == 9]
+    assert page9, "expected a chunk from page 9"
+    assert all("Chapter 1" not in c.chunk_text for c in page9)
+
+
 def test_images_are_not_chunked():
     els = [ExtractedElement("image", "[image]", 1)]
     assert chunk_elements(els, material_id=uuid.uuid4()) == []
