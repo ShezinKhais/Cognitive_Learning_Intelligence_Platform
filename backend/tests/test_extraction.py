@@ -170,6 +170,19 @@ def test_docx_end_to_end():
     assert result.chunks
 
 
+def test_low_quality_pdf_warns_when_docling_missing(monkeypatch):
+    # if pypdf returns letter-spaced garbage and docling is not installed,
+    # extract() must keep the pypdf output, flag it, and NOT crash.
+    from app.services import extraction
+
+    corrupt = [ExtractedElement("text", "T h e G l o b a l E d u c a t i o n C r i s i s " * 3, 1)]
+    monkeypatch.setattr(extraction, "read_pdf_pypdf", lambda path: corrupt)
+
+    elements, parser, warnings = extraction.extract("fake.pdf", "pdf")
+    assert parser == "pypdf-low-quality"
+    assert any("styled text" in w for w in warnings)
+
+
 def test_looks_letter_spaced_flags_corrupt_text():
     # pypdf turns styled text into single letters; the guard must catch it
     corrupt = "T h e G l o b a l E d u c a t i o n C r i s i s " * 3
