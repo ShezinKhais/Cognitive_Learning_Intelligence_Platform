@@ -10,7 +10,6 @@ from app.models.course import Course
 from app.models.student import Student
 from app.models.user import User
 
-
 COURSE_CODE = "CLIP101"
 
 
@@ -18,9 +17,7 @@ async def seed_database() -> None:
     async with SessionLocal() as session:
         try:
             # Create or retrieve the course.
-            course = await session.scalar(
-                select(Course).where(Course.code == COURSE_CODE)
-            )
+            course = await session.scalar(select(Course).where(Course.code == COURSE_CODE))
 
             if course is None:
                 course = Course(
@@ -34,9 +31,7 @@ async def seed_database() -> None:
             # Create the lecturer.
             lecturer_email = "lecturer@clip.edu"
 
-            lecturer = await session.scalar(
-                select(User).where(User.email == lecturer_email)
-            )
+            lecturer = await session.scalar(select(User).where(User.email == lecturer_email))
 
             if lecturer is None:
                 session.add(
@@ -51,9 +46,7 @@ async def seed_database() -> None:
             for number in range(1, 41):
                 student_email = f"student{number:02d}@clip.edu"
 
-                student_user = await session.scalar(
-                    select(User).where(User.email == student_email)
-                )
+                student_user = await session.scalar(select(User).where(User.email == student_email))
 
                 if student_user is None:
                     student_user = User(
@@ -65,9 +58,7 @@ async def seed_database() -> None:
                     await session.flush()
 
                 student_record = await session.scalar(
-                    select(Student).where(
-                        Student.user_id == student_user.user_id
-                    )
+                    select(Student).where(Student.user_id == student_user.user_id)
                 )
 
                 if student_record is None:

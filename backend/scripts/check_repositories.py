@@ -21,12 +21,8 @@ async def check_repositories() -> None:
         students = await user_repository.list_by_role("student")
         student_records = await student_repository.list_by_course(course.id)
 
-        assert len(lecturers) == 1, (
-            f"Expected 1 lecturer, found {len(lecturers)}."
-        )
-        assert len(students) == 40, (
-            f"Expected 40 student users, found {len(students)}."
-        )
+        assert len(lecturers) == 1, f"Expected 1 lecturer, found {len(lecturers)}."
+        assert len(students) == 40, f"Expected 40 student users, found {len(students)}."
         assert len(student_records) == 40, (
             f"Expected 40 student records, found {len(student_records)}."
         )

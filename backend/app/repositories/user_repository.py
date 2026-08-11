@@ -16,16 +16,12 @@ class UserRepository:
         return await self.session.get(User, user_id)
 
     async def get_by_email(self, email: str) -> User | None:
-        result = await self.session.execute(
-            select(User).where(User.email == email)
-        )
+        result = await self.session.execute(select(User).where(User.email == email))
         return result.scalar_one_or_none()
 
     async def list_by_role(self, role: str) -> list[User]:
         result = await self.session.execute(
-            select(User)
-            .where(User.role == role)
-            .order_by(User.name)
+            select(User).where(User.role == role).order_by(User.name)
         )
         return list(result.scalars().all())
 

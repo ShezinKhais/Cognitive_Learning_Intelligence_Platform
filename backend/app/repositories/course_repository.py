@@ -16,15 +16,11 @@ class CourseRepository:
         return await self.session.get(Course, course_id)
 
     async def get_by_code(self, code: str) -> Course | None:
-        result = await self.session.execute(
-            select(Course).where(Course.code == code)
-        )
+        result = await self.session.execute(select(Course).where(Course.code == code))
         return result.scalar_one_or_none()
 
     async def list_all(self) -> list[Course]:
-        result = await self.session.execute(
-            select(Course).order_by(Course.code)
-        )
+        result = await self.session.execute(select(Course).order_by(Course.code))
         return list(result.scalars().all())
 
     async def create(
