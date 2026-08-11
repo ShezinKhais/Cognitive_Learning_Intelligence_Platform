@@ -75,6 +75,9 @@ class ProcessingResult:
     material_id: uuid.UUID
     elements: list[ExtractedElement] = field(default_factory=list)
     chunks: list[ContentChunk] = field(default_factory=list)
+    # highest page/slide seen. PDF and PPTX report real pages; DOCX and TXT
+    # always report 1 because Word/plain-text have no fixed pagination without
+    # rendering. BBIS persists this as-is - it is a known format limitation.
     page_count: int = 0
     parser_used: str = ""  # "pypdf" | "docling" | "pypdf-low-quality" | "python-pptx" | ...
     warnings: list[str] = field(default_factory=list)
