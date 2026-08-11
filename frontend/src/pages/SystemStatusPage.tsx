@@ -1,4 +1,8 @@
-import { useEffect, useState } from 'react'
+import {
+  useEffect,
+  useState,
+  type ReactNode,
+} from 'react'
 
 import { apiGet, type Health } from '../api'
 
@@ -30,7 +34,9 @@ export default function SystemStatusPage() {
                 unreachable ({error})
               </span>
             ) : health ? (
-              <span className="text-success">{health.status}</span>
+              <span className="text-success">
+                {health.status}
+              </span>
             ) : (
               <span className="text-muted-foreground">
                 checking
@@ -40,8 +46,14 @@ export default function SystemStatusPage() {
 
           {health && (
             <>
-              <Row label="Environment">{health.env}</Row>
-              <Row label="Version">{health.version}</Row>
+              <Row label="Environment">
+                {health.env}
+              </Row>
+
+              <Row label="Version">
+                {health.version}
+              </Row>
+
               <Row label="Teams">
                 {health.teams_configured
                   ? 'configured'
@@ -60,12 +72,17 @@ function Row({
   children,
 }: {
   label: string
-  children: React.ReactNode
+  children: ReactNode
 }) {
   return (
     <div className="flex justify-between gap-4">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="font-medium">{children}</dd>
+      <dt className="text-muted-foreground">
+        {label}
+      </dt>
+
+      <dd className="font-medium">
+        {children}
+      </dd>
     </div>
   )
 }
