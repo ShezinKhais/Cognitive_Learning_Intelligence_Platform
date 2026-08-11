@@ -221,11 +221,21 @@ def read_pptx(path: str) -> list[ExtractedElement]:
     els = []
     for i, slide in enumerate(Presentation(path).slides):
         parts = walk(slide.shapes, i + 1, els)
-        if parts:
-            els.append(ExtractedElement("heading", clean_text(parts[0]), i + 1))
-            if len(parts) > 1:
-                body = "\n".join(parts[1:])
-                els.append(ExtractedElement("text", clean_text(body), i + 1))
+        if not parts:
+            continue
+        # use the real title placeholder if the slide has one, otherwise fall
+        # back to the first shape. parts[0] is just first in z-order, which is
+        # often NOT the title, so it would tag chunks with the wrong topic.
+        title = None
+        if slide.shapes.title is not None and slide.shapes.title.text.strip():
+            title = slide.shapes.title.text
+        heading = title if title else parts[0]
+        els.append(ExtractedElement("heading", clean_text(heading), i + 1))
+        # body is everything except the shape we used as the heading
+        body_parts = [p for p in parts if p != heading]
+        if body_parts:
+            body = "\n".join(body_parts)
+            els.append(ExtractedElement("text", clean_text(body), i + 1))
     return els
 
 
