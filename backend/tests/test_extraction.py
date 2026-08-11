@@ -17,6 +17,7 @@ from app.services.extraction import (
     ExtractedElement,
     chunk_elements,
     clean_text,
+    looks_letter_spaced,
     process_material,
     validate_file,
 )
@@ -167,6 +168,20 @@ def test_docx_end_to_end():
     result = process_material(str(SAMPLES / "lecture.docx"), material_id=uuid.uuid4())
     assert result.parser_used == "python-docx"
     assert result.chunks
+
+
+def test_looks_letter_spaced_flags_corrupt_text():
+    # pypdf turns styled text into single letters; the guard must catch it
+    corrupt = "T h e G l o b a l E d u c a t i o n C r i s i s " * 3
+    assert looks_letter_spaced(corrupt) is True
+
+
+def test_looks_letter_spaced_ignores_normal_text():
+    normal = (
+        "The global education crisis affects millions of students across many "
+        "regions who lack access to quality learning and basic resources today"
+    )
+    assert looks_letter_spaced(normal) is False
 
 
 def test_malformed_file_raises_validation_error(tmp_path):
