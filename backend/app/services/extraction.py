@@ -351,6 +351,21 @@ def chunk_elements(
 
 def extract(path: str, ext: str) -> tuple[list[ExtractedElement], str, list[str]]:
     """Pick a reader for the format. Returns elements, parser name, warnings."""
+    try:
+        return _extract(path, ext)
+    except ValidationError:
+        raise  # already a clean error (e.g. unsupported format), keep it
+    except Exception as exc:
+        # a reader threw on a corrupt or mislabelled file (e.g. a real PDF
+        # renamed .docx). turn it into a clean ValidationError, not a 500.
+        raise ValidationError(
+            "This file could not be read; it may be corrupt or not a real document.",
+            {"detail": str(exc)},
+        ) from exc
+
+
+def _extract(path: str, ext: str) -> tuple[list[ExtractedElement], str, list[str]]:
+    """The actual reader dispatch, wrapped by extract() for error handling."""
     warnings: list[str] = []
 
     if ext == "pdf":

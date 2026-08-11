@@ -165,6 +165,15 @@ def test_docx_end_to_end():
     assert result.chunks
 
 
+def test_malformed_file_raises_validation_error(tmp_path):
+    # a file with a valid extension but corrupt/garbage bytes should raise a
+    # clean ValidationError, not crash with a library error / 500.
+    bad = tmp_path / "broken.pdf"
+    bad.write_bytes(b"this is not a real pdf at all")
+    with pytest.raises(ValidationError):
+        process_material(str(bad), material_id=uuid.uuid4())
+
+
 def test_file_with_no_text_is_rejected(tmp_path):
     f = tmp_path / "blank.txt"
     f.write_text("   \n  ")
