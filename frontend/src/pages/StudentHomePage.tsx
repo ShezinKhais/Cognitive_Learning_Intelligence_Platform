@@ -42,6 +42,16 @@ export default function StudentHomePage() {
     )
   }
 
+  if (currentUser.role !== 'student') {
+    return (
+      <MessagePanel
+        title="Student access required"
+        message="This workspace is only available to student accounts."
+        isError
+      />
+    )
+  }
+
   return (
     <main className="min-h-screen bg-background px-6 py-10">
       <section className="mx-auto max-w-4xl">
@@ -62,6 +72,7 @@ export default function StudentHomePage() {
 
           <div className="rounded-xl border border-border bg-card px-4 py-3 text-sm">
             <p className="font-medium">{currentUser.email}</p>
+
             <p className="mt-1 text-muted-foreground">
               Authenticated student
             </p>
@@ -78,7 +89,10 @@ export default function StudentHomePage() {
           The Phase 3 session endpoints are not implemented yet.
         </div>
 
-        <section className="mt-8" aria-labelledby="sessions-heading">
+        <section
+          className="mt-8"
+          aria-labelledby="sessions-heading"
+        >
           <h2
             id="sessions-heading"
             className="text-xl font-semibold"
@@ -193,13 +207,26 @@ function MessagePanel({
   )
 }
 
-function formatStart(value: string | null): string {
+function formatStart(
+  value: string | null | undefined,
+): string {
   if (!value) {
     return 'Start time not scheduled'
   }
 
+  const startTime = new Date(value)
+
+  if (Number.isNaN(startTime.getTime())) {
+    return 'Start time unavailable'
+  }
+
   return new Intl.DateTimeFormat('en-AE', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'Asia/Dubai',
+    timeZoneName: 'short',
+  }).format(startTime)
 }

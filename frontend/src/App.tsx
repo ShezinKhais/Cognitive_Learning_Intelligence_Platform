@@ -1,7 +1,13 @@
-import { Navigate, Route, Routes } from 'react-router'
+import {
+  Navigate,
+  Route,
+  Routes,
+} from 'react-router'
 
 import { StudentAppProvider } from './features/student/StudentAppContext'
-import StudentHomePage from './pages/StudentHomePage'
+import AccessDeniedPage from './pages/AccessDeniedPage'
+import LoginPage from './pages/LoginPage'
+import ProtectedStudentPage from './pages/ProtectedStudentPage'
 import SystemStatusPage from './pages/SystemStatusPage'
 
 export default function App() {
@@ -9,14 +15,29 @@ export default function App() {
     <Routes>
       <Route
         path="/"
-        element={<Navigate to="/student" replace />}
+        element={
+          <Navigate
+            to="/student"
+            replace
+          />
+        }
+      />
+
+      <Route
+        path="/login"
+        element={<LoginPage />}
+      />
+
+      <Route
+        path="/access-denied"
+        element={<AccessDeniedPage />}
       />
 
       <Route
         path="/student"
         element={
           <StudentAppProvider>
-            <StudentHomePage />
+            <ProtectedStudentPage />
           </StudentAppProvider>
         }
       />
@@ -28,7 +49,12 @@ export default function App() {
 
       <Route
         path="*"
-        element={<Navigate to="/student" replace />}
+        element={
+          <Navigate
+            to="/student"
+            replace
+          />
+        }
       />
     </Routes>
   )

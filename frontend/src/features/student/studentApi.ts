@@ -1,19 +1,18 @@
+import {
+  ApiError,
+  getAccessToken,
+  getCurrentUser,
+} from '../../api'
+
 import type {
   StudentSession,
+  StudentSessionPage,
   StudentUser,
 } from './types'
 
 export interface StudentApi {
   getCurrentStudent(): Promise<StudentUser | null>
-  listSessions(): Promise<StudentSession[]>
-}
-
-const demoStudent: StudentUser = {
-  id: '00000000-0000-4000-8000-000000000001',
-  email: 'student@example.com',
-  full_name: 'Demo Student',
-  role: 'student',
-  consents: ['terms'],
+  listSessions(): Promise<StudentSessionPage>
 }
 
 const demoSessions: StudentSession[] = [
@@ -37,21 +36,40 @@ function wait(milliseconds = 150): Promise<void> {
   })
 }
 
-export const mockStudentApi: StudentApi = {
+/**
+ * Phase 1 student API adapter.
+ *
+ * Authentication uses the real Cyber 1 endpoints. Sessions remain mocked
+ * until the live-session endpoints are delivered in Phase 3, but the mock
+ * already follows the frozen paginated response contract.
+ */
+export const phaseOneStudentApi: StudentApi = {
   async getCurrentStudent() {
-    await wait()
+    if (!getAccessToken()) {
+      return null
+    }
 
-    return {
-      ...demoStudent,
-      consents: [...demoStudent.consents],
+    try {
+      return await getCurrentUser()
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        return null
+      }
+
+      throw error
     }
   },
 
   async listSessions() {
     await wait()
 
-    return demoSessions.map((session) => ({
-      ...session,
-    }))
+    return {
+      items: demoSessions.map((session) => ({
+        ...session,
+      })),
+      total: demoSessions.length,
+      limit: 50,
+      offset: 0,
+    }
   },
 }

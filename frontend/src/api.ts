@@ -1,15 +1,16 @@
-/**
- * Base path for the API.
- *
- * Kept in one place so a version bump is a single edit rather than a search for
- * hardcoded URLs. TypeScript cannot check a wrong URL string, so a typo here is
- * only caught at runtime.
- */
+/** Shared API and authentication helpers. */
+
 export const API_BASE = '/api/v1'
 
-export function apiUrl(path: string): string {
-  return `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`
-}
+const ACCESS_TOKEN_KEY = 'clip_access_token'
+
+export type Role = 'student' | 'lecturer' | 'admin'
+
+export type ConsentType =
+  | 'terms'
+  | 'engagement_monitoring'
+  | 'camera'
+  | 'microphone'
 
 export interface Health {
   status: string
@@ -18,40 +19,288 @@ export interface Health {
   teams_configured: boolean
 }
 
+export interface LoginResponse {
+  access_token: string
+  token_type: 'bearer'
+  expires_in: number
+  role: Role
+}
+
+export interface CurrentUser {
+  id: string
+  email: string
+  full_name: string
+  role: Role
+  consents: ConsentType[]
+}
+
+export interface ConsentResponse {
+  consent_type: ConsentType
+  granted: boolean
+  recorded_at: string
+}
+
+export interface ConsentChoice {
+  consent_type: ConsentType
+  granted: boolean
+}
+
+export interface ConsentBatchRequest {
+  consents: ConsentChoice[]
+}
+
+export interface ConsentBatchResponse {
+  consents: ConsentResponse[]
+}
+
+export interface TimetableImportResult {
+  rows_read: number
+  sessions_created: number
+  conflicts: string[]
+  unmatched_lecturers: string[]
+  unmatched_students: string[]
+}
+
+/**
+ * Build an API URL from a path.
+ */
+export function apiUrl(path: string): string {
+  return `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`
+}
+
+/**
+ * Read the saved bearer token.
+ */
+export function getAccessToken(): string | null {
+  return window.localStorage.getItem(ACCESS_TOKEN_KEY)
+}
+
+/**
+ * Save the bearer token after login.
+ */
+export function saveAccessToken(token: string): void {
+  window.localStorage.setItem(
+    ACCESS_TOKEN_KEY,
+    token,
+  )
+}
+
+/**
+ * Remove the bearer token.
+ */
+export function clearAccessToken(): void {
+  window.localStorage.removeItem(
+    ACCESS_TOKEN_KEY,
+  )
+}
+
 export class ApiError extends Error {
-  // Assigned explicitly rather than as constructor parameter properties, which
-  // this tsconfig disallows under erasableSyntaxOnly.
   status: number
   code: string
 
-  constructor(status: number, code: string, message: string) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+  ) {
     super(message)
+
+    this.name = 'ApiError'
     this.status = status
     this.code = code
   }
 }
 
+async function readErrorEnvelope(
+  response: Response,
+): Promise<ApiError> {
+  let code = 'HTTP_ERROR'
+  let message = `HTTP ${response.status}`
+
+  try {
+    const body = await response.json()
+
+    code = body?.error?.code ?? code
+    message = body?.error?.message ?? message
+  } catch {
+    // A proxy, dead server or non-API response may not return JSON.
+  }
+
+  return new ApiError(
+    response.status,
+    code,
+    message,
+  )
+}
+
 /**
- * Fetch JSON, translating the API's error envelope into a typed error.
+ * Shared request helper.
  *
- * Every failure returns {error: {code, message, detail}, request_id}, so
- * callers get the stable code rather than having to parse a message.
+ * Authenticated calls automatically attach the saved bearer token.
+ * API error envelopes are converted to ApiError instances.
  */
-export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(apiUrl(path))
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+  authenticated = false,
+): Promise<T> {
+  const headers = new Headers(options.headers)
+
+  if (authenticated) {
+    const token = getAccessToken()
+
+    if (!token) {
+      throw new ApiError(
+        401,
+        'UNAUTHENTICATED',
+        'Login is required.',
+      )
+    }
+
+    headers.set(
+      'Authorization',
+      `Bearer ${token}`,
+    )
+  }
+
+  if (
+    options.body &&
+    !(options.body instanceof FormData) &&
+    !headers.has('Content-Type')
+  ) {
+    headers.set(
+      'Content-Type',
+      'application/json',
+    )
+  }
+
+  const response = await fetch(
+    apiUrl(path),
+    {
+      ...options,
+      headers,
+    },
+  )
 
   if (!response.ok) {
-    let code = 'HTTP_ERROR'
-    let message = `HTTP ${response.status}`
-    try {
-      const body = await response.json()
-      code = body?.error?.code ?? code
-      message = body?.error?.message ?? message
-    } catch {
-      // Not every failure has a JSON body: a proxy or a dead server will not.
+    const error = await readErrorEnvelope(
+      response,
+    )
+
+    if (response.status === 401) {
+      clearAccessToken()
     }
-    throw new ApiError(response.status, code, message)
+
+    throw error
   }
 
   return response.json() as Promise<T>
+}
+
+/**
+ * Basic unauthenticated GET helper used by shared frontend code.
+ */
+export function apiGet<T>(
+  path: string,
+): Promise<T> {
+  return request<T>(path)
+}
+
+/**
+ * Authenticate with email and password.
+ */
+export function login(
+  email: string,
+  password: string,
+): Promise<LoginResponse> {
+  return request<LoginResponse>(
+    '/auth/login',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        email,
+        password,
+      }),
+    },
+  )
+}
+
+/**
+ * Return the currently authenticated user.
+ */
+export function getCurrentUser(): Promise<CurrentUser> {
+  return request<CurrentUser>(
+    '/auth/me',
+    {},
+    true,
+  )
+}
+
+/**
+ * Record one consent decision.
+ */
+export function recordConsent(
+  consentType: ConsentType,
+  granted: boolean,
+): Promise<ConsentResponse> {
+  return request<ConsentResponse>(
+    '/auth/consent',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        consent_type: consentType,
+        granted,
+      }),
+    },
+    true,
+  )
+}
+
+/**
+ * Save a group of consent decisions atomically.
+ *
+ * The same frozen Phase 1 endpoint accepts either a single consent
+ * payload or a batch payload.
+ */
+export function saveConsents(
+  consents: ConsentChoice[],
+): Promise<ConsentBatchResponse> {
+  const payload: ConsentBatchRequest = {
+    consents,
+  }
+
+  return request<ConsentBatchResponse>(
+    '/auth/consent',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    },
+    true,
+  )
+}
+
+/**
+ * Upload a file to an authenticated API endpoint.
+ */
+export function apiUploadFile<
+  T = TimetableImportResult,
+>(
+  path: string,
+  file: File,
+): Promise<T> {
+  const formData = new FormData()
+
+  formData.append(
+    'file',
+    file,
+  )
+
+  return request<T>(
+    path,
+    {
+      method: 'POST',
+      body: formData,
+    },
+    true,
+  )
 }

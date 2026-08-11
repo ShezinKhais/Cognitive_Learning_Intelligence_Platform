@@ -6,10 +6,7 @@ import {
   type ReactNode,
 } from 'react'
 
-import {
-  mockStudentApi,
-  type StudentApi,
-} from './studentApi'
+import { phaseOneStudentApi } from './studentApi'
 import type {
   StudentSession,
   StudentUser,
@@ -72,6 +69,7 @@ function reducer(
           : 'unauthenticated',
         currentUser: action.currentUser,
         sessions: action.sessions,
+        selectedSessionId: null,
         error: null,
       }
 
@@ -79,6 +77,9 @@ function reducer(
       return {
         ...state,
         authStatus: 'error',
+        currentUser: null,
+        sessions: [],
+        selectedSessionId: null,
         error: action.message,
       }
 
@@ -87,15 +88,16 @@ function reducer(
         ...state,
         selectedSessionId: action.sessionId,
       }
+
+    default:
+      return state
   }
 }
 
 export function StudentAppProvider({
   children,
-  api = mockStudentApi,
 }: {
   children: ReactNode
-  api?: StudentApi
 }) {
   const [state, dispatch] = useReducer(
     reducer,
@@ -105,20 +107,46 @@ export function StudentAppProvider({
   useEffect(() => {
     let cancelled = false
 
-    Promise.all([
-      api.getCurrentStudent(),
-      api.listSessions(),
-    ])
-      .then(([currentUser, sessions]) => {
+    async function loadStudentWorkspace(): Promise<void> {
+      try {
+        const currentUser =
+          await phaseOneStudentApi.getCurrentStudent()
+
+        if (cancelled) {
+          return
+        }
+
+        if (!currentUser) {
+          dispatch({
+            type: 'loaded',
+            currentUser: null,
+            sessions: [],
+          })
+
+          return
+        }
+
+        if (currentUser.role !== 'student') {
+          dispatch({
+            type: 'loaded',
+            currentUser,
+            sessions: [],
+          })
+
+          return
+        }
+
+        const sessionPage =
+          await phaseOneStudentApi.listSessions()
+
         if (!cancelled) {
           dispatch({
             type: 'loaded',
             currentUser,
-            sessions,
+            sessions: sessionPage.items,
           })
         }
-      })
-      .catch((caught: unknown) => {
+      } catch (caught: unknown) {
         if (!cancelled) {
           dispatch({
             type: 'failed',
@@ -128,12 +156,15 @@ export function StudentAppProvider({
                 : 'Could not load the student workspace.',
           })
         }
-      })
+      }
+    }
+
+    void loadStudentWorkspace()
 
     return () => {
       cancelled = true
     }
-  }, [api])
+  }, [])
 
   function selectSession(sessionId: string): void {
     dispatch({
