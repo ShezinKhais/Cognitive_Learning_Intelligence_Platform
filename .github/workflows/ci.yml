@@ -69,7 +69,11 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
-      - run: npx tsc --noEmit
+      # tsconfig.json is a solution file: "files": [] plus references. Under
+      # that layout `tsc --noEmit` compiles nothing and passes on a file with a
+      # blatant type error, so the typecheck has to go through the references.
+      - run: npx tsc -b
+      - run: npm run lint
       - run: npm run build
 
   manifest:
