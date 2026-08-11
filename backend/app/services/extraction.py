@@ -154,7 +154,9 @@ def read_pdf_docling(path: str) -> list[ExtractedElement]:
         if prov:
             page = getattr(prov[0], "page_no", 1)
 
-        els.append(ExtractedElement(el_type, clean_text(text), page))
+        els.append(
+            ExtractedElement(el_type, clean_text(text, is_heading=(el_type == "heading")), page)
+        )
 
     # record images as placeholders. we do not read what is inside them yet.
     for pic in getattr(doc, "pictures", []):
@@ -230,7 +232,7 @@ def read_pptx(path: str) -> list[ExtractedElement]:
         if slide.shapes.title is not None and slide.shapes.title.text.strip():
             title = slide.shapes.title.text
         heading = title if title else parts[0]
-        els.append(ExtractedElement("heading", clean_text(heading), i + 1))
+        els.append(ExtractedElement("heading", clean_text(heading, is_heading=True), i + 1))
         # body is everything except the shape we used as the heading
         body_parts = [p for p in parts if p != heading]
         if body_parts:
@@ -255,7 +257,9 @@ def read_docx(path: str) -> list[ExtractedElement]:
             continue
         style = (para.style.name or "").lower()
         el_type = "heading" if style.startswith("heading") or style == "title" else "text"
-        els.append(ExtractedElement(el_type, clean_text(para.text), 1))
+        els.append(
+            ExtractedElement(el_type, clean_text(para.text, is_heading=(el_type == "heading")), 1)
+        )
 
     for table in doc.tables:
         for row in table.rows:
@@ -278,17 +282,18 @@ def read_txt(path: str) -> list[ExtractedElement]:
 # ---------------------------------------------------------------------------
 
 
-def clean_text(text: str) -> str:
-    """SDD: clean_extracted_text. Collapse whitespace, drop repeated phrases.
+def clean_text(text: str, is_heading: bool = False) -> str:
+    """SDD: clean_extracted_text. Collapse whitespace; on headings only, drop
+    docling's repeated-phrase duplication.
 
-    The repeat check exists because docling reads both the visible title and an
-    overlapping text layer on some slides, producing headings like
-    "Overview Overview" and "The Global Education Crisis The Global Education".
+    The repeat check runs on headings only, because that is where docling's
+    duplication happens ("Overview Overview"). Running it on body text would
+    wrongly mutate real sentences like "Rain in Spain ... Rain in Spain".
     """
     text = " ".join(text.split())
 
-    # if the second half of a short line repeats the start of it, cut it
-    if len(text) < 200:
+    # repeat-strip is heading-only, to avoid mangling real body text
+    if is_heading and len(text) < 200:
         words = text.split()
         n = len(words)
         # case 1: the whole line is one phrase said exactly twice, e.g.

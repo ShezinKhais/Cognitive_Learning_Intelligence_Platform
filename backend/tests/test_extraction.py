@@ -64,10 +64,10 @@ def test_clean_collapses_whitespace():
 
 def test_clean_removes_docling_duplicate_heading():
     # docling reads the visible title and an overlapping text layer
-    assert clean_text("Overview Overview") == "Overview"
-    assert clean_text("Data Mining Data Mining") == "Data Mining"
+    assert clean_text("Overview Overview", is_heading=True) == "Overview"
+    assert clean_text("Data Mining Data Mining", is_heading=True) == "Data Mining"
     assert (
-        clean_text("The Global Education Crisis The Global Education")
+        clean_text("The Global Education Crisis The Global Education", is_heading=True)
         == "The Global Education Crisis"
     )
 
@@ -75,10 +75,14 @@ def test_clean_removes_docling_duplicate_heading():
 def test_clean_keeps_real_titles_that_repeat_a_word():
     # regression: a title that legitimately starts and ends with the same word
     # must NOT be truncated (the bug Shezin found).
-    assert clean_text("Networks of Networks") == "Networks of Networks"
-    assert clean_text("Business Intelligence for Business") == "Business Intelligence for Business"
+    assert clean_text("Networks of Networks", is_heading=True) == "Networks of Networks"
     assert (
-        clean_text("Deep Learning for Deep Understanding") == "Deep Learning for Deep Understanding"
+        clean_text("Business Intelligence for Business", is_heading=True)
+        == "Business Intelligence for Business"
+    )
+    assert (
+        clean_text("Deep Learning for Deep Understanding", is_heading=True)
+        == "Deep Learning for Deep Understanding"
     )
 
 
