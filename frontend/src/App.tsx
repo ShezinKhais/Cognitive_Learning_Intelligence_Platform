@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router'
 
+import { StudentAppProvider } from './features/student/StudentAppContext'
 import StudentHomePage from './pages/StudentHomePage'
 import SystemStatusPage from './pages/SystemStatusPage'
 
@@ -13,7 +14,11 @@ export default function App() {
 
       <Route
         path="/student"
-        element={<StudentHomePage />}
+        element={
+          <StudentAppProvider>
+            <StudentHomePage />
+          </StudentAppProvider>
+        }
       />
 
       <Route
