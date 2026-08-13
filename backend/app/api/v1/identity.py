@@ -79,7 +79,7 @@ async def import_timetable(
 
     conflicts = detect_timetable_conflicts(rows)
 
-    # Placeholder until BBIS's models land — see TODO above.
+    # Placeholder until BBIS's models land -see TODO above.
     known_lecturers: list[str] = []
     unmatched_lecturers, _ = match_names([r.lecturer for r in rows], known_lecturers)
 
@@ -107,7 +107,7 @@ async def import_roster(
     raw = await file.read()
     rows, rows_read = parse_roster(file.filename or "", raw)
 
-    # Placeholder until BBIS's models land — see TODO above.
+    # Placeholder until BBIS's models land -see TODO above.
     known_students: list[str] = []
     unmatched_students, _ = match_names([r.student_name for r in rows], known_students)
 
