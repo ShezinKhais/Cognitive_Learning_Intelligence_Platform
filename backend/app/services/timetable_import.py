@@ -50,7 +50,7 @@ class TimetableRow:
     start_time: time
     end_time: time
     room: str
-    row_number: int  # 1-indexed, header excluded — for error messages
+    row_number: int  # 2-indexed, header excluded — for error messages
 
 
 @dataclass
