@@ -157,7 +157,25 @@ def _parse_time(value: str, row_number: int, column: str) -> time:
         {"row": row_number, "column": column, "value": value},
     )
 
+_DAY_ALIASES = {
+    "monday": "Monday", "mon": "Monday",
+    "tuesday": "Tuesday", "tue": "Tuesday", "tues": "Tuesday",
+    "wednesday": "Wednesday", "wed": "Wednesday",
+    "thursday": "Thursday", "thu": "Thursday", "thurs": "Thursday",
+    "friday": "Friday", "fri": "Friday",
+    "saturday": "Saturday", "sat": "Saturday",
+    "sunday": "Sunday", "sun": "Sunday",
+}
 
+
+def _parse_day(value: str, row_number: int) -> str:
+    normalized = _DAY_ALIASES.get(value.strip().lower())
+    if normalized is None:
+        raise ValidationError(
+            f"Row {row_number}: '{value}' is not a recognized day of the week.",
+            {"row": row_number, "value": value},
+        )
+    return normalized
 def parse_timetable(filename: str, raw: bytes) -> tuple[list[TimetableRow], int]:
     """Parse a timetable CSV/XLSX. Returns (rows, rows_read).
 
@@ -183,7 +201,7 @@ def parse_timetable(filename: str, raw: bytes) -> tuple[list[TimetableRow], int]
     for i, row in enumerate(rows, start=1):
         course_code = row["course_code"].strip()
         lecturer = row["lecturer"].strip()
-        day = row["day"].strip().title()
+        day = _parse_day(row["day"], i)
         room = row["room"].strip()
 
         if not course_code or not lecturer or not day or not room:
