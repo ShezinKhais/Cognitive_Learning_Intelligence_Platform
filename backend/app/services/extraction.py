@@ -9,17 +9,17 @@ comparison notebook). Numbers:
     docling, no OCR    18.4s   110 headings  letter-spacing clean
     docling, OCR on    ~5min   116 headings  (GPU; ~27min on CPU)
 
-So: docling for PDF with OCR off. It costs 3 seconds more than pypdf and is the
-only one that survives designed decks, where pypdf returns "T h e  G l o b a l"
-one letter at a time. That text would go straight into the embedding model as
-garbage, so this is a correctness problem, not a tidiness one.
+So (Option B): pypdf is the DEFAULT PDF parser - it is light and installs
+everywhere, including CI and newest macOS, where docling's pypdfium2 dependency
+has no build. A quality guard (looks_letter_spaced) checks pypdf's output for
+the letter-spacing corruption above; when it fires and docling is installed,
+extraction upgrades to docling. When docling is absent, the pypdf result is
+kept but flagged as "pypdf-low-quality" with an honest warning, so corrupted
+text never flows silently into the embedding model.
 
 OCR stays off because it added 6 headings out of 116 and returned empty results
 on most images of a normal text-layer PDF. It is worth its cost only on scanned
 pages, which is a later phase.
-
-pypdf is kept as a fallback: docling's parser is strict and refuses malformed
-PDFs that pypdf reads fine (observed on one real file).
 """
 
 from __future__ import annotations
@@ -58,6 +58,7 @@ class ContentChunk:
     """A chunk ready to be embedded and stored. SDD: RAG_Chunk."""
 
     chunk_id: uuid.UUID  # matches rag_chunk.chunk_id (UUID)
+    chunk_index: int  # 0-based order within the material; UUIDs alone lose it
     material_id: uuid.UUID  # SDD: Source_material_id, matches rag_chunk (UUID)
     chunk_text: str  # SDD: Chunk_text
     source_page: int  # not in the SDD table, but QuestionOut.source_slide
@@ -210,23 +211,27 @@ def read_pptx(path: str) -> list[ExtractedElement]:
     from pptx import Presentation
     from pptx.enum.shapes import MSO_SHAPE_TYPE
 
-    def walk(shapes, page, els):
+    def walk(shapes, page, images):
         """Yield text from shapes, stepping inside groups so their text
-        is not lost (a plain shape loop skips grouped content)."""
+        is not lost. Images are collected separately and appended after the
+        slide's text, so elements keep document order (heading, body, images)
+        instead of images always landing first."""
         parts = []
         for shape in shapes:
             if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
-                parts.extend(walk(shape.shapes, page, els))
+                parts.extend(walk(shape.shapes, page, images))
             elif shape.has_text_frame and shape.text_frame.text.strip():
                 parts.append(shape.text_frame.text)
             elif shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
-                els.append(ExtractedElement("image", "[image on slide]", page))
+                images.append(ExtractedElement("image", "[image on slide]", page))
         return parts
 
     els = []
     for i, slide in enumerate(Presentation(path).slides):
-        parts = walk(slide.shapes, i + 1, els)
+        slide_images: list[ExtractedElement] = []
+        parts = walk(slide.shapes, i + 1, slide_images)
         if not parts:
+            els.extend(slide_images)
             continue
         # use the real title placeholder if the slide has one, otherwise fall
         # back to the first shape. parts[0] is just first in z-order, which is
@@ -241,6 +246,7 @@ def read_pptx(path: str) -> list[ExtractedElement]:
         if body_parts:
             body = "\n".join(body_parts)
             els.append(ExtractedElement("text", clean_text(body), i + 1))
+        els.extend(slide_images)
     return els
 
 
@@ -274,9 +280,23 @@ def read_docx(path: str) -> list[ExtractedElement]:
 
 
 def read_txt(path: str) -> list[ExtractedElement]:
-    """TXT reader. No structure to recover, so it is one block."""
-    with open(path, encoding="utf-8", errors="replace") as f:
-        text = f.read()
+    """TXT reader. No structure to recover, so it is one block.
+
+    utf-8-sig first (strips Word/Notepad's BOM), then a cp1252 retry for
+    Windows files. errors="replace" would silently turn dashes and accents
+    into U+FFFD, corrupting the text instead of decoding it.
+    """
+    raw = Path(path).read_bytes()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        try:
+            text = raw.decode("cp1252")
+        except UnicodeDecodeError as exc:
+            raise ValidationError(
+                "Text file is not UTF-8 or Windows-1252 encoded",
+                {"filename": Path(path).name},
+            ) from exc
     return [ExtractedElement("text", clean_text(text), 1)] if text.strip() else []
 
 
@@ -325,7 +345,16 @@ def chunk_elements(
     still says what topic it belongs to once it is on its own in the database.
     That is what makes retrieval and "see slide 3" work.
     """
+    if overlap >= size:
+        # size=500 overlap=500 would turn 5,000 chars into 5,000 chunks of
+        # 2.5M chars total. defaults are safe; reject bad explicit values.
+        raise ValidationError(
+            "Chunk overlap must be smaller than chunk size",
+            {"size": size, "overlap": overlap},
+        )
+
     chunks: list[ContentChunk] = []
+    index = 0
     current_heading = ""
     heading_page = None  # page the current heading belongs to
 
@@ -347,7 +376,8 @@ def chunk_elements(
         for start in range(0, len(text), step):
             piece = text[start : start + size]
             if piece.strip():
-                chunks.append(ContentChunk(uuid.uuid4(), material_id, piece, el.page))
+                chunks.append(ContentChunk(uuid.uuid4(), index, material_id, piece, el.page))
+                index += 1
 
     return chunks
 
@@ -357,28 +387,31 @@ def chunk_elements(
 # ---------------------------------------------------------------------------
 
 
-def extract(path: str, ext: str) -> tuple[list[ExtractedElement], str, list[str]]:
-    """Pick a reader for the format. Returns elements, parser name, warnings."""
+def _run_reader(reader, path: str) -> list[ExtractedElement]:
+    """Run one reader, turning file-level failures into a clean ValidationError.
+
+    Only the reader call is wrapped, so bugs in our own routing/chunking logic
+    still surface as real errors instead of being mislabelled "corrupt file".
+    The library detail goes to the log; the client gets the filename only, so
+    no library internals or server paths leak into the API response.
+    """
     try:
-        return _extract(path, ext)
-    except ValidationError:
-        raise  # already a clean error (e.g. unsupported format), keep it
+        return reader(path)
     except Exception as exc:
-        # a reader threw on a corrupt or mislabelled file (e.g. a real PDF
-        # renamed .docx). turn it into a clean ValidationError, not a 500.
+        log.warning("%s failed on %s: %s", reader.__name__, path, exc)
         raise ValidationError(
             "This file could not be read; it may be corrupt or not a real document.",
-            {"detail": str(exc)},
+            {"filename": Path(path).name},
         ) from exc
 
 
-def _extract(path: str, ext: str) -> tuple[list[ExtractedElement], str, list[str]]:
-    """The actual reader dispatch, wrapped by extract() for error handling."""
+def extract(path: str, ext: str) -> tuple[list[ExtractedElement], str, list[str]]:
+    """Pick a reader for the format. Returns elements, parser name, warnings."""
     warnings: list[str] = []
 
     if ext == "pdf":
         # Option B: pypdf is the default (light, installs everywhere).
-        elements = read_pdf_pypdf(path)
+        elements = _run_reader(read_pdf_pypdf, path)
         joined = " ".join(e.content for e in elements if e.el_type != "image")
 
         # quality guard: if pypdf produced letter-spaced garbage, try to
@@ -388,7 +421,7 @@ def _extract(path: str, ext: str) -> tuple[list[ExtractedElement], str, list[str
                 from docling.document_converter import DocumentConverter  # noqa: F401
 
                 log.info("pypdf output looks corrupted on %s, upgrading to docling", path)
-                return read_pdf_docling(path), "docling", warnings
+                return _run_reader(read_pdf_docling, path), "docling", warnings
             except ImportError:
                 warnings.append(
                     "This PDF uses styled text that the default parser reads poorly. "
@@ -399,11 +432,11 @@ def _extract(path: str, ext: str) -> tuple[list[ExtractedElement], str, list[str
         return elements, "pypdf", warnings
 
     if ext == "pptx":
-        return read_pptx(path), "python-pptx", warnings
+        return _run_reader(read_pptx, path), "python-pptx", warnings
     if ext == "docx":
-        return read_docx(path), "python-docx", warnings
+        return _run_reader(read_docx, path), "python-docx", warnings
     if ext == "txt":
-        return read_txt(path), "plain-text", warnings
+        return _run_reader(read_txt, path), "plain-text", warnings
 
     raise ValidationError(f"Unsupported file format: .{ext}", {"received": ext})
 
@@ -430,10 +463,10 @@ def process_material(
     page_count = max((e.page for e in elements), default=0)
 
     image_only = sum(1 for e in elements if e.el_type == "image")
-    text_elements = sum(1 for e in elements if e.el_type != "image")
-    # warn when a file is mostly/entirely images with no readable text - the
-    # lecturer gets nothing useful and should know (e.g. a scanned PDF).
-    if image_only and text_elements == 0:
+    # warn whenever some pages had no readable text (e.g. a scanned deck with
+    # a few text pages). the all-images case never reaches here - the
+    # "no readable text" raise above fires first.
+    if image_only:
         warnings.append(f"{image_only} page(s) contained no readable text and were skipped.")
 
     log.info(

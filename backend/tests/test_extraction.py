@@ -116,6 +116,18 @@ def test_heading_is_prefixed_to_following_text():
     assert "Planetary Boundaries" in chunks[0].chunk_text
 
 
+def test_rejects_overlap_not_smaller_than_size():
+    els = [ExtractedElement("text", "a" * 600, 1)]
+    with pytest.raises(ValidationError):
+        chunk_elements(els, material_id=uuid.uuid4(), size=500, overlap=500)
+
+
+def test_chunk_index_records_order():
+    els = [ExtractedElement("text", "a" * 1200, 1)]
+    chunks = chunk_elements(els, material_id=uuid.uuid4())
+    assert [c.chunk_index for c in chunks] == list(range(len(chunks)))
+
+
 def test_heading_does_not_leak_across_pages():
     # regression: a heading on page 1 must NOT attach to text on a later page
     els = [
@@ -195,6 +207,17 @@ def test_looks_letter_spaced_ignores_normal_text():
         "regions who lack access to quality learning and basic resources today"
     )
     assert looks_letter_spaced(normal) is False
+
+
+def test_txt_cp1252_is_decoded_not_corrupted(tmp_path):
+    # Word/Notepad on Windows produce cp1252; errors="replace" used to turn
+    # the dash and accent into U+FFFD. now it must decode cleanly.
+    f = tmp_path / "notes.txt"
+    f.write_bytes("Education \u2013 caf\u00e9 rules".encode("cp1252"))
+    result = process_material(str(f), material_id=uuid.uuid4())
+    text = result.chunks[0].chunk_text
+    assert "\ufffd" not in text
+    assert "caf\u00e9" in text
 
 
 def test_malformed_file_raises_validation_error(tmp_path):
