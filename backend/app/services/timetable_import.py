@@ -107,21 +107,29 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
                 {"filename": filename},
             ) from exc
         ws = wb.active
-        it = ws.iter_rows(values_only=True)
-        try:
-            header = [str(c).strip().lower() if c is not None else "" for c in next(it)]
-        except StopIteration:
-            raise ValidationError("File has no header row.", {"filename": filename}) from None
-        rows = []
-        for raw_row in it:
-            if all(c is None for c in raw_row):
-                continue  # skip fully blank rows, common at the end of a sheet
-            row = {
-                header[i]: ("" if c is None else str(c).strip())
-                for i, c in enumerate(raw_row)
-                if i < len(header) and header[i]
-            }
-            rows.append(row)
+            if ws is None:
+                raise ValidationError(
+                    "This .xlsx file has no active sheet.",
+                    {"filename": filename},
+                )
+
+            it = ws.iter_rows(values_only=True)
+            try:
+                header = [str(c).strip().lower() if c is not None else "" for c in next(it)]
+            except StopIteration:
+                raise ValidationError("File has no header row.", {"filename": filename}) from None
+            rows = []
+            for raw_row in it:
+                if all(c is None for c in raw_row):
+                    continue  # skip fully blank rows, common at the end of a sheet
+                row = {
+                    header[i]: ("" if c is None else str(c).strip())
+                    for i, c in enumerate(raw_row)
+                    if i < len(header) and header[i]
+                }
+                rows.append(row)
+        finally:
+            wb.close()
     else:
         raise ValidationError(
             "Only .csv and .xlsx files are accepted.",
