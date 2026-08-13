@@ -206,9 +206,20 @@ def test_docx_end_to_end():
 
 
 def test_low_quality_pdf_warns_when_docling_missing(monkeypatch):
-    # if pypdf returns letter-spaced garbage and docling is not installed,
-    # extract() must keep the pypdf output, flag it, and NOT crash.
+    # force the docling import to fail so this behaves the same whether or not
+    # the extraction extra is installed.
+    import builtins
+
     from app.services import extraction
+
+    real_import = builtins.__import__
+
+    def blocked(name, *args, **kwargs):
+        if name.startswith("docling"):
+            raise ImportError("docling not installed (simulated)")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", blocked)
 
     corrupt = [ExtractedElement("text", "T h e G l o b a l E d u c a t i o n C r i s i s " * 3, 1)]
     monkeypatch.setattr(extraction, "read_pdf_pypdf", lambda path: corrupt)
@@ -216,6 +227,31 @@ def test_low_quality_pdf_warns_when_docling_missing(monkeypatch):
     elements, parser, warnings = extraction.extract("fake.pdf", "pdf")
     assert parser == "pypdf-low-quality"
     assert any("styled text" in w for w in warnings)
+
+
+def test_corrupt_pypdf_output_upgrades_to_docling(monkeypatch):
+    # docling is FORCED available via sys.modules, so this runs identically
+    # whether or not the extraction extra is installed.
+    import sys
+    import types
+
+    from app.services import extraction
+
+    pkg = types.ModuleType("docling")
+    mod = types.ModuleType("docling.document_converter")
+    mod.DocumentConverter = object
+    pkg.document_converter = mod
+    monkeypatch.setitem(sys.modules, "docling", pkg)
+    monkeypatch.setitem(sys.modules, "docling.document_converter", mod)
+
+    corrupt = [ExtractedElement("text", "T h e G l o b a l E d u c a t i o n C r i s i s " * 3, 1)]
+    clean = [ExtractedElement("text", "The Global Education Crisis", 1)]
+    monkeypatch.setattr(extraction, "read_pdf_pypdf", lambda path: corrupt)
+    monkeypatch.setattr(extraction, "read_pdf_docling", lambda path: clean)
+
+    elements, parser, warnings = extraction.extract("fake.pdf", "pdf")
+    assert parser == "docling"
+    assert elements == clean
 
 
 def test_looks_letter_spaced_flags_corrupt_text():

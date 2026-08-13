@@ -420,6 +420,8 @@ def _run_reader(reader, path: str) -> list[ExtractedElement]:
     """
     try:
         return reader(path)
+    except ValidationError:
+        raise  # the reader already produced a precise message; keep it
     except Exception as exc:
         log.warning("%s failed on %s: %s", reader.__name__, path, exc)
         raise ValidationError(
