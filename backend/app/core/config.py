@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from urllib.parse import unquote, urlparse, urlsplit
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -113,7 +114,8 @@ class Settings(BaseSettings):
         """
         if not self.is_production:
             return self
-problems = []
+
+        problems = []
         if self.clip_secret_key == INSECURE_SECRET_KEY:
             problems.append("CLIP_SECRET_KEY is still the default")
         elif len(self.clip_secret_key) < MIN_SECRET_KEY_LENGTH:
