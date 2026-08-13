@@ -8,9 +8,10 @@ Contract frozen in Phase 1. Handler bodies are owned by:
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, UploadFile, status
-from app.core.config import get_settings
+
 from app.api.deps import CurrentUser, DbSession, require_roles
-from app.core.errors import not_implemented
+from app.core.config import get_settings
+from app.core.errors import ValidationError, not_implemented
 from app.schemas.identity import (
     ConsentOut,
     ConsentRequest,
@@ -73,11 +74,17 @@ async def import_timetable(
     # still useful on its own for an admin sanity-checking a file before the
     # write path exists.
     raw = await file.read()
+    if len(raw) > get_settings().max_upload_bytes:
+        raise ValidationError(
+            "File exceeds the maximum upload size.",
+            {"max_bytes": get_settings().max_upload_bytes},
+        )
+
     rows, rows_read = parse_timetable(file.filename or "", raw)
 
     conflicts = detect_timetable_conflicts(rows)
 
-    # Placeholder until BBIS's models land -see TODO above.
+    # Placeholder until BBIS's models land - see TODO above.
     known_lecturers: list[str] = []
     unmatched_lecturers, _ = match_names([r.lecturer for r in rows], known_lecturers)
 
@@ -96,20 +103,22 @@ async def import_timetable(
 async def import_roster(
     file: UploadFile, principal: CurrentUser, db: DbSession
 ) -> TimetableImportResult:
-    """CSV or XLSX only, same reasoning as /timetable: no OCR path.
-
-    TODO(Cyber 2 + BBIS): swap `known_students = []` for a real query against
-    enrolled students once the models exist, and persist matched rows as
-    roster/enrollment records instead of just counting them.
-    """
-  raw = await file.read()
+    """CSV or XLSX only, same reasoning as /timetable: no OCR path."""
+    # TODO(Cyber 2 + BBIS): swap known_students for a real query against
+    # enrolled students once the models exist, and persist matched rows as
+    # roster/enrollment records instead of just counting them.
+    raw = await file.read()
     if len(raw) > get_settings().max_upload_bytes:
         raise ValidationError(
             "File exceeds the maximum upload size.",
             {"max_bytes": get_settings().max_upload_bytes},
         )
 
-    rows, rows_read = parse_timetable(file.filename or "", raw)
+    rows, rows_read = parse_roster(file.filename or "", raw)
+
+    # Placeholder until BBIS's models land - see TODO above.
+    known_students: list[str] = []
+    unmatched_students, _ = match_names([r.student_name for r in rows], known_students)
 
     return TimetableImportResult(
         rows_read=rows_read,
