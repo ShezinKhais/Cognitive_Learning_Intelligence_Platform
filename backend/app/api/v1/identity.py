@@ -40,6 +40,23 @@ admin = APIRouter(
 )
 
 
+def _reject_if_too_large(file: UploadFile) -> None:
+    """Reject an oversized upload before it's read into memory.
+
+    UploadFile.size comes from the part's Content-Length and is known before
+    any bytes are read, so a client claiming a too-large body is rejected
+    immediately. It can be None (some clients omit it), so this is a
+    best-effort first line of defense, not the only check - the caller still
+    checks len(raw) after reading, for the case where size wasn't reported.
+    """
+    max_bytes = get_settings().max_upload_bytes
+    if file.size is not None and file.size > max_bytes:
+        raise ValidationError(
+            "File exceeds the maximum upload size.",
+            {"max_bytes": max_bytes, "reported_size": file.size},
+        )
+
+
 @auth.post("/login", response_model=TokenResponse)
 async def login(payload: LoginRequest, db: DbSession) -> TokenResponse:
     raise not_implemented("Cyber 1", "Phase 1")
@@ -73,6 +90,7 @@ async def import_timetable(
     # validates, parses and reports conflicts without writing anything -
     # still useful on its own for an admin sanity-checking a file before the
     # write path exists.
+    _reject_if_too_large(file)
     raw = await file.read()
     if len(raw) > get_settings().max_upload_bytes:
         raise ValidationError(
@@ -107,6 +125,7 @@ async def import_roster(
     # TODO(Cyber 2 + BBIS): swap known_students for a real query against
     # enrolled students once the models exist, and persist matched rows as
     # roster/enrollment records instead of just counting them.
+    _reject_if_too_large(file)
     raw = await file.read()
     if len(raw) > get_settings().max_upload_bytes:
         raise ValidationError(
