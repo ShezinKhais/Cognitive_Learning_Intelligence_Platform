@@ -1,9 +1,7 @@
 """Application settings, loaded from environment (.env in development)."""
 
 from functools import lru_cache
-from urllib.parse import urlparse
-from urllib.parse import unquote, urlsplit
-
+from urllib.parse import unquote, urlparse, urlsplit
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
