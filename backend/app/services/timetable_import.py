@@ -3,7 +3,7 @@
 Owner: Cyber 2, Phase 1.
 
 Deliberately has no OCR path. A CSV or XLSX cell is either read correctly or the
-row is rejected — never guessed at. A misread digit here would silently put a
+row is rejected - never guessed at. A misread digit here would silently put a
 student in the wrong session, which is worse than failing loudly.
 
 This module is DB-agnostic on purpose: BBIS's ORM models (Session, Lecturer,
@@ -50,7 +50,7 @@ class TimetableRow:
     start_time: time
     end_time: time
     room: str
-    row_number: int  # 2-indexed, header excluded — for error messages
+    row_number: int  # 1-indexed, header excluded - for error messages
 
 
 @dataclass
@@ -74,7 +74,7 @@ class ParsedImport:
 def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
     """Read a CSV or XLSX into a list of {column: value} dicts, header-normalized.
 
-    Raises ValidationError for anything that isn't clean structured data —
+    Raises ValidationError for anything that isn't clean structured data -
     wrong extension, empty file, or a header that doesn't match what we expect.
     """
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
@@ -94,7 +94,7 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
         reader = csv.DictReader(io.StringIO(text))
         if reader.fieldnames is None:
             raise ValidationError("File has no header row.", {"filename": filename})
-      rows = [
+        rows = [
             {k.strip().lower(): (v or "").strip() for k, v in row.items() if k is not None}
             for row in reader
         ]
@@ -106,8 +106,9 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
                 "Could not read this file as .xlsx. It may be corrupt or not a real Excel file.",
                 {"filename": filename},
             ) from exc
-    
-        ws = wb.active
+
+        try:
+            ws = wb.active
             if ws is None:
                 raise ValidationError(
                     "This .xlsx file has no active sheet.",
@@ -158,6 +159,7 @@ def _parse_time(value: str, row_number: int, column: str) -> time:
         {"row": row_number, "column": column, "value": value},
     )
 
+
 _DAY_ALIASES = {
     "monday": "Monday", "mon": "Monday",
     "tuesday": "Tuesday", "tue": "Tuesday", "tues": "Tuesday",
@@ -177,11 +179,13 @@ def _parse_day(value: str, row_number: int) -> str:
             {"row": row_number, "value": value},
         )
     return normalized
+
+
 def parse_timetable(filename: str, raw: bytes) -> tuple[list[TimetableRow], int]:
     """Parse a timetable CSV/XLSX. Returns (rows, rows_read).
 
     Raises ValidationError on the first structural problem (bad header, bad
-    extension, empty file). Per-row problems (bad time format) also raise —
+    extension, empty file). Per-row problems (bad time format) also raise -
     partial imports are not attempted, so an admin never has to guess which
     half of a file actually landed.
     """
