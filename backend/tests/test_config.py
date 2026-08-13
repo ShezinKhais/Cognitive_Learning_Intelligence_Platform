@@ -45,7 +45,7 @@ def test_production_rejects_a_short_secret_key() -> None:
 
 
 def test_production_rejects_the_development_database_password() -> None:
-    with pytest.raises(ValueError, match="missing, default, or weak password"):
+    with pytest.raises(ValueError, match="development password"):
         Settings(
             clip_env="production",
             clip_secret_key=STRONG_KEY,
