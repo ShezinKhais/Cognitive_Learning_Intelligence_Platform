@@ -40,19 +40,6 @@ export interface ConsentResponse {
   recorded_at: string
 }
 
-export interface ConsentChoice {
-  consent_type: ConsentType
-  granted: boolean
-}
-
-export interface ConsentBatchRequest {
-  consents: ConsentChoice[]
-}
-
-export interface ConsentBatchResponse {
-  consents: ConsentResponse[]
-}
-
 export interface TimetableImportResult {
   rows_read: number
   sessions_created: number
@@ -237,7 +224,7 @@ export function getCurrentUser(): Promise<CurrentUser> {
 }
 
 /**
- * Record one consent decision.
+ * Record one consent decision using the frozen Phase 1 contract.
  */
 export function recordConsent(
   consentType: ConsentType,
@@ -251,29 +238,6 @@ export function recordConsent(
         consent_type: consentType,
         granted,
       }),
-    },
-    true,
-  )
-}
-
-/**
- * Save a group of consent decisions atomically.
- *
- * The same frozen Phase 1 endpoint accepts either a single consent
- * payload or a batch payload.
- */
-export function saveConsents(
-  consents: ConsentChoice[],
-): Promise<ConsentBatchResponse> {
-  const payload: ConsentBatchRequest = {
-    consents,
-  }
-
-  return request<ConsentBatchResponse>(
-    '/auth/consent',
-    {
-      method: 'POST',
-      body: JSON.stringify(payload),
     },
     true,
   )

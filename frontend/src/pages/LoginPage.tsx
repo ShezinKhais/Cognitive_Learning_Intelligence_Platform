@@ -44,9 +44,7 @@ export default function LoginPage() {
       const defaultPath =
         result.role === 'student'
           ? '/student'
-          : result.role === 'admin'
-            ? '/admin'
-            : '/access-denied'
+          : '/access-denied'
 
       navigate(
         requestedPath ?? defaultPath,

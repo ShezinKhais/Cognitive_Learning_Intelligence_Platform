@@ -88,9 +88,6 @@ function reducer(
         ...state,
         selectedSessionId: action.sessionId,
       }
-
-    default:
-      return state
   }
 }
 
