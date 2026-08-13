@@ -80,14 +80,24 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
     if ext == "csv":
-        text = raw.decode("utf-8-sig", errors="strict")
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            try:
+                text = raw.decode("cp1252")
+            except UnicodeDecodeError as exc:
+                raise ValidationError(
+                    "Could not read this file as text. It may be saved in an "
+                    "unsupported encoding.",
+                    {"filename": filename},
+                ) from exc
         reader = csv.DictReader(io.StringIO(text))
         if reader.fieldnames is None:
             raise ValidationError("File has no header row.", {"filename": filename})
-        rows = [
-            {(k or "").strip().lower(): (v or "").strip() for k, v in row.items()} for row in reader
+      rows = [
+            {k.strip().lower(): (v or "").strip() for k, v in row.items() if k is not None}
+            for row in reader
         ]
-
     elif ext == "xlsx":
         try:
             wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
