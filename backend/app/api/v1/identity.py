@@ -8,7 +8,7 @@ Contract frozen in Phase 1. Handler bodies are owned by:
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, UploadFile, status
-
+from app.core.config import get_settings
 from app.api.deps import CurrentUser, DbSession, require_roles
 from app.core.errors import not_implemented
 from app.schemas.identity import (
@@ -104,12 +104,14 @@ async def import_roster(
     enrolled students once the models exist, and persist matched rows as
     roster/enrollment records instead of just counting them.
     """
-    raw = await file.read()
-    rows, rows_read = parse_roster(file.filename or "", raw)
+  raw = await file.read()
+    if len(raw) > get_settings().max_upload_bytes:
+        raise ValidationError(
+            "File exceeds the maximum upload size.",
+            {"max_bytes": get_settings().max_upload_bytes},
+        )
 
-    # Placeholder until BBIS's models land -see TODO above.
-    known_students: list[str] = []
-    unmatched_students, _ = match_names([r.student_name for r in rows], known_students)
+    rows, rows_read = parse_timetable(file.filename or "", raw)
 
     return TimetableImportResult(
         rows_read=rows_read,
