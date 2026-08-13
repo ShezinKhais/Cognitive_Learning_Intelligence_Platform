@@ -116,6 +116,29 @@ def test_heading_is_prefixed_to_following_text():
     assert "Planetary Boundaries" in chunks[0].chunk_text
 
 
+def test_pptx_images_are_not_reported_as_skipped_pages():
+    # a normal deck with text + one picture per slide skips nothing
+    result = process_material(str(SAMPLES / "lecture.pptx"), material_id=uuid.uuid4())
+    assert not any("skipped" in w for w in result.warnings)
+
+
+def test_utf16_txt_is_decoded_not_mangled(tmp_path):
+    # Notepad's "Unicode" save is UTF-16; cp1252 would decode it to garbage
+    f = tmp_path / "notes.txt"
+    f.write_bytes("Caf\u00e9 notes".encode("utf-16"))
+    result = process_material(str(f), material_id=uuid.uuid4())
+    text = result.chunks[0].chunk_text
+    assert "\x00" not in text
+    assert "Caf\u00e9" in text
+
+
+def test_rejects_overlap_one_less_than_size():
+    # step would be 1, so 10k chars would make 10,000 chunks
+    els = [ExtractedElement("text", "a" * 10_000, 1)]
+    with pytest.raises(ValidationError):
+        chunk_elements(els, material_id=uuid.uuid4(), size=500, overlap=499)
+
+
 def test_rejects_overlap_not_smaller_than_size():
     els = [ExtractedElement("text", "a" * 600, 1)]
     with pytest.raises(ValidationError):

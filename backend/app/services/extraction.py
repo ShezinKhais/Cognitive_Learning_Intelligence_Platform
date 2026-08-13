@@ -287,16 +287,37 @@ def read_txt(path: str) -> list[ExtractedElement]:
     into U+FFFD, corrupting the text instead of decoding it.
     """
     raw = Path(path).read_bytes()
-    try:
-        text = raw.decode("utf-8-sig")
-    except UnicodeDecodeError:
+
+    # UTF-16 first: Notepad's "Unicode" option writes it, and cp1252 would
+    # happily decode those bytes into garbage with embedded NULs.
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
         try:
-            text = raw.decode("cp1252")
+            text = raw.decode("utf-16")
         except UnicodeDecodeError as exc:
             raise ValidationError(
-                "Text file is not UTF-8 or Windows-1252 encoded",
+                "Text file is not valid UTF-16",
                 {"filename": Path(path).name},
             ) from exc
+    else:
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            try:
+                text = raw.decode("cp1252")
+            except UnicodeDecodeError as exc:
+                raise ValidationError(
+                    "Text file is not UTF-8 or Windows-1252 encoded",
+                    {"filename": Path(path).name},
+                ) from exc
+
+    # a NUL means we decoded with the wrong codec (cp1252 never errors, it
+    # just produces nonsense), so reject rather than embed garbage.
+    if "\x00" in text:
+        raise ValidationError(
+            "Text file encoding could not be determined",
+            {"filename": Path(path).name},
+        )
+
     return [ExtractedElement("text", clean_text(text), 1)] if text.strip() else []
 
 
@@ -345,12 +366,14 @@ def chunk_elements(
     still says what topic it belongs to once it is on its own in the database.
     That is what makes retrieval and "see slide 3" work.
     """
-    if overlap >= size:
-        # size=500 overlap=500 would turn 5,000 chars into 5,000 chunks of
-        # 2.5M chars total. defaults are safe; reject bad explicit values.
+    # overlap >= size is not the only blowup: overlap = size - 1 leaves a step
+    # of 1, so 10k chars still produce 10,000 chunks. require the step to be a
+    # meaningful fraction of the chunk size.
+    min_step = max(1, size // 10)
+    if size - overlap < min_step:
         raise ValidationError(
-            "Chunk overlap must be smaller than chunk size",
-            {"size": size, "overlap": overlap},
+            "Chunk overlap is too large for the chunk size",
+            {"size": size, "overlap": overlap, "min_step": min_step},
         )
 
     chunks: list[ContentChunk] = []
@@ -462,12 +485,14 @@ def process_material(
     chunks = chunk_elements(elements, material_id)
     page_count = max((e.page for e in elements), default=0)
 
-    image_only = sum(1 for e in elements if e.el_type == "image")
-    # warn whenever some pages had no readable text (e.g. a scanned deck with
-    # a few text pages). the all-images case never reaches here - the
-    # "no readable text" raise above fires first.
-    if image_only:
-        warnings.append(f"{image_only} page(s) contained no readable text and were skipped.")
+    # only PDF pages that yielded NO text are actually skipped. a PPTX picture
+    # sits alongside the slide's text and is not a skipped page, so counting
+    # every image element would report "2 pages skipped" on a normal deck.
+    skipped_pages = sum(
+        1 for e in elements if e.el_type == "image" and e.content == "[image-only page]"
+    )
+    if skipped_pages:
+        warnings.append(f"{skipped_pages} page(s) contained no readable text and were skipped.")
 
     log.info(
         "material %s: %s elements, %s chunks, parser=%s",
