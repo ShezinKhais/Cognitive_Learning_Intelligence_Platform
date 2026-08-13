@@ -279,13 +279,22 @@ def parse_roster(filename: str, raw: bytes) -> tuple[list[RosterRow], int]:
     return parsed, len(rows)
 
 
+MAX_REPORTED_CONFLICTS = 200
+
+
 def detect_timetable_conflicts(rows: list[TimetableRow]) -> list[str]:
     """Same lecturer, same day, overlapping time ranges = a conflict.
 
     Also flags double-booked rooms, since a lecturer conflict and a room
     conflict are different problems an admin needs to resolve differently.
+
+    Capped at MAX_REPORTED_CONFLICTS: the comparison itself is O(n^2), and an
+    upload with many identical or heavily overlapping rows can otherwise
+    produce a response body in the tens of megabytes that's no more useful
+    to an admin than the first couple hundred lines would be.
     """
     conflicts: list[str] = []
+    total = 0
 
     def overlaps(a: TimetableRow, b: TimetableRow) -> bool:
         return a.day == b.day and a.start_time < b.end_time and b.start_time < a.end_time
@@ -295,17 +304,24 @@ def detect_timetable_conflicts(rows: list[TimetableRow]) -> list[str]:
             if not overlaps(a, b):
                 continue
             if a.lecturer.strip().lower() == b.lecturer.strip().lower():
-                conflicts.append(
-                    f"Lecturer '{a.lecturer}' double-booked on {a.day}: "
-                    f"row {a.row_number} ({a.course_code}) overlaps row {b.row_number} "
-                    f"({b.course_code})."
-                )
+                total += 1
+                if len(conflicts) < MAX_REPORTED_CONFLICTS:
+                    conflicts.append(
+                        f"Lecturer '{a.lecturer}' double-booked on {a.day}: "
+                        f"row {a.row_number} ({a.course_code}) overlaps row {b.row_number} "
+                        f"({b.course_code})."
+                    )
             if a.room.strip().lower() == b.room.strip().lower():
-                conflicts.append(
-                    f"Room '{a.room}' double-booked on {a.day}: "
-                    f"row {a.row_number} ({a.course_code}) overlaps row {b.row_number} "
-                    f"({b.course_code})."
-                )
+                total += 1
+                if len(conflicts) < MAX_REPORTED_CONFLICTS:
+                    conflicts.append(
+                        f"Room '{a.room}' double-booked on {a.day}: "
+                        f"row {a.row_number} ({a.course_code}) overlaps row {b.row_number} "
+                        f"({b.course_code})."
+                    )
+
+    if total > len(conflicts):
+        conflicts.append(f"...and {total - len(conflicts)} more conflicts not shown.")
 
     return conflicts
 
