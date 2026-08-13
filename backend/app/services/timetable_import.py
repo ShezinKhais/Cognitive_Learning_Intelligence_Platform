@@ -87,8 +87,7 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
                 text = raw.decode("cp1252")
             except UnicodeDecodeError as exc:
                 raise ValidationError(
-                    "Could not read this file as text. It may be saved in an "
-                    "unsupported encoding.",
+                    "Could not read this file as text. It may be saved in an unsupported encoding.",
                     {"filename": filename},
                 ) from exc
         reader = csv.DictReader(io.StringIO(text))
@@ -161,13 +160,22 @@ def _parse_time(value: str, row_number: int, column: str) -> time:
 
 
 _DAY_ALIASES = {
-    "monday": "Monday", "mon": "Monday",
-    "tuesday": "Tuesday", "tue": "Tuesday", "tues": "Tuesday",
-    "wednesday": "Wednesday", "wed": "Wednesday",
-    "thursday": "Thursday", "thu": "Thursday", "thurs": "Thursday",
-    "friday": "Friday", "fri": "Friday",
-    "saturday": "Saturday", "sat": "Saturday",
-    "sunday": "Sunday", "sun": "Sunday",
+    "monday": "Monday",
+    "mon": "Monday",
+    "tuesday": "Tuesday",
+    "tue": "Tuesday",
+    "tues": "Tuesday",
+    "wednesday": "Wednesday",
+    "wed": "Wednesday",
+    "thursday": "Thursday",
+    "thu": "Thursday",
+    "thurs": "Thursday",
+    "friday": "Friday",
+    "fri": "Friday",
+    "saturday": "Saturday",
+    "sat": "Saturday",
+    "sunday": "Sunday",
+    "sun": "Sunday",
 }
 
 
