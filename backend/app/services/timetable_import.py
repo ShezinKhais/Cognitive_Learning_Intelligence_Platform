@@ -106,6 +106,7 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
                 "Could not read this file as .xlsx. It may be corrupt or not a real Excel file.",
                 {"filename": filename},
             ) from exc
+    
         ws = wb.active
             if ws is None:
                 raise ValidationError(
