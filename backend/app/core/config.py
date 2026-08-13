@@ -113,28 +113,17 @@ class Settings(BaseSettings):
         """
         if not self.is_production:
             return self
-
-        problems = []
+problems = []
         if self.clip_secret_key == INSECURE_SECRET_KEY:
             problems.append("CLIP_SECRET_KEY is still the default")
-
-        # Parse DATABASE_URL for thorough production checks
-        parsed_db = urlparse(self.database_url)
-        db_password = parsed_db.password or ""
-        db_host = parsed_db.hostname or ""
-
-        if not db_password or db_password in {
-            "clip_dev_password",
-            "postgres",
-            "password",
-            "admin",
-            "root",
-        }:
-            problems.append("DATABASE_URL uses a missing, default, or weak password")
-        if db_host in {"localhost", "127.0.0.1", "0.0.0.0"}:
-            problems.append("DATABASE_URL points to localhost in production")
         elif len(self.clip_secret_key) < MIN_SECRET_KEY_LENGTH:
             problems.append(f"CLIP_SECRET_KEY is shorter than {MIN_SECRET_KEY_LENGTH} characters")
+
+        parsed_db = urlparse(self.database_url)
+        db_host = parsed_db.hostname or ""
+
+        if db_host in {"localhost", "127.0.0.1", "0.0.0.0"}:
+            problems.append("DATABASE_URL points to localhost in production")
 
         database = database_password_problem(self.database_url)
         if database:
