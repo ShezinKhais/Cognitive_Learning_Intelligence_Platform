@@ -65,15 +65,13 @@ async def record_consent(
 async def import_timetable(
     file: UploadFile, principal: CurrentUser, db: DbSession
 ) -> TimetableImportResult:
-    """CSV or XLSX only. Structured data is parsed, never OCR'd.
-
-    TODO(Cyber 2 + BBIS): once Session/Lecturer ORM models exist, replace the
-    `known_lecturers = []` placeholder below with a real query, and persist
-    `rows` as Session rows instead of just counting them. Until then this
-    validates, parses and reports conflicts without writing anything —
-    still useful on its own for an admin sanity-checking a file before the
-    write path exists.
-    """
+    """CSV or XLSX only. Structured data is parsed, never OCR'd."""
+    # TODO(Cyber 2 + BBIS): once Session/Lecturer ORM models exist, replace the
+    # known_lecturers placeholder below with a real query, and persist rows
+    # as Session rows instead of just counting them. Until then this
+    # validates, parses and reports conflicts without writing anything -
+    # still useful on its own for an admin sanity-checking a file before the
+    # write path exists.
     raw = await file.read()
     rows, rows_read = parse_timetable(file.filename or "", raw)
 
