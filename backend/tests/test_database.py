@@ -16,6 +16,8 @@ from app.core.config import get_settings
 from app.models.rag_chunk import RagChunk
 
 REQUIRED_EXTENSIONS = {"vector", "pg_trgm", "uuid-ossp"}
+
+
 def test_rag_chunk_model_matches_content_pipeline() -> None:
     columns = RagChunk.__table__.c
 
@@ -24,6 +26,7 @@ def test_rag_chunk_model_matches_content_pipeline() -> None:
     assert columns.embedding_model.nullable is True
     assert columns.chunk_index.nullable is False
     assert columns.source_page.nullable is True
+
 
 @pytest.fixture
 async def db():
