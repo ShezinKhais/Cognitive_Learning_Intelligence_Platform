@@ -16,6 +16,7 @@ from app.core.config import get_settings
 from app.models.course import Course
 from app.models.material import Material
 from app.models.rag_chunk import RagChunk
+from app.models.user import User
 
 REQUIRED_EXTENSIONS = {"vector", "pg_trgm", "uuid-ossp"}
 
@@ -44,6 +45,18 @@ def test_course_code_is_unique_and_indexed() -> None:
 
     assert code.unique is True
     assert code.index is True
+
+
+def test_user_model_supports_auth_contract() -> None:
+    columns = User.__table__.c
+    constraint_names = {constraint.name for constraint in User.__table__.constraints}
+
+    assert columns.password_hash.nullable is True
+    assert columns.active.nullable is False
+    assert columns.active.server_default is not None
+    assert "ck_user_role" in constraint_names
+    assert isinstance(User.id, property)
+    assert isinstance(User.full_name, property)
 
 
 @pytest.fixture
