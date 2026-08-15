@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
+from app.models.material import Material
 from app.models.rag_chunk import RagChunk
 
 REQUIRED_EXTENSIONS = {"vector", "pg_trgm", "uuid-ossp"}
@@ -26,6 +27,15 @@ def test_rag_chunk_model_matches_content_pipeline() -> None:
     assert columns.embedding_model.nullable is True
     assert columns.chunk_index.nullable is False
     assert columns.source_page.nullable is True
+
+
+def test_material_course_reference_matches_course_model() -> None:
+    course_id = Material.__table__.c.course_id
+
+    assert course_id.type.as_uuid is True
+    assert course_id.nullable is True
+    assert course_id.index is True
+    assert {key.target_fullname for key in course_id.foreign_keys} == {"course.id"}
 
 
 @pytest.fixture
