@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
+from app.models.consent import Consent
 from app.models.course import Course
 from app.models.material import Material
 from app.models.rag_chunk import RagChunk
@@ -57,6 +58,19 @@ def test_user_model_supports_auth_contract() -> None:
     assert "ck_user_role" in constraint_names
     assert isinstance(User.id, property)
     assert isinstance(User.full_name, property)
+
+
+def test_consent_model_supports_granular_revocable_consent() -> None:
+    columns = Consent.__table__.c
+    constraint_names = {constraint.name for constraint in Consent.__table__.constraints}
+
+    assert columns.user_id.nullable is False
+    assert {key.target_fullname for key in columns.user_id.foreign_keys} == {"user.user_id"}
+    assert columns.consent_type.nullable is False
+    assert columns.granted.nullable is False
+    assert columns.recorded_at.nullable is False
+    assert "ck_consent_type" in constraint_names
+    assert "uq_consent_user_type" in constraint_names
 
 
 @pytest.fixture

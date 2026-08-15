@@ -19,6 +19,7 @@ from app.core.database import Base
 from app.models.audit_log import AuditLog  # noqa: F401
 from app.models.breakout_room import BreakoutRoom  # noqa: F401
 from app.models.comprehension_result import ComprehensionResult  # noqa: F401
+from app.models.consent import Consent  # noqa: F401
 from app.models.course import Course  # noqa: F401
 from app.models.dynamic_prompt import DynamicPrompt  # noqa: F401
 from app.models.engagement_record import EngagementRecord  # noqa: F401
