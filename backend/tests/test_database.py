@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
+from app.models.course import Course
 from app.models.material import Material
 from app.models.rag_chunk import RagChunk
 
@@ -36,6 +37,13 @@ def test_material_course_reference_matches_course_model() -> None:
     assert course_id.nullable is True
     assert course_id.index is True
     assert {key.target_fullname for key in course_id.foreign_keys} == {"course.id"}
+
+
+def test_course_code_is_unique_and_indexed() -> None:
+    code = Course.__table__.c.code
+
+    assert code.unique is True
+    assert code.index is True
 
 
 @pytest.fixture
