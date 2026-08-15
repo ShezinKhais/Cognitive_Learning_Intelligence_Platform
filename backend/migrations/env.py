@@ -11,7 +11,10 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 config = context.config
 from app.core.config import get_settings
 
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+config.set_main_option(
+    "sqlalchemy.url",
+    get_settings().database_url.replace("%", "%%"),
+)
 from app.core.database import Base
 from app.models.audit_log import AuditLog  # noqa: F401
 from app.models.breakout_room import BreakoutRoom  # noqa: F401
