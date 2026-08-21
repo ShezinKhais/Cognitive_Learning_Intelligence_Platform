@@ -17,9 +17,7 @@ class StudentRepository:
         return await self.session.get(Student, student_id)
 
     async def get_by_user_id(self, user_id: uuid.UUID) -> Student | None:
-        result = await self.session.execute(
-            select(Student).where(Student.user_id == user_id)
-        )
+        result = await self.session.execute(select(Student).where(Student.user_id == user_id))
         return result.scalar_one_or_none()
 
     async def list_by_course(self, course_id: uuid.UUID) -> list[Student]:
