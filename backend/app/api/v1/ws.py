@@ -29,8 +29,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError as PydanticValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import AppSettings
+from app.api.deps import AppSettings, DbSession
 from app.auth.service import user_from_token
 from app.core.security import TokenValidationError
 from app.realtime.hub import Connection, hub
@@ -66,12 +67,14 @@ async def _send(
     seq is 0 because these are not part of a session's ordered stream; clients
     only track gaps in events that carry a non-zero seq.
     """
+
     event = ServerEvent(
         type=event_type,
         seq=0,
         ts=datetime.now(UTC),
         data=data,
     )
+
     await websocket.send_json(event.model_dump(mode="json"))
 
 
@@ -85,6 +88,7 @@ async def _receive_event(
 
     Raises WebSocketDisconnect when the peer has disconnected.
     """
+
     message = await websocket.receive()
 
     if message["type"] == "websocket.disconnect":
@@ -109,12 +113,14 @@ async def _receive_event(
 async def _authenticate(
     websocket: WebSocket,
     settings: AppSettings,
+    db: AsyncSession,
 ) -> tuple[UUID, UUID | None] | None:
     """Read and validate the opening auth event.
 
-    Token validation uses the same application settings dependency as the
-    normal HTTP authentication flow.
+    Development resolves JWT users from the local Cyber 1 identities.
+    Production resolves JWT users through Nour's persisted User table.
     """
+
     try:
         raw = await asyncio.wait_for(
             _receive_event(websocket),
@@ -170,19 +176,22 @@ async def _authenticate(
         return None
 
     try:
-        user = user_from_token(
+        user = await user_from_token(
             payload.token,
             settings,
+            db,
         )
     except TokenValidationError as exc:
         log.warning(
-            "security_event=TOKEN_REJECTED transport=websocket reason=%s",
+            ("security_event=TOKEN_REJECTED transport=websocket reason=%s"),
             str(exc),
         )
+
         await websocket.close(
             code=CLOSE_UNAUTHENTICATED,
             reason="authentication failed",
         )
+
         return None
 
     return user.id, payload.session_id
@@ -196,19 +205,19 @@ def _session_access_allowed(
 
     Phase 1 fails closed when a specific session is requested because
     authentication proves identity but does not yet prove session membership.
-
-    BBIS-backed session membership replaces this temporary check during
-    integration.
     """
+
     if session_id is None:
         return True
 
     log.warning(
-        "security_event=ACCESS_DENIED "
-        "transport=websocket "
-        "user_id=%s "
-        "session_id=%s "
-        "reason=session_membership_unverified",
+        (
+            "security_event=ACCESS_DENIED "
+            "transport=websocket "
+            "user_id=%s "
+            "session_id=%s "
+            "reason=session_membership_unverified"
+        ),
         user_id,
         session_id,
     )
@@ -220,12 +229,14 @@ def _session_access_allowed(
 async def session_socket(
     websocket: WebSocket,
     settings: AppSettings,
+    db: DbSession,
 ) -> None:
     await websocket.accept()
 
     identity = await _authenticate(
         websocket,
         settings,
+        db,
     )
 
     if identity is None:
@@ -266,8 +277,6 @@ async def session_socket(
             raw = await _receive_event(websocket)
 
             if raw is None:
-                # A malformed frame after authentication does not disconnect
-                # the student. Report the error and keep listening.
                 await _send(
                     websocket,
                     ServerEventType.ERROR,

@@ -26,33 +26,46 @@ from app.core.security import (
     TokenValidationError,
     extract_bearer_token,
 )
+from app.repositories.consent_repository import ConsentRepository
 from app.schemas.identity import ConsentType, Role
 
 log = logging.getLogger("clip.security")
 
-DbSession = Annotated[AsyncSession, Depends(get_db)]
-AppSettings = Annotated[Settings, Depends(get_settings)]
+DbSession = Annotated[
+    AsyncSession,
+    Depends(get_db),
+]
+
+AppSettings = Annotated[
+    Settings,
+    Depends(get_settings),
+]
 
 
 class Pagination:
     def __init__(
         self,
-        limit: Annotated[int, Query(ge=1, le=200)] = 50,
-        offset: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[
+            int,
+            Query(ge=1, le=200),
+        ] = 50,
+        offset: Annotated[
+            int,
+            Query(ge=0),
+        ] = 0,
     ) -> None:
         self.limit = limit
         self.offset = offset
 
 
-Paginated = Annotated[Pagination, Depends(Pagination)]
+Paginated = Annotated[
+    Pagination,
+    Depends(Pagination),
+]
 
 
 class Principal:
-    """The authenticated caller.
-
-    Populated by the authentication dependency below. Handlers should depend
-    on this rather than reading authorization headers themselves.
-    """
+    """The authenticated caller."""
 
     def __init__(
         self,
@@ -64,30 +77,35 @@ class Principal:
         self.role = role
         self.email = email
 
-    def is_(self, *roles: Role) -> bool:
+    def is_(
+        self,
+        *roles: Role,
+    ) -> bool:
         return self.role in roles
 
 
 async def get_principal(
     request: Request,
     settings: AppSettings,
+    db: DbSession,
 ) -> Principal:
-    """Resolve the caller from a signed bearer token.
+    """Resolve the caller from a signed bearer token."""
 
-    HTTP handlers never parse authorization headers themselves.
-    Authentication uses the same settings dependency as the rest of the app.
-    """
     try:
         token = extract_bearer_token(request.headers.get("Authorization"))
-        user = user_from_token(
+
+        user = await user_from_token(
             token,
             settings,
+            db,
         )
+
     except TokenValidationError as exc:
         log.warning(
             "security_event=TOKEN_REJECTED reason=%s",
             str(exc),
         )
+
         raise AuthenticationError("Authentication is required.") from exc
 
     return Principal(
@@ -103,7 +121,9 @@ CurrentUser = Annotated[
 ]
 
 
-def require_roles(*roles: Role):
+def require_roles(
+    *roles: Role,
+):
     """Require one of the supplied roles for a route or router."""
 
     async def _guard(
@@ -111,7 +131,7 @@ def require_roles(*roles: Role):
     ) -> Principal:
         if not principal.is_(*roles):
             log.warning(
-                "security_event=ACCESS_DENIED user_id=%s actual_role=%s required_roles=%s",
+                ("security_event=ACCESS_DENIED user_id=%s actual_role=%s required_roles=%s"),
                 principal.user_id,
                 principal.role.value,
                 ",".join(role.value for role in roles),
@@ -133,18 +153,30 @@ def require_roles(*roles: Role):
 def require_consents(
     *consents: ConsentType,
 ):
-    """Require explicitly granted consent without merging categories."""
+    """Require explicitly granted consent without merging categories.
+
+    Development uses the temporary in-memory consent store.
+    Production uses Nour's persisted Consent table.
+    """
 
     async def _guard(
         principal: CurrentUser,
+        settings: AppSettings,
+        db: DbSession,
     ) -> Principal:
-        granted = get_consent_repository().granted_for(principal.user_id)
+        if settings.is_production:
+            repository = ConsentRepository(db)
+
+            granted = await repository.granted_for(principal.user_id)
+
+        else:
+            granted = get_consent_repository(settings).granted_for(principal.user_id)
 
         missing = [consent for consent in consents if consent not in granted]
 
         if missing:
             log.warning(
-                "security_event=ACCESS_DENIED user_id=%s missing_consents=%s",
+                ("security_event=ACCESS_DENIED user_id=%s missing_consents=%s"),
                 principal.user_id,
                 ",".join(consent.value for consent in missing),
             )

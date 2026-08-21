@@ -68,7 +68,6 @@ def _headers(
 def test_consent_can_be_granted_and_appears_in_me(
     client: TestClient,
 ) -> None:
-    """The original single-consent payload remains supported."""
     token = _student_token(client)
 
     response = client.post(
@@ -87,9 +86,10 @@ def test_consent_can_be_granted_and_appears_in_me(
     me = client.get(
         "/api/v1/auth/me",
         headers=_headers(token),
-    ).json()
+    )
 
-    assert me["consents"] == ["camera"]
+    assert me.status_code == 200
+    assert me.json()["consents"] == ["camera"]
 
 
 def test_one_consent_can_be_revoked_without_changing_another(
@@ -127,95 +127,13 @@ def test_one_consent_can_be_revoked_without_changing_another(
     me = client.get(
         "/api/v1/auth/me",
         headers=_headers(token),
-    ).json()
-
-    assert me["consents"] == ["microphone"]
-
-
-def test_student_can_save_all_consent_choices_in_one_batch(
-    client: TestClient,
-) -> None:
-    token = _student_token(client)
-
-    response = client.post(
-        "/api/v1/auth/consent",
-        headers=_headers(token),
-        json={
-            "consents": [
-                {
-                    "consent_type": "terms",
-                    "granted": True,
-                },
-                {
-                    "consent_type": "engagement_monitoring",
-                    "granted": True,
-                },
-                {
-                    "consent_type": "camera",
-                    "granted": False,
-                },
-                {
-                    "consent_type": "microphone",
-                    "granted": True,
-                },
-            ]
-        },
-    )
-
-    assert response.status_code == 201
-
-    body = response.json()
-
-    assert len(body["consents"]) == 4
-
-    me = client.get(
-        "/api/v1/auth/me",
-        headers=_headers(token),
     )
 
     assert me.status_code == 200
-
-    assert me.json()["consents"] == [
-        "engagement_monitoring",
-        "microphone",
-        "terms",
-    ]
+    assert me.json()["consents"] == ["microphone"]
 
 
-def test_duplicate_consent_types_are_rejected_without_saving(
-    client: TestClient,
-) -> None:
-    token = _student_token(client)
-
-    response = client.post(
-        "/api/v1/auth/consent",
-        headers=_headers(token),
-        json={
-            "consents": [
-                {
-                    "consent_type": "camera",
-                    "granted": True,
-                },
-                {
-                    "consent_type": "camera",
-                    "granted": False,
-                },
-            ]
-        },
-    )
-
-    assert response.status_code == 422
-
-    me = client.get(
-        "/api/v1/auth/me",
-        headers=_headers(token),
-    )
-
-    assert me.status_code == 200
-    assert me.json()["consents"] == []
-
-
-def test_admin_cannot_submit_student_monitoring_consents(
+def test_admin_cannot_submit_student_monitoring_consent(
     client: TestClient,
 ) -> None:
     token = _admin_token(client)
@@ -224,23 +142,15 @@ def test_admin_cannot_submit_student_monitoring_consents(
         "/api/v1/auth/consent",
         headers=_headers(token),
         json={
-            "consents": [
-                {
-                    "consent_type": "terms",
-                    "granted": True,
-                },
-                {
-                    "consent_type": "camera",
-                    "granted": True,
-                },
-            ]
+            "consent_type": "camera",
+            "granted": True,
         },
     )
 
     assert response.status_code == 403
 
 
-def test_lecturer_cannot_submit_student_monitoring_consents(
+def test_lecturer_cannot_submit_student_monitoring_consent(
     client: TestClient,
 ) -> None:
     token = _lecturer_token(client)
@@ -249,38 +159,31 @@ def test_lecturer_cannot_submit_student_monitoring_consents(
         "/api/v1/auth/consent",
         headers=_headers(token),
         json={
-            "consents": [
-                {
-                    "consent_type": "terms",
-                    "granted": True,
-                },
-                {
-                    "consent_type": "microphone",
-                    "granted": True,
-                },
-            ]
+            "consent_type": "microphone",
+            "granted": True,
         },
     )
 
     assert response.status_code == 403
 
 
-def test_batch_consent_requires_authentication(
+def test_admin_can_record_terms_consent(
     client: TestClient,
 ) -> None:
+    token = _admin_token(client)
+
     response = client.post(
         "/api/v1/auth/consent",
+        headers=_headers(token),
         json={
-            "consents": [
-                {
-                    "consent_type": "terms",
-                    "granted": True,
-                }
-            ]
+            "consent_type": "terms",
+            "granted": True,
         },
     )
 
-    assert response.status_code == 401
+    assert response.status_code == 201
+    assert response.json()["consent_type"] == "terms"
+    assert response.json()["granted"] is True
 
 
 def test_single_consent_requires_authentication(

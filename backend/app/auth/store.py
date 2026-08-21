@@ -1,7 +1,12 @@
-"""Temporary in-memory identity and consent repositories.
+"""Development identity stores and transient login-security state.
 
-BBIS can replace these classes with PostgreSQL implementations later without
-changing the route contracts, JWT format or role guards.
+Development uses fixed in-memory identities so the application and tests can
+run without a local PostgreSQL database.
+
+Production identity and consent persistence must use the database repositories.
+The functions below deliberately refuse to return development repositories in
+production so a deployment cannot silently lose consent decisions after a
+restart.
 """
 
 from __future__ import annotations
@@ -18,8 +23,8 @@ STUDENT_ID = UUID("11111111-1111-1111-1111-111111111111")
 LECTURER_ID = UUID("22222222-2222-2222-2222-222222222222")
 ADMIN_ID = UUID("33333333-3333-3333-3333-333333333333")
 
-# Prototype-only credentials. The repository stores only password hashes.
-# Development identities are disabled completely in production.
+# Prototype-only credentials.
+# Only password hashes are stored here.
 DEV_STUDENT_PASSWORD_HASH = (
     "pbkdf2_sha256$600000$QcKKGcvq3iTHPqYPKj0ePw==$TY1Ln5kfviWL4GOQrqVgXcW0VttV_qKFKNqsQF_nHSA="
 )
@@ -36,7 +41,10 @@ MAX_FAILED_LOGIN_ATTEMPTS = 5
 ACCOUNT_LOCK_DURATION = timedelta(minutes=15)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(
+    frozen=True,
+    slots=True,
+)
 class UserRecord:
     id: UUID
     email: str
@@ -46,7 +54,10 @@ class UserRecord:
     active: bool = True
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(
+    frozen=True,
+    slots=True,
+)
 class ConsentRecord:
     user_id: UUID
     consent_type: ConsentType
@@ -54,27 +65,26 @@ class ConsentRecord:
     recorded_at: datetime
 
 
-class InMemoryUserRepository:
-    def __init__(self, users: list[UserRecord]) -> None:
-        self._by_id = {user.id: user for user in users}
+class LoginSecurityStore:
+    """Track temporary failed-login and lockout state.
 
-        self._by_email = {user.email.lower(): user for user in users}
+    Authentication identities themselves are persisted by BBIS/Nour's
+    database layer in production. This object only tracks the short-lived
+    security counters used by the Cyber 1 login flow.
+    """
 
-        self._failed_attempts: dict[UUID, int] = {}
-        self._locked_until: dict[UUID, datetime] = {}
+    def __init__(self) -> None:
+        self._failed_attempts: dict[
+            UUID,
+            int,
+        ] = {}
+
+        self._locked_until: dict[
+            UUID,
+            datetime,
+        ] = {}
+
         self._lock = RLock()
-
-    def get_by_email(
-        self,
-        email: str,
-    ) -> UserRecord | None:
-        return self._by_email.get(email.strip().lower())
-
-    def get_by_id(
-        self,
-        user_id: UUID,
-    ) -> UserRecord | None:
-        return self._by_id.get(user_id)
 
     def is_locked(
         self,
@@ -95,6 +105,7 @@ class InMemoryUserRepository:
                     user_id,
                     None,
                 )
+
                 return False
 
             return True
@@ -103,7 +114,8 @@ class InMemoryUserRepository:
         self,
         user_id: UUID,
     ) -> bool:
-        """Increment failures and report whether the account became locked."""
+        """Increment failures and report whether locking began."""
+
         with self._lock:
             count = (
                 self._failed_attempts.get(
@@ -117,6 +129,7 @@ class InMemoryUserRepository:
 
             if count >= MAX_FAILED_LOGIN_ATTEMPTS:
                 self._locked_until[user_id] = datetime.now(UTC) + ACCOUNT_LOCK_DURATION
+
                 return True
 
             return False
@@ -130,22 +143,53 @@ class InMemoryUserRepository:
                 user_id,
                 None,
             )
+
             self._locked_until.pop(
                 user_id,
                 None,
             )
 
-    def reset_security_state(self) -> None:
-        """Test helper for the temporary in-memory implementation."""
+    def reset(self) -> None:
+        """Clear transient security state for tests."""
+
         with self._lock:
             self._failed_attempts.clear()
             self._locked_until.clear()
 
 
+class InMemoryUserRepository:
+    """Development-only fixed user repository."""
+
+    def __init__(
+        self,
+        users: list[UserRecord],
+    ) -> None:
+        self._by_id = {user.id: user for user in users}
+
+        self._by_email = {user.email.lower(): user for user in users}
+
+    def get_by_email(
+        self,
+        email: str,
+    ) -> UserRecord | None:
+        return self._by_email.get(email.strip().lower())
+
+    def get_by_id(
+        self,
+        user_id: UUID,
+    ) -> UserRecord | None:
+        return self._by_id.get(user_id)
+
+
 class InMemoryConsentRepository:
+    """Development-only granular consent repository."""
+
     def __init__(self) -> None:
         self._records: dict[
-            tuple[UUID, ConsentType],
+            tuple[
+                UUID,
+                ConsentType,
+            ],
             ConsentRecord,
         ] = {}
 
@@ -167,42 +211,14 @@ class InMemoryConsentRepository:
         )
 
         with self._lock:
-            self._records[(user_id, consent_type)] = record
+            self._records[
+                (
+                    user_id,
+                    consent_type,
+                )
+            ] = record
 
         return record
-
-    def record_many(
-        self,
-        user_id: UUID,
-        consents: list[tuple[ConsentType, bool]],
-        *,
-        recorded_at: datetime | None = None,
-    ) -> list[ConsentRecord]:
-        """Save multiple consent decisions together."""
-        timestamp = recorded_at or datetime.now(UTC)
-
-        records = [
-            ConsentRecord(
-                user_id=user_id,
-                consent_type=consent_type,
-                granted=granted,
-                recorded_at=timestamp,
-            )
-            for consent_type, granted in consents
-        ]
-
-        updates = {
-            (
-                record.user_id,
-                record.consent_type,
-            ): record
-            for record in records
-        }
-
-        with self._lock:
-            self._records.update(updates)
-
-        return records
 
     def granted_for(
         self,
@@ -214,7 +230,7 @@ class InMemoryConsentRepository:
                 for (
                     record_user,
                     consent_type,
-                ), record in self._records.items()
+                ), record in (self._records.items())
                 if (record_user == user_id and record.granted)
             }
 
@@ -227,41 +243,66 @@ def _build_dev_users() -> list[UserRecord]:
     return [
         UserRecord(
             id=STUDENT_ID,
-            email="student@clip.example.com",
-            full_name="Development Student",
+            email=("student@clip.example.com"),
+            full_name=("Development Student"),
             role=Role.STUDENT,
-            password_hash=DEV_STUDENT_PASSWORD_HASH,
+            password_hash=(DEV_STUDENT_PASSWORD_HASH),
         ),
         UserRecord(
             id=LECTURER_ID,
-            email="lecturer@clip.example.com",
-            full_name="Development Lecturer",
+            email=("lecturer@clip.example.com"),
+            full_name=("Development Lecturer"),
             role=Role.LECTURER,
-            password_hash=DEV_LECTURER_PASSWORD_HASH,
+            password_hash=(DEV_LECTURER_PASSWORD_HASH),
         ),
         UserRecord(
             id=ADMIN_ID,
-            email="admin@clip.example.com",
-            full_name="Development Administrator",
+            email=("admin@clip.example.com"),
+            full_name=("Development Administrator"),
             role=Role.ADMIN,
-            password_hash=DEV_ADMIN_PASSWORD_HASH,
+            password_hash=(DEV_ADMIN_PASSWORD_HASH),
         ),
     ]
 
 
 _DEV_USERS = InMemoryUserRepository(_build_dev_users())
 
-_EMPTY_USERS = InMemoryUserRepository([])
+_DEV_CONSENTS = InMemoryConsentRepository()
 
-_CONSENTS = InMemoryConsentRepository()
+_LOGIN_SECURITY = LoginSecurityStore()
 
 
 def get_user_repository(
     settings: Settings,
 ) -> InMemoryUserRepository:
-    """Development identities are unavailable in production."""
-    return _EMPTY_USERS if settings.is_production else _DEV_USERS
+    """Return development users only.
+
+    Production callers must use
+    app.repositories.user_repository.UserRepository.
+    """
+
+    if settings.is_production:
+        raise RuntimeError("Production users must use the database UserRepository.")
+
+    return _DEV_USERS
 
 
-def get_consent_repository() -> InMemoryConsentRepository:
-    return _CONSENTS
+def get_consent_repository(
+    settings: Settings,
+) -> InMemoryConsentRepository:
+    """Return the development consent repository only.
+
+    Production callers must use
+    app.repositories.consent_repository.ConsentRepository.
+    """
+
+    if settings.is_production:
+        raise RuntimeError("Production consent must use the database ConsentRepository.")
+
+    return _DEV_CONSENTS
+
+
+def get_login_security_store() -> LoginSecurityStore:
+    """Return transient failed-login/lockout state."""
+
+    return _LOGIN_SECURITY

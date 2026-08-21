@@ -108,41 +108,6 @@
         "title": "ComprehensionLabel",
         "type": "string"
       },
-      "ConsentBatchOut": {
-        "properties": {
-          "consents": {
-            "items": {
-              "$ref": "#/components/schemas/ConsentOut"
-            },
-            "title": "Consents",
-            "type": "array"
-          }
-        },
-        "required": [
-          "consents"
-        ],
-        "title": "ConsentBatchOut",
-        "type": "object"
-      },
-      "ConsentBatchRequest": {
-        "description": "A group of consent decisions saved as one operation.",
-        "properties": {
-          "consents": {
-            "items": {
-              "$ref": "#/components/schemas/ConsentRequest"
-            },
-            "maxItems": 4,
-            "minItems": 1,
-            "title": "Consents",
-            "type": "array"
-          }
-        },
-        "required": [
-          "consents"
-        ],
-        "title": "ConsentBatchRequest",
-        "type": "object"
-      },
       "ConsentOut": {
         "properties": {
           "consent_type": {
@@ -167,7 +132,6 @@
         "type": "object"
       },
       "ConsentRequest": {
-        "description": "One consent decision.\n\nKept for backwards compatibility with the existing\nPOST /auth/consent endpoint.",
         "properties": {
           "consent_type": {
             "$ref": "#/components/schemas/ConsentType"
@@ -185,7 +149,7 @@
         "type": "object"
       },
       "ConsentType": {
-        "description": "Independent consent choices.\n\nDeclining one consent must never automatically block another.\nDeclining camera or microphone consent must never lower an\nengagement score.",
+        "description": "Granular. Declining one must never block the others, and declining\ncamera or microphone must never lower an engagement score.",
         "enum": [
           "terms",
           "engagement_monitoring",
@@ -1054,7 +1018,7 @@
         "type": "object"
       },
       "TimetableImportResult": {
-        "description": "Result of an administrator uploading a timetable CSV or XLSX.\n\nCSV and XLSX are parsed as structured data. There is no OCR path,\nbecause a misread digit could silently assign a student to the\nwrong session.",
+        "description": "Result of an administrator uploading a timetable CSV or XLSX.\n\nCSV and XLSX are parsed as structured data. There is no OCR path, because a\nmisread digit would silently assign a student to the wrong session.",
         "properties": {
           "conflicts": {
             "items": {
@@ -1208,7 +1172,7 @@
   "paths": {
     "/api/v1/admin/roster": {
       "post": {
-        "description": "Import a roster CSV or XLSX file.",
+        "description": "CSV or XLSX only, same reasoning as /timetable: no OCR path.",
         "operationId": "import_roster_api_v1_admin_roster_post",
         "requestBody": {
           "content": {
@@ -1250,7 +1214,7 @@
     },
     "/api/v1/admin/timetable": {
       "post": {
-        "description": "Import a timetable CSV or XLSX file.",
+        "description": "CSV or XLSX only. Structured data is parsed, never OCR'd.",
         "operationId": "import_timetable_api_v1_admin_timetable_post",
         "requestBody": {
           "content": {
@@ -1292,21 +1256,13 @@
     },
     "/api/v1/auth/consent": {
       "post": {
-        "description": "Record one consent decision or an atomic batch.",
+        "description": "Consent is per-type and revocable.\n\nRevoking camera or microphone consent must stop collection immediately and\nmust not reduce the student's engagement score.",
         "operationId": "record_consent_api_v1_auth_consent_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/ConsentRequest"
-                  },
-                  {
-                    "$ref": "#/components/schemas/ConsentBatchRequest"
-                  }
-                ],
-                "title": "Payload"
+                "$ref": "#/components/schemas/ConsentRequest"
               }
             }
           },
@@ -1317,15 +1273,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/ConsentOut"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ConsentBatchOut"
-                    }
-                  ],
-                  "title": "Response Record Consent Api V1 Auth Consent Post"
+                  "$ref": "#/components/schemas/ConsentOut"
                 }
               }
             },
@@ -1350,6 +1298,7 @@
     },
     "/api/v1/auth/login": {
       "post": {
+        "description": "Authenticate a user and return a bearer token.\n\nDevelopment uses the fixed Cyber 1 development identities.\nProduction resolves users through Nour's persisted User table.",
         "operationId": "login_api_v1_auth_login_post",
         "requestBody": {
           "content": {
@@ -1391,6 +1340,7 @@
     },
     "/api/v1/auth/me": {
       "get": {
+        "description": "Return the authenticated user's identity and consent state.",
         "operationId": "me_api_v1_auth_me_get",
         "responses": {
           "200": {
