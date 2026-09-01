@@ -60,6 +60,12 @@ def test_user_model_supports_auth_contract() -> None:
     assert isinstance(User.full_name, property)
 
 
+def test_models_package_exports_user() -> None:
+    from app.models import User as ExportedUser
+
+    assert ExportedUser is User
+
+
 def test_consent_model_supports_granular_revocable_consent() -> None:
     columns = Consent.__table__.c
     constraint_names = {constraint.name for constraint in Consent.__table__.constraints}
