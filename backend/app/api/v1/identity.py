@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, UploadFile, status
+from fastapi import APIRouter, Depends, Request, UploadFile, status
 
 from app.api.deps import (
     AppSettings,
@@ -18,11 +18,13 @@ from app.api.deps import (
     require_consents,
     require_roles,
 )
+from app.auth.login_security import PersistentLoginSecurityStore
 from app.auth.store import (
     get_consent_repository,
     get_login_security_store,
     get_user_repository,
 )
+from app.core.audit import audit_action
 from app.core.config import get_settings
 from app.core.errors import (
     AuthenticationError,
@@ -108,6 +110,7 @@ def _reject_if_too_large(
 )
 async def login(
     payload: LoginRequest,
+    request: Request,
     settings: AppSettings,
     db: DbSession,
 ) -> TokenResponse:
@@ -144,26 +147,53 @@ async def login(
 
         raise AuthenticationError(GENERIC_LOGIN_ERROR)
 
-    security = get_login_security_store()
+    ip_address = request.client.host if request.client is not None else "unknown"
 
-    if security.is_locked(user.id):
-        log.warning(
-            "security_event=LOGIN_FAILED user_id=%s reason=account_locked",
-            user.id,
-        )
+    if settings.is_production:
+        security = PersistentLoginSecurityStore(db)
 
-        raise AuthenticationError(GENERIC_LOGIN_ERROR)
+        if await security.is_locked(user.id):
+            log.warning(
+                "security_event=LOGIN_FAILED user_id=%s reason=account_locked",
+                user.id,
+            )
 
-    if not password_valid:
-        locked = security.record_failed_login(user.id)
+            raise AuthenticationError(GENERIC_LOGIN_ERROR)
 
-        log.warning(
-            "security_event=%s user_id=%s reason=invalid_credentials",
-            ("ACCOUNT_LOCKED" if locked else "LOGIN_FAILED"),
-            user.id,
-        )
+        if not password_valid:
+            locked = await security.record_failed_login(
+                user.id,
+                ip_address,
+            )
 
-        raise AuthenticationError(GENERIC_LOGIN_ERROR)
+            log.warning(
+                "security_event=%s user_id=%s reason=invalid_credentials",
+                ("ACCOUNT_LOCKED" if locked else "LOGIN_FAILED"),
+                user.id,
+            )
+
+            raise AuthenticationError(GENERIC_LOGIN_ERROR)
+    else:
+        security = get_login_security_store()
+
+        if security.is_locked(user.id):
+            log.warning(
+                "security_event=LOGIN_FAILED user_id=%s reason=account_locked",
+                user.id,
+            )
+
+            raise AuthenticationError(GENERIC_LOGIN_ERROR)
+
+        if not password_valid:
+            locked = security.record_failed_login(user.id)
+
+            log.warning(
+                "security_event=%s user_id=%s reason=invalid_credentials",
+                ("ACCOUNT_LOCKED" if locked else "LOGIN_FAILED"),
+                user.id,
+            )
+
+            raise AuthenticationError(GENERIC_LOGIN_ERROR)
 
     if not user.active:
         log.warning(
@@ -173,8 +203,6 @@ async def login(
 
         raise AuthenticationError(GENERIC_LOGIN_ERROR)
 
-    security.reset_failed_logins(user.id)
-
     role = _normalise_role(user.role)
 
     token, expires_in = create_access_token(
@@ -183,6 +211,14 @@ async def login(
         email=user.email,
         settings=settings,
     )
+
+    if settings.is_production:
+        await security.record_successful_login(
+            user.id,
+            ip_address,
+        )
+    else:
+        security.reset_failed_logins(user.id)
 
     log.info(
         "security_event=LOGIN_SUCCEEDED user_id=%s role=%s",
@@ -246,8 +282,10 @@ async def me(
     response_model=ConsentOut,
     status_code=status.HTTP_201_CREATED,
 )
+@audit_action("CONSENT_UPDATED")
 async def record_consent(
     payload: ConsentRequest,
+    request: Request,
     principal: CurrentUser,
     settings: AppSettings,
     db: DbSession,
