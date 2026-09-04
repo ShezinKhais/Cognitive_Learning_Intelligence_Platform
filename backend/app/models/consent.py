@@ -22,7 +22,7 @@ class Consent(Base):
     __tablename__ = "consent"
     __table_args__ = (
         CheckConstraint(
-            ("consent_type IN ('terms', 'engagement_monitoring', 'camera', 'microphone')"),
+            "consent_type IN ('terms', 'engagement_monitoring', 'camera', 'microphone')",
             name="ck_consent_type",
         ),
         UniqueConstraint(

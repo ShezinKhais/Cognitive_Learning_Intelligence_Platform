@@ -12,31 +12,17 @@ class UserRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def get_by_id(
-        self,
-        user_id: uuid.UUID,
-    ) -> User | None:
-        return await self.session.get(
-            User,
-            user_id,
-        )
+    async def get_by_id(self, user_id: uuid.UUID) -> User | None:
+        return await self.session.get(User, user_id)
 
-    async def get_by_email(
-        self,
-        email: str,
-    ) -> User | None:
+    async def get_by_email(self, email: str) -> User | None:
         result = await self.session.execute(select(User).where(User.email == email))
-
         return result.scalar_one_or_none()
 
-    async def list_by_role(
-        self,
-        role: str,
-    ) -> list[User]:
+    async def list_by_role(self, role: str) -> list[User]:
         result = await self.session.execute(
             select(User).where(User.role == role).order_by(User.name)
         )
-
         return list(result.scalars().all())
 
     async def create(
@@ -46,15 +32,8 @@ class UserRepository:
         role: str,
         email: str,
     ) -> User:
-        user = User(
-            name=name,
-            role=role,
-            email=email,
-        )
-
+        user = User(name=name, role=role, email=email)
         self.session.add(user)
-
         await self.session.flush()
         await self.session.refresh(user)
-
         return user

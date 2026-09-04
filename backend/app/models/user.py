@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import Boolean, String, true
+from sqlalchemy import Boolean, CheckConstraint, String, true
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,7 +11,12 @@ from app.core.database import Base
 
 class User(Base):
     __tablename__ = "user"
-
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('student', 'lecturer', 'admin')",
+            name="ck_user_role",
+        ),
+    )
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
