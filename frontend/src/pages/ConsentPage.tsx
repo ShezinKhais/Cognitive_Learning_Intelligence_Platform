@@ -5,8 +5,7 @@ import { useNavigate } from 'react-router'
 import {
   ApiError,
   getCurrentUser,
-  saveConsents,
-  type ConsentChoice,
+  recordConsent,
   type CurrentUser,
 } from '../api'
 
@@ -100,37 +99,16 @@ export default function ConsentPage() {
     setError(null)
 
     try {
-      let consents: ConsentChoice[]
+      await recordConsent('terms', true)
 
       if (user.role === 'student') {
-        consents = [
-          {
-            consent_type: 'terms',
-            granted: true,
-          },
-          {
-            consent_type: 'engagement_monitoring',
-            granted: monitoring,
-          },
-          {
-            consent_type: 'camera',
-            granted: camera,
-          },
-          {
-            consent_type: 'microphone',
-            granted: microphone,
-          },
-        ]
-      } else {
-        consents = [
-          {
-            consent_type: 'terms',
-            granted: true,
-          },
-        ]
+        await recordConsent(
+          'engagement_monitoring',
+          monitoring,
+        )
+        await recordConsent('camera', camera)
+        await recordConsent('microphone', microphone)
       }
-
-      await saveConsents(consents)
 
       navigate(
         user.role === 'admin' ? '/admin' : '/',

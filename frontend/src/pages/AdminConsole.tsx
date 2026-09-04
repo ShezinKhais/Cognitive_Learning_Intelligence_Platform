@@ -33,7 +33,7 @@ export default function AdminConsole() {
           <div>
             <h1 className="text-xl font-bold text-foreground">Administrator console</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Import timetables and student rosters. Only .csv and .xlsx are accepted — every row is
+              Import timetables and student rosters. Only .csv and .xlsx are accepted; every row is
               read as structured data, never guessed at from an image.
             </p>
           </div>
@@ -106,7 +106,7 @@ function UploadPanel({ kind }: { kind: UploadKind }) {
           disabled={isBusy}
           className="shrink-0 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
         >
-          {isBusy ? 'Uploading…' : 'Choose file'}
+          {isBusy ? 'Uploading...' : 'Choose file'}
         </button>
         <input
           ref={inputRef}

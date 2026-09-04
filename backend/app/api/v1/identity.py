@@ -15,7 +15,6 @@ from app.api.deps import (
     AppSettings,
     CurrentUser,
     DbSession,
-    require_consents,
     require_roles,
 )
 from app.auth.login_security import PersistentLoginSecurityStore
@@ -71,7 +70,6 @@ admin = APIRouter(
     tags=["admin"],
     dependencies=[
         Depends(require_roles(Role.ADMIN)),
-        Depends(require_consents(ConsentType.TERMS)),
     ],
 )
 
@@ -87,10 +85,10 @@ def _normalise_role(
     return Role(role)
 
 
-def _reject_if_too_large(
+async def _read_upload_with_limit(
     file: UploadFile,
-) -> None:
-    """Reject an oversized upload before reading it into memory."""
+) -> bytes:
+    """Read an upload without buffering more than the configured limit."""
 
     max_bytes = get_settings().max_upload_bytes
 
@@ -102,6 +100,18 @@ def _reject_if_too_large(
                 "reported_size": file.size,
             },
         )
+
+    raw = await file.read(max_bytes + 1)
+
+    if len(raw) > max_bytes:
+        raise ValidationError(
+            "File exceeds the maximum upload size.",
+            {
+                "max_bytes": max_bytes,
+            },
+        )
+
+    return raw
 
 
 @auth.post(
@@ -348,15 +358,7 @@ async def import_timetable(
 ) -> TimetableImportResult:
     """CSV or XLSX only. Structured data is parsed, never OCR'd."""
 
-    _reject_if_too_large(file)
-
-    raw = await file.read()
-
-    if len(raw) > get_settings().max_upload_bytes:
-        raise ValidationError(
-            "File exceeds the maximum upload size.",
-            {"max_bytes": get_settings().max_upload_bytes},
-        )
+    raw = await _read_upload_with_limit(file)
 
     rows, rows_read = parse_timetable(
         file.filename or "",
@@ -393,15 +395,7 @@ async def import_roster(
 ) -> TimetableImportResult:
     """CSV or XLSX only, same reasoning as /timetable: no OCR path."""
 
-    _reject_if_too_large(file)
-
-    raw = await file.read()
-
-    if len(raw) > get_settings().max_upload_bytes:
-        raise ValidationError(
-            "File exceeds the maximum upload size.",
-            {"max_bytes": get_settings().max_upload_bytes},
-        )
+    raw = await _read_upload_with_limit(file)
 
     rows, rows_read = parse_roster(
         file.filename or "",

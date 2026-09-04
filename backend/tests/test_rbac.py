@@ -33,15 +33,28 @@ def _accept_terms(client: TestClient, token: str) -> None:
     assert response.status_code == 201
 
 
-def test_admin_route_requires_terms_even_for_an_admin(client: TestClient) -> None:
-    token = _login(client, "admin@clip.example.com", ADMIN_PASSWORD)
+def test_admin_route_does_not_require_student_consent(
+    client: TestClient,
+) -> None:
+    token = _login(
+        client,
+        "admin@clip.example.com",
+        ADMIN_PASSWORD,
+    )
+
     response = client.post(
         "/api/v1/admin/timetable",
         headers=_headers(token),
-        files={"file": ("timetable.csv", TIMETABLE, "text/csv")},
+        files={
+            "file": (
+                "timetable.csv",
+                TIMETABLE,
+                "text/csv",
+            )
+        },
     )
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "CONSENT_REQUIRED"
+
+    assert response.status_code == 200
 
 
 def test_student_and_lecturer_cannot_upload_a_timetable(client: TestClient) -> None:

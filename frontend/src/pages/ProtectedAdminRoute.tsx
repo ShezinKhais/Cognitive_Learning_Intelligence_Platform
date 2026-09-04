@@ -42,7 +42,7 @@ export default function ProtectedAdminRoute() {
   }, [])
 
   if (state.status === 'loading') {
-    return <main className="min-h-screen grid place-items-center">Checking access…</main>
+    return <main className="min-h-screen grid place-items-center">Checking access...</main>
   }
   if (state.status === 'unauthenticated') {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />
@@ -52,9 +52,6 @@ export default function ProtectedAdminRoute() {
   }
   if (state.user.role !== 'admin') {
     return <Navigate to="/access-denied" replace />
-  }
-  if (!state.user.consents.includes('terms')) {
-    return <Navigate to="/consent" replace />
   }
   return <Outlet />
 }

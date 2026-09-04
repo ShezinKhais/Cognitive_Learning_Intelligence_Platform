@@ -12,6 +12,7 @@ import openpyxl
 import pytest
 
 from app.core.errors import ValidationError
+from app.services import timetable_import
 from app.services.timetable_import import (
     detect_timetable_conflicts,
     match_names,
@@ -60,6 +61,36 @@ def test_rejects_missing_required_column():
         parse_timetable("timetable.csv", raw)
 
 
+def test_normalises_short_day_name():
+    raw = _csv(
+        TIMETABLE_HEADER,
+        "CSIT321,X,Mon,09:00,11:00,Room 1",
+    )
+
+    rows, _ = parse_timetable(
+        "timetable.csv",
+        raw,
+    )
+
+    assert rows[0].day == "Monday"
+
+
+def test_rejects_invalid_day():
+    raw = _csv(
+        TIMETABLE_HEADER,
+        "CSIT321,X,Funday,09:00,11:00,Room 1",
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match="not a valid day",
+    ):
+        parse_timetable(
+            "timetable.csv",
+            raw,
+        )
+
+
 def test_rejects_bad_time_format():
     raw = _csv(TIMETABLE_HEADER, "CSIT321,X,Monday,9am,11am,Room 1")
     with pytest.raises(ValidationError, match="could not parse"):
@@ -70,6 +101,34 @@ def test_rejects_end_before_start():
     raw = _csv(TIMETABLE_HEADER, "CSIT321,X,Monday,14:00,13:00,Room 1")
     with pytest.raises(ValidationError, match="not after"):
         parse_timetable("timetable.csv", raw)
+
+
+def test_timetable_first_data_row_is_row_two():
+    raw = _csv(
+        TIMETABLE_HEADER,
+        "CSIT321,X,Monday,09:00,11:00,Room 1",
+    )
+
+    rows, _ = parse_timetable(
+        "timetable.csv",
+        raw,
+    )
+
+    assert rows[0].row_number == 2
+
+
+def test_roster_first_data_row_is_row_two():
+    raw = _csv(
+        ROSTER_HEADER,
+        "a.student@uni.test,A Student,CSIT321",
+    )
+
+    rows, _ = parse_roster(
+        "roster.csv",
+        raw,
+    )
+
+    assert rows[0].row_number == 2
 
 
 def test_rejects_blank_required_field():
@@ -89,6 +148,133 @@ def test_parses_valid_timetable_xlsx():
     rows, rows_read = parse_timetable("timetable.xlsx", buf.getvalue())
     assert rows_read == 1
     assert rows[0].course_code == "CSIT321"
+
+
+def test_xlsx_workbook_is_closed(monkeypatch):
+    closed = False
+
+    class FakeWorksheet:
+        def iter_rows(self, values_only=True):
+            return iter(
+                [
+                    [
+                        "course_code",
+                        "lecturer",
+                        "day",
+                        "start_time",
+                        "end_time",
+                        "room",
+                    ],
+                    [
+                        "CSIT321",
+                        "Dr. Orumchian",
+                        "Monday",
+                        "09:00",
+                        "11:00",
+                        "Room 12",
+                    ],
+                ]
+            )
+
+    class FakeWorkbook:
+        active = FakeWorksheet()
+
+        def close(self):
+            nonlocal closed
+            closed = True
+
+    monkeypatch.setattr(
+        timetable_import.openpyxl,
+        "load_workbook",
+        lambda *args, **kwargs: FakeWorkbook(),
+    )
+
+    parse_timetable(
+        "timetable.xlsx",
+        b"fake-xlsx-data",
+    )
+
+    assert closed is True
+
+
+def test_rejects_xlsx_blank_header():
+    wb = openpyxl.Workbook()
+    ws = wb.active
+
+    ws.append(
+        [
+            "course_code",
+            "lecturer",
+            "day",
+            "start_time",
+            "end_time",
+            None,
+        ]
+    )
+
+    ws.append(
+        [
+            "CSIT321",
+            "Dr. A",
+            "Monday",
+            "09:00",
+            "11:00",
+            "Room 1",
+        ]
+    )
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    wb.close()
+
+    with pytest.raises(
+        ValidationError,
+        match="blank column",
+    ):
+        parse_timetable(
+            "timetable.xlsx",
+            buf.getvalue(),
+        )
+
+
+def test_rejects_xlsx_duplicate_header():
+    wb = openpyxl.Workbook()
+    ws = wb.active
+
+    ws.append(
+        [
+            "course_code",
+            "lecturer",
+            "day",
+            "start_time",
+            "end_time",
+            "course_code",
+        ]
+    )
+
+    ws.append(
+        [
+            "CSIT321",
+            "Dr. A",
+            "Monday",
+            "09:00",
+            "11:00",
+            "CSIT999",
+        ]
+    )
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    wb.close()
+
+    with pytest.raises(
+        ValidationError,
+        match="duplicate column",
+    ):
+        parse_timetable(
+            "timetable.xlsx",
+            buf.getvalue(),
+        )
 
 
 def test_xlsx_skips_blank_trailing_rows():
@@ -114,10 +300,29 @@ def test_parses_valid_roster_csv():
     assert rows[0].student_email == "a.student@uni.test"
 
 
-def test_rejects_invalid_email():
-    raw = _csv(ROSTER_HEADER, "not-an-email,A Student,CSIT321")
-    with pytest.raises(ValidationError, match="valid email"):
-        parse_roster("roster.csv", raw)
+@pytest.mark.parametrize(
+    "email",
+    [
+        "not-an-email",
+        "student@",
+        "@uni.test",
+        "student@@uni.test",
+    ],
+)
+def test_rejects_invalid_email(email):
+    raw = _csv(
+        ROSTER_HEADER,
+        f"{email},A Student,CSIT321",
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match="valid email",
+    ):
+        parse_roster(
+            "roster.csv",
+            raw,
+        )
 
 
 # --- detect_timetable_conflicts ------------------------------------------
@@ -145,6 +350,26 @@ def test_detects_room_double_booking():
     conflicts = detect_timetable_conflicts(rows)
     assert len(conflicts) == 1
     assert "Room 'Room 12'" in conflicts[0]
+
+
+def test_detects_multiple_overlaps_in_same_group():
+    raw = _csv(
+        TIMETABLE_HEADER,
+        "CSIT321,Dr. A,Monday,09:00,13:00,Room 1",
+        "CSIT101,Dr. A,Monday,10:00,11:00,Room 2",
+        "CSIT202,Dr. A,Monday,12:00,14:00,Room 3",
+    )
+
+    rows, _ = parse_timetable(
+        "timetable.csv",
+        raw,
+    )
+
+    conflicts = detect_timetable_conflicts(rows)
+
+    lecturer_conflicts = [conflict for conflict in conflicts if conflict.startswith("Lecturer")]
+
+    assert len(lecturer_conflicts) == 2
 
 
 def test_no_conflict_for_back_to_back_sessions():
