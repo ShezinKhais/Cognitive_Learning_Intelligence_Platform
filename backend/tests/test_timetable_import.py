@@ -418,3 +418,40 @@ def test_match_names_below_threshold_is_unmatched():
     unmatched, matched = match_names(["Totally Different Name"], ["Dr. Orumchian"])
     assert unmatched == ["Totally Different Name"]
     assert matched == {}
+
+
+def test_cp1252_csv_parses():
+    raw = (
+        "course_code,lecturer,day,start_time,end_time,room\n"
+        "CSIT321,Dr Jos?,Monday,09:00,11:00,Room 1\n"
+    ).encode("cp1252")
+
+    rows, count = parse_timetable("timetable.csv", raw)
+
+    assert count == 1
+    assert rows[0].lecturer == "Dr Jos?"
+
+
+def test_utf16_csv_is_rejected_cleanly():
+    raw = (
+        "course_code,lecturer,day,start_time,end_time,room\n"
+        "CSIT321,Dr A,Monday,09:00,11:00,Room 1\n"
+    ).encode("utf-16")
+
+    with pytest.raises(
+        ValidationError,
+        match="unsupported encoding",
+    ):
+        parse_timetable("timetable.csv", raw)
+
+
+def test_surplus_csv_column_is_ignored():
+    raw = (
+        b"course_code,lecturer,day,start_time,end_time,room\n"
+        b"CSIT321,Dr A,Monday,09:00,11:00,Room 1,EXTRA\n"
+    )
+
+    rows, count = parse_timetable("timetable.csv", raw)
+
+    assert count == 1
+    assert rows[0].course_code == "CSIT321"

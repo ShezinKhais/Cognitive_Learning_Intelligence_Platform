@@ -4,10 +4,11 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.config import get_settings
 from app.core.database import Base
 
 
@@ -27,19 +28,29 @@ class RagChunk(Base):
         index=True,
     )
 
+    chunk_index: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    source_page: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
     chunk_text: Mapped[str] = mapped_column(
         Text,
         nullable=False,
     )
 
-    embedding_vector: Mapped[list[float]] = mapped_column(
-        Vector(1536),
-        nullable=False,
+    embedding_vector: Mapped[list[float] | None] = mapped_column(
+        Vector(get_settings().embedding_dim),
+        nullable=True,
     )
 
-    embedding_model: Mapped[str] = mapped_column(
+    embedding_model: Mapped[str | None] = mapped_column(
         String(100),
-        nullable=False,
+        nullable=True,
     )
 
     created_at: Mapped[datetime] = mapped_column(
