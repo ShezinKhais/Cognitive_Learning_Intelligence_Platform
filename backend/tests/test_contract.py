@@ -109,7 +109,9 @@ def test_engagement_and_comprehension_stay_separate(client: TestClient) -> None:
     assert not any("comprehension" in name.lower() for name in engagement)
 
 
-def test_engagement_reports_confidence_and_available_signals(client: TestClient) -> None:
+def test_engagement_reports_confidence_and_available_signals(
+    client: TestClient,
+) -> None:
     """A low-signal student must be reportable as 'insufficient data' rather
     than 'disengaged', which needs both of these fields."""
     engagement = client.get("/api/v1/openapi.json").json()["components"]["schemas"]["EngagementOut"]

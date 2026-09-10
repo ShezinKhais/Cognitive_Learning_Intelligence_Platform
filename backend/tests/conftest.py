@@ -40,3 +40,20 @@ def as_lecturer(app: FastAPI):
     with TestClient(app) as client:
         yield client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def as_admin(app: FastAPI):
+    """Same pattern as as_lecturer, for /admin routes which require Role.ADMIN."""
+
+    def _principal() -> Principal:
+        return Principal(
+            user_id=UUID("22222222-2222-2222-2222-222222222222"),
+            role=Role.ADMIN,
+            email="admin@uni.test",
+        )
+
+    app.dependency_overrides[get_principal] = _principal
+    with TestClient(app) as client:
+        yield client
+    app.dependency_overrides.clear()

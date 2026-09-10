@@ -1172,6 +1172,7 @@
   "paths": {
     "/api/v1/admin/roster": {
       "post": {
+        "description": "CSV or XLSX only, same reasoning as /timetable: no OCR path.",
         "operationId": "import_roster_api_v1_admin_roster_post",
         "requestBody": {
           "content": {

@@ -68,7 +68,10 @@ async def _check_ollama() -> DependencyStatus:
             response = await client.get(f"{base}/api/tags")
             response.raise_for_status()
             installed = {m["name"].split(":")[0] for m in response.json().get("models", [])}
-        wanted = {settings.ollama_model.split(":")[0], settings.embedding_model.split(":")[0]}
+        wanted = {
+            settings.ollama_model.split(":")[0],
+            settings.embedding_model.split(":")[0],
+        }
         missing = wanted - installed
         latency = round((time.perf_counter() - started) * 1000, 2)
         if missing:
