@@ -98,6 +98,11 @@ class Settings(BaseSettings):
     # Uploads (Includes CSV and XLSX for admin timetable/roster imports)
     max_upload_bytes: int = 52_428_800
     allowed_upload_extensions: str = "pdf,pptx,docx,txt,csv,xlsx"
+    # Uploads are processed after the request returns, so the bytes are written
+    # here rather than held in memory until a worker reaches them. Relative to
+    # the backend working directory in development; a deployment points this at
+    # a mounted volume, or swaps LocalDiskStorage for a blob backend.
+    upload_storage_dir: str = "var/uploads"
 
     # Retention (UAE PDPL)
     data_retention_days: int = 90
