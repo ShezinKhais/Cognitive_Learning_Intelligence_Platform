@@ -56,7 +56,10 @@ async def end_session(session_id: UUID, principal: CurrentUser, db: DbSession) -
     raise not_implemented("General CS", "Phase 3")
 
 
-@router.post("/{session_id}/questions/{question_id}:deliver", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/{session_id}/questions/{question_id}:deliver",
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def deliver_question(
     session_id: UUID, question_id: UUID, principal: CurrentUser, db: DbSession
 ) -> dict[str, str]:

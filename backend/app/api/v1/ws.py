@@ -147,7 +147,10 @@ async def session_socket(websocket: WebSocket) -> None:
         await _send(
             websocket,
             ServerEventType.READY,
-            {"user_id": str(user_id), "session_id": str(session_id) if session_id else None},
+            {
+                "user_id": str(user_id),
+                "session_id": str(session_id) if session_id else None,
+            },
         )
 
         while True:
@@ -170,7 +173,10 @@ async def session_socket(websocket: WebSocket) -> None:
                 await _send(
                     websocket,
                     ServerEventType.ERROR,
-                    {"code": "MALFORMED_EVENT", "detail": f"{exc.error_count()} invalid field(s)"},
+                    {
+                        "code": "MALFORMED_EVENT",
+                        "detail": f"{exc.error_count()} invalid field(s)",
+                    },
                 )
                 continue
 
@@ -183,7 +189,10 @@ async def session_socket(websocket: WebSocket) -> None:
             await _send(
                 websocket,
                 ServerEventType.ERROR,
-                {"code": "NOT_IMPLEMENTED", "detail": f"{event_type.value} lands in Phase 3"},
+                {
+                    "code": "NOT_IMPLEMENTED",
+                    "detail": f"{event_type.value} lands in Phase 3",
+                },
             )
 
     except WebSocketDisconnect:

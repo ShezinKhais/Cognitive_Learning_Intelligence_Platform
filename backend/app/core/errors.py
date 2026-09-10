@@ -129,19 +129,31 @@ def register_error_handlers(app: FastAPI) -> None:
     async def _validation(request: Request, exc: RequestValidationError) -> JSONResponse:
         # Pydantic's errors contain exception objects that json cannot encode.
         errors = [
-            {"loc": list(e.get("loc", [])), "msg": e.get("msg", ""), "type": e.get("type", "")}
+            {
+                "loc": list(e.get("loc", [])),
+                "msg": e.get("msg", ""),
+                "type": e.get("type", ""),
+            }
             for e in exc.errors()
         ]
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content=_envelope(
-                request, "VALIDATION_ERROR", "Request validation failed", {"errors": errors}
+                request,
+                "VALIDATION_ERROR",
+                "Request validation failed",
+                {"errors": errors},
             ),
         )
 
     @app.exception_handler(StarletteHTTPException)
     async def _http(request: Request, exc: StarletteHTTPException) -> JSONResponse:
-        codes = {401: "UNAUTHENTICATED", 403: "FORBIDDEN", 404: "NOT_FOUND", 405: "NOT_ALLOWED"}
+        codes = {
+            401: "UNAUTHENTICATED",
+            403: "FORBIDDEN",
+            404: "NOT_FOUND",
+            405: "NOT_ALLOWED",
+        }
         return JSONResponse(
             status_code=exc.status_code,
             content=_envelope(
