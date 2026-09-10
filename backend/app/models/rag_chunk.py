@@ -27,7 +27,6 @@ class RagChunk(Base):
         nullable=False,
         index=True,
     )
-
     chunk_index: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
