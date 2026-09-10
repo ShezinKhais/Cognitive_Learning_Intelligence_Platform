@@ -323,6 +323,10 @@ def test_rejects_invalid_email(email):
             "roster.csv",
             raw,
         )
+def test_rejects_invalid_email():
+    raw = _csv(ROSTER_HEADER, "not-an-email,A Student,CSIT321")
+    with pytest.raises(ValidationError, match="valid email"):
+        parse_roster("roster.csv", raw)
 
 
 # --- detect_timetable_conflicts ------------------------------------------

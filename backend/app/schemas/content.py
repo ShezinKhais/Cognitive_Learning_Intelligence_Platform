@@ -64,14 +64,17 @@ class QuestionOut(BaseModel):
     prompt: str
     options: list[str] | None = None
     correct_option: int | None = Field(
-        default=None, description="Never sent to students. Lecturer and admin views only."
+        default=None,
+        description="Never sent to students. Lecturer and admin views only.",
     )
     topic: str | None = None
     source_slide: int | None = Field(
-        default=None, description="Drives the 'see slide 3' reference in student feedback."
+        default=None,
+        description="Drives the 'see slide 3' reference in student feedback.",
     )
     source_excerpt: str | None = Field(
-        default=None, description="The text the question was generated from. Grounding evidence."
+        default=None,
+        description="The text the question was generated from. Grounding evidence.",
     )
 
 

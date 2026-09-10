@@ -52,7 +52,12 @@ def test_attention_signal_carries_indicators_not_media() -> None:
     the README stops being true.
     """
     fields = set(AttentionSignalPayload.model_fields)
-    assert fields == {"gaze_on_screen_ratio", "face_present", "speaking", "window_seconds"}
+    assert fields == {
+        "gaze_on_screen_ratio",
+        "face_present",
+        "speaking",
+        "window_seconds",
+    }
 
 
 def test_room_status_reports_activity_not_content() -> None:

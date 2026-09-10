@@ -1,7 +1,7 @@
 """Application settings, loaded from environment (.env in development)."""
 
 from functools import lru_cache
-from urllib.parse import unquote, urlsplit
+from urllib.parse import unquote, urlparse, urlsplit
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -95,9 +95,9 @@ class Settings(BaseSettings):
     comprehension_alert_min_respondents: int = 5
     dynamic_prompt_max_per_student: int = 3
 
-    # Uploads
+    # Uploads (Includes CSV and XLSX for admin timetable/roster imports)
     max_upload_bytes: int = 52_428_800
-    allowed_upload_extensions: str = "pdf,pptx,docx,txt"
+    allowed_upload_extensions: str = "pdf,pptx,docx,txt,csv,xlsx"
 
     # Retention (UAE PDPL)
     data_retention_days: int = 90
@@ -121,6 +121,12 @@ class Settings(BaseSettings):
             problems.append("CLIP_SECRET_KEY is still the default")
         elif len(self.clip_secret_key) < MIN_SECRET_KEY_LENGTH:
             problems.append(f"CLIP_SECRET_KEY is shorter than {MIN_SECRET_KEY_LENGTH} characters")
+
+        parsed_db = urlparse(self.database_url)
+        db_host = parsed_db.hostname or ""
+
+        if db_host in {"localhost", "127.0.0.1", "0.0.0.0"}:
+            problems.append("DATABASE_URL points to localhost in production")
 
         database = database_password_problem(self.database_url)
         if database:

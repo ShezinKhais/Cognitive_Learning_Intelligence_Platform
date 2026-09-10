@@ -19,6 +19,7 @@ class Material(Base):
         default=uuid.uuid4,
     )
 
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     course_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("course.id"),
@@ -37,3 +38,4 @@ class Material(Base):
         DateTime,
         server_default=func.now(),
     )
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

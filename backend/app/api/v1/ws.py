@@ -270,6 +270,7 @@ async def session_socket(
             {
                 "user_id": str(user_id),
                 "session_id": (str(session_id) if session_id else None),
+                "session_id": str(session_id) if session_id else None,
             },
         )
 
@@ -296,6 +297,7 @@ async def session_socket(
                     {
                         "code": "MALFORMED_EVENT",
                         "detail": (f"{exc.error_count()} invalid field(s)"),
+                        "detail": f"{exc.error_count()} invalid field(s)",
                     },
                 )
                 continue
@@ -315,6 +317,7 @@ async def session_socket(
                 {
                     "code": "NOT_IMPLEMENTED",
                     "detail": (f"{event_type.value} lands in Phase 3"),
+                    "detail": f"{event_type.value} lands in Phase 3",
                 },
             )
 

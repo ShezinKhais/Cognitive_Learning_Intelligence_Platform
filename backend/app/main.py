@@ -48,8 +48,11 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    # Read at call time rather than at import, so the environment a test sets up
-    # is the environment the app is built from.
+    # Looked up at call time so a test can replace app.main.get_settings and
+    # decide how the app is assembled. Note that get_settings is cached and the
+    # module-level call above has already filled that cache, so setting an
+    # environment variable after import does not change what this returns.
+    # Patch the name, as tests/test_security.py does.
     settings = get_settings()
 
     # Interactive docs describe every route, parameter and schema. That is what

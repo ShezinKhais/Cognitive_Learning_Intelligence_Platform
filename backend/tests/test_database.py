@@ -13,8 +13,70 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
+from app.models.consent import Consent
+from app.models.course import Course
+from app.models.material import Material
+from app.models.rag_chunk import RagChunk
+from app.models.user import User
 
 REQUIRED_EXTENSIONS = {"vector", "pg_trgm", "uuid-ossp"}
+
+
+def test_rag_chunk_model_matches_content_pipeline() -> None:
+    columns = RagChunk.__table__.c
+
+    assert columns.embedding_vector.type.dim == get_settings().embedding_dim
+    assert columns.embedding_vector.nullable is True
+    assert columns.embedding_model.nullable is True
+    assert columns.chunk_index.nullable is False
+    assert columns.source_page.nullable is True
+
+
+def test_material_course_reference_matches_course_model() -> None:
+    course_id = Material.__table__.c.course_id
+
+    assert course_id.type.as_uuid is True
+    assert course_id.nullable is True
+    assert course_id.index is True
+    assert {key.target_fullname for key in course_id.foreign_keys} == {"course.id"}
+
+
+def test_course_code_is_unique_and_indexed() -> None:
+    code = Course.__table__.c.code
+
+    assert code.unique is True
+    assert code.index is True
+
+
+def test_user_model_supports_auth_contract() -> None:
+    columns = User.__table__.c
+    constraint_names = {constraint.name for constraint in User.__table__.constraints}
+
+    assert columns.password_hash.nullable is True
+    assert columns.active.nullable is False
+    assert columns.active.server_default is not None
+    assert "ck_user_role" in constraint_names
+    assert isinstance(User.id, property)
+    assert isinstance(User.full_name, property)
+
+
+def test_models_package_exports_user() -> None:
+    from app.models import User as ExportedUser
+
+    assert ExportedUser is User
+
+
+def test_consent_model_supports_granular_revocable_consent() -> None:
+    columns = Consent.__table__.c
+    constraint_names = {constraint.name for constraint in Consent.__table__.constraints}
+
+    assert columns.user_id.nullable is False
+    assert {key.target_fullname for key in columns.user_id.foreign_keys} == {"user.user_id"}
+    assert columns.consent_type.nullable is False
+    assert columns.granted.nullable is False
+    assert columns.recorded_at.nullable is False
+    assert "ck_consent_type" in constraint_names
+    assert "uq_consent_user_type" in constraint_names
 
 
 @pytest.fixture
