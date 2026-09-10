@@ -1,21 +1,36 @@
-"""Async SQLAlchemy engine, session factory and declarative base."""
+"""Async SQLAlchemy engine, session factory and declarative base.
+
+The engine is created lazily so authentication and WebSocket tests can run
+before the BBIS/PostgreSQL workstream is available.
+"""
 
 from collections.abc import AsyncGenerator
+from functools import lru_cache
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import get_settings
 
-settings = get_settings()
 
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.clip_env == "development",
-    pool_pre_ping=True,
-)
+@lru_cache
+def get_engine() -> AsyncEngine:
+    settings = get_settings()
+    return create_async_engine(
+        settings.database_url,
+        echo=settings.clip_env == "development",
+        pool_pre_ping=True,
+    )
 
-SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+@lru_cache
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
+    return async_sessionmaker(get_engine(), class_=AsyncSession, expire_on_commit=False)
 
 
 class Base(DeclarativeBase):
@@ -24,7 +39,7 @@ class Base(DeclarativeBase):
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency yielding a request-scoped session."""
-    async with SessionLocal() as session:
+    async with get_session_factory()() as session:
         try:
             yield session
             await session.commit()

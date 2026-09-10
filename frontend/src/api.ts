@@ -1,15 +1,16 @@
-/**
- * Base path for the API.
- *
- * Kept in one place so a version bump is a single edit rather than a search for
- * hardcoded URLs. TypeScript cannot check a wrong URL string, so a typo here is
- * only caught at runtime.
- */
+/** Shared API and authentication helpers. */
+
 export const API_BASE = '/api/v1'
 
-export function apiUrl(path: string): string {
-  return `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`
-}
+const ACCESS_TOKEN_KEY = 'clip_access_token'
+
+export type Role = 'student' | 'lecturer' | 'admin'
+
+export type ConsentType =
+  | 'terms'
+  | 'engagement_monitoring'
+  | 'camera'
+  | 'microphone'
 
 export interface Health {
   status: string
@@ -18,52 +19,27 @@ export interface Health {
   teams_configured: boolean
 }
 
-export class ApiError extends Error {
-  // Assigned explicitly rather than as constructor parameter properties, which
-  // this tsconfig disallows under erasableSyntaxOnly.
-  status: number
-  code: string
-
-  constructor(status: number, code: string, message: string) {
-    super(message)
-    this.status = status
-    this.code = code
-  }
+export interface LoginResponse {
+  access_token: string
+  token_type: 'bearer'
+  expires_in: number
+  role: Role
 }
 
-/**
- * Fetch JSON, translating the API's error envelope into a typed error.
- *
- * Every failure returns {error: {code, message, detail}, request_id}, so
- * callers get the stable code rather than having to parse a message.
- */
-async function readErrorEnvelope(response: Response): Promise<ApiError> {
-  let code = 'HTTP_ERROR'
-  let message = `HTTP ${response.status}`
-  try {
-    const body = await response.json()
-    code = body?.error?.code ?? code
-    message = body?.error?.message ?? message
-  } catch {
-    // Not every failure has a JSON body: a proxy or a dead server will not.
-  }
-  return new ApiError(response.status, code, message)
+export interface CurrentUser {
+  id: string
+  email: string
+  full_name: string
+  role: Role
+  consents: ConsentType[]
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(apiUrl(path))
-
-  if (!response.ok) {
-    throw await readErrorEnvelope(response)
-  }
-
-  return response.json() as Promise<T>
+export interface ConsentResponse {
+  consent_type: ConsentType
+  granted: boolean
+  recorded_at: string
 }
 
-/**
- * Upload result for /admin/timetable and /admin/roster. Mirrors the backend's
- * frozen TimetableImportResult schema exactly, since the two routes share it.
- */
 export interface TimetableImportResult {
   rows_read: number
   sessions_created: number
@@ -73,22 +49,222 @@ export interface TimetableImportResult {
 }
 
 /**
- * POST a CSV/XLSX file to an /admin route as multipart form data.
- * Shared by the timetable and roster uploads, since both take one `file`
- * field and return the same TimetableImportResult shape.
+ * Build an API URL from a path.
  */
-export async function apiUploadFile(
-  path: string,
-  file: File,
-): Promise<TimetableImportResult> {
-  const formData = new FormData()
-  formData.append('file', file)
+export function apiUrl(path: string): string {
+  return `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`
+}
 
-  const response = await fetch(apiUrl(path), { method: 'POST', body: formData })
+/**
+ * Read the saved bearer token.
+ */
+export function getAccessToken(): string | null {
+  return window.localStorage.getItem(ACCESS_TOKEN_KEY)
+}
 
-  if (!response.ok) {
-    throw await readErrorEnvelope(response)
+/**
+ * Save the bearer token after login.
+ */
+export function saveAccessToken(token: string): void {
+  window.localStorage.setItem(
+    ACCESS_TOKEN_KEY,
+    token,
+  )
+}
+
+/**
+ * Remove the bearer token.
+ */
+export function clearAccessToken(): void {
+  window.localStorage.removeItem(
+    ACCESS_TOKEN_KEY,
+  )
+}
+
+export class ApiError extends Error {
+  status: number
+  code: string
+
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+  ) {
+    super(message)
+
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+  }
+}
+
+async function readErrorEnvelope(
+  response: Response,
+): Promise<ApiError> {
+  let code = 'HTTP_ERROR'
+  let message = `HTTP ${response.status}`
+
+  try {
+    const body = await response.json()
+
+    code = body?.error?.code ?? code
+    message = body?.error?.message ?? message
+  } catch {
+    // A proxy, dead server or non-API response may not return JSON.
   }
 
-  return response.json() as Promise<TimetableImportResult>
+  return new ApiError(
+    response.status,
+    code,
+    message,
+  )
+}
+
+/**
+ * Shared request helper.
+ *
+ * Authenticated calls automatically attach the saved bearer token.
+ * API error envelopes are converted to ApiError instances.
+ */
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+  authenticated = false,
+): Promise<T> {
+  const headers = new Headers(options.headers)
+
+  if (authenticated) {
+    const token = getAccessToken()
+
+    if (!token) {
+      throw new ApiError(
+        401,
+        'UNAUTHENTICATED',
+        'Login is required.',
+      )
+    }
+
+    headers.set(
+      'Authorization',
+      `Bearer ${token}`,
+    )
+  }
+
+  if (
+    options.body &&
+    !(options.body instanceof FormData) &&
+    !headers.has('Content-Type')
+  ) {
+    headers.set(
+      'Content-Type',
+      'application/json',
+    )
+  }
+
+  const response = await fetch(
+    apiUrl(path),
+    {
+      ...options,
+      headers,
+    },
+  )
+
+  if (!response.ok) {
+    const error = await readErrorEnvelope(
+      response,
+    )
+
+    if (response.status === 401) {
+      clearAccessToken()
+    }
+
+    throw error
+  }
+
+  return response.json() as Promise<T>
+}
+
+/**
+ * Basic unauthenticated GET helper used by shared frontend code.
+ */
+export function apiGet<T>(
+  path: string,
+): Promise<T> {
+  return request<T>(path)
+}
+
+/**
+ * Authenticate with email and password.
+ */
+export function login(
+  email: string,
+  password: string,
+): Promise<LoginResponse> {
+  return request<LoginResponse>(
+    '/auth/login',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        email,
+        password,
+      }),
+    },
+  )
+}
+
+/**
+ * Return the currently authenticated user.
+ */
+export function getCurrentUser(): Promise<CurrentUser> {
+  return request<CurrentUser>(
+    '/auth/me',
+    {},
+    true,
+  )
+}
+
+/**
+ * Record one consent decision.
+ */
+export function recordConsent(
+  consentType: ConsentType,
+  granted: boolean,
+): Promise<ConsentResponse> {
+  return request<ConsentResponse>(
+    '/auth/consent',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        consent_type: consentType,
+        granted,
+      }),
+    },
+    true,
+  )
+}
+
+/**
+ * Upload a file to an authenticated API endpoint.
+ */
+export function apiUploadFile<
+  T = TimetableImportResult,
+>(
+  path: string,
+  file: File,
+): Promise<T> {
+  const formData = new FormData()
+
+  formData.append(
+    'file',
+    file,
+  )
+
+  return request<T>(
+    path,
+    {
+      method: 'POST',
+      body: formData,
+    },
+    true,
+  )
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router'
 
 import { apiGet, type Health } from './api'
 
@@ -40,6 +41,15 @@ export default function App() {
             </>
           )}
         </dl>
+
+        <div className="mt-6 flex gap-3">
+          <Link className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground" to="/login">
+            Sign in
+          </Link>
+          <Link className="rounded-lg border border-border px-4 py-2 text-sm" to="/admin">
+            Admin console
+          </Link>
+        </div>
       </div>
     </main>
   )

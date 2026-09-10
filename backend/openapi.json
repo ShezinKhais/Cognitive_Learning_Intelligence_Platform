@@ -1298,6 +1298,7 @@
     },
     "/api/v1/auth/login": {
       "post": {
+        "description": "Authenticate a user and return a bearer token.\n\nDevelopment uses the fixed Cyber 1 development identities.\nProduction resolves users through Nour's persisted User table.",
         "operationId": "login_api_v1_auth_login_post",
         "requestBody": {
           "content": {
@@ -1339,6 +1340,7 @@
     },
     "/api/v1/auth/me": {
       "get": {
+        "description": "Return the authenticated user's identity and consent state.",
         "operationId": "me_api_v1_auth_me_get",
         "responses": {
           "200": {
