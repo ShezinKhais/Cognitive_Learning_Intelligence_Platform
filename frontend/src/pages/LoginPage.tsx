@@ -41,10 +41,15 @@ export default function LoginPage() {
         location.state as { from?: string } | null
       )?.from
 
+      // Lecturers have no workspace until Phase 3, so access-denied stays
+      // their landing point. Sending admins there too stranded them on a
+      // page with no way out while the console they own sat unreachable.
       const defaultPath =
         result.role === 'student'
           ? '/student'
-          : '/access-denied'
+          : result.role === 'admin'
+            ? '/admin'
+            : '/access-denied'
 
       navigate(
         requestedPath ?? defaultPath,

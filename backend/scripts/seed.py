@@ -5,7 +5,7 @@ from datetime import date
 
 from sqlalchemy import select
 
-from app.core.database import SessionLocal
+from app.core.database import get_session_factory
 from app.models.course import Course
 from app.models.student import Student
 from app.models.user import User
@@ -14,7 +14,7 @@ COURSE_CODE = "CLIP101"
 
 
 async def seed_database() -> None:
-    async with SessionLocal() as session:
+    async with get_session_factory()() as session:
         try:
             # Create or retrieve the course.
             course = await session.scalar(select(Course).where(Course.code == COURSE_CODE))

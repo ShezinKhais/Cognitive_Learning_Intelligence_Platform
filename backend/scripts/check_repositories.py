@@ -2,14 +2,14 @@
 
 import asyncio
 
-from app.core.database import SessionLocal
+from app.core.database import get_session_factory
 from app.repositories.course_repository import CourseRepository
 from app.repositories.student_repository import StudentRepository
 from app.repositories.user_repository import UserRepository
 
 
 async def check_repositories() -> None:
-    async with SessionLocal() as session:
+    async with get_session_factory()() as session:
         course_repository = CourseRepository(session)
         student_repository = StudentRepository(session)
         user_repository = UserRepository(session)
@@ -28,7 +28,7 @@ async def check_repositories() -> None:
         )
 
         print("Repository check passed:")
-        print(f"- Course: {course.code} — {course.name}")
+        print(f"- Course: {course.code} - {course.name}")
         print(f"- Lecturers: {len(lecturers)}")
         print(f"- Student users: {len(students)}")
         print(f"- Student records: {len(student_records)}")
