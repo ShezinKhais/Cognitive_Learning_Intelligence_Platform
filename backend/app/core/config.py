@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     clip_env: str = "development"
     clip_secret_key: str = "change-me-in-production"
     clip_log_level: str = "INFO"
+    access_token_expire_minutes: int = 60
 
     # Database
     database_url: str = f"postgresql+asyncpg://clip:{DEV_DATABASE_PASSWORD}@localhost:5432/clip"

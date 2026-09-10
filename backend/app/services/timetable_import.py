@@ -3,7 +3,7 @@
 Owner: Cyber 2, Phase 1.
 
 Deliberately has no OCR path. A CSV or XLSX cell is either read correctly or the
-row is rejected - never guessed at. A misread digit here would silently put a
+row is rejected — never guessed at. A misread digit here would silently put a
 student in the wrong session, which is worse than failing loudly.
 
 This module is DB-agnostic on purpose: BBIS's ORM models (Session, Lecturer,
@@ -16,11 +16,11 @@ from __future__ import annotations
 
 import csv
 import io
-import re
 from dataclasses import dataclass, field
 from datetime import time
 
 import openpyxl
+from email_validator import EmailNotValidError, validate_email
 from rapidfuzz import fuzz, process
 
 from app.core.errors import ValidationError
@@ -32,16 +32,7 @@ from app.core.errors import ValidationError
 # as an upload that references someone who was never enrolled).
 FUZZY_MATCH_THRESHOLD = 88  # rapidfuzz score, 0-100. Below this: unmatched.
 
-_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-
-REQUIRED_TIMETABLE_COLUMNS = {
-    "course_code",
-    "lecturer",
-    "day",
-    "start_time",
-    "end_time",
-    "room",
-}
+REQUIRED_TIMETABLE_COLUMNS = {"course_code", "lecturer", "day", "start_time", "end_time", "room"}
 REQUIRED_ROSTER_COLUMNS = {"student_email", "student_name", "course_code"}
 
 
@@ -53,7 +44,7 @@ class TimetableRow:
     start_time: time
     end_time: time
     room: str
-    row_number: int  # 1-indexed, header excluded - for error messages
+    row_number: int  # 1-indexed, header excluded — for error messages
 
 
 @dataclass
@@ -74,10 +65,50 @@ class ParsedImport:
     conflicts: list[str] = field(default_factory=list)
 
 
+def _normalise_headers(
+    values: list[object],
+    filename: str,
+) -> list[str]:
+    """Normalise headers and reject blank or duplicate column names."""
+
+    headers = [str(value).strip().lower() if value is not None else "" for value in values]
+
+    blank_columns = [index for index, header in enumerate(headers, start=1) if not header]
+
+    if blank_columns:
+        raise ValidationError(
+            "Header row contains blank column names.",
+            {
+                "filename": filename,
+                "columns": blank_columns,
+            },
+        )
+
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+
+    for header in headers:
+        if header in seen:
+            duplicates.add(header)
+        else:
+            seen.add(header)
+
+    if duplicates:
+        raise ValidationError(
+            "Header row contains duplicate column names.",
+            {
+                "filename": filename,
+                "duplicates": sorted(duplicates),
+            },
+        )
+
+    return headers
+
+
 def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
     """Read a CSV or XLSX into a list of {column: value} dicts, header-normalized.
 
-    Raises ValidationError for anything that isn't clean structured data -
+    Raises ValidationError for anything that isn't clean structured data —
     wrong extension, empty file, or a header that doesn't match what we expect.
     """
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
@@ -93,16 +124,45 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
                     "Could not read this file as text. It may be saved in an unsupported encoding.",
                     {"filename": filename},
                 ) from exc
+
+        if "\x00" in text:
+            raise ValidationError(
+                "Could not read this file as text. It may be saved in an unsupported encoding.",
+                {"filename": filename},
+            )
+
         reader = csv.DictReader(io.StringIO(text))
+
         if reader.fieldnames is None:
-            raise ValidationError("File has no header row.", {"filename": filename})
-        rows = [
-            {k.strip().lower(): (v or "").strip() for k, v in row.items() if k is not None}
-            for row in reader
-        ]
+            raise ValidationError(
+                "File has no header row.",
+                {"filename": filename},
+            )
+
+        reader.fieldnames = _normalise_headers(
+            list(reader.fieldnames),
+            filename,
+        )
+
+        rows = []
+
+        for row in reader:
+            cleaned: dict[str, str] = {}
+
+            for key, value in row.items():
+                if key is None:
+                    continue
+
+                cleaned[key.strip().lower()] = value.strip() if isinstance(value, str) else ""
+
+            rows.append(cleaned)
     elif ext == "xlsx":
         try:
-            wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+            wb = openpyxl.load_workbook(
+                io.BytesIO(raw),
+                read_only=True,
+                data_only=True,
+            )
         except Exception as exc:
             raise ValidationError(
                 "Could not read this file as .xlsx. It may be corrupt or not a real Excel file.",
@@ -111,26 +171,31 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
 
         try:
             ws = wb.active
-            if ws is None:
-                raise ValidationError(
-                    "This .xlsx file has no active sheet.",
-                    {"filename": filename},
-                )
-
             it = ws.iter_rows(values_only=True)
+
             try:
-                header = [str(c).strip().lower() if c is not None else "" for c in next(it)]
+                header = _normalise_headers(
+                    list(next(it)),
+                    filename,
+                )
             except StopIteration:
-                raise ValidationError("File has no header row.", {"filename": filename}) from None
+                raise ValidationError(
+                    "File has no header row.",
+                    {"filename": filename},
+                ) from None
+
             rows = []
+
             for raw_row in it:
                 if all(c is None for c in raw_row):
-                    continue  # skip fully blank rows, common at the end of a sheet
+                    continue
+
                 row = {
                     header[i]: ("" if c is None else str(c).strip())
                     for i, c in enumerate(raw_row)
                     if i < len(header) and header[i]
                 }
+
                 rows.append(row)
         finally:
             wb.close()
@@ -144,6 +209,48 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
         raise ValidationError("File has a header but no data rows.", {"filename": filename})
 
     return rows
+
+
+DAY_ALIASES = {
+    "monday": "Monday",
+    "mon": "Monday",
+    "tuesday": "Tuesday",
+    "tue": "Tuesday",
+    "tues": "Tuesday",
+    "wednesday": "Wednesday",
+    "wed": "Wednesday",
+    "thursday": "Thursday",
+    "thu": "Thursday",
+    "thur": "Thursday",
+    "thurs": "Thursday",
+    "friday": "Friday",
+    "fri": "Friday",
+    "saturday": "Saturday",
+    "sat": "Saturday",
+    "sunday": "Sunday",
+    "sun": "Sunday",
+}
+
+
+def _normalise_day(
+    value: str,
+    row_number: int,
+) -> str:
+    """Normalise supported day names and reject invalid values."""
+
+    raw = value.strip()
+    day = DAY_ALIASES.get(raw.lower())
+
+    if day is None:
+        raise ValidationError(
+            f"Row {row_number}: '{value}' is not a valid day.",
+            {
+                "row": row_number,
+                "value": value,
+            },
+        )
+
+    return day
 
 
 def _parse_time(value: str, row_number: int, column: str) -> time:
@@ -162,41 +269,11 @@ def _parse_time(value: str, row_number: int, column: str) -> time:
     )
 
 
-_DAY_ALIASES = {
-    "monday": "Monday",
-    "mon": "Monday",
-    "tuesday": "Tuesday",
-    "tue": "Tuesday",
-    "tues": "Tuesday",
-    "wednesday": "Wednesday",
-    "wed": "Wednesday",
-    "thursday": "Thursday",
-    "thu": "Thursday",
-    "thurs": "Thursday",
-    "friday": "Friday",
-    "fri": "Friday",
-    "saturday": "Saturday",
-    "sat": "Saturday",
-    "sunday": "Sunday",
-    "sun": "Sunday",
-}
-
-
-def _parse_day(value: str, row_number: int) -> str:
-    normalized = _DAY_ALIASES.get(value.strip().lower())
-    if normalized is None:
-        raise ValidationError(
-            f"Row {row_number}: '{value}' is not a recognized day of the week.",
-            {"row": row_number, "value": value},
-        )
-    return normalized
-
-
 def parse_timetable(filename: str, raw: bytes) -> tuple[list[TimetableRow], int]:
     """Parse a timetable CSV/XLSX. Returns (rows, rows_read).
 
     Raises ValidationError on the first structural problem (bad header, bad
-    extension, empty file). Per-row problems (bad time format) also raise -
+    extension, empty file). Per-row problems (bad time format) also raise —
     partial imports are not attempted, so an admin never has to guess which
     half of a file actually landed.
     """
@@ -207,17 +284,17 @@ def parse_timetable(filename: str, raw: bytes) -> tuple[list[TimetableRow], int]
     if missing:
         raise ValidationError(
             f"Timetable file is missing required columns: {', '.join(sorted(missing))}.",
-            {
-                "missing_columns": sorted(missing),
-                "found_columns": sorted(header_cols),
-            },
+            {"missing_columns": sorted(missing), "found_columns": sorted(header_cols)},
         )
 
     parsed: list[TimetableRow] = []
-    for i, row in enumerate(rows, start=1):
+    for i, row in enumerate(rows, start=2):
         course_code = row["course_code"].strip()
         lecturer = row["lecturer"].strip()
-        day = _parse_day(row["day"], i)
+        day = _normalise_day(
+            row["day"],
+            i,
+        )
         room = row["room"].strip()
 
         if not course_code or not lecturer or not day or not room:
@@ -259,103 +336,125 @@ def parse_roster(filename: str, raw: bytes) -> tuple[list[RosterRow], int]:
     if missing:
         raise ValidationError(
             f"Roster file is missing required columns: {', '.join(sorted(missing))}.",
-            {
-                "missing_columns": sorted(missing),
-                "found_columns": sorted(header_cols),
-            },
+            {"missing_columns": sorted(missing), "found_columns": sorted(header_cols)},
         )
 
     parsed: list[RosterRow] = []
-    for i, row in enumerate(rows, start=1):
-        email = row["student_email"].strip().lower()
+    for i, row in enumerate(rows, start=2):
+        raw_email = row["student_email"].strip()
         name = row["student_name"].strip()
         course_code = row["course_code"].strip()
 
-        if not _EMAIL_RE.match(email):
+        try:
+            email = validate_email(
+                raw_email,
+                check_deliverability=False,
+                test_environment=True,
+            ).normalized.lower()
+        except EmailNotValidError as exc:
             raise ValidationError(
                 f"Row {i}: '{row['student_email']}' is not a valid email address.",
                 {"row": i, "value": row["student_email"]},
-            )
+            ) from exc
         if not name or not course_code:
             raise ValidationError(
-                f"Row {i}: student_name and course_code are required.",
-                {"row": i},
+                f"Row {i}: student_name and course_code are required.", {"row": i}
             )
 
         parsed.append(
-            RosterRow(
-                student_email=email,
-                student_name=name,
-                course_code=course_code,
-                row_number=i,
-            )
+            RosterRow(student_email=email, student_name=name, course_code=course_code, row_number=i)
         )
 
     return parsed, len(rows)
 
 
-MAX_REPORTED_CONFLICTS = 200
-
-
 def detect_timetable_conflicts(rows: list[TimetableRow]) -> list[str]:
-    """Same lecturer, same day, overlapping time ranges = a conflict.
+    """Find lecturer and room overlaps without comparing every row pair.
 
-    Also flags double-booked rooms, since a lecturer conflict and a room
-    conflict are different problems an admin needs to resolve differently.
-
-    Rows are bucketed by day first, since overlaps already requires
-    a.day == b.day - comparing rows on different days is always wasted work.
-    Within a day, rows are sorted by start_time, so once b.start_time is past
-    a.end_time nothing later in the sorted list can overlap a either, and the
-    inner loop breaks early. That turns what was an unconditional O(n^2) scan
-    into roughly O(n log n): at the 50 MB upload limit (~1.6M rows), a full
-    quadratic scan measured at ~24 days of CPU on one worker - not viable at
-    any upload size worth supporting.
-
-    MAX_REPORTED_CONFLICTS is a separate, second safeguard: it bounds the
-    size of the response, not the comparison cost, which the day-bucketing
-    above already handles.
+    Rows are grouped by day and resource, sorted by start time, then scanned
+    against only intervals that are still active. Runtime is O(n log n + k),
+    where k is the number of conflicts that must be reported.
     """
-    conflicts: list[str] = []
-    total = 0
 
-    by_day: dict[str, list[TimetableRow]] = {}
+    def find_conflicts(
+        grouped_rows: dict[tuple[str, str], list[TimetableRow]],
+        *,
+        resource: str,
+    ) -> list[str]:
+        found: list[str] = []
+
+        for group in grouped_rows.values():
+            ordered = sorted(
+                group,
+                key=lambda row: (
+                    row.start_time,
+                    row.end_time,
+                    row.row_number,
+                ),
+            )
+
+            active: list[TimetableRow] = []
+
+            for current in ordered:
+                active = [previous for previous in active if previous.end_time > current.start_time]
+
+                for previous in active:
+                    if resource == "lecturer":
+                        found.append(
+                            f"Lecturer '{previous.lecturer}' double-booked on "
+                            f"{previous.day}: row {previous.row_number} "
+                            f"({previous.course_code}) overlaps row "
+                            f"{current.row_number} ({current.course_code})."
+                        )
+                    else:
+                        found.append(
+                            f"Room '{previous.room}' double-booked on "
+                            f"{previous.day}: row {previous.row_number} "
+                            f"({previous.course_code}) overlaps row "
+                            f"{current.row_number} ({current.course_code})."
+                        )
+
+                active.append(current)
+
+        return found
+
+    lecturer_groups: dict[tuple[str, str], list[TimetableRow]] = {}
+    room_groups: dict[tuple[str, str], list[TimetableRow]] = {}
+
     for row in rows:
-        by_day.setdefault(row.day, []).append(row)
+        lecturer_key = (
+            row.day,
+            row.lecturer.strip().casefold(),
+        )
+        room_key = (
+            row.day,
+            row.room.strip().casefold(),
+        )
 
-    for day_rows in by_day.values():
-        day_rows.sort(key=lambda r: r.start_time)
-        for i, a in enumerate(day_rows):
-            for b in day_rows[i + 1 :]:
-                if b.start_time >= a.end_time:
-                    break  # sorted by start_time: nothing further can overlap a
-                if a.lecturer.strip().lower() == b.lecturer.strip().lower():
-                    total += 1
-                    if len(conflicts) < MAX_REPORTED_CONFLICTS:
-                        conflicts.append(
-                            f"Lecturer '{a.lecturer}' double-booked on {a.day}: "
-                            f"row {a.row_number} ({a.course_code}) overlaps row {b.row_number} "
-                            f"({b.course_code})."
-                        )
-                if a.room.strip().lower() == b.room.strip().lower():
-                    total += 1
-                    if len(conflicts) < MAX_REPORTED_CONFLICTS:
-                        conflicts.append(
-                            f"Room '{a.room}' double-booked on {a.day}: "
-                            f"row {a.row_number} ({a.course_code}) overlaps row {b.row_number} "
-                            f"({b.course_code})."
-                        )
+        lecturer_groups.setdefault(
+            lecturer_key,
+            [],
+        ).append(row)
 
-    if total > len(conflicts):
-        conflicts.append(f"...and {total - len(conflicts)} more conflicts not shown.")
+        room_groups.setdefault(
+            room_key,
+            [],
+        ).append(row)
 
-    return conflicts
+    return [
+        *find_conflicts(
+            lecturer_groups,
+            resource="lecturer",
+        ),
+        *find_conflicts(
+            room_groups,
+            resource="room",
+        ),
+    ]
 
 
 def match_names(
-    candidates: list[str],
-    known: list[str],
-    threshold: int = FUZZY_MATCH_THRESHOLD,
+    candidates: list[str], known: list[str], threshold: int = FUZZY_MATCH_THRESHOLD
 ) -> tuple[list[str], dict[str, str]]:
     """Fuzzy-match uploaded names against a known roster (e.g. Teams display names).
 

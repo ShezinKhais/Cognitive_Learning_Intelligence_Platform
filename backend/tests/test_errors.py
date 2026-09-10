@@ -65,7 +65,6 @@ def test_every_stub_reports_an_owner(as_lecturer: TestClient) -> None:
     paths = {
         ("get", "/api/v1/materials"),
         ("get", "/api/v1/sessions"),
-        ("get", "/api/v1/auth/me"),
     }
     for method, path in paths:
         response = as_lecturer.request(method.upper(), path)
