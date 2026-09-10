@@ -1,65 +1,61 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router'
+import {
+  Navigate,
+  Route,
+  Routes,
+} from 'react-router'
 
-import { apiGet, type Health } from './api'
+import { StudentAppProvider } from './features/student/StudentAppContext'
+import AccessDeniedPage from './pages/AccessDeniedPage'
+import LoginPage from './pages/LoginPage'
+import ProtectedStudentPage from './pages/ProtectedStudentPage'
+import SystemStatusPage from './pages/SystemStatusPage'
 
 export default function App() {
-  const [health, setHealth] = useState<Health | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    apiGet<Health>('/health')
-      .then(setHealth)
-      .catch((e: Error) => setError(e.message))
-  }, [])
-
   return (
-    <main className="min-h-screen grid place-items-center p-8">
-      <div className="w-full max-w-md rounded-xl border border-border bg-card p-6">
-        <h1 className="text-xl font-bold text-card-foreground">C.L.I.P</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Cognitive Learning Intelligence Platform
-        </p>
+    <Routes>
+      <Route
+        path="/"
+        element={
+          <Navigate
+            to="/student"
+            replace
+          />
+        }
+      />
 
-        <dl className="mt-6 space-y-2 text-sm">
-          <Row label="Backend">
-            {error ? (
-              <span className="text-critical">unreachable ({error})</span>
-            ) : health ? (
-              <span className="text-success">{health.status}</span>
-            ) : (
-              <span className="text-muted-foreground">checking</span>
-            )}
-          </Row>
-          {health && (
-            <>
-              <Row label="Environment">{health.env}</Row>
-              <Row label="Version">{health.version}</Row>
-              <Row label="Teams">
-                {health.teams_configured ? 'configured' : 'not configured'}
-              </Row>
-            </>
-          )}
-        </dl>
+      <Route
+        path="/login"
+        element={<LoginPage />}
+      />
 
-        <div className="mt-6 flex gap-3">
-          <Link className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground" to="/login">
-            Sign in
-          </Link>
-          <Link className="rounded-lg border border-border px-4 py-2 text-sm" to="/admin">
-            Admin console
-          </Link>
-        </div>
-      </div>
-    </main>
-  )
-}
+      <Route
+        path="/access-denied"
+        element={<AccessDeniedPage />}
+      />
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex justify-between gap-4">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="font-medium">{children}</dd>
-    </div>
+      <Route
+        path="/student"
+        element={
+          <StudentAppProvider>
+            <ProtectedStudentPage />
+          </StudentAppProvider>
+        }
+      />
+
+      <Route
+        path="/status"
+        element={<SystemStatusPage />}
+      />
+
+      <Route
+        path="*"
+        element={
+          <Navigate
+            to="/student"
+            replace
+          />
+        }
+      />
+    </Routes>
   )
 }

@@ -1,8 +1,17 @@
-import { useState } from 'react'
-import type { FormEvent } from 'react'
-import { useLocation, useNavigate } from 'react-router'
+import {
+  useState,
+  type FormEvent,
+} from 'react'
+import {
+  useLocation,
+  useNavigate,
+} from 'react-router'
 
-import { ApiError, login, saveAccessToken } from '../api'
+import {
+  ApiError,
+  login,
+  saveAccessToken,
+} from '../api'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -13,25 +22,37 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  async function submit(event: FormEvent) {
+  async function submit(
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> {
     event.preventDefault()
     setSubmitting(true)
     setError(null)
 
     try {
-      const result = await login(email.trim(), password)
+      const result = await login(
+        email.trim(),
+        password,
+      )
 
       saveAccessToken(result.access_token)
 
-      const requested = (
+      const requestedPath = (
         location.state as { from?: string } | null
       )?.from
 
+      const defaultPath =
+        result.role === 'student'
+          ? '/student'
+          : '/access-denied'
+
       navigate(
-        requested ?? (result.role === 'admin' ? '/admin' : '/'),
-        { replace: true },
+        requestedPath ?? defaultPath,
+        {
+          replace: true,
+        },
       )
-    } catch (caught) {
+    } catch (caught: unknown) {
       setError(
         caught instanceof ApiError
           ? caught.message
@@ -43,10 +64,10 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="mx-auto max-w-md px-6 py-12">
+    <main className="min-h-screen grid place-items-center px-6 py-12">
       <form
         onSubmit={submit}
-        className="rounded-xl border border-border bg-card p-6 shadow-sm"
+        className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-sm"
       >
         <h1 className="text-2xl font-semibold">
           Sign in to C.L.I.P
@@ -69,7 +90,9 @@ export default function LoginPage() {
           required
           autoComplete="username"
           value={email}
-          onChange={(event) => setEmail(event.target.value)}
+          onChange={(event) =>
+            setEmail(event.target.value)
+          }
           className="mt-2 w-full rounded-lg border border-border bg-input-background px-3 py-2"
         />
 
@@ -86,7 +109,9 @@ export default function LoginPage() {
           required
           autoComplete="current-password"
           value={password}
-          onChange={(event) => setPassword(event.target.value)}
+          onChange={(event) =>
+            setPassword(event.target.value)
+          }
           className="mt-2 w-full rounded-lg border border-border bg-input-background px-3 py-2"
         />
 

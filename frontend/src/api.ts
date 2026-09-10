@@ -48,37 +48,20 @@ export interface TimetableImportResult {
   unmatched_students: string[]
 }
 
-/**
- * Build an API URL from a path.
- */
 export function apiUrl(path: string): string {
   return `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`
 }
 
-/**
- * Read the saved bearer token.
- */
 export function getAccessToken(): string | null {
   return window.localStorage.getItem(ACCESS_TOKEN_KEY)
 }
 
-/**
- * Save the bearer token after login.
- */
 export function saveAccessToken(token: string): void {
-  window.localStorage.setItem(
-    ACCESS_TOKEN_KEY,
-    token,
-  )
+  window.localStorage.setItem(ACCESS_TOKEN_KEY, token)
 }
 
-/**
- * Remove the bearer token.
- */
 export function clearAccessToken(): void {
-  window.localStorage.removeItem(
-    ACCESS_TOKEN_KEY,
-  )
+  window.localStorage.removeItem(ACCESS_TOKEN_KEY)
 }
 
 export class ApiError extends Error {
@@ -110,22 +93,12 @@ async function readErrorEnvelope(
     code = body?.error?.code ?? code
     message = body?.error?.message ?? message
   } catch {
-    // A proxy, dead server or non-API response may not return JSON.
+    // Non-API responses may not contain JSON.
   }
 
-  return new ApiError(
-    response.status,
-    code,
-    message,
-  )
+  return new ApiError(response.status, code, message)
 }
 
-/**
- * Shared request helper.
- *
- * Authenticated calls automatically attach the saved bearer token.
- * API error envelopes are converted to ApiError instances.
- */
 async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -144,10 +117,7 @@ async function request<T>(
       )
     }
 
-    headers.set(
-      'Authorization',
-      `Bearer ${token}`,
-    )
+    headers.set('Authorization', `Bearer ${token}`)
   }
 
   if (
@@ -155,24 +125,16 @@ async function request<T>(
     !(options.body instanceof FormData) &&
     !headers.has('Content-Type')
   ) {
-    headers.set(
-      'Content-Type',
-      'application/json',
-    )
+    headers.set('Content-Type', 'application/json')
   }
 
-  const response = await fetch(
-    apiUrl(path),
-    {
-      ...options,
-      headers,
-    },
-  )
+  const response = await fetch(apiUrl(path), {
+    ...options,
+    headers,
+  })
 
   if (!response.ok) {
-    const error = await readErrorEnvelope(
-      response,
-    )
+    const error = await readErrorEnvelope(response)
 
     if (response.status === 401) {
       clearAccessToken()
@@ -184,48 +146,27 @@ async function request<T>(
   return response.json() as Promise<T>
 }
 
-/**
- * Basic unauthenticated GET helper used by shared frontend code.
- */
-export function apiGet<T>(
-  path: string,
-): Promise<T> {
+export function apiGet<T>(path: string): Promise<T> {
   return request<T>(path)
 }
 
-/**
- * Authenticate with email and password.
- */
 export function login(
   email: string,
   password: string,
 ): Promise<LoginResponse> {
-  return request<LoginResponse>(
-    '/auth/login',
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        email,
-        password,
-      }),
-    },
-  )
+  return request<LoginResponse>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({
+      email,
+      password,
+    }),
+  })
 }
 
-/**
- * Return the currently authenticated user.
- */
 export function getCurrentUser(): Promise<CurrentUser> {
-  return request<CurrentUser>(
-    '/auth/me',
-    {},
-    true,
-  )
+  return request<CurrentUser>('/auth/me', {}, true)
 }
 
-/**
- * Record one consent decision.
- */
 export function recordConsent(
   consentType: ConsentType,
   granted: boolean,
@@ -243,21 +184,13 @@ export function recordConsent(
   )
 }
 
-/**
- * Upload a file to an authenticated API endpoint.
- */
-export function apiUploadFile<
-  T = TimetableImportResult,
->(
+export function apiUploadFile<T = TimetableImportResult>(
   path: string,
   file: File,
 ): Promise<T> {
   const formData = new FormData()
 
-  formData.append(
-    'file',
-    file,
-  )
+  formData.append('file', file)
 
   return request<T>(
     path,
