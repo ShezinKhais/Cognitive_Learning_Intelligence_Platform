@@ -288,9 +288,7 @@ class SessionHub:
             return 0, None
 
         events = [
-            event
-            for event in self._user_replay.get(connection.user_id, ())
-            if event.seq > last_seq
+            event for event in self._user_replay.get(connection.user_id, ()) if event.seq > last_seq
         ]
 
         delivered = 0
