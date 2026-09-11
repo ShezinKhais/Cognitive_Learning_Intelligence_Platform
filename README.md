@@ -31,6 +31,34 @@ third-party AI service.
 
 ---
 
+## Where the project is
+
+Work is organised into nine phases. Each phase is a slice across all six workstreams
+rather than a component, so every phase ends with something that runs end to end.
+
+| Phase | Covers | State |
+|---|---|---|
+| 0 | Repository, CI, database and feasibility spikes | Done |
+| 1 | Data and API spine: authentication, RBAC, consent, the frozen contract | Done |
+| 2 | Content and question pipeline: upload, extraction, chunking, embeddings, question generation | In progress |
+| 3 | Live session core: WebSocket hub, prompt scheduler, session lifecycle | Planned |
+| 4 | Microsoft Teams integration | Planned |
+| 5 | AI intelligence layer: free-text classification and the Socratic chatbot | Planned |
+| 6 | Attention signals and breakout groups | Planned |
+| 7 | Reporting, retention and governance | Planned |
+| 8 | Hardening, load testing and delivery | Planned |
+
+What runs today: logging in, roles and consent, the administrator timetable and roster
+import, and the student interface. Phase 2 is landing in pieces, starting with upload,
+background processing and live progress, followed by question generation, retrieval and
+material persistence. Everything past that returns 501 and names the workstream that owns
+it, so the shape of the system is visible before it is built.
+
+Current status per issue is on the [milestones](../../milestones), which are the source of
+truth rather than this table.
+
+---
+
 ## Running it locally
 
 Requires Python 3.11 to 3.13, Node LTS, Docker and Ollama. CI runs 3.12.
@@ -45,7 +73,9 @@ ollama pull nomic-embed-text
 
 # backend, on http://localhost:8000
 cd backend
-python -m venv .venv && .venv/Scripts/activate
+python -m venv .venv
+.venv/Scripts/activate      # Windows
+source .venv/bin/activate   # macOS and Linux
 pip install -e ".[dev]"
 cp .env.example .env
 uvicorn app.main:app --reload
@@ -63,8 +93,28 @@ curl http://localhost:8000/api/v1/ready
 That reports whether Postgres and Ollama are actually reachable, and names what is wrong
 when they are not. Interactive API docs are at `/docs` in development.
 
+Development sign-in accounts for each role are listed in
+[CYBER1_SETUP.md](CYBER1_SETUP.md), which is a Phase 1 snapshot and covers the parts of
+the app that existed then.
+
 The Teams integration stays dormant until a tenant is available. `/health` reports
 `teams_configured: false` and the app runs standalone in the meantime.
+
+---
+
+## Checks
+
+The same three run in CI, and all of them expect to be run from `backend/`.
+
+```bash
+cd backend
+ruff check . && ruff format --check .
+pytest -q
+python scripts/export_contract.py --check
+```
+
+The test suite needs the database from `docker compose up -d`. The frontend has its own:
+`npx tsc -b`, `npm run lint` and `npm run build` from `frontend/`.
 
 ---
 
@@ -76,6 +126,11 @@ backend/
   app/schemas       request, response and event contracts
   app/core          config, database, errors, logging
   app/realtime      WebSocket connections and fan-out
+  app/services      extraction, storage, background jobs, the processing pipeline
+  app/models        SQLAlchemy tables
+  app/repositories  queries, kept out of the routes
+  app/auth          tokens, password handling, consent
+  tests/            pytest, mirroring the app layout
   openapi.json      REST contract, generated
   events.schema.json  WebSocket contract, generated
 
@@ -94,7 +149,7 @@ of date, so they can be trusted as the interface between workstreams.
 Regenerate after changing any schema:
 
 ```bash
-python scripts/export_contract.py
+cd backend && python scripts/export_contract.py
 ```
 
 Routes that return 501 have an agreed contract but no implementation yet. The response
