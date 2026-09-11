@@ -103,6 +103,10 @@ class Settings(BaseSettings):
     # the backend working directory in development; a deployment points this at
     # a mounted volume, or swaps LocalDiskStorage for a blob backend.
     upload_storage_dir: str = "var/uploads"
+    # Extraction holds a CPU for fifteen to eighteen seconds per document, so
+    # more parsers than cores means every lecturer waits longer than they would
+    # have queued. Two is right for a laptop; a deployed host raises it.
+    max_concurrent_material_jobs: int = 2
 
     # Retention (UAE PDPL)
     data_retention_days: int = 90
