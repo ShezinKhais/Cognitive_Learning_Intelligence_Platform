@@ -26,16 +26,16 @@ export interface MaterialPagePreview {
   page_number: number
   text: string
   word_count?: number
-  image_count?: number
+  visual_element_count?: number
   is_thin?: boolean
-  is_image_heavy?: boolean
+  is_visual_heavy?: boolean
 }
 
 /**
  * The fields through `uploaded_at` are the frozen MaterialOut contract.
- * `warnings` and `pages` are optional Phase 2 extensions used by the preview.
- * Keeping them optional lets the UI work while AI 1 and BBIS finalise their
- * persistence response without inventing client-side content.
+ * `warnings` and `pages` are Phase 2 response fields shared with AI 1 and
+ * BBIS. Defining them on both sides prevents the response model from silently
+ * filtering the preview data before it reaches the client.
  */
 export interface Material {
   id: string
@@ -47,8 +47,8 @@ export interface Material {
   chunk_count: number | null
   error: string | null
   uploaded_at: string
-  warnings?: Array<string | MaterialWarning>
-  pages?: MaterialPagePreview[]
+  warnings: string[]
+  pages: MaterialPagePreview[]
 }
 
 export interface MaterialProgress {

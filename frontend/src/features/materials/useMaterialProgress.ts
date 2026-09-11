@@ -15,7 +15,13 @@ import type {
 
 interface ServerEvent {
   type: string
+  seq?: number
   data?: unknown
+}
+
+interface MaterialProgressOptions {
+  enabled?: boolean
+  onReconnect?: () => void
 }
 
 const MATERIAL_STAGES = new Set([
@@ -55,26 +61,38 @@ function progressSocketUrl(): string {
 
 export function useMaterialProgress(
   onProgress: (progress: MaterialProgress) => void,
+  options: MaterialProgressOptions = {},
 ): ProgressConnectionStatus {
   const callback = useRef(onProgress)
+  const reconnectCallback = useRef(options.onReconnect)
   const [status, setStatus] = useState<ProgressConnectionStatus>('connecting')
+  const enabled = options.enabled ?? true
 
   useEffect(() => {
     callback.current = onProgress
-  }, [onProgress])
+    reconnectCallback.current = options.onReconnect
+  }, [onProgress, options.onReconnect])
 
   useEffect(() => {
+    if (!enabled) {
+      setStatus('disconnected')
+      return
+    }
+
     const token = getAccessToken()
 
     if (!token) {
       setStatus('disconnected')
       return
     }
+    const accessToken: string = token
 
     let socket: WebSocket | null = null
     let retryTimer: number | undefined
     let stopped = false
     let retryCount = 0
+    let lastSeq = 0
+    let connectedOnce = false
 
     function connect() {
       if (stopped) return
@@ -84,9 +102,14 @@ export function useMaterialProgress(
       socket = currentSocket
 
       currentSocket.addEventListener('open', () => {
+        const data: { token: string; last_seq?: number } = {
+          token: accessToken,
+        }
+        if (lastSeq > 0) data.last_seq = lastSeq
+
         currentSocket.send(JSON.stringify({
           type: 'auth',
-          data: { token },
+          data,
         }))
       })
 
@@ -99,9 +122,19 @@ export function useMaterialProgress(
           return
         }
 
+        if (
+          typeof message.seq === 'number' &&
+          message.seq > lastSeq
+        ) {
+          lastSeq = message.seq
+        }
+
         if (message.type === 'ready') {
+          const reconnected = connectedOnce
+          connectedOnce = true
           retryCount = 0
           setStatus('connected')
+          if (reconnected) reconnectCallback.current?.()
           return
         }
 
@@ -141,7 +174,7 @@ export function useMaterialProgress(
       if (retryTimer !== undefined) window.clearTimeout(retryTimer)
       socket?.close()
     }
-  }, [])
+  }, [enabled])
 
   return status
 }

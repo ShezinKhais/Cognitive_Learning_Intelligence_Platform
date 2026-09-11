@@ -387,6 +387,13 @@
             ],
             "title": "Page Count"
           },
+          "pages": {
+            "items": {
+              "$ref": "#/components/schemas/MaterialPageOut"
+            },
+            "title": "Pages",
+            "type": "array"
+          },
           "size_bytes": {
             "title": "Size Bytes",
             "type": "integer"
@@ -398,6 +405,13 @@
             "format": "date-time",
             "title": "Uploaded At",
             "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "required": [
@@ -409,6 +423,60 @@
           "uploaded_at"
         ],
         "title": "MaterialOut",
+        "type": "object"
+      },
+      "MaterialPageOut": {
+        "description": "Extracted text and quality indicators for one source page or slide.",
+        "properties": {
+          "is_thin": {
+            "default": false,
+            "title": "Is Thin",
+            "type": "boolean"
+          },
+          "is_visual_heavy": {
+            "default": false,
+            "title": "Is Visual Heavy",
+            "type": "boolean"
+          },
+          "page_number": {
+            "minimum": 1.0,
+            "title": "Page Number",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "visual_element_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visual Element Count"
+          },
+          "word_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Word Count"
+          }
+        },
+        "required": [
+          "page_number",
+          "text"
+        ],
+        "title": "MaterialPageOut",
         "type": "object"
       },
       "MaterialStatus": {

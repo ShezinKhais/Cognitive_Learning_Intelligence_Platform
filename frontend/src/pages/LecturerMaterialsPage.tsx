@@ -39,6 +39,8 @@ import { useMaterialProgress } from '../features/materials/useMaterialProgress'
 
 const ACCEPTED_EXTENSIONS = ['pdf', 'pptx', 'docx', 'txt']
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+const MATERIAL_PIPELINE_ENABLED =
+  import.meta.env.VITE_MATERIAL_PIPELINE_ENABLED === 'true'
 
 interface LocalFile {
   name: string
@@ -109,6 +111,13 @@ export default function LecturerMaterialsPage() {
     try {
       const refreshed = await getMaterial(materialId)
       setMaterial(refreshed)
+      if (
+        refreshed.status === 'completed' ||
+        refreshed.status === 'failed'
+      ) {
+        setProgress(initialProgress(refreshed))
+        setError(refreshed.error)
+      }
     } catch (caught: unknown) {
       if (caught instanceof ApiError && caught.status === 401) {
         clearAccessToken()
@@ -135,7 +144,18 @@ export default function LecturerMaterialsPage() {
     }
   }, [refreshMaterial])
 
-  const connectionStatus = useMaterialProgress(receiveProgress)
+  const recoverProgress = useCallback(() => {
+    const materialId = activeMaterialId.current
+    if (materialId) void refreshMaterial(materialId)
+  }, [refreshMaterial])
+
+  const connectionStatus = useMaterialProgress(
+    receiveProgress,
+    {
+      enabled: MATERIAL_PIPELINE_ENABLED,
+      onReconnect: recoverProgress,
+    },
+  )
 
   async function handleFile(file: File) {
     const validationMessage = validateUpload(file)
@@ -205,7 +225,9 @@ export default function LecturerMaterialsPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            <ConnectionBadge status={connectionStatus} />
+            {MATERIAL_PIPELINE_ENABLED && (
+              <ConnectionBadge status={connectionStatus} />
+            )}
             <button
               type="button"
               onClick={() => {
@@ -232,7 +254,9 @@ export default function LecturerMaterialsPage() {
           </p>
         </div>
 
-        {!localFile ? (
+        {!MATERIAL_PIPELINE_ENABLED ? (
+          <PipelineUnavailable />
+        ) : !localFile ? (
           <UploadDropzone
             inputRef={inputRef}
             uploading={uploading}
@@ -273,6 +297,25 @@ export default function LecturerMaterialsPage() {
         )}
       </div>
     </main>
+  )
+}
+
+function PipelineUnavailable() {
+  return (
+    <section className="mt-8 rounded-xl border border-warning/20 bg-card p-6 shadow-[var(--shadow-card)]">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 shrink-0 text-warning" aria-hidden="true" size={21} />
+        <div>
+          <h3 className="font-semibold text-card-foreground">
+            Material processing is being connected
+          </h3>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+            Uploads will become available when the background processor and lecturer progress
+            channel are deployed. No file can be selected until that server capability is ready.
+          </p>
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -586,7 +629,7 @@ function PagePreview({
               Thin content
             </span>
           )}
-          {page.is_image_heavy && (
+          {page.is_visual_heavy && (
             <span className="inline-flex items-center gap-1 rounded-full bg-warning/10 px-2 py-0.5 text-[11px] font-medium text-warning">
               <ImageIcon aria-hidden="true" size={11} /> Image-heavy
             </span>
@@ -603,13 +646,12 @@ function PagePreview({
 }
 
 function normaliseWarnings(material: Material): MaterialWarning[] {
-  const supplied = (material.warnings ?? []).map((warning) =>
-    typeof warning === 'string'
-      ? { message: warning, severity: 'warning' as const }
-      : warning,
-  )
+  const supplied = material.warnings.map((warning) => ({
+    message: warning,
+    severity: 'warning' as const,
+  }))
 
-  const pageWarnings = (material.pages ?? []).flatMap((page) => {
+  const pageWarnings = material.pages.flatMap((page) => {
     const warnings: MaterialWarning[] = []
 
     if (page.is_thin) {
@@ -621,7 +663,7 @@ function normaliseWarnings(material: Material): MaterialWarning[] {
       })
     }
 
-    if (page.is_image_heavy) {
+    if (page.is_visual_heavy) {
       warnings.push({
         code: 'IMAGE_HEAVY',
         message: 'This source relies heavily on images; check the extracted text before generating questions.',
