@@ -31,17 +31,16 @@ from app.services.uploads import (
     stream_upload,
 )
 
-router = APIRouter(prefix="/materials", tags=["content"])
+router = APIRouter(
+    prefix="/materials",
+    tags=["content"],
+    dependencies=[Depends(require_roles(Role.LECTURER, Role.ADMIN))],
+)
 
 DEFAULT_CONTENT_TYPE = "application/octet-stream"
 
 
-@router.post(
-    "",
-    response_model=MaterialOut,
-    status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_roles(Role.LECTURER, Role.ADMIN))],
-)
+@router.post("", response_model=MaterialOut, status_code=status.HTTP_202_ACCEPTED)
 async def upload_material(file: UploadFile, principal: CurrentUser) -> MaterialOut:
     """Accepts PDF, PPTX, DOCX or TXT.
 
