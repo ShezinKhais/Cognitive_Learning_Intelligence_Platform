@@ -34,7 +34,7 @@ from app.schemas.events import MaterialStage
 from app.services.jobs import BackgroundProcessor, JobRegistry
 from app.services.pipeline import MaterialPipeline
 from app.services.storage import LocalDiskStorage
-from app.services.uploads import get_background_processor
+from app.services.uploads import get_background_processor, material_extensions
 
 from .dev_credentials import LECTURER_PASSWORD, STUDENT_PASSWORD
 
@@ -80,8 +80,10 @@ def live_client(app: FastAPI):
 @pytest.fixture
 def uploads(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """Point the route at a throwaway storage root and a fresh registry."""
-    settings = Settings(upload_storage_dir=str(tmp_path))
-    storage = LocalDiskStorage(settings)
+    # allowed_upload_extensions is left at the shipped default, spreadsheets
+    # included, so the narrowing the route relies on is actually exercised.
+    settings = Settings(_env_file=None, upload_storage_dir=str(tmp_path))
+    storage = LocalDiskStorage(settings, allowed=material_extensions(settings))
     registry = JobRegistry()
     pipeline = MaterialPipeline(
         storage=storage,
@@ -210,3 +212,22 @@ async def test_shutdown_waits_for_a_job_that_is_still_running(app: FastAPI) -> N
         pass
 
     assert processor.in_flight == 0
+
+
+@pytest.mark.parametrize("name", ["grades.xlsx", "roster.csv"])
+def test_a_spreadsheet_is_refused_rather_than_accepted_and_failed(
+    live_client: TestClient, uploads, name: str
+) -> None:
+    """CSV and XLSX are in the shipped upload list for the administrator
+    importers, and no lecture parser reads either. Accepting one here would
+    answer 202 for a file that can only fail a minute later."""
+    headers = login(live_client, "lecturer@clip.example.com", LECTURER_PASSWORD)
+
+    response = live_client.post(
+        "/api/v1/materials",
+        headers=headers,
+        files={"file": (name, b"a,b\n1,2\n", "text/csv")},
+    )
+
+    assert response.status_code == 422
+    assert name.rsplit(".", 1)[1] in response.json()["error"]["message"]

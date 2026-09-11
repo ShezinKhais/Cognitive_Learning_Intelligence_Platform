@@ -19,7 +19,8 @@ from functools import lru_cache
 
 from fastapi import UploadFile
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
+from app.services.extraction import SUPPORTED
 from app.services.jobs import BackgroundProcessor, JobRegistry
 from app.services.pipeline import MaterialPipeline
 from app.services.storage import CHUNK_BYTES, LocalDiskStorage
@@ -36,9 +37,21 @@ async def stream_upload(file: UploadFile) -> AsyncIterator[bytes]:
         yield block
 
 
+def material_extensions(settings: Settings) -> set[str]:
+    """What the material route will accept, which is narrower than the config.
+
+    allowed_upload_extensions also serves the administrator CSV and XLSX
+    importers, and the shipped default includes both. Accepting a spreadsheet
+    here would answer 202 for a file extraction refuses, so the intersection is
+    taken: an operator can narrow the list, but not widen it past the parsers.
+    """
+    return settings.upload_extensions & set(SUPPORTED)
+
+
 @lru_cache
 def get_material_storage() -> LocalDiskStorage:
-    return LocalDiskStorage(get_settings())
+    settings = get_settings()
+    return LocalDiskStorage(settings, allowed=material_extensions(settings))
 
 
 @lru_cache

@@ -64,6 +64,13 @@ class SessionHub:
         # candidate once the map reaches MAX_TRACKED_SESSIONS.
         self._seq: OrderedDict[UUID, int] = OrderedDict()
         self._lock = asyncio.Lock()
+        # Assigning a seq and writing it to the socket have to be one step.
+        # Two jobs reporting on the same user channel otherwise take numbers 1
+        # and 2, and whichever socket write completes first arrives first, so a
+        # client tracking last_seq sees 2 followed by 1 and reads a gap where
+        # nothing was lost. Held separately from _lock so that delivery does
+        # not block a connection joining or leaving.
+        self._delivery_lock = asyncio.Lock()
 
     async def join(self, connection: Connection) -> None:
         async with self._lock:
@@ -168,6 +175,11 @@ class SessionHub:
         A send failure removes the connection rather than aborting the
         broadcast: one student's dropped socket must not stop the other 39
         receiving a question.
+
+        Numbering is not serialised with delivery here, as it is on the user
+        channel. Nothing emits two session events concurrently yet, so the
+        ordering hazard is not reachable; it becomes reachable when the prompt
+        scheduler starts running alongside question delivery, which is #41.
         """
         event = self.build(session_id, event_type, data)
         payload = event.model_dump(mode="json")
@@ -199,21 +211,33 @@ class SessionHub:
 
         The user id doubles as the channel id, so seq stays monotonic across
         reconnects for as long as the counter lives.
+
+        Numbering and delivery happen under _delivery_lock because a lecturer
+        can have two uploads processing at once, and both report here. Dead
+        sockets are dropped after the lock is released, since leave() takes
+        _lock and would otherwise be waiting on a lock this call still holds.
         """
-        event = self.build(user_id, event_type, data)
-        payload = event.model_dump(mode="json")
-
-        async with self._lock:
-            targets = list(self._by_user.get(user_id, ()))
-
+        dead: list[Connection] = []
         delivered = 0
-        for connection in targets:
-            try:
-                await connection.websocket.send_json(payload)
-                delivered += 1
-            except Exception:
-                log.warning("user-channel send failed for user %s, dropping", user_id)
-                await self.leave(connection)
+
+        async with self._delivery_lock:
+            event = self.build(user_id, event_type, data)
+            payload = event.model_dump(mode="json")
+
+            async with self._lock:
+                targets = list(self._by_user.get(user_id, ()))
+
+            for connection in targets:
+                try:
+                    await connection.websocket.send_json(payload)
+                    delivered += 1
+                except Exception:
+                    dead.append(connection)
+
+        for connection in dead:
+            log.warning("user-channel send failed for user %s, dropping", user_id)
+            await self.leave(connection)
+
         return delivered
 
     async def send_to_user(

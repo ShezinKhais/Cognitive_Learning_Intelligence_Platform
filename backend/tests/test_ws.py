@@ -4,6 +4,7 @@ The hub itself is exercised directly rather than through a socket, so these run
 without a server or a database.
 """
 
+import asyncio
 from uuid import uuid4
 
 import pytest
@@ -763,3 +764,32 @@ async def test_a_session_connection_is_reachable_on_both_channels() -> None:
         )
         == 1
     )
+
+
+async def test_concurrent_progress_arrives_in_sequence_order() -> None:
+    """A lecturer can have two uploads processing at once, and both report on
+    the same channel. Sockets do not complete their writes in equal time, so
+    numbering and delivery have to be one step or the client sees 2 then 1 and
+    reads a gap where nothing was lost."""
+
+    class UnevenSocket:
+        def __init__(self) -> None:
+            self.received: list[int] = []
+
+        async def send_json(self, payload: dict) -> None:
+            await asyncio.sleep(0.01 if payload["seq"] % 2 else 0.0)
+            self.received.append(payload["seq"])
+
+    hub = SessionHub()
+    lecturer = uuid4()
+    socket = UnevenSocket()
+    await hub.join(Connection(socket, lecturer, None))
+
+    await asyncio.gather(
+        *[
+            hub.send_to_user_channel(lecturer, ServerEventType.MATERIAL_PROGRESS, {})
+            for _ in range(6)
+        ]
+    )
+
+    assert socket.received == [1, 2, 3, 4, 5, 6]

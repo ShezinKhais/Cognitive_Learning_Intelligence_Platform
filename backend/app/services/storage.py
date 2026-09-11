@@ -108,10 +108,15 @@ class LocalDiskStorage:
     on the same afternoon do not collide and neither can overwrite the other.
     """
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, allowed: set[str] | None = None) -> None:
         self._root = Path(settings.upload_storage_dir).resolve()
         self._max_bytes = settings.max_upload_bytes
-        self._allowed = settings.upload_extensions
+        # allowed_upload_extensions is shared with the administrator timetable
+        # and roster importers, so it includes spreadsheet formats no lecture
+        # parser can read. A caller that can only process some of that list
+        # passes the narrower set rather than accepting a file, answering 202
+        # and failing a minute later in a job nobody is watching.
+        self._allowed = settings.upload_extensions if allowed is None else allowed
 
     @property
     def root(self) -> Path:
