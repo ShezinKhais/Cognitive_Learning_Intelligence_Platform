@@ -19,6 +19,13 @@ interface ServerEvent {
   data?: unknown
 }
 
+function resumedSequence(value: unknown): number | null {
+  if (!value || typeof value !== 'object') return null
+
+  const resumed = (value as Record<string, unknown>).resumed_from_seq
+  return typeof resumed === 'number' ? resumed : null
+}
+
 interface MaterialProgressOptions {
   enabled?: boolean
   onReconnect?: () => void
@@ -102,10 +109,12 @@ export function useMaterialProgress(
       socket = currentSocket
 
       currentSocket.addEventListener('open', () => {
-        const data: { token: string; last_seq?: number } = {
+        const data = {
           token: accessToken,
+          // Zero matters when the socket connects after a very fast upload:
+          // it asks the server to replay progress emitted before READY.
+          last_seq: lastSeq,
         }
-        if (lastSeq > 0) data.last_seq = lastSeq
 
         currentSocket.send(JSON.stringify({
           type: 'auth',
@@ -133,6 +142,14 @@ export function useMaterialProgress(
           const reconnected = connectedOnce
           connectedOnce = true
           retryCount = 0
+
+          // A null cursor means the backend restarted or evicted this user's
+          // bounded replay buffer. Accept the new stream from sequence zero;
+          // the reconnect callback still refreshes the REST snapshot.
+          if (reconnected && resumedSequence(message.data) === null) {
+            lastSeq = 0
+          }
+
           setStatus('connected')
           if (reconnected) reconnectCallback.current?.()
           return

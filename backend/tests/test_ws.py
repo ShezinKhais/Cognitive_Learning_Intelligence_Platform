@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from fastapi.websockets import WebSocketDisconnect
 
 from app.realtime.hub import (
+    MAX_REPLAY_EVENTS_PER_CHANNEL,
     MAX_TRACKED_SESSIONS,
     Connection,
     SessionHub,
@@ -97,6 +98,7 @@ def test_socket_accepts_a_valid_token(
                 "type": ClientEventType.AUTH.value,
                 "data": {
                     "token": token,
+                    "last_seq": 0,
                 },
             }
         )
@@ -106,6 +108,7 @@ def test_socket_accepts_a_valid_token(
     assert ready["type"] == "ready"
     assert ready["data"]["user_id"] == str(STUDENT_ID)
     assert ready["data"]["session_id"] is None
+    assert ready["data"]["resumed_from_seq"] == 0
 
 
 def test_socket_rejects_unverified_session_membership(
@@ -305,6 +308,120 @@ async def test_one_dead_connection_does_not_stop_the_broadcast() -> None:
 
     assert delivered == 1
     assert hub.participant_count(session) == 1
+
+
+async def test_user_channel_reaches_connections_without_a_session() -> None:
+    """Material progress is addressed by the authenticated uploader id."""
+    hub = SessionHub()
+    user_id = uuid4()
+    socket = _FakeSocket()
+
+    await hub.join(
+        Connection(
+            socket,
+            user_id,
+            None,
+        )
+    )  # type: ignore[arg-type]
+
+    delivered = await hub.send_to_user_channel(
+        user_id,
+        ServerEventType.MATERIAL_PROGRESS,
+        {
+            "material_id": str(uuid4()),
+            "stage": "extracting",
+            "percent": 25,
+            "message": None,
+        },
+    )
+
+    assert delivered == 1
+    assert socket.sent[0]["type"] == "material.progress"
+    assert socket.sent[0]["seq"] == 1
+
+
+async def test_user_channel_is_private() -> None:
+    hub = SessionHub()
+    target_id = uuid4()
+    target = _FakeSocket()
+    bystander = _FakeSocket()
+    session_socket = _FakeSocket()
+
+    await hub.join(Connection(target, target_id, None))  # type: ignore[arg-type]
+    await hub.join(Connection(bystander, uuid4(), None))  # type: ignore[arg-type]
+    await hub.join(
+        Connection(session_socket, target_id, uuid4())  # type: ignore[arg-type]
+    )
+
+    delivered = await hub.send_to_user_channel(
+        target_id,
+        ServerEventType.MATERIAL_PROGRESS,
+        {},
+    )
+
+    assert delivered == 1
+    assert len(target.sent) == 1
+    assert bystander.sent == []
+    assert session_socket.sent == []
+
+
+async def test_user_channel_replays_progress_after_reconnect() -> None:
+    hub = SessionHub()
+    user_id = uuid4()
+
+    for percent in (10, 40, 75):
+        await hub.send_to_user_channel(
+            user_id,
+            ServerEventType.MATERIAL_PROGRESS,
+            {"percent": percent},
+        )
+
+    socket = _FakeSocket()
+    replayed, resumed_from = await hub.join_and_replay(
+        Connection(socket, user_id, None),  # type: ignore[arg-type]
+        last_seq=1,
+    )
+
+    assert replayed == 2
+    assert resumed_from == 1
+    assert [message["seq"] for message in socket.sent] == [2, 3]
+
+
+async def test_user_channel_replay_is_bounded() -> None:
+    hub = SessionHub()
+    user_id = uuid4()
+
+    for percent in range(MAX_REPLAY_EVENTS_PER_CHANNEL + 10):
+        await hub.send_to_user_channel(
+            user_id,
+            ServerEventType.MATERIAL_PROGRESS,
+            {"percent": percent},
+        )
+
+    socket = _FakeSocket()
+    replayed, resumed_from = await hub.join_and_replay(
+        Connection(socket, user_id, None),  # type: ignore[arg-type]
+        last_seq=0,
+    )
+
+    assert replayed == MAX_REPLAY_EVENTS_PER_CHANNEL
+    assert resumed_from == 0
+    assert socket.sent[0]["seq"] == 11
+
+
+async def test_replay_rejects_a_cursor_from_an_old_server_stream() -> None:
+    hub = SessionHub()
+    user_id = uuid4()
+    socket = _FakeSocket()
+
+    replayed, resumed_from = await hub.join_and_replay(
+        Connection(socket, user_id, None),  # type: ignore[arg-type]
+        last_seq=9,
+    )
+
+    assert replayed == 0
+    assert resumed_from is None
+    assert socket.sent == []
 
 
 async def test_targeted_send_is_private() -> None:

@@ -101,6 +101,7 @@ function initialProgress(material: Material): MaterialProgress {
 export default function LecturerMaterialsPage() {
   const inputRef = useRef<HTMLInputElement>(null)
   const activeMaterialId = useRef<string | null>(null)
+  const bufferedProgress = useRef(new Map<string, MaterialProgress>())
   const [localFile, setLocalFile] = useState<LocalFile | null>(null)
   const [material, setMaterial] = useState<Material | null>(null)
   const [progress, setProgress] = useState<MaterialProgress | null>(null)
@@ -133,9 +134,7 @@ export default function LecturerMaterialsPage() {
     }
   }, [])
 
-  const receiveProgress = useCallback((next: MaterialProgress) => {
-    if (next.material_id !== activeMaterialId.current) return
-
+  const applyProgress = useCallback((next: MaterialProgress) => {
     setProgress(next)
 
     if (next.stage === 'failed') {
@@ -145,6 +144,22 @@ export default function LecturerMaterialsPage() {
       void refreshMaterial(next.material_id)
     }
   }, [refreshMaterial])
+
+  const receiveProgress = useCallback((next: MaterialProgress) => {
+    if (next.material_id !== activeMaterialId.current) {
+      // The 202 response and WebSocket use separate transports. A fast worker
+      // can publish before the POST continuation knows which material is
+      // active, so retain the latest state until the response supplies its id.
+      bufferedProgress.current.set(next.material_id, next)
+      if (bufferedProgress.current.size > 32) {
+        const oldest = bufferedProgress.current.keys().next().value
+        if (oldest !== undefined) bufferedProgress.current.delete(oldest)
+      }
+      return
+    }
+
+    applyProgress(next)
+  }, [applyProgress])
 
   const recoverProgress = useCallback(() => {
     const materialId = activeMaterialId.current
@@ -172,6 +187,7 @@ export default function LecturerMaterialsPage() {
     setProgress(null)
     setError(validationMessage)
     activeMaterialId.current = null
+    bufferedProgress.current.clear()
 
     if (validationMessage) return
 
@@ -181,7 +197,14 @@ export default function LecturerMaterialsPage() {
       const uploaded = await uploadMaterial(file)
       activeMaterialId.current = uploaded.id
       setMaterial(uploaded)
-      setProgress(initialProgress(uploaded))
+
+      const buffered = bufferedProgress.current.get(uploaded.id)
+      bufferedProgress.current.delete(uploaded.id)
+      if (buffered) {
+        applyProgress(buffered)
+      } else {
+        setProgress(initialProgress(uploaded))
+      }
     } catch (caught: unknown) {
       if (caught instanceof ApiError && caught.status === 401) {
         clearAccessToken()
@@ -207,6 +230,7 @@ export default function LecturerMaterialsPage() {
 
   function resetUpload() {
     activeMaterialId.current = null
+    bufferedProgress.current.clear()
     setLocalFile(null)
     setMaterial(null)
     setProgress(null)
@@ -648,12 +672,12 @@ function PagePreview({
 }
 
 function normaliseWarnings(material: Material): MaterialWarning[] {
-  const supplied = material.warnings.map((warning) => ({
+  const supplied = (material.warnings ?? []).map((warning) => ({
     message: warning,
     severity: 'warning' as const,
   }))
 
-  const pageWarnings = material.pages.flatMap((page) => {
+  const pageWarnings = (material.pages ?? []).flatMap((page) => {
     const warnings: MaterialWarning[] = []
 
     if (page.is_thin) {

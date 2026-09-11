@@ -5,10 +5,9 @@ payload. Both directions are versioned together with the REST API.
 
 Ordering and replay
 -------------------
-Server events carry a monotonically increasing `seq` per session. A client that
-reconnects sends `last_seq` so the server can replay what it missed. The replay
-buffer itself lands in Phase 3; the protocol reserves the field now so clients
-do not need changing later.
+Server events carry a monotonically increasing `seq` per session or user
+channel. A client that reconnects sends `last_seq` so the server can replay
+missed material-progress events. Session-wide replay lands in Phase 3.
 
 Privacy
 -------
@@ -283,7 +282,7 @@ class ReadyPayload(BaseModel):
     user_id: UUID
     session_id: UUID | None = None
     resumed_from_seq: int | None = Field(
-        default=None, description="Set when the server replayed missed events."
+        default=None, description="Set when the server continued the requested sequence stream."
     )
 
 
@@ -294,7 +293,7 @@ class ErrorPayload(BaseModel):
 
 class ServerEvent(BaseModel):
     type: ServerEventType
-    seq: int = Field(description="Monotonic per session. Clients use it to detect gaps.")
+    seq: int = Field(description="Monotonic per channel. Clients use it to detect gaps.")
     ts: datetime
     data: dict[str, Any] = Field(default_factory=dict)
 

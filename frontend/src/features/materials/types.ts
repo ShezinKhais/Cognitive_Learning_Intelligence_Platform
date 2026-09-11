@@ -47,8 +47,8 @@ export interface Material {
   chunk_count: number | null
   error: string | null
   uploaded_at: string
-  warnings: string[]
-  pages: MaterialPagePreview[]
+  warnings?: string[] | null
+  pages?: MaterialPagePreview[] | null
 }
 
 export interface MaterialProgress {
