@@ -25,8 +25,8 @@ export interface MaterialWarning {
 export interface MaterialPagePreview {
   page_number: number
   text: string
-  word_count?: number
-  visual_element_count?: number
+  word_count?: number | null
+  visual_element_count?: number | null
   is_thin?: boolean
   is_visual_heavy?: boolean
 }

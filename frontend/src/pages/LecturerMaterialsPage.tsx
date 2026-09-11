@@ -110,6 +110,8 @@ export default function LecturerMaterialsPage() {
   const refreshMaterial = useCallback(async (materialId: string) => {
     try {
       const refreshed = await getMaterial(materialId)
+      if (activeMaterialId.current !== materialId) return
+
       setMaterial(refreshed)
       if (
         refreshed.status === 'completed' ||
@@ -621,7 +623,7 @@ function PagePreview({
           {sourceLabel} {page.page_number}
         </span>
         <span className="flex flex-wrap items-center gap-2">
-          {page.word_count !== undefined && (
+          {page.word_count != null && (
             <span className="text-xs text-muted-foreground">{page.word_count} words</span>
           )}
           {page.is_thin && (
