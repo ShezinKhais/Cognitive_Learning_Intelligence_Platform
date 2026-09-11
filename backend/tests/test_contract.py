@@ -100,6 +100,23 @@ def test_everything_is_versioned(client: TestClient) -> None:
         assert path.startswith("/api/v1/"), f"{path} is outside the versioned prefix"
 
 
+def test_material_contract_exposes_preview_and_warning_data(client: TestClient) -> None:
+    schemas = client.get("/api/v1/openapi.json").json()["components"]["schemas"]
+    material = schemas["MaterialOut"]["properties"]
+    page = schemas["MaterialPageOut"]["properties"]
+
+    assert "warnings" in material
+    assert "pages" in material
+    assert {
+        "page_number",
+        "text",
+        "word_count",
+        "visual_element_count",
+        "is_thin",
+        "is_visual_heavy",
+    } <= set(page)
+
+
 def test_engagement_and_comprehension_stay_separate(client: TestClient) -> None:
     """The design rests on these being distinct measures. A single schema
     carrying both would be the first step to merging them."""

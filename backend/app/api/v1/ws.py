@@ -6,9 +6,9 @@ The client opens the socket and must send an `auth` event first. Anything else
 before authentication closes the connection. On success the server replies
 `ready`, after which the connection is joined to its session room.
 
-Every server message carries a `seq` that increases monotonically within a
-session. Clients track the highest seq they have seen and send it as `last_seq`
-when reconnecting.
+Every ordered server message carries a `seq` that increases monotonically
+within its session or authenticated user channel. Clients track the highest
+seq they have seen and send it as `last_seq` when reconnecting.
 
 Closing codes
 -------------
@@ -114,7 +114,7 @@ async def _authenticate(
     websocket: WebSocket,
     settings: AppSettings,
     db: AsyncSession,
-) -> tuple[UUID, UUID | None] | None:
+) -> tuple[UUID, UUID | None, int | None] | None:
     """Read and validate the opening auth event.
 
     Development resolves JWT users from the local Cyber 1 identities.
@@ -194,7 +194,7 @@ async def _authenticate(
 
         return None
 
-    return user.id, payload.session_id
+    return user.id, payload.session_id, payload.last_seq
 
 
 def _session_access_allowed(
@@ -242,7 +242,7 @@ async def session_socket(
     if identity is None:
         return
 
-    user_id, session_id = identity
+    user_id, session_id, last_seq = identity
 
     # A valid JWT alone does not authorize an arbitrary session.
     if not _session_access_allowed(
@@ -261,15 +261,19 @@ async def session_socket(
         session_id=session_id,
     )
 
-    await hub.join(connection)
-
     try:
+        _replayed, resumed_from_seq = await hub.join_and_replay(
+            connection,
+            last_seq,
+        )
+
         await _send(
             websocket,
             ServerEventType.READY,
             {
                 "user_id": str(user_id),
                 "session_id": (str(session_id) if session_id else None),
+                "resumed_from_seq": resumed_from_seq,
             },
         )
 

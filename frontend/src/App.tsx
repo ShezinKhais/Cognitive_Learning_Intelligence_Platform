@@ -8,8 +8,10 @@ import { StudentAppProvider } from './features/student/StudentAppContext'
 import AccessDeniedPage from './pages/AccessDeniedPage'
 import AdminConsole from './pages/AdminConsole'
 import ConsentPage from './pages/ConsentPage'
+import LecturerMaterialsPage from './pages/LecturerMaterialsPage'
 import LoginPage from './pages/LoginPage'
 import ProtectedAdminRoute from './pages/ProtectedAdminRoute'
+import ProtectedLecturerRoute from './pages/ProtectedLecturerRoute'
 import ProtectedStudentPage from './pages/ProtectedStudentPage'
 import SystemStatusPage from './pages/SystemStatusPage'
 
@@ -57,6 +59,13 @@ export default function App() {
         <Route
           path="/admin"
           element={<AdminConsole />}
+        />
+      </Route>
+
+      <Route element={<ProtectedLecturerRoute />}>
+        <Route
+          path="/lecturer/materials"
+          element={<LecturerMaterialsPage />}
         />
       </Route>
 

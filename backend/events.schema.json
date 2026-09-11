@@ -244,7 +244,7 @@
           "type": "object"
         },
         "seq": {
-          "description": "Monotonic per session. Clients use it to detect gaps.",
+          "description": "Monotonic per channel. Clients use it to detect gaps.",
           "title": "Seq",
           "type": "integer"
         },
@@ -672,7 +672,7 @@
             }
           ],
           "default": null,
-          "description": "Set when the server replayed missed events.",
+          "description": "Set when the server continued the requested sequence stream.",
           "title": "Resumed From Seq"
         },
         "session_id": {
