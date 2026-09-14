@@ -37,6 +37,7 @@ from app.realtime.hub import hub as default_hub
 from app.schemas.events import MaterialProgressPayload, MaterialStage, ServerEventType
 from app.services.extraction import ContentChunk, ProcessingResult, process_material
 from app.services.jobs import JobRegistry, JobStatus
+from app.services.processing_security import validate_processing_result
 from app.services.storage import MaterialStorage, StoredFile
 
 log = logging.getLogger("clip.pipeline")
@@ -160,6 +161,10 @@ class MaterialPipeline:
                 material_id,
                 self._settings.max_upload_bytes,
             )
+
+        # Cyber 1: reject excessive extraction results before embedding,
+        # persistence or question generation use additional resources.
+        validate_processing_result(result, self._settings)
 
         # Validation, extraction and chunking are one call in AI 1's module, so
         # this event marks chunking finished rather than started. Splitting it

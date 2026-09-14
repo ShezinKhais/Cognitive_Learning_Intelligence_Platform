@@ -113,6 +113,11 @@ class Settings(BaseSettings):
     max_material_archive_entries: int = 4096
     max_material_uncompressed_bytes: int = 209_715_200  # 200 MiB
 
+    # Cyber 1 post-extraction processing limits.
+    max_material_pages: int = 1000
+    max_extracted_characters: int = 2_000_000
+    max_material_chunks: int = 5000
+
     # Retention (UAE PDPL)
     data_retention_days: int = 90
 
