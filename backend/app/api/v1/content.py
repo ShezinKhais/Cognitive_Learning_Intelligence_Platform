@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, UploadFile, status
+from fastapi import APIRouter, Depends, UploadFile, status
 
-from app.api.deps import CurrentUser, DbSession, Paginated
+from app.api.deps import CurrentUser, DbSession, Paginated, require_roles
 from app.core.errors import not_implemented
 from app.schemas.common import Page
 from app.schemas.content import (
@@ -21,8 +21,13 @@ from app.schemas.content import (
     QuestionOut,
     QuestionReviewRequest,
 )
+from app.schemas.identity import Role
 
-router = APIRouter(prefix="/materials", tags=["content"])
+router = APIRouter(
+    prefix="/materials",
+    tags=["content"],
+    dependencies=[Depends(require_roles(Role.LECTURER, Role.ADMIN))],
+)
 
 
 @router.post("", response_model=MaterialOut, status_code=status.HTTP_202_ACCEPTED)

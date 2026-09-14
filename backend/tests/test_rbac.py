@@ -100,3 +100,33 @@ def test_admin_routes_without_a_token_return_401(client: TestClient) -> None:
         files={"file": ("roster.csv", ROSTER, "text/csv")},
     )
     assert response.status_code == 401
+
+
+def test_students_cannot_access_lecturer_material_routes(client: TestClient) -> None:
+    token = _login(client, "student@clip.example.com", STUDENT_PASSWORD)
+    _accept_terms(client, token)
+
+    response = client.post(
+        "/api/v1/materials",
+        headers=_headers(token),
+        files={"file": ("lecture.txt", b"Lecture content", "text/plain")},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
+def test_lecturers_pass_the_material_role_guard(client: TestClient) -> None:
+    token = _login(client, "lecturer@clip.example.com", LECTURER_PASSWORD)
+    _accept_terms(client, token)
+
+    response = client.post(
+        "/api/v1/materials",
+        headers=_headers(token),
+        files={"file": ("lecture.txt", b"Lecture content", "text/plain")},
+    )
+
+    # AI 1 still owns the handler, but a lecturer must reach it rather than
+    # being rejected by the role boundary.
+    assert response.status_code == 501
+    assert response.json()["error"]["code"] == "NOT_IMPLEMENTED"

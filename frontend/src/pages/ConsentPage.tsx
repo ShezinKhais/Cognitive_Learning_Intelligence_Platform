@@ -111,7 +111,11 @@ export default function ConsentPage() {
       }
 
       navigate(
-        user.role === 'admin' ? '/admin' : '/',
+        user.role === 'admin'
+          ? '/admin'
+          : user.role === 'lecturer'
+            ? '/lecturer/materials'
+            : '/',
         {
           replace: true,
         },
