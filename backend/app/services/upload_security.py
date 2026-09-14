@@ -5,6 +5,9 @@ Owner: Cyber 1, Phase 2.
 Filename extensions and client-supplied MIME types are not trusted on their
 own. Uploaded material is checked against its real file structure before it
 is handed to the extraction pipeline.
+
+Compressed Office documents are also bounded before parsing so a small ZIP
+archive cannot expand into excessive memory or disk use.
 """
 
 from __future__ import annotations
@@ -12,6 +15,7 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
+from app.core.config import Settings, get_settings
 from app.core.errors import ValidationError
 
 EXPECTED_MIME_TYPES: dict[str, set[str]] = {
@@ -51,7 +55,8 @@ def validate_claimed_mime(extension: str, content_type: str | None) -> None:
 
 
 def _validate_pdf(path: Path) -> None:
-    # The PDF header is expected within the first 1024 bytes.
+    """Check that a file claiming to be PDF has a PDF signature."""
+
     with path.open("rb") as handle:
         header = handle.read(1024)
 
@@ -62,7 +67,55 @@ def _validate_pdf(path: Path) -> None:
         )
 
 
-def _validate_office_zip(path: Path, extension: str) -> None:
+def _validate_archive_limits(
+    archive: zipfile.ZipFile,
+    path: Path,
+    settings: Settings,
+) -> None:
+    """Reject Office archives that are unsafe to expand or process."""
+
+    entries = archive.infolist()
+
+    if len(entries) > settings.max_material_archive_entries:
+        raise ValidationError(
+            "Office document contains too many internal files",
+            {
+                "filename": path.name,
+                "entries": len(entries),
+                "max_entries": settings.max_material_archive_entries,
+            },
+        )
+
+    total_uncompressed = 0
+
+    for entry in entries:
+        total_uncompressed += entry.file_size
+
+        if total_uncompressed > settings.max_material_uncompressed_bytes:
+            raise ValidationError(
+                "Office document expands beyond the processing limit",
+                {
+                    "filename": path.name,
+                    "max_uncompressed_bytes": settings.max_material_uncompressed_bytes,
+                },
+            )
+
+        # Office files should not contain encrypted ZIP entries. The parsers
+        # cannot safely inspect them and they would bypass content validation.
+        if entry.flag_bits & 0x1:
+            raise ValidationError(
+                "Encrypted Office document entries are not supported",
+                {"filename": path.name},
+            )
+
+
+def _validate_office_zip(
+    path: Path,
+    extension: str,
+    settings: Settings,
+) -> None:
+    """Check Office structure and enforce archive processing limits."""
+
     if not zipfile.is_zipfile(path):
         raise ValidationError(
             f"File contents do not match a {extension.upper()} document",
@@ -76,6 +129,12 @@ def _validate_office_zip(path: Path, extension: str) -> None:
 
     try:
         with zipfile.ZipFile(path) as archive:
+            _validate_archive_limits(
+                archive,
+                path,
+                settings,
+            )
+
             names = set(archive.namelist())
 
             if "[Content_Types].xml" not in names or required_entry not in names:
@@ -83,6 +142,7 @@ def _validate_office_zip(path: Path, extension: str) -> None:
                     f"File contents do not match a {extension.upper()} document",
                     {"filename": path.name},
                 )
+
     except (zipfile.BadZipFile, OSError) as exc:
         raise ValidationError(
             f"File contents do not match a {extension.upper()} document",
@@ -91,8 +151,8 @@ def _validate_office_zip(path: Path, extension: str) -> None:
 
 
 def _validate_text(path: Path) -> None:
-    # Read only an initial sample here. Full decoding remains the extractor's
-    # responsibility. This check is for obvious binary files disguised as TXT.
+    """Reject obvious binary files disguised as plain text."""
+
     with path.open("rb") as handle:
         sample = handle.read(8192)
 
@@ -116,17 +176,23 @@ def validate_uploaded_file(
     path: str,
     extension: str,
     content_type: str | None,
+    settings: Settings | None = None,
 ) -> None:
-    """Validate MIME consistency and the actual file structure."""
+    """Validate MIME, file structure and processing safety limits."""
 
     validate_claimed_mime(extension, content_type)
 
     file_path = Path(path)
+    effective_settings = settings or get_settings()
 
     if extension == "pdf":
         _validate_pdf(file_path)
     elif extension in {"docx", "pptx"}:
-        _validate_office_zip(file_path, extension)
+        _validate_office_zip(
+            file_path,
+            extension,
+            effective_settings,
+        )
     elif extension == "txt":
         _validate_text(file_path)
     else:

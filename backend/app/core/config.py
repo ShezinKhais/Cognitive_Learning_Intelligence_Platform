@@ -107,6 +107,11 @@ class Settings(BaseSettings):
     # more parsers than cores means every lecturer waits longer than they would
     # have queued. Two is right for a laptop; a deployed host raises it.
     max_concurrent_material_jobs: int = 2
+    # Security limits for compressed Office lecture material. DOCX and PPTX
+    # are ZIP archives, so a small upload can expand dramatically during
+    # parsing if no decompression ceiling is enforced.
+    max_material_archive_entries: int = 4096
+    max_material_uncompressed_bytes: int = 209_715_200  # 200 MiB
 
     # Retention (UAE PDPL)
     data_retention_days: int = 90
