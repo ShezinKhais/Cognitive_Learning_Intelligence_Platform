@@ -128,9 +128,16 @@ export default function LecturerMaterialsPage() {
         return
       }
 
-      // BBIS owns this query and may not have connected it yet. The progress
-      // event remains authoritative, so a missing refresh must not turn a
-      // successfully processed upload into an error on screen.
+      // BBIS owns this query and may not have connected it yet. Keep the
+      // current progress event for that one expected stub response, but expose
+      // genuine server and network failures instead of silently hiding them.
+      if (caught instanceof ApiError && caught.status === 501) return
+
+      setError(
+        caught instanceof ApiError
+          ? `The latest material details could not be loaded: ${caught.message}`
+          : 'The latest material details could not be loaded. Check your connection and try again.',
+      )
     }
   }, [])
 
@@ -513,7 +520,14 @@ function ProcessingStatus({
             : <LoaderCircle className="shrink-0 animate-spin text-info" aria-hidden="true" size={22} />}
       </div>
 
-      <div className="mt-5 h-2 overflow-hidden rounded-full bg-muted">
+      <div
+        className="mt-5 h-2 overflow-hidden rounded-full bg-muted"
+        role="progressbar"
+        aria-label="Material processing progress"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+      >
         <div
           className={`h-full rounded-full transition-[width] duration-500 ${
             failed ? 'bg-critical' : completed ? 'bg-success' : 'bg-info'

@@ -13,8 +13,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import OrderedDict, defaultdict, deque
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from uuid import UUID
+from weakref import WeakValueDictionary
 
 from fastapi import WebSocket
 
@@ -63,16 +65,26 @@ class SessionHub:
             lambda: deque(maxlen=MAX_REPLAY_EVENTS_PER_CHANNEL)
         )
         self._lock = asyncio.Lock()
-        # Serialising user-channel replay with publication closes the gap where
-        # an event could otherwise be emitted after a reconnect joins but
-        # before its replay snapshot is taken.
-        self._user_delivery_lock = asyncio.Lock()
+        # Publication and replay must be ordered for one user, but a slow
+        # lecturer connection must never hold up every other lecturer. Weak
+        # values keep this per-user lock registry bounded once a channel is no
+        # longer active.
+        self._user_delivery_locks: WeakValueDictionary[UUID, asyncio.Lock] = WeakValueDictionary()
+
+    def _user_delivery_lock(self, user_id: UUID) -> asyncio.Lock:
+        lock = self._user_delivery_locks.get(user_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._user_delivery_locks[user_id] = lock
+        return lock
 
     async def join(self, connection: Connection) -> None:
         async with self._lock:
-            if connection.session_id is None:
-                self._by_user[connection.user_id].add(connection)
-            else:
+            # Every authenticated socket belongs to its user's private channel.
+            # A session-bound lecturer can therefore continue receiving their
+            # material progress while participating in a live session.
+            self._by_user[connection.user_id].add(connection)
+            if connection.session_id is not None:
                 self._rooms[connection.session_id].add(connection)
 
         if connection.session_id is None:
@@ -82,13 +94,13 @@ class SessionHub:
 
     async def leave(self, connection: Connection) -> None:
         async with self._lock:
-            if connection.session_id is None:
-                user_connections = self._by_user.get(connection.user_id)
-                if user_connections:
-                    user_connections.discard(connection)
-                    if not user_connections:
-                        del self._by_user[connection.user_id]
-            else:
+            user_connections = self._by_user.get(connection.user_id)
+            if user_connections:
+                user_connections.discard(connection)
+                if not user_connections:
+                    del self._by_user[connection.user_id]
+
+            if connection.session_id is not None:
                 room = self._rooms.get(connection.session_id)
                 if room:
                     room.discard(connection)
@@ -234,7 +246,7 @@ class SessionHub:
         join the channel derived from their signed token in the WebSocket
         endpoint; no client-supplied user id is trusted.
         """
-        async with self._user_delivery_lock:
+        async with self._user_delivery_lock(user_id):
             event = self._build_user_event(user_id, event_type, data)
             payload = event.model_dump(mode="json")
 
@@ -255,36 +267,53 @@ class SessionHub:
         self,
         connection: Connection,
         last_seq: int | None,
+        send_ready: Callable[[int | None], Awaitable[None]],
     ) -> tuple[int, int | None]:
-        """Authorize the user channel handoff and replay missed progress.
+        """Complete the handshake, join, and replay missed progress atomically.
 
         The returned cursor is null when the server cannot resume the client's
         sequence (for example after a backend restart), allowing the client to
         reset its local cursor before accepting the new stream.
-        """
-        async with self._user_delivery_lock:
-            await self.join(connection)
-            return await self._replay_user_events(connection, last_seq)
 
-    async def replay(
+        READY is sent before the connection joins either delivery index. The
+        per-user lock prevents publication during that handoff, so no progress
+        can slip between READY, joining, and replay.
+        """
+        async with self._user_delivery_lock(connection.user_id):
+            resumed_from_seq = self._resumable_cursor(connection.user_id, last_seq)
+            await send_ready(resumed_from_seq)
+            await self.join(connection)
+            return await self._replay_user_events(connection, resumed_from_seq)
+
+    def _resumable_cursor(
         self,
-        connection: Connection,
+        user_id: UUID,
         last_seq: int | None,
-    ) -> tuple[int, int | None]:
-        """Replay missed progress on an already joined user connection."""
-        async with self._user_delivery_lock:
-            return await self._replay_user_events(connection, last_seq)
+    ) -> int | None:
+        if last_seq is None:
+            return None
+
+        current_seq = self._user_seq.get(user_id, 0)
+        if last_seq > current_seq:
+            return None
+
+        if last_seq == current_seq:
+            return last_seq
+
+        replay = self._user_replay.get(user_id)
+        if not replay or last_seq < replay[0].seq - 1:
+            # The requested cursor predates the retained window. Replaying only
+            # the tail would falsely claim there was no gap.
+            return None
+
+        return last_seq
 
     async def _replay_user_events(
         self,
         connection: Connection,
         last_seq: int | None,
     ) -> tuple[int, int | None]:
-        if connection.session_id is not None or last_seq is None:
-            return 0, None
-
-        current_seq = self._user_seq.get(connection.user_id, 0)
-        if last_seq > current_seq:
+        if last_seq is None:
             return 0, None
 
         events = [
