@@ -4,15 +4,25 @@ Phase 1 provides the registry, sequencing and broadcast paths. Phase 3 adds the
 replay buffer, so that a student who loses wifi mid-question receives what they
 missed rather than a blank panel.
 
-Sequence numbers are per session and assigned here, so every client can detect
-a gap by comparing the seq it receives against the last one it saw.
+Events are addressed to a channel, and a channel is either a session or a
+single user. Sequence numbers are assigned per channel and every client can
+detect a gap by comparing the seq it receives against the last one it saw.
+
+Both kinds of channel exist because not every event belongs to a class.
+`material.progress` reports on a file a lecturer uploaded, which happens while
+they are preparing, not while they are teaching. Before Phase 2 a connection
+that named no session joined no room, so it could be sent nothing at all; the
+user channel is what gives that connection an address.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections import OrderedDict, defaultdict
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -22,13 +32,29 @@ from app.schemas.events import ServerEvent, ServerEventType
 
 log = logging.getLogger("clip.realtime")
 
-# One small int per session, held so a reconnecting client can be told whether
+# One small int per channel, held so a reconnecting client can be told whether
 # it missed anything. forget_session is the intended way to drop an entry, but
 # nothing calls it until the session lifecycle lands in Phase 3, so the map
 # needs a ceiling of its own rather than trusting a caller that does not exist.
 # A single lecturer never approaches this; reaching it means something is
 # creating sessions that never end, which is worth a log line.
 MAX_TRACKED_SESSIONS = 1024
+
+# How long one socket write may take before the connection is treated as dead.
+# A client on a train in a tunnel stops acknowledging without closing, and a
+# write to it waits on TCP backpressure indefinitely. Every delivery path loops
+# over its recipients one at a time, so without a bound that one socket holds
+# up everyone after it in the loop. Five seconds is far past any healthy write
+# of a few hundred bytes.
+SEND_TIMEOUT_SECONDS = 5.0
+
+# Sent when the hub gives up on a connection. RFC 6455 registers 1013 as
+# "try again later", which is the instruction: reconnect and resume.
+CLOSE_TRY_AGAIN_LATER = 1013
+
+# Closing writes a frame to a socket that has just failed a write, so it is
+# bounded as well. It runs in the background, so this limit holds up nobody.
+CLOSE_TIMEOUT_SECONDS = 5.0
 
 
 class Connection:
@@ -49,28 +75,63 @@ class SessionHub:
 
     def __init__(self) -> None:
         self._rooms: dict[UUID, set[Connection]] = defaultdict(set)
+        # Every connection is indexed here, with or without a session, so a
+        # lecturer preparing material has an address even though they are in
+        # no class. One user can hold several connections at once.
+        self._by_user: dict[UUID, set[Connection]] = defaultdict(set)
         # Ordered so the least recently used counter is the first eviction
         # candidate once the map reaches MAX_TRACKED_SESSIONS.
         self._seq: OrderedDict[UUID, int] = OrderedDict()
         self._lock = asyncio.Lock()
+        # Strong references to closes in progress, which run detached from
+        # the delivery that found the dead socket.
+        self._closing: set[asyncio.Task[None]] = set()
+        # Assigning a seq and writing it to the socket have to be one step.
+        # Two jobs reporting on the same user channel otherwise take numbers 1
+        # and 2, and whichever socket write completes first arrives first, so a
+        # client tracking last_seq sees 2 followed by 1 and reads a gap where
+        # nothing was lost.
+        #
+        # One lock per user, not one for the hub. A single shared lock held
+        # across socket writes meant one lecturer's stalled connection stopped
+        # progress reaching every other lecturer on the process. Entries exist
+        # only while a delivery to that user is in flight, counted in
+        # _delivery_waiters, so the map cannot grow with the number of users.
+        # Held separately from _lock so that delivery never blocks a connection
+        # joining or leaving.
+        self._delivery_locks: dict[UUID, asyncio.Lock] = {}
+        self._delivery_waiters: dict[UUID, int] = {}
 
     async def join(self, connection: Connection) -> None:
-        if connection.session_id is None:
-            return
         async with self._lock:
-            self._rooms[connection.session_id].add(connection)
-        log.info("user %s joined session %s", connection.user_id, connection.session_id)
+            self._by_user[connection.user_id].add(connection)
+            if connection.session_id is not None:
+                self._rooms[connection.session_id].add(connection)
+
+        if connection.session_id is None:
+            log.info("user %s connected without a session", connection.user_id)
+        else:
+            log.info("user %s joined session %s", connection.user_id, connection.session_id)
 
     async def leave(self, connection: Connection) -> None:
-        if connection.session_id is None:
-            return
         async with self._lock:
-            room = self._rooms.get(connection.session_id)
-            if room:
-                room.discard(connection)
-                if not room:
-                    del self._rooms[connection.session_id]
-        log.info("user %s left session %s", connection.user_id, connection.session_id)
+            held = self._by_user.get(connection.user_id)
+            if held:
+                held.discard(connection)
+                if not held:
+                    del self._by_user[connection.user_id]
+
+            if connection.session_id is not None:
+                room = self._rooms.get(connection.session_id)
+                if room:
+                    room.discard(connection)
+                    if not room:
+                        del self._rooms[connection.session_id]
+
+        if connection.session_id is None:
+            log.info("user %s disconnected", connection.user_id)
+        else:
+            log.info("user %s left session %s", connection.user_id, connection.session_id)
 
     def forget_session(self, session_id: UUID) -> None:
         """Drop a finished session's room and sequence counter.
@@ -103,20 +164,28 @@ class SessionHub:
         return counter
 
     def _evict_idle_counter(self) -> None:
-        """Drop the counter of the session that has been quiet longest.
+        """Drop the counter of the channel that has been quiet longest.
 
-        Only sessions with nobody connected are eligible. Evicting a live one
+        Only channels with nobody connected are eligible. Evicting a live one
         would restart its seq at 1, and every client watching that stream would
         read the restart as a gap, so an oversized map is the better failure.
+
+        A user channel is live whenever that user holds a connection, so both
+        indexes have to be consulted. Checking only `_rooms` would mark every
+        user channel idle, and a lecturer watching an upload would see the seq
+        restart mid-import.
         """
-        idle = next((s for s in self._seq if not self._rooms.get(s)), None)
+        idle = next(
+            (c for c in self._seq if not self._rooms.get(c) and not self._by_user.get(c)),
+            None,
+        )
         if idle is not None:
             del self._seq[idle]
-            log.info("dropped the sequence counter for idle session %s", idle)
+            log.info("dropped the sequence counter for idle channel %s", idle)
             return
 
         log.warning(
-            "%d sessions are tracked and every one has live connections, so the %d ceiling "
+            "%d channels are tracked and every one has live connections, so the %d ceiling "
             "cannot be enforced; sessions are being created faster than they end",
             len(self._seq),
             MAX_TRACKED_SESSIONS,
@@ -136,6 +205,11 @@ class SessionHub:
         A send failure removes the connection rather than aborting the
         broadcast: one student's dropped socket must not stop the other 39
         receiving a question.
+
+        Numbering is not serialised with delivery here, as it is on the user
+        channel. Nothing emits two session events concurrently yet, so the
+        ordering hazard is not reachable; it becomes reachable when the prompt
+        scheduler starts running alongside question delivery, which is #41.
         """
         event = self.build(session_id, event_type, data)
         payload = event.model_dump(mode="json")
@@ -144,13 +218,57 @@ class SessionHub:
             targets = list(self._rooms.get(session_id, ()))
 
         delivered = 0
+        dead: list[Connection] = []
         for connection in targets:
-            try:
-                await connection.websocket.send_json(payload)
+            if await self._deliver(connection, payload):
                 delivered += 1
-            except Exception:
+            else:
                 log.warning("send failed for user %s, dropping", connection.user_id)
-                await self.leave(connection)
+                dead.append(connection)
+        for connection in dead:
+            await self._drop(connection)
+        return delivered
+
+    async def send_to_user_channel(
+        self, user_id: UUID, event_type: ServerEventType, data: dict
+    ) -> int:
+        """Deliver on a user's own channel, independent of any session.
+
+        This is how `material.progress` reaches the lecturer who uploaded a
+        file: processing runs while they are preparing, so there is no class to
+        broadcast to and no session id to address. Returns the number of
+        connections written to, which is zero when the lecturer has closed the
+        tab. That is a normal outcome, not a failure; the material keeps
+        processing and its status is readable over REST afterwards.
+
+        The user id doubles as the channel id, so seq stays monotonic across
+        reconnects for as long as the counter lives.
+
+        Numbering and delivery happen under this user's delivery lock, because
+        a lecturer can have two uploads processing at once and both report
+        here. Dead sockets are dropped after the lock is released, since leave()
+        takes _lock and would otherwise be waiting on a lock this call holds.
+        """
+        dead: list[Connection] = []
+        delivered = 0
+
+        async with self._delivery_lock_for(user_id):
+            event = self.build(user_id, event_type, data)
+            payload = event.model_dump(mode="json")
+
+            async with self._lock:
+                targets = list(self._by_user.get(user_id, ()))
+
+            for connection in targets:
+                if await self._deliver(connection, payload):
+                    delivered += 1
+                else:
+                    dead.append(connection)
+
+        for connection in dead:
+            log.warning("user-channel send failed for user %s, dropping", user_id)
+            await self._drop(connection)
+
         return delivered
 
     async def send_to_user(
@@ -172,14 +290,83 @@ class SessionHub:
             targets = [c for c in self._rooms.get(session_id, ()) if c.user_id == user_id]
 
         delivered = 0
+        dead: list[Connection] = []
         for connection in targets:
-            try:
-                await connection.websocket.send_json(payload)
+            if await self._deliver(connection, payload):
                 delivered += 1
-            except Exception:
+            else:
                 log.warning("targeted send failed for user %s, dropping", user_id)
-                await self.leave(connection)
+                dead.append(connection)
+        for connection in dead:
+            await self._drop(connection)
         return delivered > 0
+
+    async def _deliver(self, connection: Connection, payload: dict) -> bool:
+        """Write one frame, reporting whether it arrived rather than raising.
+
+        A write that outlasts SEND_TIMEOUT_SECONDS counts as a failure, so the
+        caller drops the connection exactly as it would a closed one. Nothing
+        is closed here: callers can be holding a user's delivery lock, and a
+        close is another write to the same stalled socket.
+        """
+        try:
+            async with asyncio.timeout(SEND_TIMEOUT_SECONDS):
+                await connection.websocket.send_json(payload)
+        except Exception:
+            return False
+        return True
+
+    async def _drop(self, connection: Connection) -> None:
+        """Forget a failed connection now, and close it in the background.
+
+        The close used to be awaited inline, under the user's delivery lock, so
+        one stalled tab held up progress to that lecturer's healthy tabs for a
+        second timeout, and the pipeline awaiting the send waited too. Detached,
+        the caller moves on as soon as the connection is out of the registry.
+        """
+        await self.leave(connection)
+        task = asyncio.create_task(self._close_quietly(connection))
+        self._closing.add(task)
+        task.add_done_callback(self._closing.discard)
+
+    async def _close_quietly(self, connection: Connection) -> None:
+        """Close a connection the hub is about to forget, so the client finds out.
+
+        Removing a socket from the registry without closing it left the client
+        connected and still answering pings, with nothing to tell it that no
+        further event would ever arrive. A few seconds of bad wifi was enough to
+        silence a lecturer's progress for the rest of the connection. Closed, the
+        client reconnects, which is the recovery the send timeout depends on.
+
+        Bounded for the same reason the send is: closing a stalled socket means
+        writing a close frame to it. A socket that is already gone raises, and
+        there is nothing more to do about that.
+        """
+        with contextlib.suppress(Exception):
+            async with asyncio.timeout(CLOSE_TIMEOUT_SECONDS):
+                await connection.websocket.close(code=CLOSE_TRY_AGAIN_LATER)
+
+    @asynccontextmanager
+    async def _delivery_lock_for(self, user_id: UUID) -> AsyncIterator[None]:
+        """Serialise delivery on one user's channel without touching anyone else's.
+
+        The waiter count is what lets the entry be removed. Nothing yields
+        between creating the lock and counting this caller, so a concurrent
+        caller either finds the lock already present or creates it, and the
+        entry only disappears once the last caller for that user has finished.
+        """
+        lock = self._delivery_locks.setdefault(user_id, asyncio.Lock())
+        self._delivery_waiters[user_id] = self._delivery_waiters.get(user_id, 0) + 1
+        try:
+            async with lock:
+                yield
+        finally:
+            remaining = self._delivery_waiters[user_id] - 1
+            if remaining:
+                self._delivery_waiters[user_id] = remaining
+            else:
+                del self._delivery_waiters[user_id]
+                del self._delivery_locks[user_id]
 
 
 hub = SessionHub()

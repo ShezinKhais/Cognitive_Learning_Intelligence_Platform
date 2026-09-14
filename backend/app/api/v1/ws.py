@@ -30,11 +30,12 @@ from uuid import UUID
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.websockets import WebSocketState
 
 from app.api.deps import AppSettings, DbSession
 from app.auth.service import user_from_token
 from app.core.security import TokenValidationError
-from app.realtime.hub import Connection, hub
+from app.realtime.hub import CLOSE_TRY_AGAIN_LATER, Connection, hub
 from app.schemas.events import (
     AuthPayload,
     ClientEventType,
@@ -66,7 +67,15 @@ async def _send(
 
     seq is 0 because these are not part of a session's ordered stream; clients
     only track gaps in events that carry a non-zero seq.
+
+    The hub closes a socket from another task when a delivery to it fails. A
+    ping already on its way was then answered on a closed socket, Starlette
+    raised RuntimeError, and the endpoint logged a traceback for what is an
+    ordinary disconnect. It is reported as the disconnect it is instead. No
+    await separates the check from the send, so the state cannot change between.
     """
+    if websocket.application_state is not WebSocketState.CONNECTED:
+        raise WebSocketDisconnect(code=CLOSE_TRY_AGAIN_LATER)
 
     event = ServerEvent(
         type=event_type,
@@ -261,8 +270,6 @@ async def session_socket(
         session_id=session_id,
     )
 
-    await hub.join(connection)
-
     try:
         await _send(
             websocket,
@@ -272,6 +279,15 @@ async def session_socket(
                 "session_id": (str(session_id) if session_id else None),
             },
         )
+
+        # Joined only once ready is on the wire. Joining first made the
+        # connection visible to delivery before the handshake had finished, so
+        # an upload already in progress could put a material.progress frame
+        # ahead of ready, and a client that waits for ready as this module
+        # documents would drop it. An event emitted in the moment before the
+        # join is missed instead, which costs nothing: every progress frame
+        # carries the whole state, so the next one supersedes it.
+        await hub.join(connection)
 
         while True:
             raw = await _receive_event(websocket)

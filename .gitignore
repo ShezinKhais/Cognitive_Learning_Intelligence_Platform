@@ -48,3 +48,6 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Uploaded material, written by LocalDiskStorage
+backend/var/
