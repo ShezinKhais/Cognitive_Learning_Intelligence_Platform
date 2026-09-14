@@ -57,6 +57,11 @@ TERMINAL_STAGES = {MaterialStage.DONE, MaterialStage.FAILED}
 INTERRUPTED_MESSAGE = "Processing was interrupted while the server was stopping."
 CANCELLED_ERROR = "cancelled"
 
+# How long a cancel hook may run at shutdown. It tells the lecturer and
+# writes to the database, and a deploy must not wait indefinitely on either;
+# a database that has stopped answering would otherwise hold the process open.
+ABANDON_TIMEOUT_SECONDS = 10.0
+
 
 @dataclass(frozen=True)
 class JobStatus:
@@ -261,7 +266,8 @@ class BackgroundProcessor:
 
         if on_cancel is not None:
             try:
-                await on_cancel()
+                async with asyncio.timeout(ABANDON_TIMEOUT_SECONDS):
+                    await on_cancel()
             except Exception:
                 log.exception("could not report the interruption of material %s", material_id)
 

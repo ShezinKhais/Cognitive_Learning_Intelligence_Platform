@@ -18,6 +18,7 @@ user channel is what gives that connection an address.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections import OrderedDict, defaultdict
 from collections.abc import AsyncIterator
@@ -46,6 +47,10 @@ MAX_TRACKED_SESSIONS = 1024
 # up everyone after it in the loop. Five seconds is far past any healthy write
 # of a few hundred bytes.
 SEND_TIMEOUT_SECONDS = 5.0
+
+# Sent when the hub gives up on a connection. RFC 6455 registers 1013 as
+# "try again later", which is the instruction: reconnect and resume.
+CLOSE_TRY_AGAIN_LATER = 1013
 
 
 class Connection:
@@ -288,15 +293,33 @@ class SessionHub:
 
         A write that outlasts SEND_TIMEOUT_SECONDS counts as a failure, so the
         caller drops the connection exactly as it would a closed one. The
-        client reconnects and resumes from last_seq, which is a far better
-        outcome for everyone than waiting on it.
+        client is closed so that it reconnects and resumes, which is a far
+        better outcome for everyone than waiting on it.
         """
         try:
             async with asyncio.timeout(SEND_TIMEOUT_SECONDS):
                 await connection.websocket.send_json(payload)
         except Exception:
+            await self._close_quietly(connection)
             return False
         return True
+
+    async def _close_quietly(self, connection: Connection) -> None:
+        """Close a connection the hub is about to forget, so the client finds out.
+
+        Removing a socket from the registry without closing it left the client
+        connected and still answering pings, with nothing to tell it that no
+        further event would ever arrive. A few seconds of bad wifi was enough to
+        silence a lecturer's progress for the rest of the connection. Closed, the
+        client reconnects, which is the recovery the send timeout depends on.
+
+        Bounded for the same reason the send is: closing a stalled socket means
+        writing a close frame to it. A socket that is already gone raises, and
+        there is nothing more to do about that.
+        """
+        with contextlib.suppress(Exception):
+            async with asyncio.timeout(SEND_TIMEOUT_SECONDS):
+                await connection.websocket.close(code=CLOSE_TRY_AGAIN_LATER)
 
     @asynccontextmanager
     async def _delivery_lock_for(self, user_id: UUID) -> AsyncIterator[None]:

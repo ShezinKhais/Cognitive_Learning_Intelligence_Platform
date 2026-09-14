@@ -11,10 +11,14 @@ the parse succeeded, threw, or was killed by a deploy.
 from __future__ import annotations
 
 import asyncio
+import time
 from uuid import uuid4
+
+import pytest
 
 from app.schemas.content import MaterialStatus
 from app.schemas.events import MaterialStage
+from app.services import jobs as jobs_module
 from app.services.jobs import (
     CANCELLED_ERROR,
     STAGE_PERCENT,
@@ -315,3 +319,33 @@ async def test_a_cancel_hook_that_fails_still_leaves_a_terminal_state() -> None:
     assert status is not None
     assert status.is_finished
     assert status.error == CANCELLED_ERROR
+
+
+async def test_a_cancel_hook_that_hangs_cannot_hold_shutdown_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The hook writes to the database. One that has stopped answering must not
+    keep a deploy waiting, and the job must still end in a terminal state."""
+    monkeypatch.setattr(jobs_module, "ABANDON_TIMEOUT_SECONDS", 0.05)
+    registry = JobRegistry()
+    processor = BackgroundProcessor(registry, max_concurrent=1)
+    started = asyncio.Event()
+
+    async def runs() -> None:
+        started.set()
+        await asyncio.sleep(3600)
+
+    async def database_not_answering() -> None:
+        await asyncio.sleep(3600)
+
+    material_id = uuid4()
+    processor.submit(material_id, runs, on_cancel=database_not_answering)
+    await started.wait()
+
+    began = time.monotonic()
+    await processor.drain(grace_seconds=0.01)
+
+    assert time.monotonic() - began < 1.0
+    status = registry.get(material_id)
+    assert status is not None
+    assert status.is_finished

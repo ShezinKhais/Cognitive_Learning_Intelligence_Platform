@@ -10,6 +10,7 @@ to, and in what order it arrives.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from uuid import uuid4
 
@@ -296,10 +297,14 @@ class _StalledSocket:
 
     def __init__(self) -> None:
         self.attempts = 0
+        self.closed_with: int | None = None
 
     async def send_json(self, payload: dict) -> None:
         self.attempts += 1
         await asyncio.sleep(3600)
+
+    async def close(self, code: int = 1000, reason: str | None = None) -> None:
+        self.closed_with = code
 
 
 async def test_a_stalled_lecturer_does_not_hold_up_another_lecturers_progress() -> None:
@@ -322,6 +327,8 @@ async def test_a_stalled_lecturer_does_not_hold_up_another_lecturers_progress() 
     assert delivered == 1
     assert time.monotonic() - started < 0.5
     stuck.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await stuck
 
 
 async def test_a_socket_that_stops_acknowledging_is_dropped(
@@ -380,3 +387,20 @@ async def test_per_user_delivery_locks_are_released_once_idle() -> None:
 
     assert hub._delivery_locks == {}
     assert hub._delivery_waiters == {}
+
+
+async def test_a_dropped_connection_is_closed_so_the_client_reconnects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dropping a socket without closing it left the client connected and
+    answering pings, never told that nothing more would arrive. A few seconds
+    of bad wifi silenced progress for the rest of the connection."""
+    monkeypatch.setattr(hub_module, "SEND_TIMEOUT_SECONDS", 0.05)
+    hub = SessionHub()
+    lecturer = uuid4()
+    socket = _StalledSocket()
+    await hub.join(Connection(socket, lecturer, None))
+
+    await hub.send_to_user_channel(lecturer, ServerEventType.MATERIAL_PROGRESS, {})
+
+    assert socket.closed_with == hub_module.CLOSE_TRY_AGAIN_LATER
