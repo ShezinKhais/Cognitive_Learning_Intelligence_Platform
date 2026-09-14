@@ -1437,7 +1437,7 @@
         ]
       },
       "post": {
-        "description": "Accepts PDF, PPTX, DOCX or TXT.\n\nReturns 202 immediately: processing runs in the background and reports\nprogress over the WebSocket as `material.progress` events.",
+        "description": "Accepts PDF, PPTX, DOCX or TXT.\n\nReturns 202 immediately after the uploaded file passes security validation.\nProcessing then runs in the background and reports progress over the\nWebSocket as `material.progress` events.",
         "operationId": "upload_material_api_v1_materials_post",
         "requestBody": {
           "content": {

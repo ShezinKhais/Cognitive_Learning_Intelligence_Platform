@@ -159,17 +159,21 @@ def test_the_upload_is_processed_after_the_response(live_client: TestClient, upl
     assert status.status is MaterialStatus.COMPLETED
 
 
-def test_an_unreadable_file_finishes_as_failed_rather_than_never(
+def test_a_fake_pdf_is_rejected_before_background_processing(
     live_client: TestClient, uploads
 ) -> None:
-    """The 202 already went out, so the only way to report this is the job."""
+    """A file renamed to PDF must fail before it reaches the parser."""
     headers = login(live_client, "lecturer@clip.example.com", LECTURER_PASSWORD)
 
-    material_id = upload(live_client, headers, "broken.pdf", b"this is not a PDF").json()["id"]
+    response = upload(
+        live_client,
+        headers,
+        "broken.pdf",
+        b"this is not a PDF",
+    )
 
-    status = await_terminal_state(uploads, material_id)
-    assert status.stage is MaterialStage.FAILED
-    assert "could not be read" in status.message
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
 @pytest.mark.parametrize("name", ["notes.exe", "notes.pdf.exe", "notes"])
