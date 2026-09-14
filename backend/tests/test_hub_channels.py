@@ -151,6 +151,7 @@ async def test_a_dead_socket_is_dropped_from_the_user_channel() -> None:
         )
         == 1
     )
+    assert [c.websocket for c in hub._by_user[lecturer]] == [alive]
 
     # The dead socket is gone, so the next send does not retry it.
     assert (
@@ -402,5 +403,60 @@ async def test_a_dropped_connection_is_closed_so_the_client_reconnects(
     await hub.join(Connection(socket, lecturer, None))
 
     await hub.send_to_user_channel(lecturer, ServerEventType.MATERIAL_PROGRESS, {})
+    await asyncio.gather(*hub._closing)
 
     assert socket.closed_with == hub_module.CLOSE_TRY_AGAIN_LATER
+    assert not hub._closing
+
+
+class _StallsOnCloseToo(_StalledSocket):
+    async def close(self, code: int = 1000, reason: str | None = None) -> None:
+        await asyncio.sleep(3600)
+
+
+async def test_closing_a_stalled_socket_does_not_hold_up_the_lecturers_other_tabs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The close is a second write to the stalled socket. Awaited under the
+    user's delivery lock, it held every other upload's progress behind it."""
+    monkeypatch.setattr(hub_module, "SEND_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(hub_module, "CLOSE_TIMEOUT_SECONDS", 3600)
+    hub = SessionHub()
+    lecturer = uuid4()
+    healthy = _FakeSocket()
+    await hub.join(Connection(_StallsOnCloseToo(), lecturer, None))
+    await hub.join(Connection(healthy, lecturer, None))
+
+    async with asyncio.timeout(2):
+        await hub.send_to_user_channel(lecturer, ServerEventType.MATERIAL_PROGRESS, {})
+        delivered = await hub.send_to_user_channel(lecturer, ServerEventType.MATERIAL_PROGRESS, {})
+
+    assert delivered == 1
+    for task in list(hub._closing):
+        task.cancel()
+    await asyncio.gather(*hub._closing, return_exceptions=True)
+
+
+async def test_a_close_that_stalls_is_given_up_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(hub_module, "SEND_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(hub_module, "CLOSE_TIMEOUT_SECONDS", 0.05)
+    hub = SessionHub()
+    lecturer = uuid4()
+    await hub.join(Connection(_StallsOnCloseToo(), lecturer, None))
+
+    await hub.send_to_user_channel(lecturer, ServerEventType.MATERIAL_PROGRESS, {})
+
+    async with asyncio.timeout(1):
+        await asyncio.gather(*hub._closing)
+
+
+async def test_a_user_with_no_connections_left_is_forgotten() -> None:
+    """Otherwise every lecturer who ever connected stays in the index."""
+    hub = SessionHub()
+    lecturer = uuid4()
+    connection = Connection(_FakeSocket(), lecturer, None)
+    await hub.join(connection)
+
+    await hub.leave(connection)
+
+    assert lecturer not in hub._by_user

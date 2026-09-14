@@ -3,7 +3,7 @@
 from functools import lru_cache
 from urllib.parse import unquote, urlparse, urlsplit
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 INSECURE_SECRET_KEY = "change-me-in-production"
@@ -106,7 +106,7 @@ class Settings(BaseSettings):
     # Extraction holds a CPU for fifteen to eighteen seconds per document, so
     # more parsers than cores means every lecturer waits longer than they would
     # have queued. Two is right for a laptop; a deployed host raises it.
-    max_concurrent_material_jobs: int = 2
+    max_concurrent_material_jobs: int = Field(default=2, ge=1)
 
     # Retention (UAE PDPL)
     data_retention_days: int = 90

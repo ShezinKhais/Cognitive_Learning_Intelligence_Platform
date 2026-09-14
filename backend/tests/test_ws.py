@@ -582,3 +582,42 @@ def test_ready_is_the_first_frame_even_with_an_upload_in_progress(
     assert first["type"] == ServerEventType.READY
     assert first["data"]["user_id"] == str(LECTURER_ID)
     assert second["type"] == ServerEventType.MATERIAL_PROGRESS
+
+
+async def test_a_reply_on_a_socket_the_hub_closed_is_a_disconnect_not_an_error() -> None:
+    """A ping in flight when the hub closed the socket was answered anyway,
+    and Starlette's RuntimeError was logged as a websocket failure."""
+    from starlette.websockets import WebSocketState
+
+    from app.api.v1 import ws as ws_module
+
+    class Closed:
+        application_state = WebSocketState.DISCONNECTED
+        sent: list[dict] = []
+
+        async def send_json(self, payload: dict) -> None:
+            raise RuntimeError('Cannot call "send" once a close message has been sent.')
+
+    with pytest.raises(WebSocketDisconnect):
+        await ws_module._send(Closed(), ServerEventType.PONG, {})
+
+
+def test_a_closed_socket_is_removed_from_the_hub(client: TestClient) -> None:
+    """Without the leave in finally, every dead connection stays registered."""
+    from app.api.v1 import ws as ws_module
+    from app.auth.store import STUDENT_ID
+
+    token = client.post(
+        "/api/v1/auth/login",
+        json={"email": "student@clip.example.com", "password": STUDENT_PASSWORD},
+    ).json()["access_token"]
+
+    with client.websocket_connect("/ws/session") as ws:
+        ws.send_json({"type": ClientEventType.AUTH.value, "data": {"token": token}})
+        ws.receive_json()
+        # The pong comes from the receive loop, which starts after the join.
+        ws.send_json({"type": ClientEventType.PING.value, "data": {}})
+        ws.receive_json()
+        assert STUDENT_ID in ws_module.hub._by_user
+
+    assert STUDENT_ID not in ws_module.hub._by_user

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -20,12 +21,15 @@ from app.schemas.content import MaterialStatus
 from app.schemas.events import MaterialStage
 from app.services import jobs as jobs_module
 from app.services.jobs import (
-    CANCELLED_ERROR,
+    INTERNAL_ERROR,
+    INTERRUPTED_ERROR,
     STAGE_PERCENT,
     BackgroundProcessor,
     JobRegistry,
     JobStatus,
 )
+
+EVENT_TIMEOUT_SECONDS = 5.0
 
 
 async def test_submitting_does_not_wait_for_the_work() -> None:
@@ -37,7 +41,7 @@ async def test_submitting_does_not_wait_for_the_work() -> None:
 
     async def blocks() -> None:
         started.set()
-        await release.wait()
+        await asyncio.wait_for(release.wait(), EVENT_TIMEOUT_SECONDS)
 
     material_id = uuid4()
     task = processor.submit(material_id, blocks)
@@ -45,7 +49,7 @@ async def test_submitting_does_not_wait_for_the_work() -> None:
     # Control is back here while the job has not even begun.
     assert not started.is_set()
 
-    await started.wait()
+    await asyncio.wait_for(started.wait(), EVENT_TIMEOUT_SECONDS)
     release.set()
     await task
 
@@ -57,7 +61,7 @@ async def test_a_queued_material_reports_pending_before_the_worker_starts() -> N
     release = asyncio.Event()
 
     async def blocks() -> None:
-        await release.wait()
+        await asyncio.wait_for(release.wait(), EVENT_TIMEOUT_SECONDS)
 
     material_id = uuid4()
     task = processor.submit(material_id, blocks)
@@ -87,7 +91,8 @@ async def test_concurrency_is_bounded() -> None:
 
     await asyncio.gather(*[processor.submit(uuid4(), tracked) for _ in range(8)])
 
-    assert peak <= 2
+    # Equal, not at most: no work running at all would also be at most two.
+    assert peak == 2
 
 
 async def test_a_job_that_raises_is_recorded_as_failed() -> None:
@@ -105,7 +110,8 @@ async def test_a_job_that_raises_is_recorded_as_failed() -> None:
     assert status is not None
     assert status.status is MaterialStatus.FAILED
     assert status.stage is MaterialStage.FAILED
-    assert status.error == "RuntimeError"
+    # A code, not the class name, which is in the log.
+    assert status.error == INTERNAL_ERROR
     assert status.is_finished
 
 
@@ -142,14 +148,14 @@ async def test_work_cancelled_at_shutdown_is_marked_not_left_running() -> None:
 
     material_id = uuid4()
     processor.submit(material_id, never_finishes)
-    await started.wait()
+    await asyncio.wait_for(started.wait(), EVENT_TIMEOUT_SECONDS)
 
     await processor.drain(grace_seconds=0.01)
 
     status = registry.get(material_id)
     assert status is not None
     assert status.stage is MaterialStage.FAILED
-    assert status.error == "cancelled"
+    assert status.error == INTERRUPTED_ERROR
     assert processor.in_flight == 0
 
 
@@ -163,7 +169,6 @@ async def test_drain_lets_work_that_finishes_in_time_complete() -> None:
         nonlocal finished
         await asyncio.sleep(0)
         finished = True
-        registry.advance(uuid4(), MaterialStage.DONE)
 
     processor.submit(uuid4(), quick)
     await processor.drain(grace_seconds=5)
@@ -255,14 +260,14 @@ async def test_a_job_still_waiting_for_a_slot_is_marked_when_shutdown_cancels_it
     processor.submit(uuid4(), hogs_the_only_slot)
     queued = uuid4()
     processor.submit(queued, never_gets_a_turn)
-    await holding.wait()
+    await asyncio.wait_for(holding.wait(), EVENT_TIMEOUT_SECONDS)
 
     await processor.drain(grace_seconds=0.01)
 
     status = registry.get(queued)
     assert status is not None
     assert status.status is MaterialStatus.FAILED
-    assert status.error == CANCELLED_ERROR
+    assert status.error == INTERRUPTED_ERROR
 
 
 async def test_shutdown_hands_every_interrupted_job_to_its_caller() -> None:
@@ -289,7 +294,7 @@ async def test_shutdown_hands_every_interrupted_job_to_its_caller() -> None:
 
     processor.submit(uuid4(), runs, on_cancel=reporter("running"))
     processor.submit(uuid4(), queued, on_cancel=reporter("queued"))
-    await holding.wait()
+    await asyncio.wait_for(holding.wait(), EVENT_TIMEOUT_SECONDS)
 
     await processor.drain(grace_seconds=0.01)
 
@@ -311,14 +316,14 @@ async def test_a_cancel_hook_that_fails_still_leaves_a_terminal_state() -> None:
 
     material_id = uuid4()
     processor.submit(material_id, runs, on_cancel=broken_hook)
-    await started.wait()
+    await asyncio.wait_for(started.wait(), EVENT_TIMEOUT_SECONDS)
 
     await processor.drain(grace_seconds=0.01)
 
     status = registry.get(material_id)
     assert status is not None
     assert status.is_finished
-    assert status.error == CANCELLED_ERROR
+    assert status.error == INTERRUPTED_ERROR
 
 
 async def test_a_cancel_hook_that_hangs_cannot_hold_shutdown_open(
@@ -340,7 +345,7 @@ async def test_a_cancel_hook_that_hangs_cannot_hold_shutdown_open(
 
     material_id = uuid4()
     processor.submit(material_id, runs, on_cancel=database_not_answering)
-    await started.wait()
+    await asyncio.wait_for(started.wait(), EVENT_TIMEOUT_SECONDS)
 
     began = time.monotonic()
     await processor.drain(grace_seconds=0.01)
@@ -349,3 +354,68 @@ async def test_a_cancel_hook_that_hangs_cannot_hold_shutdown_open(
     status = registry.get(material_id)
     assert status is not None
     assert status.is_finished
+
+
+def test_the_concurrency_limit_works_on_a_second_event_loop() -> None:
+    """The processor is a process-wide singleton. A semaphore bound to the
+    first loop failed every queued job on the next one as an unexpected error."""
+    registry = JobRegistry()
+    processor = BackgroundProcessor(registry, max_concurrent=1)
+
+    async def two_jobs_contending() -> list[JobStatus | None]:
+        ids = [uuid4(), uuid4()]
+
+        async def brief() -> None:
+            await asyncio.sleep(0.01)
+
+        await asyncio.gather(*(processor.submit(material_id, brief) for material_id in ids))
+        return [registry.get(material_id) for material_id in ids]
+
+    asyncio.run(two_jobs_contending())
+    statuses = asyncio.run(two_jobs_contending())
+
+    assert all(status is not None and status.error is None for status in statuses)
+
+
+def test_a_limit_of_zero_is_refused_rather_than_queueing_forever() -> None:
+    with pytest.raises(ValueError, match="at least 1"):
+        BackgroundProcessor(JobRegistry(), max_concurrent=0)
+
+
+def test_the_oldest_finished_job_is_evicted_first() -> None:
+    registry = JobRegistry(max_entries=2)
+    base = datetime.now(UTC)
+    oldest, newer, newest = uuid4(), uuid4(), uuid4()
+    for offset, material_id in enumerate((oldest, newer, newest)):
+        registry.record(
+            JobStatus(
+                material_id=material_id,
+                status=MaterialStatus.COMPLETED,
+                stage=MaterialStage.DONE,
+                percent=100,
+                updated_at=base + timedelta(seconds=offset),
+            )
+        )
+
+    assert registry.get(oldest) is None
+    assert registry.get(newer) is not None
+    assert registry.get(newest) is not None
+
+
+async def test_a_finished_job_without_a_hook_is_not_marked_interrupted() -> None:
+    """Cancellation can land between a job's last write and its return."""
+    registry = JobRegistry()
+    processor = BackgroundProcessor(registry, max_concurrent=1)
+    material_id = uuid4()
+    finished = asyncio.Event()
+
+    async def finishes_then_lingers() -> None:
+        registry.advance(material_id, MaterialStage.DONE)
+        finished.set()
+        await asyncio.sleep(3600)
+
+    processor.submit(material_id, finishes_then_lingers)
+    await asyncio.wait_for(finished.wait(), EVENT_TIMEOUT_SECONDS)
+    await processor.drain(grace_seconds=0.0)
+
+    assert registry.get(material_id).stage is MaterialStage.DONE

@@ -185,3 +185,15 @@ async def test_delete_removes_the_file_and_tolerates_a_second_call(tmp_path: Pat
 
     # Retrying a cleanup that already ran is not an error.
     await store.delete(material_id)
+
+
+@pytest.mark.parametrize(
+    "sent",
+    ["C:\\Users\\bob\\Desktop\\notes.pdf", "/home/bob/notes.pdf", "D:notes.pdf"],
+)
+async def test_a_full_client_path_is_shown_as_just_the_file_name(tmp_path: Path, sent: str) -> None:
+    """Path(...).name splits only on the host's separator, so a Windows path
+    uploaded to a Linux server kept the lecturer's whole directory."""
+    stored = await storage(tmp_path).save(uuid4(), sent, feed(b"%PDF-1.4 minimal"))
+
+    assert stored.filename == "notes.pdf"

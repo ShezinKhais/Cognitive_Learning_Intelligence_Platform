@@ -36,9 +36,16 @@ from app.core.config import Settings
 from app.core.errors import ValidationError
 from app.realtime.hub import SessionHub
 from app.realtime.hub import hub as default_hub
+from app.schemas.content import Difficulty, QuestionType
 from app.schemas.events import MaterialProgressPayload, MaterialStage, ServerEventType
 from app.services.extraction import ContentChunk, ProcessingResult, process_material
-from app.services.jobs import CANCELLED_ERROR, INTERRUPTED_MESSAGE, JobRegistry, JobStatus
+from app.services.jobs import (
+    INTERNAL_ERROR,
+    INTERRUPTED_ERROR,
+    INTERRUPTED_MESSAGE,
+    JobRegistry,
+    JobStatus,
+)
 from app.services.storage import MaterialStorage, StoredFile
 
 log = logging.getLogger("clip.pipeline")
@@ -93,39 +100,126 @@ async def run_in_daemon_thread(fn: Callable[..., T], *args: object) -> T:
     return await future
 
 
+@dataclass(frozen=True)
+class EmbeddingBatch:
+    """The vectors for one material, and the model that produced them.
+
+    rag_chunk records embedding_model on every row. Vectors from two models are
+    not comparable, so a store that took the name from settings instead would
+    mislabel every chunk embedded before a model change, and retrieval could
+    not tell the old rows from the new ones.
+    """
+
+    vectors: Sequence[Embedding]
+    model: str
+    dim: int
+
+
+@dataclass(frozen=True)
+class DraftQuestion:
+    """One generated question, before a lecturer has seen it.
+
+    The fields are QuestionOut's, less the two the store assigns: the id, and
+    the status, which is always draft. Nothing the generator returns can reach
+    a class without a lecturer approving it.
+    """
+
+    type: QuestionType
+    difficulty: Difficulty
+    prompt: str
+    options: tuple[str, ...] | None = None
+    correct_option: int | None = None
+    topic: str | None = None
+    source_slide: int | None = None
+    source_excerpt: str | None = None
+
+    def __post_init__(self) -> None:
+        # A generator building drafts from model JSON passes "mcq", not the
+        # enum. Compared by identity, every such MCQ was dropped as free text.
+        # An unknown value raises here, in the generator, where the bug is.
+        object.__setattr__(self, "type", QuestionType(self.type))
+        object.__setattr__(self, "difficulty", Difficulty(self.difficulty))
+        if self.options is not None and not isinstance(self.options, tuple):
+            object.__setattr__(self, "options", tuple(self.options))
+
+    def problem(self) -> str | None:
+        """Why this draft cannot be stored, or None when it can."""
+        if not isinstance(self.prompt, str) or not self.prompt.strip():
+            return "has no prompt"
+        if self.type == QuestionType.MCQ:
+            if not self.options or len(self.options) < 2:
+                return "is multiple choice with fewer than two options"
+            if any(not isinstance(option, str) or not option.strip() for option in self.options):
+                return "has a blank option"
+            if len({option.strip() for option in self.options}) != len(self.options):
+                return "repeats an option"
+            # bool is an int, so True would otherwise pass as option 1.
+            if (
+                not isinstance(self.correct_option, int)
+                or isinstance(self.correct_option, bool)
+                or not 0 <= self.correct_option < len(self.options)
+            ):
+                return "has an answer key that points at no option"
+        elif self.options is not None or self.correct_option is not None:
+            return "is free text but carries multiple choice fields"
+        if self.source_slide is not None and self.source_slide < 1:
+            return "cites a slide before the first"
+        return None
+
+
 class ChunkEmbedder(Protocol):
     """Owner: AI 1, issue #37."""
 
-    async def embed(self, chunks: Sequence[ContentChunk]) -> Sequence[Embedding]:
+    async def embed(self, chunks: Sequence[ContentChunk]) -> EmbeddingBatch:
         """One vector per chunk, in the order the chunks were given."""
         ...
 
 
 class QuestionGenerator(Protocol):
-    """Owner: AI 1, issue #37."""
+    """Owner: AI 1, issue #37.
 
-    async def generate(self, material_id: UUID, chunks: Sequence[ContentChunk]) -> int:
-        """Draft questions from the chunks. Returns how many were produced."""
-        ...
+    Returns the drafts rather than writing them. Persistence stays behind one
+    seam, so the success of a material is recorded only after its chunks and
+    its questions have both been stored.
+    """
+
+    async def generate(
+        self, material_id: UUID, chunks: Sequence[ContentChunk]
+    ) -> Sequence[DraftQuestion]: ...
 
 
 class MaterialStore(Protocol):
     """Owner: BBIS, issue #36.
 
-    The material row itself is created by the upload route, which knows the
-    filename and the size. This seam only records what processing found.
+    This seam only records what processing found. The source_material row it
+    writes against has to exist first, and nothing creates it yet: the upload
+    route knows the filename and size, and inserting the row there is part of
+    wiring #36 in. Chunks carry a foreign key to it.
     """
 
     async def save_chunks(
-        self, result: ProcessingResult, embeddings: Sequence[Embedding]
-    ) -> None: ...
+        self, result: ProcessingResult, embeddings: EmbeddingBatch | None
+    ) -> None:
+        """Store every chunk. embeddings is None when no embedder is wired up,
+        in which case the chunks are stored without vectors."""
+        ...
+
+    async def save_questions(self, material_id: UUID, questions: Sequence[DraftQuestion]) -> None:
+        """Store the drafts with status draft."""
+        ...
 
     async def record_outcome(
         self,
         status: JobStatus,
         page_count: int | None = None,
         chunk_count: int | None = None,
-    ) -> None: ...
+        warnings: Sequence[str] = (),
+    ) -> None:
+        """Write a terminal state. source_material.error takes status.message,
+        which is written for the lecturer; status.error is a code for logs and
+        branching (VALIDATION_ERROR, INTERRUPTED, INTERNAL_ERROR). warnings are
+        lecturer-facing too."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -159,6 +253,11 @@ class MaterialPipeline:
         self._embedder = embedder
         self._generator = generator
         self._store = store
+        # Terminal store writes, by material, with the status each one records.
+        # Shutdown has to know what reached the database, and the registry
+        # cannot say: it shows a failure the moment it is announced, before the
+        # write. Entries are removed when run() ends or abandon() reads them.
+        self._outcomes: dict[UUID, tuple[JobStatus, asyncio.Future[None]]] = {}
 
     async def run(self, stored: StoredFile, owner_id: UUID) -> PipelineResult | None:
         """Process one material. Returns None when the file itself was unusable.
@@ -168,6 +267,20 @@ class MaterialPipeline:
         process, so it is recorded and then re-raised, which is what puts a
         traceback in the log.
         """
+        material_id = stored.material_id
+        cancelled = False
+        try:
+            return await self._attempt(stored, owner_id)
+        except asyncio.CancelledError:
+            cancelled = True
+            raise
+        finally:
+            # A cancelled run leaves its entry for abandon(), which the
+            # processor calls next and which needs it.
+            if not cancelled:
+                self._outcomes.pop(material_id, None)
+
+    async def _attempt(self, stored: StoredFile, owner_id: UUID) -> PipelineResult | None:
         material_id = stored.material_id
         try:
             return await self._process(stored, owner_id)
@@ -184,11 +297,12 @@ class MaterialPipeline:
             # covers a job cancelled before it ever reached this method.
             raise
         except Exception as exc:
+            log.info("material %s failed with %s", material_id, type(exc).__name__)
             await self._fail(
                 material_id,
                 owner_id,
                 "Processing failed unexpectedly.",
-                type(exc).__name__,
+                INTERNAL_ERROR,
             )
             raise
 
@@ -226,9 +340,16 @@ class MaterialPipeline:
         if self._store is not None:
             await self._store.save_chunks(result, embeddings)
 
-        question_count = await self._generate(material_id, owner_id, result.chunks)
+        # For the lecturer, and stored. The build notes below are for whoever
+        # reads the log, and a lecturer has no use for them.
+        lecturer_warnings = list(result.warnings)
 
-        warnings = list(result.warnings)
+        questions = await self._generate(material_id, owner_id, result.chunks, lecturer_warnings)
+        if self._store is not None and questions:
+            await self._store.save_questions(material_id, questions)
+        question_count = len(questions)
+
+        warnings = list(lecturer_warnings)
         for missing, what in (
             (self._embedder is None, "embedding"),
             (self._generator is None, "question generation"),
@@ -246,12 +367,12 @@ class MaterialPipeline:
         # Written down before it is announced. The other order told the
         # lecturer "done" and then, when the database write failed, "failed",
         # about a material whose success was never recorded anywhere durable.
-        if self._store is not None:
-            await self._store.record_outcome(
-                JobStatus.for_stage(material_id, MaterialStage.DONE, message=done_message),
-                page_count=result.page_count,
-                chunk_count=len(result.chunks),
-            )
+        await self._record(
+            JobStatus.for_stage(material_id, MaterialStage.DONE, message=done_message),
+            page_count=result.page_count,
+            chunk_count=len(result.chunks),
+            warnings=tuple(lecturer_warnings),
+        )
 
         await self._report(material_id, owner_id, MaterialStage.DONE, done_message)
 
@@ -276,41 +397,105 @@ class MaterialPipeline:
 
     async def _embed(
         self, material_id: UUID, owner_id: UUID, chunks: Sequence[ContentChunk]
-    ) -> list[Embedding]:
+    ) -> EmbeddingBatch | None:
         if self._embedder is None:
-            return []
+            return None
 
         await self._report(
             material_id, owner_id, MaterialStage.EMBEDDING, "Indexing the content for retrieval."
         )
-        embeddings = list(await self._embedder.embed(chunks))
+        batch = await self._embedder.embed(chunks)
 
         # zip would drop the surplus silently, storing chunks against the wrong
         # vectors and leaving retrieval to return confidently wrong slides.
-        if len(embeddings) != len(chunks):
+        if len(batch.vectors) != len(chunks):
             raise RuntimeError(
-                f"embedder returned {len(embeddings)} vectors for {len(chunks)} chunks"
+                f"embedder returned {len(batch.vectors)} vectors for {len(chunks)} chunks"
             )
-        return embeddings
+        # The column is a fixed-width vector sized from settings, so a model
+        # with another width fails at the insert with a pgvector error that
+        # names neither the model nor the setting. Refused here, it says both.
+        expected = self._settings.embedding_dim
+        if batch.dim != expected or any(len(vector) != expected for vector in batch.vectors):
+            raise RuntimeError(
+                f"embedding model {batch.model!r} produced vectors that do not match "
+                f"embedding_dim={expected}"
+            )
+        return batch
 
     async def _generate(
-        self, material_id: UUID, owner_id: UUID, chunks: Sequence[ContentChunk]
-    ) -> int:
+        self,
+        material_id: UUID,
+        owner_id: UUID,
+        chunks: Sequence[ContentChunk],
+        warnings: list[str],
+    ) -> list[DraftQuestion]:
         if self._generator is None:
-            return 0
+            return []
 
         await self._report(material_id, owner_id, MaterialStage.GENERATING, "Drafting questions.")
-        return await self._generator.generate(material_id, chunks)
+        drafts = await self._generator.generate(material_id, chunks)
+
+        # A model will sometimes return an answer key that points past the
+        # options. Storing it would mark every student wrong on that question,
+        # so it is dropped, and one bad draft does not cost the lecturer the rest.
+        usable: list[DraftQuestion] = []
+        for index, draft in enumerate(drafts):
+            try:
+                problem = draft.problem()
+            except Exception:
+                # A draft malformed enough to break the check is dropped like
+                # any other, rather than failing every question with it.
+                problem = "could not be checked"
+            if problem is None:
+                usable.append(draft)
+            else:
+                log.warning("material %s: dropped draft %d, which %s", material_id, index, problem)
+                warnings.append(f"draft question {index} {problem} and was dropped")
+        return usable
 
     async def abandon(self, material_id: UUID, owner_id: UUID) -> None:
-        """Report that a shutdown stopped this material.
+        """Make sure the outcome of a material stopped by shutdown is recorded.
 
         Handed to the processor as on_cancel, so it covers a job still waiting
         for a slot as well as one halfway through; a queued job never entered
         run() at all, which is why this cannot live there. The stored file is
         kept, since nothing was wrong with it.
+
+        Shutdown can land at three points, and only one of them is an
+        interruption:
+
+        - During a terminal write. The write is shielded and finishes. Marking
+          the material interrupted on top of it overwrote a committed success
+          with a failure, with the chunks and questions already stored.
+        - After a failure was announced but before it was written. The registry
+          already showed it, so this used to be skipped and the database kept
+          saying processing. The real failure is written instead.
+        - Anywhere else. The material is reported and recorded as interrupted.
         """
-        await self._fail(material_id, owner_id, INTERRUPTED_MESSAGE, CANCELLED_ERROR)
+        pending = self._outcomes.pop(material_id, None)
+        if pending is not None:
+            status, write = pending
+            try:
+                await asyncio.shield(write)
+            except Exception:
+                log.warning("the outcome of material %s was not recorded", material_id)
+            else:
+                current = self._registry.get(material_id)
+                if current is None or not current.is_finished:
+                    # Success is written before it is announced, so the
+                    # announcement is what the shutdown cut off.
+                    await self._report(
+                        material_id, owner_id, status.stage, status.message, error=status.error
+                    )
+                return
+
+        current = self._registry.get(material_id)
+        if self._store is not None and current is not None and current.is_finished:
+            await self._record_quietly(current)
+            return
+
+        await self._fail(material_id, owner_id, INTERRUPTED_MESSAGE, INTERRUPTED_ERROR)
 
     async def _fail(self, material_id: UUID, owner_id: UUID, message: str, error: str) -> None:
         # Announced before it is written down, the reverse of success. A
@@ -320,14 +505,40 @@ class MaterialPipeline:
         status = await self._report(
             material_id, owner_id, MaterialStage.FAILED, message, error=error
         )
-        if self._store is None:
-            return
+        await self._record_quietly(status)
+
+    async def _record_quietly(self, status: JobStatus) -> None:
         try:
-            await self._store.record_outcome(status)
+            await self._record(status)
         except Exception:
             # Already failing. A second error here would replace a message that
             # names the real problem with one about the database.
-            log.exception("could not record the failure of material %s", material_id)
+            log.exception("could not record the failure of material %s", status.material_id)
+
+    async def _record(
+        self,
+        status: JobStatus,
+        page_count: int | None = None,
+        chunk_count: int | None = None,
+        warnings: Sequence[str] = (),
+    ) -> None:
+        """Write a terminal state, and finish writing it even if cancelled.
+
+        A write cancelled after the database committed but before the driver
+        returned leaves no way to tell whether it happened. Shielded, it always
+        completes, and abandon() waits for it and knows the answer.
+        """
+        if self._store is None:
+            return
+        write = asyncio.ensure_future(
+            self._store.record_outcome(
+                status, page_count=page_count, chunk_count=chunk_count, warnings=warnings
+            )
+        )
+        # Read here so an exception nobody awaits is not logged as unretrieved.
+        write.add_done_callback(lambda done: done.cancelled() or done.exception())
+        self._outcomes[status.material_id] = (status, write)
+        await asyncio.shield(write)
 
     async def _report(
         self,

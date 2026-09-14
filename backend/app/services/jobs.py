@@ -55,7 +55,12 @@ TERMINAL_STAGES = {MaterialStage.DONE, MaterialStage.FAILED}
 # processor and the pipeline so the wording cannot drift between the job that
 # was waiting for a slot and the job that was halfway through a parse.
 INTERRUPTED_MESSAGE = "Processing was interrupted while the server was stopping."
-CANCELLED_ERROR = "cancelled"
+
+# Machine-readable codes for JobStatus.error, in the same UPPER_SNAKE form as
+# the API's error envelope. The lecturer-facing text is JobStatus.message; an
+# exception class name is an implementation detail and belongs in the log.
+INTERRUPTED_ERROR = "INTERRUPTED"
+INTERNAL_ERROR = "INTERNAL_ERROR"
 
 # How long a cancel hook may run at shutdown. It tells the lecturer and
 # writes to the database, and a deploy must not wait indefinitely on either;
@@ -173,8 +178,14 @@ class BackgroundProcessor:
     """Accepts work, runs it later, and never lets a failure disappear."""
 
     def __init__(self, registry: JobRegistry, max_concurrent: int = 2) -> None:
+        # Zero is accepted by Semaphore and queues every job forever with no
+        # error anywhere, so it is refused here rather than discovered later.
+        if max_concurrent < 1:
+            raise ValueError(f"max_concurrent must be at least 1, got {max_concurrent}")
         self._registry = registry
-        self._limit = asyncio.Semaphore(max_concurrent)
+        self._max_concurrent = max_concurrent
+        self._limit: asyncio.Semaphore | None = None
+        self._limit_loop: asyncio.AbstractEventLoop | None = None
         # Strong references to running tasks. asyncio only holds a weak one, so
         # a task nothing else references can be garbage collected mid-await and
         # the job vanishes with no error anywhere.
@@ -230,12 +241,12 @@ class BackgroundProcessor:
         # queued raises from the semaphore, and outside the try that skipped
         # every handler below and left the material pending forever.
         try:
-            async with self._limit:
+            async with self._slot():
                 await work()
         except asyncio.CancelledError:
             await self._abandon(material_id, on_cancel)
             raise
-        except Exception as exc:
+        except Exception:
             # The pipeline marks its own failures. Reaching here means
             # something outside it broke, and a job that ends with no
             # terminal state is a spinner that never stops.
@@ -246,7 +257,7 @@ class BackgroundProcessor:
                     material_id,
                     MaterialStage.FAILED,
                     message="Processing failed unexpectedly.",
-                    error=type(exc).__name__,
+                    error=INTERNAL_ERROR,
                 )
 
     async def _abandon(
@@ -256,15 +267,21 @@ class BackgroundProcessor:
     ) -> None:
         """Record that a shutdown stopped this job, then let cancellation go on.
 
-        Shutdown, not a bad file, so the upload is not blamed. A job that had
-        already finished is left alone: cancellation can land in the instant
-        between the last write and the task returning.
-        """
-        current = self._registry.get(material_id)
-        if current is not None and current.is_finished:
-            return
+        Shutdown, not a bad file, so the upload is not blamed.
 
-        if on_cancel is not None:
+        The hook runs even when the registry already shows a terminal state.
+        The registry changes the moment a failure is announced, before it is
+        written to the database, so a finished entry here does not mean the
+        outcome was recorded. Only the caller knows that; the pipeline's hook
+        checks what it actually wrote. Without a hook, a finished job is left
+        alone, since cancellation can land between its last write and the task
+        returning.
+        """
+        if on_cancel is None:
+            current = self._registry.get(material_id)
+            if current is not None and current.is_finished:
+                return
+        else:
             try:
                 async with asyncio.timeout(ABANDON_TIMEOUT_SECONDS):
                     await on_cancel()
@@ -279,8 +296,23 @@ class BackgroundProcessor:
                 material_id,
                 MaterialStage.FAILED,
                 message=INTERRUPTED_MESSAGE,
-                error=CANCELLED_ERROR,
+                error=INTERRUPTED_ERROR,
             )
+
+    def _slot(self) -> asyncio.Semaphore:
+        """The concurrency limit for the loop this job is running on.
+
+        The processor is a process-wide singleton, and a Semaphore binds itself
+        to the first loop that has to wait on it. A second loop in the same
+        process, as a test run or a reloaded app produces, then failed every
+        job that queued with "bound to a different event loop", recorded as an
+        unexpected processing failure. Built per loop, each gets its own.
+        """
+        loop = asyncio.get_running_loop()
+        if self._limit is None or self._limit_loop is not loop:
+            self._limit = asyncio.Semaphore(self._max_concurrent)
+            self._limit_loop = loop
+        return self._limit
 
     async def drain(self, grace_seconds: float = 30.0) -> None:
         """Wait for in-flight work at shutdown, then cancel what is left.

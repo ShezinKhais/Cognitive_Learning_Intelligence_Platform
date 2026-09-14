@@ -52,6 +52,10 @@ SEND_TIMEOUT_SECONDS = 5.0
 # "try again later", which is the instruction: reconnect and resume.
 CLOSE_TRY_AGAIN_LATER = 1013
 
+# Closing writes a frame to a socket that has just failed a write, so it is
+# bounded as well. It runs in the background, so this limit holds up nobody.
+CLOSE_TIMEOUT_SECONDS = 5.0
+
 
 class Connection:
     def __init__(self, websocket: WebSocket, user_id: UUID, session_id: UUID | None) -> None:
@@ -79,6 +83,9 @@ class SessionHub:
         # candidate once the map reaches MAX_TRACKED_SESSIONS.
         self._seq: OrderedDict[UUID, int] = OrderedDict()
         self._lock = asyncio.Lock()
+        # Strong references to closes in progress, which run detached from
+        # the delivery that found the dead socket.
+        self._closing: set[asyncio.Task[None]] = set()
         # Assigning a seq and writing it to the socket have to be one step.
         # Two jobs reporting on the same user channel otherwise take numbers 1
         # and 2, and whichever socket write completes first arrives first, so a
@@ -211,12 +218,15 @@ class SessionHub:
             targets = list(self._rooms.get(session_id, ()))
 
         delivered = 0
+        dead: list[Connection] = []
         for connection in targets:
             if await self._deliver(connection, payload):
                 delivered += 1
             else:
                 log.warning("send failed for user %s, dropping", connection.user_id)
-                await self.leave(connection)
+                dead.append(connection)
+        for connection in dead:
+            await self._drop(connection)
         return delivered
 
     async def send_to_user_channel(
@@ -257,7 +267,7 @@ class SessionHub:
 
         for connection in dead:
             log.warning("user-channel send failed for user %s, dropping", user_id)
-            await self.leave(connection)
+            await self._drop(connection)
 
         return delivered
 
@@ -280,29 +290,44 @@ class SessionHub:
             targets = [c for c in self._rooms.get(session_id, ()) if c.user_id == user_id]
 
         delivered = 0
+        dead: list[Connection] = []
         for connection in targets:
             if await self._deliver(connection, payload):
                 delivered += 1
             else:
                 log.warning("targeted send failed for user %s, dropping", user_id)
-                await self.leave(connection)
+                dead.append(connection)
+        for connection in dead:
+            await self._drop(connection)
         return delivered > 0
 
     async def _deliver(self, connection: Connection, payload: dict) -> bool:
         """Write one frame, reporting whether it arrived rather than raising.
 
         A write that outlasts SEND_TIMEOUT_SECONDS counts as a failure, so the
-        caller drops the connection exactly as it would a closed one. The
-        client is closed so that it reconnects and resumes, which is a far
-        better outcome for everyone than waiting on it.
+        caller drops the connection exactly as it would a closed one. Nothing
+        is closed here: callers can be holding a user's delivery lock, and a
+        close is another write to the same stalled socket.
         """
         try:
             async with asyncio.timeout(SEND_TIMEOUT_SECONDS):
                 await connection.websocket.send_json(payload)
         except Exception:
-            await self._close_quietly(connection)
             return False
         return True
+
+    async def _drop(self, connection: Connection) -> None:
+        """Forget a failed connection now, and close it in the background.
+
+        The close used to be awaited inline, under the user's delivery lock, so
+        one stalled tab held up progress to that lecturer's healthy tabs for a
+        second timeout, and the pipeline awaiting the send waited too. Detached,
+        the caller moves on as soon as the connection is out of the registry.
+        """
+        await self.leave(connection)
+        task = asyncio.create_task(self._close_quietly(connection))
+        self._closing.add(task)
+        task.add_done_callback(self._closing.discard)
 
     async def _close_quietly(self, connection: Connection) -> None:
         """Close a connection the hub is about to forget, so the client finds out.
@@ -318,7 +343,7 @@ class SessionHub:
         there is nothing more to do about that.
         """
         with contextlib.suppress(Exception):
-            async with asyncio.timeout(SEND_TIMEOUT_SECONDS):
+            async with asyncio.timeout(CLOSE_TIMEOUT_SECONDS):
                 await connection.websocket.close(code=CLOSE_TRY_AGAIN_LATER)
 
     @asynccontextmanager

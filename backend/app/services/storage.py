@@ -30,7 +30,7 @@ import shutil
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Protocol
 from uuid import UUID
 
@@ -76,6 +76,16 @@ class MaterialStorage(Protocol):
         ...
 
 
+def display_name(filename: str) -> str:
+    """The last component of a client-supplied filename, whatever the host OS.
+
+    Some browsers send the full client path. Path(...).name only splits on the
+    server's own separator, so on a Linux host "C:\\Users\\bob\\notes.txt" came
+    back whole. PureWindowsPath splits on both separators and drops a drive.
+    """
+    return PureWindowsPath(filename).name
+
+
 def validated_extension(filename: str, allowed: set[str]) -> str:
     """Return the lowercase extension, or refuse the file.
 
@@ -84,12 +94,12 @@ def validated_extension(filename: str, allowed: set[str]) -> str:
     than trusted. Suffix comes from PurePath, so a name like `notes.pdf.exe`
     yields `exe` and is refused instead of being read as a PDF.
     """
-    extension = Path(filename).suffix.lower().lstrip(".")
+    extension = PureWindowsPath(filename).suffix.lower().lstrip(".")
 
     if not extension:
         raise ValidationError(
             "This file has no extension, so there is no way to tell what it is.",
-            {"filename": Path(filename).name},
+            {"filename": display_name(filename)},
         )
 
     if extension not in allowed:
@@ -163,13 +173,13 @@ class LocalDiskStorage:
 
         if written == 0:
             await asyncio.to_thread(destination.unlink, missing_ok=True)
-            raise ValidationError("File is empty", {"filename": Path(filename).name})
+            raise ValidationError("File is empty", {"filename": display_name(filename)})
 
         log.info("stored material %s as %s (%d bytes)", material_id, destination.name, written)
 
         return StoredFile(
             material_id=material_id,
-            filename=Path(filename).name,
+            filename=display_name(filename),
             extension=extension,
             size_bytes=written,
             key=str(destination),
