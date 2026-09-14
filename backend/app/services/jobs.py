@@ -51,6 +51,12 @@ STAGE_PERCENT: dict[MaterialStage, int] = {
 
 TERMINAL_STAGES = {MaterialStage.DONE, MaterialStage.FAILED}
 
+# What a lecturer is told when a deploy stops their upload. Shared by the
+# processor and the pipeline so the wording cannot drift between the job that
+# was waiting for a slot and the job that was halfway through a parse.
+INTERRUPTED_MESSAGE = "Processing was interrupted while the server was stopping."
+CANCELLED_ERROR = "cancelled"
+
 
 @dataclass(frozen=True)
 class JobStatus:
@@ -67,6 +73,28 @@ class JobStatus:
     @property
     def is_finished(self) -> bool:
         return self.stage in TERMINAL_STAGES
+
+    @classmethod
+    def for_stage(
+        cls,
+        material_id: UUID,
+        stage: MaterialStage,
+        message: str | None = None,
+        error: str | None = None,
+    ) -> JobStatus:
+        """The status a material holds once it reaches `stage`.
+
+        Built without touching the registry, so a terminal state can be written
+        to the database before anything announces it.
+        """
+        return cls(
+            material_id=material_id,
+            status=_status_for(stage),
+            stage=stage,
+            percent=STAGE_PERCENT[stage],
+            message=message,
+            error=error,
+        )
 
 
 def _status_for(stage: MaterialStage) -> MaterialStatus:
@@ -104,16 +132,7 @@ class JobRegistry:
         message: str | None = None,
         error: str | None = None,
     ) -> JobStatus:
-        return self.record(
-            JobStatus(
-                material_id=material_id,
-                status=_status_for(stage),
-                stage=stage,
-                percent=STAGE_PERCENT[stage],
-                message=message,
-                error=error,
-            )
-        )
+        return self.record(JobStatus.for_stage(material_id, stage, message=message, error=error))
 
     def get(self, material_id: UUID) -> JobStatus | None:
         return self._jobs.get(material_id)
@@ -164,12 +183,19 @@ class BackgroundProcessor:
         self,
         material_id: UUID,
         work: Callable[[], Awaitable[None]],
+        on_cancel: Callable[[], Awaitable[None]] | None = None,
     ) -> asyncio.Task:
         """Queue work and return immediately.
 
         The material is marked queued here rather than inside the task, so a
         status read between the 202 and the worker starting reports pending
         instead of "no such material".
+
+        `on_cancel` runs when a shutdown stops the job, whether it was halfway
+        through or still waiting for a slot. The registry is memory only and
+        dies with the process, so this is the caller's one chance to tell the
+        lecturer and the database; without it a restart leaves both believing
+        the upload is still processing.
         """
         self._registry.record(
             JobStatus(
@@ -182,7 +208,7 @@ class BackgroundProcessor:
         )
 
         task = asyncio.create_task(
-            self._run(material_id, work),
+            self._run(material_id, work, on_cancel),
             name=f"material-{material_id}",
         )
         self._running.add(task)
@@ -193,33 +219,62 @@ class BackgroundProcessor:
         self,
         material_id: UUID,
         work: Callable[[], Awaitable[None]],
+        on_cancel: Callable[[], Awaitable[None]] | None,
     ) -> None:
-        async with self._limit:
-            try:
+        # Waiting for a slot is inside the try. A job cancelled while still
+        # queued raises from the semaphore, and outside the try that skipped
+        # every handler below and left the material pending forever.
+        try:
+            async with self._limit:
                 await work()
-            except asyncio.CancelledError:
-                # Shutdown, not a bad file. Say so rather than blaming the
-                # upload, and let the cancellation continue to propagate.
+        except asyncio.CancelledError:
+            await self._abandon(material_id, on_cancel)
+            raise
+        except Exception as exc:
+            # The pipeline marks its own failures. Reaching here means
+            # something outside it broke, and a job that ends with no
+            # terminal state is a spinner that never stops.
+            log.exception("processing material %s failed", material_id)
+            current = self._registry.get(material_id)
+            if current is None or not current.is_finished:
                 self._registry.advance(
                     material_id,
                     MaterialStage.FAILED,
-                    message="Processing was interrupted while the server was stopping.",
-                    error="cancelled",
+                    message="Processing failed unexpectedly.",
+                    error=type(exc).__name__,
                 )
-                raise
-            except Exception as exc:
-                # The pipeline marks its own failures. Reaching here means
-                # something outside it broke, and a job that ends with no
-                # terminal state is a spinner that never stops.
-                log.exception("processing material %s failed", material_id)
-                current = self._registry.get(material_id)
-                if current is None or not current.is_finished:
-                    self._registry.advance(
-                        material_id,
-                        MaterialStage.FAILED,
-                        message="Processing failed unexpectedly.",
-                        error=type(exc).__name__,
-                    )
+
+    async def _abandon(
+        self,
+        material_id: UUID,
+        on_cancel: Callable[[], Awaitable[None]] | None,
+    ) -> None:
+        """Record that a shutdown stopped this job, then let cancellation go on.
+
+        Shutdown, not a bad file, so the upload is not blamed. A job that had
+        already finished is left alone: cancellation can land in the instant
+        between the last write and the task returning.
+        """
+        current = self._registry.get(material_id)
+        if current is not None and current.is_finished:
+            return
+
+        if on_cancel is not None:
+            try:
+                await on_cancel()
+            except Exception:
+                log.exception("could not report the interruption of material %s", material_id)
+
+        # The registry is the backstop whether or not the caller managed to
+        # report it, so the job still ends in a terminal state here.
+        current = self._registry.get(material_id)
+        if current is None or not current.is_finished:
+            self._registry.advance(
+                material_id,
+                MaterialStage.FAILED,
+                message=INTERRUPTED_MESSAGE,
+                error=CANCELLED_ERROR,
+            )
 
     async def drain(self, grace_seconds: float = 30.0) -> None:
         """Wait for in-flight work at shutdown, then cancel what is left.

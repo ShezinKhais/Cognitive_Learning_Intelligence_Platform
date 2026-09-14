@@ -537,3 +537,48 @@ async def test_leaving_empties_the_room() -> None:
     await hub.leave(connection)
 
     assert hub.participant_count(session) == 0
+
+
+def test_ready_is_the_first_frame_even_with_an_upload_in_progress(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Joining before ready made the connection visible to delivery mid
+    handshake, so a progress frame could arrive first and be dropped by any
+    client that waits for ready as the protocol says it should.
+
+    The race is forced here rather than left to timing: the join itself
+    publishes progress, which is exactly the moment an upload already running
+    for this lecturer would.
+    """
+    from app.api.v1 import ws as ws_module
+    from app.auth.store import LECTURER_ID
+
+    from .dev_credentials import LECTURER_PASSWORD
+
+    real_join = ws_module.hub.join
+
+    async def join_while_an_upload_reports(connection) -> None:
+        await real_join(connection)
+        await ws_module.hub.send_to_user_channel(
+            connection.user_id,
+            ServerEventType.MATERIAL_PROGRESS,
+            {"material_id": str(uuid4()), "stage": "extracting", "percent": 20},
+        )
+
+    monkeypatch.setattr(ws_module.hub, "join", join_while_an_upload_reports)
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "lecturer@clip.example.com", "password": LECTURER_PASSWORD},
+    )
+    token = login.json()["access_token"]
+
+    with client.websocket_connect("/ws/session") as ws:
+        ws.send_json({"type": ClientEventType.AUTH.value, "data": {"token": token}})
+        first = ws.receive_json()
+        second = ws.receive_json()
+
+    assert first["type"] == ServerEventType.READY
+    assert first["data"]["user_id"] == str(LECTURER_ID)
+    assert second["type"] == ServerEventType.MATERIAL_PROGRESS

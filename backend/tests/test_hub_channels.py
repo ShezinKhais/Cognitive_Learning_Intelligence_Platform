@@ -10,8 +10,12 @@ to, and in what order it arrives.
 from __future__ import annotations
 
 import asyncio
+import time
 from uuid import uuid4
 
+import pytest
+
+from app.realtime import hub as hub_module
 from app.realtime.hub import (
     MAX_TRACKED_SESSIONS,
     Connection,
@@ -285,3 +289,94 @@ async def test_concurrent_progress_arrives_in_sequence_order() -> None:
     )
 
     assert socket.received == [1, 2, 3, 4, 5, 6]
+
+
+class _StalledSocket:
+    """A client that has stopped acknowledging without closing the connection."""
+
+    def __init__(self) -> None:
+        self.attempts = 0
+
+    async def send_json(self, payload: dict) -> None:
+        self.attempts += 1
+        await asyncio.sleep(3600)
+
+
+async def test_a_stalled_lecturer_does_not_hold_up_another_lecturers_progress() -> None:
+    """One lock for the whole hub, held across socket writes, meant a single
+    stuck connection stopped progress reaching every lecturer on the process."""
+    hub = SessionHub()
+    stalled, other = uuid4(), uuid4()
+    await hub.join(Connection(_StalledSocket(), stalled, None))
+    healthy = _FakeSocket()
+    await hub.join(Connection(healthy, other, None))
+
+    stuck = asyncio.create_task(
+        hub.send_to_user_channel(stalled, ServerEventType.MATERIAL_PROGRESS, {})
+    )
+    await asyncio.sleep(0)
+
+    started = time.monotonic()
+    delivered = await hub.send_to_user_channel(other, ServerEventType.MATERIAL_PROGRESS, {})
+
+    assert delivered == 1
+    assert time.monotonic() - started < 0.5
+    stuck.cancel()
+
+
+async def test_a_socket_that_stops_acknowledging_is_dropped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Treated like a closed socket: the client reconnects and resumes, which
+    beats every later event for that lecturer waiting on it."""
+    monkeypatch.setattr(hub_module, "SEND_TIMEOUT_SECONDS", 0.05)
+    hub = SessionHub()
+    lecturer = uuid4()
+    socket = _StalledSocket()
+    await hub.join(Connection(socket, lecturer, None))
+
+    first = await hub.send_to_user_channel(lecturer, ServerEventType.MATERIAL_PROGRESS, {})
+    second = await hub.send_to_user_channel(lecturer, ServerEventType.MATERIAL_PROGRESS, {})
+
+    assert first == 0
+    assert second == 0
+    assert socket.attempts == 1
+
+
+async def test_a_stalled_socket_in_a_class_does_not_stall_the_broadcast(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Broadcast walks the room one socket at a time, so without a bound one
+    student in a tunnel holds a question back from the other thirty-nine."""
+    monkeypatch.setattr(hub_module, "SEND_TIMEOUT_SECONDS", 0.05)
+    hub = SessionHub()
+    session = uuid4()
+    await hub.join(Connection(_StalledSocket(), uuid4(), session))
+    listening = _FakeSocket()
+    await hub.join(Connection(listening, uuid4(), session))
+
+    delivered = await hub.broadcast(session, ServerEventType.PONG, {})
+
+    assert delivered == 1
+    assert len(listening.sent) == 1
+
+
+async def test_per_user_delivery_locks_are_released_once_idle() -> None:
+    """A lock per user is only safe if it goes away again. Otherwise every
+    lecturer who ever uploaded leaves an entry behind for the life of the
+    process."""
+    hub = SessionHub()
+    lecturers = [uuid4() for _ in range(50)]
+    for lecturer in lecturers:
+        await hub.join(Connection(_FakeSocket(), lecturer, None))
+
+    await asyncio.gather(
+        *[
+            hub.send_to_user_channel(lecturer, ServerEventType.MATERIAL_PROGRESS, {})
+            for lecturer in lecturers
+            for _ in range(3)
+        ]
+    )
+
+    assert hub._delivery_locks == {}
+    assert hub._delivery_waiters == {}

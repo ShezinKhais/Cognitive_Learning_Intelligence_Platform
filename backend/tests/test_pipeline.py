@@ -10,7 +10,10 @@ lines that records what it was handed.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import threading
+import time
 from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -22,8 +25,14 @@ from app.realtime.hub import Connection, SessionHub
 from app.schemas.content import MaterialStatus
 from app.schemas.events import MaterialProgressPayload, MaterialStage, ServerEventType
 from app.services.extraction import ContentChunk, ProcessingResult
-from app.services.jobs import JobRegistry, JobStatus
-from app.services.pipeline import MaterialPipeline
+from app.services.jobs import (
+    CANCELLED_ERROR,
+    INTERRUPTED_MESSAGE,
+    BackgroundProcessor,
+    JobRegistry,
+    JobStatus,
+)
+from app.services.pipeline import MaterialPipeline, run_in_daemon_thread
 from app.services.storage import LocalDiskStorage, StoredFile
 
 SAMPLES = Path(__file__).resolve().parent / "samples"
@@ -369,3 +378,107 @@ async def test_extraction_does_not_run_on_the_event_loop(
     await pipeline.run(await stored_text(storage), uuid4())
 
     assert ran_on and ran_on[0] != loop_thread
+
+
+async def test_success_is_not_announced_until_it_is_recorded(tmp_path: Path) -> None:
+    """Announcing first sent the lecturer "done" and then "failed" when the
+    database write that should have preceded it went wrong."""
+
+    class RefusesToRecordSuccess(Store):
+        async def record_outcome(self, status, page_count=None, chunk_count=None) -> None:
+            if status.stage is MaterialStage.DONE:
+                raise ConnectionError("database is gone")
+            await super().record_outcome(status, page_count, chunk_count)
+
+    hub = SessionHub()
+    owner = uuid4()
+    socket = await watching(hub, owner)
+    pipeline, storage, registry = build(tmp_path, hub=hub, store=RefusesToRecordSuccess())
+    stored = await stored_text(storage)
+
+    with pytest.raises(ConnectionError):
+        await pipeline.run(stored, owner)
+
+    assert MaterialStage.DONE not in stages(socket)
+    assert stages(socket)[-1] == MaterialStage.FAILED
+    assert registry.get(stored.material_id).stage is MaterialStage.FAILED
+
+
+async def test_an_upload_interrupted_by_shutdown_is_reported_and_recorded(
+    tmp_path: Path,
+) -> None:
+    """Without this the process exits with the lecturer still watching the
+    bar move and the database still saying the material is processing."""
+
+    class SlowStore(Store):
+        def __init__(self) -> None:
+            super().__init__()
+            self.writing = asyncio.Event()
+
+        async def save_chunks(self, result, embeddings) -> None:
+            self.writing.set()
+            await asyncio.sleep(3600)
+
+    hub = SessionHub()
+    owner = uuid4()
+    socket = await watching(hub, owner)
+    store = SlowStore()
+    pipeline, storage, registry = build(tmp_path, hub=hub, store=store)
+    processor = BackgroundProcessor(registry, max_concurrent=1)
+    stored = await stored_text(storage)
+
+    async def work() -> None:
+        await pipeline.run(stored, owner)
+
+    async def interrupted() -> None:
+        await pipeline.abandon(stored.material_id, owner)
+
+    processor.submit(stored.material_id, work, on_cancel=interrupted)
+    # Stopped partway through, mid database write, rather than before it began.
+    await store.writing.wait()
+
+    await processor.drain(grace_seconds=0.01)
+
+    assert stages(socket)[-1] == MaterialStage.FAILED
+    assert socket.sent[-1]["data"]["message"] == INTERRUPTED_MESSAGE
+    assert [outcome.stage for outcome in store.outcomes] == [MaterialStage.FAILED]
+    assert store.outcomes[0].error == CANCELLED_ERROR
+    # Nothing was wrong with the file, so it survives for a retry.
+    assert exists(stored.key)
+
+
+def test_shutdown_does_not_wait_for_a_parse_it_has_abandoned() -> None:
+    """Cancelling cannot stop a thread. With the default executor the process
+    then waited for the whole parse before it could exit, for a result it had
+    already discarded."""
+
+    def slow_parse() -> str:
+        time.sleep(2)
+        return "too late"
+
+    async def deploy() -> None:
+        parse = asyncio.create_task(run_in_daemon_thread(slow_parse))
+        await asyncio.sleep(0.05)
+        parse.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await parse
+
+    started = time.monotonic()
+    asyncio.run(deploy())
+
+    assert time.monotonic() - started < 1.0
+
+
+async def test_daemon_thread_returns_results_and_raises_errors_unchanged() -> None:
+    """A bad document has to arrive as the ValidationError the pipeline treats
+    as the lecturer's problem, not as something wrapped or swallowed."""
+
+    def parses() -> int:
+        return 42
+
+    def rejects() -> None:
+        raise ValueError("not a real document")
+
+    assert await run_in_daemon_thread(parses) == 42
+    with pytest.raises(ValueError, match="not a real document"):
+        await run_in_daemon_thread(rejects)

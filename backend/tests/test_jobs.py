@@ -16,6 +16,7 @@ from uuid import uuid4
 from app.schemas.content import MaterialStatus
 from app.schemas.events import MaterialStage
 from app.services.jobs import (
+    CANCELLED_ERROR,
     STAGE_PERCENT,
     BackgroundProcessor,
     JobRegistry,
@@ -231,3 +232,86 @@ def test_forgetting_a_job_removes_it() -> None:
     registry.forget(material_id)
 
     assert registry.get(material_id) is None
+
+
+async def test_a_job_still_waiting_for_a_slot_is_marked_when_shutdown_cancels_it() -> None:
+    """Waiting for the semaphore used to sit outside the handlers, so a queued
+    job cancelled by a deploy skipped all of them and stayed pending forever."""
+    registry = JobRegistry()
+    processor = BackgroundProcessor(registry, max_concurrent=1)
+    holding = asyncio.Event()
+
+    async def hogs_the_only_slot() -> None:
+        holding.set()
+        await asyncio.sleep(3600)
+
+    async def never_gets_a_turn() -> None:
+        raise AssertionError("a queued job must not run after shutdown")
+
+    processor.submit(uuid4(), hogs_the_only_slot)
+    queued = uuid4()
+    processor.submit(queued, never_gets_a_turn)
+    await holding.wait()
+
+    await processor.drain(grace_seconds=0.01)
+
+    status = registry.get(queued)
+    assert status is not None
+    assert status.status is MaterialStatus.FAILED
+    assert status.error == CANCELLED_ERROR
+
+
+async def test_shutdown_hands_every_interrupted_job_to_its_caller() -> None:
+    """The registry dies with the process, so the caller has to be told in
+    order to reach the lecturer and the database. Both the running job and the
+    one still queued behind it count."""
+    registry = JobRegistry()
+    processor = BackgroundProcessor(registry, max_concurrent=1)
+    holding = asyncio.Event()
+    reported: list[str] = []
+
+    async def runs() -> None:
+        holding.set()
+        await asyncio.sleep(3600)
+
+    async def queued() -> None:
+        await asyncio.sleep(3600)
+
+    def reporter(label: str):
+        async def report() -> None:
+            reported.append(label)
+
+        return report
+
+    processor.submit(uuid4(), runs, on_cancel=reporter("running"))
+    processor.submit(uuid4(), queued, on_cancel=reporter("queued"))
+    await holding.wait()
+
+    await processor.drain(grace_seconds=0.01)
+
+    assert sorted(reported) == ["queued", "running"]
+
+
+async def test_a_cancel_hook_that_fails_still_leaves_a_terminal_state() -> None:
+    """The database being down during a deploy must not leave a spinner."""
+    registry = JobRegistry()
+    processor = BackgroundProcessor(registry, max_concurrent=1)
+    started = asyncio.Event()
+
+    async def runs() -> None:
+        started.set()
+        await asyncio.sleep(3600)
+
+    async def broken_hook() -> None:
+        raise ConnectionError("database is gone")
+
+    material_id = uuid4()
+    processor.submit(material_id, runs, on_cancel=broken_hook)
+    await started.wait()
+
+    await processor.drain(grace_seconds=0.01)
+
+    status = registry.get(material_id)
+    assert status is not None
+    assert status.is_finished
+    assert status.error == CANCELLED_ERROR

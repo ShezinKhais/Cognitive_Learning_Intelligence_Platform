@@ -20,6 +20,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import OrderedDict, defaultdict
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -36,6 +38,14 @@ log = logging.getLogger("clip.realtime")
 # A single lecturer never approaches this; reaching it means something is
 # creating sessions that never end, which is worth a log line.
 MAX_TRACKED_SESSIONS = 1024
+
+# How long one socket write may take before the connection is treated as dead.
+# A client on a train in a tunnel stops acknowledging without closing, and a
+# write to it waits on TCP backpressure indefinitely. Every delivery path loops
+# over its recipients one at a time, so without a bound that one socket holds
+# up everyone after it in the loop. Five seconds is far past any healthy write
+# of a few hundred bytes.
+SEND_TIMEOUT_SECONDS = 5.0
 
 
 class Connection:
@@ -68,9 +78,17 @@ class SessionHub:
         # Two jobs reporting on the same user channel otherwise take numbers 1
         # and 2, and whichever socket write completes first arrives first, so a
         # client tracking last_seq sees 2 followed by 1 and reads a gap where
-        # nothing was lost. Held separately from _lock so that delivery does
-        # not block a connection joining or leaving.
-        self._delivery_lock = asyncio.Lock()
+        # nothing was lost.
+        #
+        # One lock per user, not one for the hub. A single shared lock held
+        # across socket writes meant one lecturer's stalled connection stopped
+        # progress reaching every other lecturer on the process. Entries exist
+        # only while a delivery to that user is in flight, counted in
+        # _delivery_waiters, so the map cannot grow with the number of users.
+        # Held separately from _lock so that delivery never blocks a connection
+        # joining or leaving.
+        self._delivery_locks: dict[UUID, asyncio.Lock] = {}
+        self._delivery_waiters: dict[UUID, int] = {}
 
     async def join(self, connection: Connection) -> None:
         async with self._lock:
@@ -189,10 +207,9 @@ class SessionHub:
 
         delivered = 0
         for connection in targets:
-            try:
-                await connection.websocket.send_json(payload)
+            if await self._deliver(connection, payload):
                 delivered += 1
-            except Exception:
+            else:
                 log.warning("send failed for user %s, dropping", connection.user_id)
                 await self.leave(connection)
         return delivered
@@ -212,15 +229,15 @@ class SessionHub:
         The user id doubles as the channel id, so seq stays monotonic across
         reconnects for as long as the counter lives.
 
-        Numbering and delivery happen under _delivery_lock because a lecturer
-        can have two uploads processing at once, and both report here. Dead
-        sockets are dropped after the lock is released, since leave() takes
-        _lock and would otherwise be waiting on a lock this call still holds.
+        Numbering and delivery happen under this user's delivery lock, because
+        a lecturer can have two uploads processing at once and both report
+        here. Dead sockets are dropped after the lock is released, since leave()
+        takes _lock and would otherwise be waiting on a lock this call holds.
         """
         dead: list[Connection] = []
         delivered = 0
 
-        async with self._delivery_lock:
+        async with self._delivery_lock_for(user_id):
             event = self.build(user_id, event_type, data)
             payload = event.model_dump(mode="json")
 
@@ -228,10 +245,9 @@ class SessionHub:
                 targets = list(self._by_user.get(user_id, ()))
 
             for connection in targets:
-                try:
-                    await connection.websocket.send_json(payload)
+                if await self._deliver(connection, payload):
                     delivered += 1
-                except Exception:
+                else:
                     dead.append(connection)
 
         for connection in dead:
@@ -260,13 +276,49 @@ class SessionHub:
 
         delivered = 0
         for connection in targets:
-            try:
-                await connection.websocket.send_json(payload)
+            if await self._deliver(connection, payload):
                 delivered += 1
-            except Exception:
+            else:
                 log.warning("targeted send failed for user %s, dropping", user_id)
                 await self.leave(connection)
         return delivered > 0
+
+    async def _deliver(self, connection: Connection, payload: dict) -> bool:
+        """Write one frame, reporting whether it arrived rather than raising.
+
+        A write that outlasts SEND_TIMEOUT_SECONDS counts as a failure, so the
+        caller drops the connection exactly as it would a closed one. The
+        client reconnects and resumes from last_seq, which is a far better
+        outcome for everyone than waiting on it.
+        """
+        try:
+            async with asyncio.timeout(SEND_TIMEOUT_SECONDS):
+                await connection.websocket.send_json(payload)
+        except Exception:
+            return False
+        return True
+
+    @asynccontextmanager
+    async def _delivery_lock_for(self, user_id: UUID) -> AsyncIterator[None]:
+        """Serialise delivery on one user's channel without touching anyone else's.
+
+        The waiter count is what lets the entry be removed. Nothing yields
+        between creating the lock and counting this caller, so a concurrent
+        caller either finds the lock already present or creates it, and the
+        entry only disappears once the last caller for that user has finished.
+        """
+        lock = self._delivery_locks.setdefault(user_id, asyncio.Lock())
+        self._delivery_waiters[user_id] = self._delivery_waiters.get(user_id, 0) + 1
+        try:
+            async with lock:
+                yield
+        finally:
+            remaining = self._delivery_waiters[user_id] - 1
+            if remaining:
+                self._delivery_waiters[user_id] = remaining
+            else:
+                del self._delivery_waiters[user_id]
+                del self._delivery_locks[user_id]
 
 
 hub = SessionHub()

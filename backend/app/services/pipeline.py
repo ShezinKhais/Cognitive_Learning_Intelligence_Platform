@@ -24,10 +24,12 @@ an embedding step that did not happen.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
-from collections.abc import Sequence
+import threading
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, TypeVar
 from uuid import UUID
 
 from app.core.config import Settings
@@ -36,12 +38,59 @@ from app.realtime.hub import SessionHub
 from app.realtime.hub import hub as default_hub
 from app.schemas.events import MaterialProgressPayload, MaterialStage, ServerEventType
 from app.services.extraction import ContentChunk, ProcessingResult, process_material
-from app.services.jobs import JobRegistry, JobStatus
+from app.services.jobs import CANCELLED_ERROR, INTERRUPTED_MESSAGE, JobRegistry, JobStatus
 from app.services.storage import MaterialStorage, StoredFile
 
 log = logging.getLogger("clip.pipeline")
 
 Embedding = Sequence[float]
+T = TypeVar("T")
+
+
+async def run_in_daemon_thread(fn: Callable[..., T], *args: object) -> T:
+    """Run blocking work off the event loop, in a thread shutdown will not wait for.
+
+    asyncio.to_thread uses the default executor, and cancelling the await does
+    not stop the thread, because Python cannot interrupt one. The parse ran on
+    to the end regardless, and the process could not exit until it had, so a
+    deploy that cancelled an eighteen second parse still waited eighteen
+    seconds for a result it had already thrown away.
+
+    A daemon thread keeps the event loop just as free and is abandoned when the
+    process exits. That is safe for extraction specifically, which reads the
+    stored file and writes nothing. A result that arrives after its awaiter has
+    gone is dropped rather than handed to a loop that may already be closed.
+    """
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[T] = loop.create_future()
+    # Carried across, as asyncio.to_thread does, so log lines from inside the
+    # parse keep the request id of the upload that started it.
+    context = contextvars.copy_context()
+
+    def settle_result(result: T) -> None:
+        if not future.done():
+            future.set_result(result)
+
+    def settle_exception(exc: BaseException) -> None:
+        if not future.done():
+            future.set_exception(exc)
+
+    def target() -> None:
+        try:
+            result = context.run(fn, *args)
+        except BaseException as exc:
+            callback, value = settle_exception, exc
+        else:
+            callback, value = settle_result, result
+        try:
+            loop.call_soon_threadsafe(callback, value)
+        except RuntimeError:
+            # The loop closed while this thread was still working, which is
+            # what a shutdown looks like from in here. Nobody is waiting.
+            pass
+
+    threading.Thread(target=target, name="material-extraction", daemon=True).start()
+    return await future
 
 
 class ChunkEmbedder(Protocol):
@@ -131,8 +180,8 @@ class MaterialPipeline:
             await self._storage.delete(material_id)
             return None
         except asyncio.CancelledError:
-            # Shutdown. The processor records this one, because only it knows
-            # the difference between a deploy and a bad file.
+            # Shutdown. The processor reports it through abandon(), which also
+            # covers a job cancelled before it ever reached this method.
             raise
         except Exception as exc:
             await self._fail(
@@ -154,7 +203,7 @@ class MaterialPipeline:
             # a normal deck, eighteen when it upgrades to docling. Calling it
             # inline would freeze every live session on this process for that
             # long, which is the exact failure the 202 exists to avoid.
-            result = await asyncio.to_thread(
+            result = await run_in_daemon_thread(
                 process_material,
                 str(path),
                 material_id,
@@ -188,21 +237,23 @@ class MaterialPipeline:
             if missing:
                 warnings.append(f"{what} is not wired up in this build and was skipped")
 
-        status = await self._report(
-            material_id,
-            owner_id,
-            MaterialStage.DONE,
+        done_message = (
             f"{question_count} question(s) ready for review."
             if question_count
-            else f"Processed {len(result.chunks)} chunk(s).",
+            else f"Processed {len(result.chunks)} chunk(s)."
         )
 
+        # Written down before it is announced. The other order told the
+        # lecturer "done" and then, when the database write failed, "failed",
+        # about a material whose success was never recorded anywhere durable.
         if self._store is not None:
             await self._store.record_outcome(
-                status,
+                JobStatus.for_stage(material_id, MaterialStage.DONE, message=done_message),
                 page_count=result.page_count,
                 chunk_count=len(result.chunks),
             )
+
+        await self._report(material_id, owner_id, MaterialStage.DONE, done_message)
 
         log.info(
             "material %s done: parser=%s pages=%d chunks=%d questions=%d warnings=%s",
@@ -251,7 +302,21 @@ class MaterialPipeline:
         await self._report(material_id, owner_id, MaterialStage.GENERATING, "Drafting questions.")
         return await self._generator.generate(material_id, chunks)
 
+    async def abandon(self, material_id: UUID, owner_id: UUID) -> None:
+        """Report that a shutdown stopped this material.
+
+        Handed to the processor as on_cancel, so it covers a job still waiting
+        for a slot as well as one halfway through; a queued job never entered
+        run() at all, which is why this cannot live there. The stored file is
+        kept, since nothing was wrong with it.
+        """
+        await self._fail(material_id, owner_id, INTERRUPTED_MESSAGE, CANCELLED_ERROR)
+
     async def _fail(self, material_id: UUID, owner_id: UUID, message: str, error: str) -> None:
+        # Announced before it is written down, the reverse of success. A
+        # lecturer should hear about a failure even when the database is the
+        # thing that failed, whereas success must never be claimed until it is
+        # durable.
         status = await self._report(
             material_id, owner_id, MaterialStage.FAILED, message, error=error
         )
