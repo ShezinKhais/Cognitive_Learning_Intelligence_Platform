@@ -36,6 +36,9 @@ def rejection_reasons(draft: DraftQuestion, chunks: list[RetrievedChunk]) -> lis
     if len(draft.options) != OPTION_COUNT:
         reasons.append(f"expected {OPTION_COUNT} options, got {len(draft.options)}")
 
+    if any(option.strip().startswith("{") for option in draft.options):
+        reasons.append("options are objects, not answer strings")
+
     # Duplicates mean either two correct answers or an unanswerable question.
     cleaned = [option.strip().lower() for option in draft.options]
     if len(set(cleaned)) != len(cleaned):
@@ -77,11 +80,27 @@ else - no markdown fences, no explanation.
 Each object must have exactly these keys:
   "prompt": the question
   "options": exactly 4 answer strings, all different
-  "correct_option": the 0-based index of the correct answer
+  "correct_option": the index of the correct answer, counting from 0.
+                    The first option is 0 and the last is 3. Never use 4.
   "topic": a short topic label
   "source_slide": the page number of the excerpt you used
   "source_excerpt": the sentence from that excerpt the answer comes from,
                     copied as closely as you can
+
+Example of the exact format required:
+
+[
+  {{
+    "prompt": "What is frozen during transfer learning?",
+    "options": ["The base layers", "The output layer", "The dataset", "The optimiser"],
+    "correct_option": 0,
+    "topic": "Transfer learning",
+    "source_slide": 3,
+    "source_excerpt": "The base layers are frozen"
+  }}
+]
+
+"options" must be an array of exactly 4 plain strings. Not objects. Not 3.
 """
 
 
@@ -112,13 +131,21 @@ def parse_drafts(raw: str) -> list[DraftQuestion]:
 
     drafts = []
     for item in payload:
+        slide = item.get("source_slide")
+        raw_options = item.get("options", [])
+        # str() on a dict gives Python's repr, which hides the real fault.
+        # json.dumps keeps it recognisable as an object so the validator
+        # can name what actually went wrong.
+        options = [o if isinstance(o, str) else json.dumps(o) for o in raw_options]
         drafts.append(
             DraftQuestion(
                 prompt=str(item.get("prompt", "")),
-                options=[str(o) for o in item.get("options", [])],
+                options=options,
                 correct_option=int(item.get("correct_option", -1)),
                 topic=item.get("topic"),
-                source_slide=item.get("source_slide"),
+                # Models return page numbers as strings often enough that
+                # comparing them untouched rejects correctly-cited questions.
+                source_slide=int(slide) if slide is not None else None,
                 source_excerpt=item.get("source_excerpt"),
             )
         )

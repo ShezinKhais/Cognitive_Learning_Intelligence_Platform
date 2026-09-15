@@ -116,3 +116,13 @@ def test_prompt_includes_page_numbers_for_citation():
 
     assert "[page 3]" in text
     assert "3 multiple-choice questions" in text
+
+
+def test_page_number_returned_as_a_string_is_still_a_number():
+    """Qwen returns source_slide as "3" rather than 3."""
+    raw = (
+        '[{"prompt": "Q?", "options": ["a","b","c","d"], "correct_option": 0,'
+        ' "topic": "T", "source_slide": "3", "source_excerpt": "x"}]'
+    )
+
+    assert parse_drafts(raw)[0].source_slide == 3
