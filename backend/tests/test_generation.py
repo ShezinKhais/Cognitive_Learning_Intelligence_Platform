@@ -126,3 +126,19 @@ def test_page_number_returned_as_a_string_is_still_a_number():
     )
 
     assert parse_drafts(raw)[0].source_slide == 3
+
+
+def test_catches_options_that_are_reorderings():
+    """Observed in a real generation run: same words, different order."""
+    reasons = rejection_reasons(
+        draft(
+            options=[
+                "Retraining happens only in the base layers",
+                "Retraining happens in the base layers only",
+                "Retraining happens in the output layer",
+                "Retraining happens everywhere",
+            ]
+        ),
+        chunks(),
+    )
+    assert any("reorderings" in r for r in reasons)

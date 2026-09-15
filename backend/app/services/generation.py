@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 
 from rapidfuzz import fuzz
@@ -12,6 +13,7 @@ from app.services.retrieval import RetrievedChunk
 
 OPTION_COUNT = 4
 GROUNDING_THRESHOLD = 80
+ANSWER_SUPPORT_THRESHOLD = 40
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,16 @@ def rejection_reasons(draft: DraftQuestion, chunks: list[RetrievedChunk]) -> lis
     if len(set(cleaned)) != len(cleaned):
         reasons.append("options contain duplicates")
 
+    # "only in the base layers" and "in the base layers only" are the same
+    # option written twice. Sorting the words collapses reorderings and
+    # punctuation differences to one form.
+    def normalised(option: str) -> str:
+        words = re.findall(r"[a-z0-9]+", option.lower())
+        return " ".join(sorted(words))
+
+    if len({normalised(o) for o in draft.options}) != len(draft.options):
+        reasons.append("options are reorderings of each other")
+
     if not 0 <= draft.correct_option < len(draft.options):
         reasons.append(f"correct_option {draft.correct_option} is out of range")
 
@@ -62,6 +74,17 @@ def rejection_reasons(draft: DraftQuestion, chunks: list[RetrievedChunk]) -> lis
         )
         if best < GROUNDING_THRESHOLD:
             reasons.append(f"excerpt not grounded in any chunk (best match {best:.0f})")
+            # Grounding proves the excerpt exists, not that it supports the answer.
+    # A correct answer sharing almost no words with its own cited excerpt is
+    # the signature of a question reasoned from the model's own knowledge.
+    # This is a lexical proxy for entailment, not entailment itself.
+    if draft.source_excerpt and 0 <= draft.correct_option < len(draft.options):
+        answer = draft.options[draft.correct_option]
+        support = fuzz.partial_token_set_ratio(answer, draft.source_excerpt)
+        if support < ANSWER_SUPPORT_THRESHOLD:
+            reasons.append(
+                f"correct answer has little overlap with the cited excerpt (score {support:.0f})"
+            )
 
     return reasons
 
