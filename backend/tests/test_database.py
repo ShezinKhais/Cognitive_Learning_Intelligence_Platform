@@ -22,6 +22,8 @@ from app.models.material import Material
 from app.models.material_processing_status import MaterialProcessingStatus
 from app.models.rag_chunk import RagChunk
 from app.models.user import User
+from app.repositories.material_repository import MaterialRepository
+from app.schemas.events import MaterialStage
 
 REQUIRED_EXTENSIONS = {"vector", "pg_trgm", "uuid-ossp"}
 
@@ -256,6 +258,39 @@ async def test_phase_two_pipeline_is_traceable_by_material(db: AsyncSession) -> 
     assert stored_progress.stage == "embedding"
     assert stored_extraction.content == "Stored source content"
     assert stored_embedding.model_run_id == model_run.run_id
+
+
+async def test_material_repository_persists_queries_and_tracks_progress(
+    db: AsyncSession,
+) -> None:
+    repository = MaterialRepository(db)
+
+    material = await repository.create(
+        filename="week-4.pdf",
+        content_type="application/pdf",
+        size_bytes=4096,
+    )
+
+    stored = await repository.get_by_id(material.id)
+    materials, total = await repository.list_page(limit=200, offset=0)
+
+    assert stored is material
+    assert material.id in {item.id for item in materials}
+    assert total >= 1
+    assert material.status == "pending"
+
+    recorded = await repository.record_progress(
+        material_id=material.id,
+        stage=MaterialStage.EXTRACTING,
+        percent=30,
+        message="Reading pages",
+    )
+    history = await repository.list_status_history(material.id)
+
+    assert recorded is not None
+    assert recorded.source_material_id == material.id
+    assert material.status == "processing"
+    assert [(item.stage, item.percent) for item in history] == [("extracting", 30)]
 
 
 async def test_trigram_similarity_works(db: AsyncSession) -> None:

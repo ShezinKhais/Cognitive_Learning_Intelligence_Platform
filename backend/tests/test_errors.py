@@ -63,7 +63,6 @@ def test_unimplemented_route_names_its_owner(as_lecturer: TestClient) -> None:
 def test_every_stub_reports_an_owner(as_lecturer: TestClient) -> None:
     """No route may 501 without saying who is responsible for it."""
     paths = {
-        ("get", "/api/v1/materials"),
         ("get", "/api/v1/sessions"),
     }
     for method, path in paths:
