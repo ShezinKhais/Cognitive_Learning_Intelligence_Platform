@@ -50,6 +50,10 @@ jobs:
             -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
 
       - run: pip install -e ".[dev]"
+      - name: Apply database schema
+        # The Postgres service starts empty. Tests that exercise retrieval and
+        # persistence need the actual tables, not just the required extensions.
+        run: alembic upgrade head
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest -q
