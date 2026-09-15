@@ -111,6 +111,13 @@ async def test_extensions_are_installed(db: AsyncSession) -> None:
     assert not missing, f"missing extensions: {sorted(missing)}"
 
 
+async def test_source_material_table_exists(db: AsyncSession) -> None:
+    """Retrieval tests need the migrated tables, not just a reachable database."""
+    table_name = (await db.execute(text("select to_regclass('public.source_material')"))).scalar_one()
+
+    assert table_name == "source_material"
+
+
 async def test_vector_column_round_trips(db: AsyncSession) -> None:
     """Proves pgvector is usable, not merely present."""
     await db.execute(text("create temporary table _probe (id int primary key, v vector(3))"))
