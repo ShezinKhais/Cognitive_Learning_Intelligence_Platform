@@ -80,3 +80,50 @@ async def test_closest_chunk_comes_first(db: AsyncSession) -> None:
     assert len(results) == 3
     assert results[0].chunk_text == "chunk on axis 0"
     assert results[0].source_page == 2
+
+
+async def test_search_never_returns_another_materials_chunks(db: AsyncSession) -> None:
+    """A lecturer's questions must not be grounded in someone else's upload."""
+    mine = Material(
+        id=uuid.uuid4(),
+        filename="mine.pdf",
+        content_type="application/pdf",
+        size_bytes=1000,
+    )
+    theirs = Material(
+        id=uuid.uuid4(),
+        filename="theirs.pdf",
+        content_type="application/pdf",
+        size_bytes=1000,
+    )
+    db.add_all([mine, theirs])
+    await db.flush()
+
+    # My chunk is a poor match; theirs is a perfect one. If the filter were
+    # missing, theirs would rank first — so a pass here can't be luck.
+    db.add(
+        RagChunk(
+            chunk_id=uuid.uuid4(),
+            source_material_id=mine.id,
+            chunk_index=0,
+            source_page=1,
+            chunk_text="my distant chunk",
+            embedding_vector=axis_vector(7),
+        )
+    )
+    db.add(
+        RagChunk(
+            chunk_id=uuid.uuid4(),
+            source_material_id=theirs.id,
+            chunk_index=0,
+            source_page=1,
+            chunk_text="their perfect match",
+            embedding_vector=axis_vector(0),
+        )
+    )
+    await db.flush()
+
+    retriever = ChunkRetriever(db, FixedVectorClient(axis_vector(0)))
+    results = await retriever.search("anything", mine.id, k=5)
+
+    assert [r.chunk_text for r in results] == ["my distant chunk"]
