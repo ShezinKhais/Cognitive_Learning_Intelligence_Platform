@@ -25,6 +25,7 @@ pages, which is a later phase.
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -354,6 +355,64 @@ def clean_text(text: str, is_heading: bool = False) -> str:
     return text
 
 
+def _split_oversized(text: str, size: int) -> list[str]:
+    """A block too big for one chunk: sentences, then words, then characters.
+
+    Each level is a fallback for the one above. Characters are the last resort
+    and only reached by a single token longer than a whole chunk - a URL or a
+    base64 blob, where there is no boundary to respect anyway.
+    """
+    if len(text) <= size:
+        return [text]
+
+    pieces: list[str] = []
+    for sentence in re.split(r"(?<=[.!?])\s+", text):
+        if not sentence.strip():
+            continue
+        if len(sentence) <= size:
+            pieces.append(sentence)
+            continue
+
+        current = ""
+        for word in sentence.split():
+            if len(word) > size:
+                if current:
+                    pieces.append(current)
+                    current = ""
+                for start in range(0, len(word), size):
+                    pieces.append(word[start : start + size])
+                continue
+            candidate = f"{current} {word}".strip()
+            if len(candidate) > size:
+                pieces.append(current)
+                current = word
+            else:
+                current = candidate
+        if current:
+            pieces.append(current)
+
+    return pieces or [text[:size]]
+
+
+def _tail(text: str, overlap: int) -> str:
+    """The last whole words of a chunk, up to `overlap` characters.
+
+    Text with no usable word boundary - one long token - has no words that
+    fit, so character overlap is the only option left.
+    """
+    if overlap <= 0:
+        return ""
+
+    tail = ""
+    for word in reversed(text.split()):
+        candidate = f"{word} {tail}".strip()
+        if len(candidate) > overlap:
+            break
+        tail = candidate
+
+    return tail or text[-overlap:]
+
+
 def chunk_elements(
     elements: list[ExtractedElement],
     material_id: uuid.UUID,
@@ -379,13 +438,15 @@ def chunk_elements(
     chunks: list[ContentChunk] = []
     index = 0
     current_heading = ""
-    heading_page = None  # page the current heading belongs to
+    heading_page = None
 
+    # Group by page first. A PDF page arrives as one large element and a PPTX
+    # slide as many small ones; chunking per element made the same content
+    # produce completely different chunk sizes depending on the parser.
+    pages: list[tuple[int, list[str]]] = []
     for el in elements:
         if el.el_type == "image":
             continue
-        # a heading only applies to text on its own page - reset when the page
-        # changes so a page-1 heading does not leak onto page-9 text.
         if el.page != heading_page:
             current_heading = ""
         if el.el_type == "heading":
@@ -394,13 +455,36 @@ def chunk_elements(
             continue
 
         text = f"{current_heading}\n{el.content}" if current_heading else el.content
+        if pages and pages[-1][0] == el.page:
+            pages[-1][1].append(text)
+        else:
+            pages.append((el.page, [text]))
 
-        step = max(size - overlap, 1)
-        for start in range(0, len(text), step):
-            piece = text[start : start + size]
-            if piece.strip():
-                chunks.append(ContentChunk(uuid.uuid4(), index, material_id, piece, el.page))
-                index += 1
+    for page, blocks in pages:
+        flat: list[str] = []
+        for block in blocks:
+            for part in re.split(r"\n\s*\n|\n", block):
+                if part.strip():
+                    flat.append(part.strip())
+
+        buffer = ""
+        carried = ""
+        for block in flat:
+            for piece in _split_oversized(block, size):
+                joined = f"{buffer}\n{piece}".strip() if buffer else piece
+                if len(joined) > size:
+                    if buffer:
+                        chunks.append(ContentChunk(uuid.uuid4(), index, material_id, buffer, page))
+                        index += 1
+                        carried = _tail(buffer, overlap)
+                    seed = f"{carried} {piece}".strip() if carried else piece
+                    buffer = seed if len(seed) <= size else piece
+                else:
+                    buffer = joined
+
+        if buffer.strip():
+            chunks.append(ContentChunk(uuid.uuid4(), index, material_id, buffer, page))
+            index += 1
 
     return chunks
 

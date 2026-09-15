@@ -169,6 +169,32 @@ def test_images_are_not_chunked():
     assert chunk_elements(els, material_id=uuid.uuid4()) == []
 
 
+def test_chunks_never_exceed_the_size_limit():
+    els = [ExtractedElement("text", "Transfer learning is useful. " * 60, 1)]
+    chunks = chunk_elements(els, material_id=uuid.uuid4(), size=500, overlap=100)
+    assert all(len(c.chunk_text) <= 500 for c in chunks)
+
+
+def test_prose_is_split_on_sentence_boundaries():
+    """Character slicing cut words in half, which the embedder then saw as
+    broken tokens at both edges of every chunk."""
+    els = [ExtractedElement("text", "Transfer learning is useful. " * 60, 1)]
+    chunks = chunk_elements(els, material_id=uuid.uuid4(), size=500, overlap=100)
+    assert len(chunks) > 1
+    for chunk in chunks[:-1]:
+        assert chunk.chunk_text.rstrip().endswith(".")
+
+
+def test_small_blocks_on_one_page_are_packed_together():
+    """A PPTX slide arrives as one element per bullet. Chunking per element
+    embedded four-word fragments with no surrounding context."""
+    els = [ExtractedElement("text", f"Bullet point number {i}", 3) for i in range(6)]
+    chunks = chunk_elements(els, material_id=uuid.uuid4())
+    assert len(chunks) == 1
+    assert "number 0" in chunks[0].chunk_text
+    assert "number 5" in chunks[0].chunk_text
+
+
 # --- end to end, one per supported format ------------------------------------
 
 
