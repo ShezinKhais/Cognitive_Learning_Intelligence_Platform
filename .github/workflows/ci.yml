@@ -51,6 +51,11 @@ jobs:
 
       - run: pip install -e ".[dev]"
       - run: ruff check .
+            - name: Run migrations
+        # The service container starts empty. Tests that touch real tables
+        # need the schema built, or they fail against a database that is
+        # reachable but has nothing in it.
+        run: alembic upgrade head
       - run: ruff format --check .
       - run: pytest -q
       - name: API contract is in sync with the code
