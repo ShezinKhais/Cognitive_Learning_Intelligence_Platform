@@ -12,6 +12,7 @@ position, so vectors must come back in the same order they went in.
 
 from collections.abc import Sequence
 
+from app.core.config import get_settings
 from app.services.extraction import ContentChunk
 
 BATCH_SIZE = 32
@@ -42,5 +43,14 @@ class OllamaEmbedder:
         for start in range(0, len(chunks), self._batch_size):
             batch = chunks[start : start + self._batch_size]
             texts = [c.chunk_text for c in batch]
-            vectors.extend(await self._client.embed(texts))
+            batch_vectors = await self._client.embed(texts)
+            expected = get_settings().embedding_dim
+            for vector in batch_vectors:
+                if len(vector) != expected:
+                    raise ValueError(
+                        f"Embedding model returned {len(vector)} dimensions, "
+                        f"expected {expected}. Check embedding_model in config "
+                        f"matches embedding_dim."
+                    )
+            vectors.extend(batch_vectors)
         return vectors

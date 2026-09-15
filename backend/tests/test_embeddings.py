@@ -2,6 +2,8 @@
 
 import uuid
 
+import pytest
+
 from app.services.embeddings import OllamaEmbedder
 from app.services.extraction import ContentChunk
 
@@ -39,3 +41,25 @@ async def test_batches_instead_of_one_call_per_chunk():
 
     assert len(vectors) == 70
     assert len(client.calls) == 3
+
+
+class WrongSizeClient:
+    async def embed(self, texts):
+        return [[0.1] * 1536 for _ in texts]
+
+
+async def test_rejects_vectors_of_the_wrong_dimension():
+    embedder = OllamaEmbedder(WrongSizeClient(), batch_size=32)
+
+    with pytest.raises(ValueError):
+        await embedder.embed(make_chunks(3))
+
+
+async def test_no_chunks_means_no_calls():
+    client = FakeEmbeddingClient()
+    embedder = OllamaEmbedder(client, batch_size=32)
+
+    vectors = await embedder.embed([])
+
+    assert vectors == []
+    assert client.calls == []
