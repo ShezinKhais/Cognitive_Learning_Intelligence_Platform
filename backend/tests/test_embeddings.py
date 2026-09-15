@@ -12,7 +12,7 @@ class FakeEmbeddingClient:
     def __init__(self):
         self.calls = []
 
-    def embed(self, texts):
+    async def embed(self, texts):
         self.calls.append(texts)
         return [[float(len(t))] * 768 for t in texts]
 
@@ -29,15 +29,6 @@ def make_chunks(n):
         )
         for i in range(n)
     ]
-
-
-def test_returns_one_vector_per_chunk():
-    client = FakeEmbeddingClient()
-    texts = ["alpha", "bb", "c"]
-
-    vectors = client.embed(texts)
-
-    assert len(vectors) == 3
 
 
 async def test_batches_instead_of_one_call_per_chunk():
