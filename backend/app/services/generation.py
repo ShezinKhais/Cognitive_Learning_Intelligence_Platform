@@ -1,5 +1,9 @@
+"""Generation service for multiple-choice questions."""
+
 from __future__ import annotations
 
+import json
+import logging
 from dataclasses import dataclass
 
 from rapidfuzz import fuzz
@@ -57,3 +61,65 @@ def rejection_reasons(draft: DraftQuestion, chunks: list[RetrievedChunk]) -> lis
             reasons.append(f"excerpt not grounded in any chunk (best match {best:.0f})")
 
     return reasons
+
+
+logger = logging.getLogger(__name__)
+
+PROMPT_TEMPLATE = """You write multiple-choice questions for university lecturers.
+
+Use ONLY the numbered excerpts below. Do not use outside knowledge.
+
+{excerpts}
+
+Write {count} multiple-choice questions. Reply with a JSON array and nothing
+else - no markdown fences, no explanation.
+
+Each object must have exactly these keys:
+  "prompt": the question
+  "options": exactly 4 answer strings, all different
+  "correct_option": the 0-based index of the correct answer
+  "topic": a short topic label
+  "source_slide": the page number of the excerpt you used
+  "source_excerpt": the sentence from that excerpt the answer comes from,
+                    copied as closely as you can
+"""
+
+
+@dataclass(frozen=True)
+class GenerationOutcome:
+    """What generation produced, and what it threw away."""
+
+    accepted: list[DraftQuestion]
+    rejected: list[tuple[DraftQuestion, list[str]]]
+
+
+def build_prompt(chunks: list[RetrievedChunk], count: int) -> str:
+    excerpts = "\n\n".join(f"[page {chunk.source_page}]\n{chunk.chunk_text}" for chunk in chunks)
+    return PROMPT_TEMPLATE.format(excerpts=excerpts, count=count)
+
+
+def parse_drafts(raw: str) -> list[DraftQuestion]:
+    """Turn the model's reply into drafts, tolerating markdown fences."""
+    text = raw.strip()
+    if text.startswith("```"):
+        text = text.split("```")[1]
+        if text.startswith("json"):
+            text = text[4:]
+
+    payload = json.loads(text)
+    if not isinstance(payload, list):
+        raise ValueError("expected a JSON array of questions")
+
+    drafts = []
+    for item in payload:
+        drafts.append(
+            DraftQuestion(
+                prompt=str(item.get("prompt", "")),
+                options=[str(o) for o in item.get("options", [])],
+                correct_option=int(item.get("correct_option", -1)),
+                topic=item.get("topic"),
+                source_slide=item.get("source_slide"),
+                source_excerpt=item.get("source_excerpt"),
+            )
+        )
+    return drafts

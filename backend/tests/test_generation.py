@@ -3,7 +3,9 @@ drafts and check each one is caught."""
 
 import uuid
 
-from app.services.generation import DraftQuestion, rejection_reasons
+import pytest
+
+from app.services.generation import DraftQuestion, build_prompt, parse_drafts, rejection_reasons
 from app.services.retrieval import RetrievedChunk
 
 CHUNK_TEXT = (
@@ -69,3 +71,48 @@ def test_catches_ungrounded_excerpt():
         chunks(),
     )
     assert any("not grounded" in r for r in reasons)
+
+
+def test_parses_a_clean_json_array():
+    raw = (
+        '[{"prompt": "Q?", "options": ["a","b","c","d"], "correct_option": 1,'
+        ' "topic": "T", "source_slide": 3, "source_excerpt": "x"}]'
+    )
+
+    drafts = parse_drafts(raw)
+
+    assert len(drafts) == 1
+    assert drafts[0].correct_option == 1
+
+
+def test_strips_markdown_fences():
+    """Models wrap JSON in fences often enough that this can't be optional."""
+    raw = (
+        '```json\n[{"prompt": "Q?", "options": ["a","b","c","d"],'
+        ' "correct_option": 0, "topic": "T", "source_slide": 3,'
+        ' "source_excerpt": "x"}]\n```'
+    )
+
+    drafts = parse_drafts(raw)
+
+    assert len(drafts) == 1
+
+
+def test_missing_fields_become_a_rejectable_draft_not_a_crash():
+    """A malformed item must survive parsing so the validator can explain it."""
+    drafts = parse_drafts('[{"prompt": "Q?"}]')
+
+    assert drafts[0].options == []
+    assert drafts[0].correct_option == -1
+
+
+def test_non_array_output_is_rejected():
+    with pytest.raises(ValueError):
+        parse_drafts('{"prompt": "not in an array"}')
+
+
+def test_prompt_includes_page_numbers_for_citation():
+    text = build_prompt(chunks(), count=3)
+
+    assert "[page 3]" in text
+    assert "3 multiple-choice questions" in text
