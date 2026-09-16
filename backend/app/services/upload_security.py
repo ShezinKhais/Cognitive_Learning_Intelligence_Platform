@@ -32,6 +32,8 @@ GENERIC_MIME_TYPES = {
     "application/octet-stream",
 }
 
+TEXT_SCAN_CHUNK_SIZE = 8192
+
 
 def validate_claimed_mime(extension: str, content_type: str | None) -> None:
     """Reject a specific MIME type that contradicts the file extension."""
@@ -55,12 +57,12 @@ def validate_claimed_mime(extension: str, content_type: str | None) -> None:
 
 
 def _validate_pdf(path: Path) -> None:
-    """Check that a file claiming to be PDF has a PDF signature."""
+    """Require the PDF signature at the actual start of the file."""
 
     with path.open("rb") as handle:
-        header = handle.read(1024)
+        header = handle.read(5)
 
-    if b"%PDF-" not in header:
+    if header != b"%PDF-":
         raise ValidationError(
             "File contents do not match a PDF",
             {"filename": path.name},
@@ -151,10 +153,12 @@ def _validate_office_zip(
 
 
 def _validate_text(path: Path) -> None:
-    """Reject obvious binary files disguised as plain text."""
+    """Reject binary files disguised as plain text.
 
-    with path.open("rb") as handle:
-        sample = handle.read(8192)
+    Binary signatures are checked at the actual beginning of the file, while
+    the complete file is scanned for NUL bytes so binary data cannot be hidden
+    after the first sample window.
+    """
 
     binary_signatures = (
         b"MZ",  # Windows executable
@@ -165,11 +169,26 @@ def _validate_text(path: Path) -> None:
         b"\xff\xd8\xff",  # JPEG
     )
 
-    if sample.startswith(binary_signatures) or b"\x00" in sample:
-        raise ValidationError(
-            "Text upload appears to contain binary data",
-            {"filename": path.name},
-        )
+    with path.open("rb") as handle:
+        first_chunk = handle.read(TEXT_SCAN_CHUNK_SIZE)
+
+        if first_chunk.startswith(binary_signatures) or b"\x00" in first_chunk:
+            raise ValidationError(
+                "Text upload appears to contain binary data",
+                {"filename": path.name},
+            )
+
+        while True:
+            chunk = handle.read(TEXT_SCAN_CHUNK_SIZE)
+
+            if not chunk:
+                break
+
+            if b"\x00" in chunk:
+                raise ValidationError(
+                    "Text upload appears to contain binary data",
+                    {"filename": path.name},
+                )
 
 
 def validate_uploaded_file(

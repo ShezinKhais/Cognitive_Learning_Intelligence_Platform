@@ -52,6 +52,21 @@ def test_fake_pdf_is_rejected(tmp_path: Path) -> None:
         )
 
 
+def test_executable_with_later_pdf_marker_is_rejected(tmp_path: Path) -> None:
+    """A PDF marker later in an executable must not satisfy PDF validation."""
+    path = write_file(
+        tmp_path / "lecture.pdf",
+        b"MZ fake executable payload " + b"A" * 100 + b"%PDF-1.7\nfake",
+    )
+
+    with pytest.raises(ValidationError):
+        validate_uploaded_file(
+            str(path),
+            "pdf",
+            "application/pdf",
+        )
+
+
 def test_wrong_mime_type_is_rejected(tmp_path: Path) -> None:
     path = write_file(
         tmp_path / "lecture.pdf",
@@ -137,6 +152,21 @@ def test_executable_renamed_as_txt_is_rejected(tmp_path: Path) -> None:
     path = write_file(
         tmp_path / "notes.txt",
         b"MZ fake executable",
+    )
+
+    with pytest.raises(ValidationError):
+        validate_uploaded_file(
+            str(path),
+            "txt",
+            "text/plain",
+        )
+
+
+def test_binary_nul_after_first_text_window_is_rejected(tmp_path: Path) -> None:
+    """Binary content hidden after byte 8192 must still be detected."""
+    path = write_file(
+        tmp_path / "notes.txt",
+        b"A" * 9000 + b"\x00" + b"hidden binary data",
     )
 
     with pytest.raises(ValidationError):
