@@ -230,3 +230,24 @@ def test_catches_excerpt_quoted_from_a_page_it_did_not_cite():
     )
 
     assert any("not grounded" in r for r in reasons)
+
+
+def test_a_null_array_member_becomes_a_rejectable_draft():
+    drafts = parse_drafts("[null]")
+
+    assert len(drafts) == 1
+    assert rejection_reasons(drafts[0], chunks())
+
+
+def test_non_numeric_fields_do_not_abort_the_batch():
+    """One malformed item used to raise and lose every other question."""
+    raw = (
+        '[{"prompt": "Q?", "options": null, "correct_option": "abc",'
+        ' "source_slide": "page three", "source_excerpt": "x"}]'
+    )
+
+    drafts = parse_drafts(raw)
+
+    assert drafts[0].correct_option == -1
+    assert drafts[0].source_slide is None
+    assert drafts[0].options == []

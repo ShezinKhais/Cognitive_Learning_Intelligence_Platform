@@ -162,21 +162,45 @@ def parse_drafts(raw: str) -> list[DraftQuestion]:
 
     drafts = []
     for item in payload:
-        slide = item.get("source_slide")
-        raw_options = item.get("options", [])
-        # str() on a dict gives Python's repr, which hides the real fault.
-        # json.dumps keeps it recognisable as an object so the validator
-        # can name what actually went wrong.
+        # A model that returns one bad item should cost you that item, not the
+        # whole batch. Anything unusable becomes a sentinel the validator can
+        # then reject with a readable reason.
+        if not isinstance(item, dict):
+            drafts.append(
+                DraftQuestion(
+                    prompt="",
+                    options=[],
+                    correct_option=-1,
+                    topic=None,
+                    source_slide=None,
+                    source_excerpt=None,
+                )
+            )
+            continue
+
+        raw_options = item.get("options") or []
+        if not isinstance(raw_options, list):
+            raw_options = []
         options = [o if isinstance(o, str) else json.dumps(o) for o in raw_options]
+
+        try:
+            correct = int(item.get("correct_option", -1))
+        except (TypeError, ValueError):
+            correct = -1
+
+        try:
+            slide = item.get("source_slide")
+            slide = int(slide) if slide is not None else None
+        except (TypeError, ValueError):
+            slide = None
+
         drafts.append(
             DraftQuestion(
-                prompt=str(item.get("prompt", "")),
+                prompt=str(item.get("prompt") or ""),
                 options=options,
-                correct_option=int(item.get("correct_option", -1)),
+                correct_option=correct,
                 topic=item.get("topic"),
-                # Models return page numbers as strings often enough that
-                # comparing them untouched rejects correctly-cited questions.
-                source_slide=int(slide) if slide is not None else None,
+                source_slide=slide,
                 source_excerpt=item.get("source_excerpt"),
             )
         )
