@@ -6,8 +6,10 @@ payload. Both directions are versioned together with the REST API.
 Ordering and replay
 -------------------
 Server events carry a monotonically increasing `seq` per session or user
-channel. A client that reconnects sends `last_seq` so the server can replay
-missed material-progress events. Session-wide replay lands in Phase 3.
+channel. A client that reconnects sends `last_seq` and the stream generation
+from READY so the server can replay missed material-progress events without
+confusing a restarted counter for the previous process. Session-wide replay
+lands in Phase 3.
 
 Privacy
 -------
@@ -110,6 +112,10 @@ class AuthPayload(BaseModel):
         default=None,
         ge=0,
         description="Highest seq already received. Triggers replay on reconnect.",
+    )
+    stream_id: UUID | None = Field(
+        default=None,
+        description="Sequence-stream generation received in the previous ready event.",
     )
 
 
@@ -283,6 +289,10 @@ class ReadyPayload(BaseModel):
     session_id: UUID | None = None
     resumed_from_seq: int | None = Field(
         default=None, description="Set when the server continued the requested sequence stream."
+    )
+    stream_id: UUID | None = Field(
+        default=None,
+        description="Generation identifier for reconnecting to this ordered stream.",
     )
 
 

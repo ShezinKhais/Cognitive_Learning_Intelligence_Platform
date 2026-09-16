@@ -26,6 +26,13 @@ function resumedSequence(value: unknown): number | null {
   return typeof resumed === 'number' ? resumed : null
 }
 
+function sequenceStream(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null
+
+  const streamId = (value as Record<string, unknown>).stream_id
+  return typeof streamId === 'string' ? streamId : null
+}
+
 interface MaterialProgressOptions {
   enabled?: boolean
   onReconnect?: () => void
@@ -99,6 +106,7 @@ export function useMaterialProgress(
     let stopped = false
     let retryCount = 0
     let lastSeq = 0
+    let streamId: string | null = null
     let connectedOnce = false
 
     function connect() {
@@ -109,12 +117,17 @@ export function useMaterialProgress(
       socket = currentSocket
 
       currentSocket.addEventListener('open', () => {
-        const data = {
+        const data: {
+          token: string
+          last_seq: number
+          stream_id?: string
+        } = {
           token: accessToken,
           // Zero matters when the socket connects after a very fast upload:
           // it asks the server to replay progress emitted before READY.
           last_seq: lastSeq,
         }
+        if (streamId) data.stream_id = streamId
 
         currentSocket.send(JSON.stringify({
           type: 'auth',
@@ -149,6 +162,11 @@ export function useMaterialProgress(
           if (reconnected && resumedSequence(message.data) === null) {
             lastSeq = 0
           }
+
+          // The generation changes whenever the backend restarts or evicts an
+          // idle user's replay state. Sending it with the next cursor prevents
+          // a new in-memory counter from being mistaken for the old stream.
+          streamId = sequenceStream(message.data)
 
           setStatus('connected')
           if (reconnected) reconnectCallback.current?.()

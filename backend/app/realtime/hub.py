@@ -15,7 +15,7 @@ import logging
 from collections import OrderedDict, defaultdict, deque
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 from weakref import WeakValueDictionary
 
 from fastapi import WebSocket
@@ -36,6 +36,12 @@ MAX_TRACKED_SESSIONS = 1024
 # after a long disconnect. Bound every user independently so an abandoned
 # account cannot retain events forever.
 MAX_REPLAY_EVENTS_PER_CHANNEL = 128
+
+# A socket that has stopped reading must not hold a user's delivery lock
+# forever. One second is long enough for an in-process WebSocket send while
+# keeping a dead tab from stalling the material pipeline and every reconnect.
+SEND_TIMEOUT_SECONDS = 1.0
+SEND_TIMEOUT_CLOSE_CODE = 1011
 
 
 class Connection:
@@ -61,6 +67,10 @@ class SessionHub:
         # candidate once the map reaches MAX_TRACKED_SESSIONS.
         self._seq: OrderedDict[UUID, int] = OrderedDict()
         self._user_seq: OrderedDict[UUID, int] = OrderedDict()
+        # A sequence alone cannot identify a stream after a process restart or
+        # an idle-user eviction: a new counter eventually reaches old values.
+        # The generation id travels in READY and the next auth handshake.
+        self._user_stream_ids: dict[UUID, UUID] = {}
         self._user_replay: dict[UUID, deque[ServerEvent]] = defaultdict(
             lambda: deque(maxlen=MAX_REPLAY_EVENTS_PER_CHANNEL)
         )
@@ -80,11 +90,13 @@ class SessionHub:
 
     async def join(self, connection: Connection) -> None:
         async with self._lock:
-            # Every authenticated socket belongs to its user's private channel.
-            # A session-bound lecturer can therefore continue receiving their
-            # material progress while participating in a live session.
-            self._by_user[connection.user_id].add(connection)
-            if connection.session_id is not None:
+            # One socket carries one ordered stream. Material-workspace sockets
+            # have no session id and join the private user channel; live-class
+            # sockets join only their session room. Mixing both indexes gives a
+            # single last_seq cursor two unrelated sequence namespaces.
+            if connection.session_id is None:
+                self._by_user[connection.user_id].add(connection)
+            else:
                 self._rooms[connection.session_id].add(connection)
 
         if connection.session_id is None:
@@ -94,13 +106,13 @@ class SessionHub:
 
     async def leave(self, connection: Connection) -> None:
         async with self._lock:
-            user_connections = self._by_user.get(connection.user_id)
-            if user_connections:
-                user_connections.discard(connection)
-                if not user_connections:
-                    del self._by_user[connection.user_id]
-
-            if connection.session_id is not None:
+            if connection.session_id is None:
+                user_connections = self._by_user.get(connection.user_id)
+                if user_connections:
+                    user_connections.discard(connection)
+                    if not user_connections:
+                        del self._by_user[connection.user_id]
+            else:
                 room = self._rooms.get(connection.session_id)
                 if room:
                     room.discard(connection)
@@ -171,8 +183,20 @@ class SessionHub:
         )
 
     def _next_user_seq(self, user_id: UUID) -> int:
+        self._ensure_user_stream(user_id)
         counter = self._user_seq.get(user_id, 0) + 1
         self._user_seq[user_id] = counter
+        self._user_seq.move_to_end(user_id)
+
+        return counter
+
+    def _ensure_user_stream(self, user_id: UUID) -> UUID:
+        stream_id = self._user_stream_ids.get(user_id)
+        if stream_id is None:
+            stream_id = uuid4()
+            self._user_stream_ids[user_id] = stream_id
+            self._user_seq[user_id] = 0
+
         self._user_seq.move_to_end(user_id)
 
         if len(self._user_seq) > MAX_TRACKED_SESSIONS:
@@ -186,6 +210,7 @@ class SessionHub:
             )
             if idle is not None:
                 del self._user_seq[idle]
+                self._user_stream_ids.pop(idle, None)
                 self._user_replay.pop(idle, None)
             else:
                 log.warning(
@@ -193,7 +218,7 @@ class SessionHub:
                     len(self._user_seq),
                 )
 
-        return counter
+        return stream_id
 
     def _build_user_event(
         self,
@@ -225,13 +250,37 @@ class SessionHub:
 
         delivered = 0
         for connection in targets:
-            try:
-                await connection.websocket.send_json(payload)
+            if await self._send(connection, payload, "session broadcast"):
                 delivered += 1
-            except Exception:
-                log.warning("send failed for user %s, dropping", connection.user_id)
-                await self.leave(connection)
         return delivered
+
+    async def _send(self, connection: Connection, payload: dict, context: str) -> bool:
+        """Bound one WebSocket send and discard a connection that stops reading."""
+        try:
+            await asyncio.wait_for(
+                connection.websocket.send_json(payload),
+                timeout=SEND_TIMEOUT_SECONDS,
+            )
+            return True
+        except TimeoutError:
+            log.warning("%s timed out for user %s, dropping", context, connection.user_id)
+        except Exception:
+            log.warning("%s failed for user %s, dropping", context, connection.user_id)
+
+        await self.leave(connection)
+        try:
+            await asyncio.wait_for(
+                connection.websocket.close(
+                    code=SEND_TIMEOUT_CLOSE_CODE,
+                    reason="client stopped receiving events",
+                ),
+                timeout=SEND_TIMEOUT_SECONDS,
+            )
+        except Exception:
+            # The send often failed because the peer was already gone. Closing
+            # is best-effort after the connection has left both indexes.
+            pass
+        return False
 
     async def send_to_user_channel(
         self,
@@ -255,20 +304,17 @@ class SessionHub:
 
             delivered = 0
             for connection in targets:
-                try:
-                    await connection.websocket.send_json(payload)
+                if await self._send(connection, payload, "user-channel send"):
                     delivered += 1
-                except Exception:
-                    log.warning("user-channel send failed for user %s, dropping", user_id)
-                    await self.leave(connection)
             return delivered
 
     async def join_and_replay(
         self,
         connection: Connection,
         last_seq: int | None,
-        send_ready: Callable[[int | None], Awaitable[None]],
-    ) -> tuple[int, int | None]:
+        stream_id: UUID | None,
+        send_ready: Callable[[int | None, UUID | None], Awaitable[None]],
+    ) -> tuple[int, int | None] | None:
         """Complete the handshake, join, and replay missed progress atomically.
 
         The returned cursor is null when the server cannot resume the client's
@@ -279,18 +325,81 @@ class SessionHub:
         per-user lock prevents publication during that handoff, so no progress
         can slip between READY, joining, and replay.
         """
+        # Session replay lands in Phase 3. Keeping a session socket out of the
+        # user channel gives this connection exactly one sequence stream.
+        if connection.session_id is not None:
+            if not await self._send_ready(connection, send_ready, None, None):
+                return None
+            await self.join(connection)
+            return 0, None
+
         async with self._user_delivery_lock(connection.user_id):
-            resumed_from_seq = self._resumable_cursor(connection.user_id, last_seq)
-            await send_ready(resumed_from_seq)
+            current_stream_id = self._ensure_user_stream(connection.user_id)
+            resumed_from_seq = self._resumable_cursor(
+                connection.user_id,
+                last_seq,
+                stream_id,
+                current_stream_id,
+            )
+            if not await self._send_ready(
+                connection,
+                send_ready,
+                resumed_from_seq,
+                current_stream_id,
+            ):
+                return None
             await self.join(connection)
             return await self._replay_user_events(connection, resumed_from_seq)
+
+    async def _send_ready(
+        self,
+        connection: Connection,
+        send_ready: Callable[[int | None, UUID | None], Awaitable[None]],
+        resumed_from_seq: int | None,
+        stream_id: UUID | None,
+    ) -> bool:
+        try:
+            await asyncio.wait_for(
+                send_ready(resumed_from_seq, stream_id),
+                timeout=SEND_TIMEOUT_SECONDS,
+            )
+            return True
+        except TimeoutError:
+            log.warning("READY timed out for user %s, dropping", connection.user_id)
+        except Exception:
+            log.warning("READY failed for user %s, dropping", connection.user_id)
+
+        await self.leave(connection)
+        try:
+            await asyncio.wait_for(
+                connection.websocket.close(
+                    code=SEND_TIMEOUT_CLOSE_CODE,
+                    reason="client stopped receiving events",
+                ),
+                timeout=SEND_TIMEOUT_SECONDS,
+            )
+        except Exception:
+            pass
+        return False
 
     def _resumable_cursor(
         self,
         user_id: UUID,
         last_seq: int | None,
+        stream_id: UUID | None,
+        current_stream_id: UUID,
     ) -> int | None:
         if last_seq is None:
+            return None
+
+        # A brand-new workspace socket deliberately asks for sequence zero so
+        # it can receive progress emitted before the 202 response arrived. It
+        # has no stream id yet; every later reconnect must name the generation
+        # learned from READY so a restarted counter cannot impersonate it.
+        if stream_id is None:
+            if last_seq != 0:
+                return None
+        elif stream_id != current_stream_id:
             return None
 
         current_seq = self._user_seq.get(user_id, 0)
@@ -322,13 +431,14 @@ class SessionHub:
 
         delivered = 0
         for event in events:
-            try:
-                await connection.websocket.send_json(event.model_dump(mode="json"))
+            if await self._send(
+                connection,
+                event.model_dump(mode="json"),
+                "user-channel replay",
+            ):
                 delivered += 1
-            except Exception:
-                log.warning("replay failed for user %s, dropping", connection.user_id)
-                await self.leave(connection)
-                break
+                continue
+            break
 
         return delivered, last_seq
 
@@ -352,12 +462,8 @@ class SessionHub:
 
         delivered = 0
         for connection in targets:
-            try:
-                await connection.websocket.send_json(payload)
+            if await self._send(connection, payload, "targeted send"):
                 delivered += 1
-            except Exception:
-                log.warning("targeted send failed for user %s, dropping", user_id)
-                await self.leave(connection)
         return delivered > 0
 
 

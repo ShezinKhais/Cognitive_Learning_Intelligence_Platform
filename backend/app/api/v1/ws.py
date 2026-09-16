@@ -8,7 +8,7 @@ before authentication closes the connection. On success the server replies
 
 Every ordered server message carries a `seq` that increases monotonically
 within its session or authenticated user channel. Clients track the highest
-seq they have seen and send it as `last_seq` when reconnecting.
+seq and stream generation they have seen and send both when reconnecting.
 
 Closing codes
 -------------
@@ -114,7 +114,7 @@ async def _authenticate(
     websocket: WebSocket,
     settings: AppSettings,
     db: AsyncSession,
-) -> tuple[UUID, UUID | None, int | None] | None:
+) -> tuple[UUID, UUID | None, int | None, UUID | None] | None:
     """Read and validate the opening auth event.
 
     Development resolves JWT users from the local Cyber 1 identities.
@@ -194,7 +194,7 @@ async def _authenticate(
 
         return None
 
-    return user.id, payload.session_id, payload.last_seq
+    return user.id, payload.session_id, payload.last_seq, payload.stream_id
 
 
 def _session_access_allowed(
@@ -242,7 +242,7 @@ async def session_socket(
     if identity is None:
         return
 
-    user_id, session_id, last_seq = identity
+    user_id, session_id, last_seq, stream_id = identity
 
     # A valid JWT alone does not authorize an arbitrary session.
     if not _session_access_allowed(
@@ -261,7 +261,10 @@ async def session_socket(
         session_id=session_id,
     )
 
-    async def send_ready(resumed_from_seq: int | None) -> None:
+    async def send_ready(
+        resumed_from_seq: int | None,
+        ready_stream_id: UUID | None,
+    ) -> None:
         await _send(
             websocket,
             ServerEventType.READY,
@@ -269,15 +272,19 @@ async def session_socket(
                 "user_id": str(user_id),
                 "session_id": (str(session_id) if session_id else None),
                 "resumed_from_seq": resumed_from_seq,
+                "stream_id": (str(ready_stream_id) if ready_stream_id else None),
             },
         )
 
     try:
-        await hub.join_and_replay(
+        joined = await hub.join_and_replay(
             connection,
             last_seq,
+            stream_id,
             send_ready,
         )
+        if joined is None:
+            return
 
         while True:
             raw = await _receive_event(websocket)

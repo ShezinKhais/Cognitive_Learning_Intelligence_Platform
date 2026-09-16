@@ -64,6 +64,15 @@ export default function App() {
 
       <Route element={<ProtectedLecturerRoute />}>
         <Route
+          path="/lecturer"
+          element={
+            <Navigate
+              to="/lecturer/materials"
+              replace
+            />
+          }
+        />
+        <Route
           path="/lecturer/materials"
           element={<LecturerMaterialsPage />}
         />

@@ -77,6 +77,20 @@
           "default": null,
           "title": "Session Id"
         },
+        "stream_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Sequence-stream generation received in the previous ready event.",
+          "title": "Stream Id"
+        },
         "token": {
           "maxLength": 4096,
           "title": "Token",
@@ -687,6 +701,20 @@
           ],
           "default": null,
           "title": "Session Id"
+        },
+        "stream_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Generation identifier for reconnecting to this ordered stream.",
+          "title": "Stream Id"
         },
         "user_id": {
           "format": "uuid",
