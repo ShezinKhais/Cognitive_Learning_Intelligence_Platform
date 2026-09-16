@@ -14,6 +14,7 @@ from app.api.v1.router import api_router, ws_router
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, request_id_var
+from app.services.uploads import get_background_processor
 
 settings = get_settings()
 configure_logging(settings.clip_log_level)
@@ -45,6 +46,10 @@ async def lifespan(app: FastAPI):
     else:
         log.info("Running without Teams integration")
     yield
+    # Material processing outlives the request that started it, so a shutdown
+    # that does not wait for it kills a parse halfway and leaves the lecturer
+    # watching a bar stuck at 20 per cent with no record of why.
+    await get_background_processor().drain()
 
 
 def create_app() -> FastAPI:
