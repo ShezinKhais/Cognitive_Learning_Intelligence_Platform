@@ -256,3 +256,26 @@ async def test_generator_returns_nothing_without_chunks():
     generator = QuestionGenerator(FakeChatClient("[]"), "test-model")
 
     assert await generator.generate(uuid.uuid4(), []) == []
+
+
+def test_catches_an_answer_the_excerpt_does_not_support():
+    """The hallucination that survives grounding: a real quote from the right
+    page, paired with an answer that quote says nothing about."""
+    reasons = rejection_reasons(
+        draft(
+            prompt="What is the main advantage of freezing the base layers?",
+            options=("Lower memory use", "More layers", "Faster hardware", "Bigger datasets"),
+            correct_option=0,
+            source_excerpt="the base layers are frozen so their weights do not change",
+        ),
+        chunks(),
+    )
+
+    assert any("little overlap" in r for r in reasons)
+
+
+def test_truncated_json_raises_value_error_not_a_decode_error():
+    """Local models truncate. The caller expects ValueError, not whatever
+    json.loads happens to raise."""
+    with pytest.raises(ValueError):
+        parse_drafts('[{"prompt": "Q?", "options": ["a","b"')

@@ -345,3 +345,16 @@ def test_heading_appears_once_per_chunk_not_once_per_bullet():
 
     assert len(chunks) == 1
     assert chunks[0].chunk_text.count("Transfer learning") == 1
+
+
+def test_an_oversized_heading_cannot_break_the_size_limit():
+    """A heading longer than a chunk would drive the budget negative."""
+    els = [
+        ExtractedElement("heading", "H" * 800, 1),
+        ExtractedElement("text", "Some body text about normalisation.", 1),
+    ]
+
+    chunks = chunk_elements(els, material_id=uuid.uuid4(), size=500, overlap=100)
+
+    assert chunks
+    assert all(len(c.chunk_text) <= 500 for c in chunks)

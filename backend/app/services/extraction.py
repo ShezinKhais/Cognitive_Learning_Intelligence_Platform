@@ -469,7 +469,11 @@ def chunk_elements(
                 if part.strip():
                     flat.append(part.strip())
 
+        # A heading longer than a whole chunk would leave no room for content
+        # and drive the budget negative, breaking the size invariant.
         prefix = f"{heading}\n" if heading else ""
+        if len(prefix) > size // 2:
+            prefix = prefix[: size // 2]
         budget = size - len(prefix)
 
         buffer = ""

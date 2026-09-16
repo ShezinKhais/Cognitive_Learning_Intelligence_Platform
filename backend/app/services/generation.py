@@ -18,7 +18,27 @@ from app.services.retrieval import RetrievedChunk
 
 OPTION_COUNT = 4
 GROUNDING_THRESHOLD = 80
-ANSWER_SUPPORT_THRESHOLD = 40
+# Measured across short and long answers against the same excerpt: supported
+# answers covered 60-100% of their own words, unsupported ones 0%. 50 sits in
+# the gap. token_set_ratio and partial_token_set_ratio were both tried and
+# rejected - the first scored a correct one-word answer at 27, the second put
+# unrelated answers at 44.
+ANSWER_SUPPORT_THRESHOLD = 50
+
+
+def answer_coverage(answer: str, excerpt: str) -> float:
+    """What share of the answer's words appear in the excerpt.
+
+    Not a similarity ratio: those compare two strings and so punish length
+    mismatch, and a one-word correct answer inside a ten-word excerpt scored
+    27 on token_set_ratio - indistinguishable from an unrelated answer.
+    Containment is the question actually being asked.
+    """
+    answer_words = set(re.findall(r"[a-z0-9]+", answer.lower()))
+    excerpt_words = set(re.findall(r"[a-z0-9]+", excerpt.lower()))
+    if not answer_words:
+        return 0.0
+    return 100.0 * len(answer_words & excerpt_words) / len(answer_words)
 
 
 def rejection_reasons(draft: DraftQuestion, chunks: list[RetrievedChunk]) -> list[str]:
@@ -73,6 +93,19 @@ def rejection_reasons(draft: DraftQuestion, chunks: list[RetrievedChunk]) -> lis
         )
         if best < GROUNDING_THRESHOLD:
             reasons.append(f"excerpt not grounded in any chunk (best match {best:.0f})")
+    # Grounding proves the excerpt exists on the cited page, not that it
+    # supports the answer. An answer sharing almost no words with its own
+    # excerpt is the signature of a question reasoned from the model's own
+    # knowledge. A lexical proxy for entailment, not entailment itself.
+    if draft.source_excerpt and draft.correct_option is not None:
+        if 0 <= draft.correct_option < len(options):
+            answer = options[draft.correct_option]
+            support = answer_coverage(answer, draft.source_excerpt)
+            if support < ANSWER_SUPPORT_THRESHOLD:
+                reasons.append(
+                    f"correct answer has little overlap with the cited excerpt "
+                    f"(score {support:.0f})"
+                )
 
     return reasons
 
@@ -136,7 +169,13 @@ def parse_drafts(raw: str) -> list[DraftQuestion]:
         if text.startswith("json"):
             text = text[4:]
 
-    payload = json.loads(text)
+    # Local models truncate. A half-finished response should cost the batch,
+    # not the whole material job.
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"model did not return valid JSON: {exc}") from exc
+
     if not isinstance(payload, list):
         raise ValueError("expected a JSON array of questions")
 

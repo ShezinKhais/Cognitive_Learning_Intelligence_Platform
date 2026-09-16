@@ -50,7 +50,6 @@ jobs:
             -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
 
       - run: pip install -e ".[dev]"
-      
       - name: Run migrations
         # The service container starts empty. Tests that touch real tables
         # need the schema built, or they fail against a database that is
