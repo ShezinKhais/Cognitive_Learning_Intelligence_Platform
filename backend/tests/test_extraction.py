@@ -358,3 +358,21 @@ def test_an_oversized_heading_cannot_break_the_size_limit():
 
     assert chunks
     assert all(len(c.chunk_text) <= 500 for c in chunks)
+
+
+def test_a_second_heading_on_a_page_applies_to_the_text_after_it():
+    """DOCX puts every element on page 1, so grouping by page alone filed a
+    whole document under its first heading."""
+    els = [
+        ExtractedElement("heading", "Normalisation", 1),
+        ExtractedElement("text", "Redundancy is removed from the schema.", 1),
+        ExtractedElement("heading", "Indexing", 1),
+        ExtractedElement("text", "A B-tree keeps lookups fast.", 1),
+    ]
+
+    chunks = chunk_elements(els, material_id=uuid.uuid4())
+
+    indexing = [c for c in chunks if "B-tree" in c.chunk_text]
+    assert indexing
+    assert all("Normalisation" not in c.chunk_text for c in indexing)
+    assert any("Indexing" in c.chunk_text for c in indexing)

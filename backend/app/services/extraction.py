@@ -454,12 +454,15 @@ def chunk_elements(
             heading_page = el.page
             continue
 
-        if pages and pages[-1][0] == el.page:
+        if pages and pages[-1][0] == el.page and pages[-1][1] == current_heading:
             pages[-1][2].append(el.content)
         else:
             # The heading is held per page and prefixed once per chunk below.
             # Prefixing it per element repeated it for every bullet on a slide,
             # which wastes the chunk budget and skews the embedding.
+            # A new heading on the same page starts a new group: grouping by
+            # page alone filed a whole DOCX, where every element is page 1,
+            # under its first heading.
             pages.append((el.page, current_heading, [el.content]))
 
     for page, heading, blocks in pages:
