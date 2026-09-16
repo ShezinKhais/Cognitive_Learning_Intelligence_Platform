@@ -48,6 +48,18 @@ class WrongSizeClient:
         return [[0.1] * 1536 for _ in texts]
 
 
+class ShortBatchClient:
+    async def embed(self, texts):
+        return [[0.1] * 768 for _ in texts][:-1]
+
+
+async def test_rejects_a_short_batch():
+    embedder = OllamaEmbedder(ShortBatchClient(), batch_size=32)
+
+    with pytest.raises(ValueError):
+        await embedder.embed(make_chunks(5))
+
+
 async def test_rejects_vectors_of_the_wrong_dimension():
     embedder = OllamaEmbedder(WrongSizeClient(), batch_size=32)
 

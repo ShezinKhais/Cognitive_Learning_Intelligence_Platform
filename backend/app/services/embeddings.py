@@ -44,6 +44,13 @@ class OllamaEmbedder:
             batch = chunks[start : start + self._batch_size]
             texts = [c.chunk_text for c in batch]
             batch_vectors = await self._client.embed(texts)
+            # Vectors are paired to chunks by position, so a short batch
+            # misaligns every chunk after it rather than losing one.
+            if len(batch_vectors) != len(batch):
+                raise ValueError(
+                    f"Embedding client returned {len(batch_vectors)} vectors "
+                    f"for {len(batch)} chunks."
+                )
             expected = get_settings().embedding_dim
             for vector in batch_vectors:
                 if len(vector) != expected:

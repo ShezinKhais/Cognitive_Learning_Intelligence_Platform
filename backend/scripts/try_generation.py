@@ -33,7 +33,7 @@ async def main():
     client = AsyncOpenAI(base_url=settings.ollama_base_url, api_key="ollama")
 
     response = await client.chat.completions.create(
-        model="qwen2.5:3b",
+        model=settings.ollama_model,
         messages=[{"role": "user", "content": build_prompt(CHUNKS, count=3)}],
     )
     raw = response.choices[0].message.content or ""
