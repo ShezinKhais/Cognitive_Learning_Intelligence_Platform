@@ -28,9 +28,14 @@ class RetrievedChunk:
 
 
 class ChunkRetriever:
-    def __init__(self, session: AsyncSession, client) -> None:
+    def __init__(self, session: AsyncSession, client, model: str) -> None:
         self._session = session
         self._client = client
+        # Vectors from two models are not comparable. Without this filter a
+        # query embedded with the new model would be scored against rows
+        # embedded with the old one, and the nearest neighbours would be
+        # arbitrary rather than wrong in any detectable way.
+        self._model = model
 
     async def search(self, query: str, material_id: UUID, k: int = 5) -> list[RetrievedChunk]:
         vectors = await self._client.embed([query])
@@ -45,6 +50,7 @@ class ChunkRetriever:
             .where(
                 RagChunk.source_material_id == material_id,
                 RagChunk.embedding_vector.isnot(None),
+                RagChunk.embedding_model == self._model,
             )
             .order_by(distance)
             .limit(k)

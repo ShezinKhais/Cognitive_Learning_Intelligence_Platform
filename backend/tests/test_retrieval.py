@@ -70,11 +70,12 @@ async def test_closest_chunk_comes_first(db: AsyncSession) -> None:
                 source_page=index + 1,
                 chunk_text=f"chunk on axis {position}",
                 embedding_vector=axis_vector(position),
+                embedding_model="nomic-embed-text",
             )
         )
     await db.flush()
 
-    retriever = ChunkRetriever(db, FixedVectorClient(axis_vector(0)))
+    retriever = ChunkRetriever(db, FixedVectorClient(axis_vector(0)), "nomic-embed-text")
     results = await retriever.search("anything", material.id, k=3)
 
     assert len(results) == 3
@@ -109,6 +110,7 @@ async def test_search_never_returns_another_materials_chunks(db: AsyncSession) -
             source_page=1,
             chunk_text="my distant chunk",
             embedding_vector=axis_vector(7),
+            embedding_model="nomic-embed-text",
         )
     )
     db.add(
@@ -119,11 +121,56 @@ async def test_search_never_returns_another_materials_chunks(db: AsyncSession) -
             source_page=1,
             chunk_text="their perfect match",
             embedding_vector=axis_vector(0),
+            embedding_model="nomic-embed-text",
         )
     )
     await db.flush()
 
-    retriever = ChunkRetriever(db, FixedVectorClient(axis_vector(0)))
+    retriever = ChunkRetriever(db, FixedVectorClient(axis_vector(0)), "nomic-embed-text")
     results = await retriever.search("anything", mine.id, k=5)
 
     assert [r.chunk_text for r in results] == ["my distant chunk"]
+
+
+async def test_search_ignores_chunks_from_another_embedding_model(db: AsyncSession) -> None:
+    """A model change leaves old vectors in place. Comparing across models
+    gives neighbours that are arbitrary rather than detectably wrong."""
+    material = Material(
+        id=uuid.uuid4(),
+        filename="lecture.pdf",
+        content_type="application/pdf",
+        size_bytes=1000,
+    )
+    db.add(material)
+    await db.flush()
+
+    # The old-model chunk is a perfect match, so it would rank first if the
+    # filter were missing.
+    db.add(
+        RagChunk(
+            chunk_id=uuid.uuid4(),
+            source_material_id=material.id,
+            chunk_index=0,
+            source_page=1,
+            chunk_text="old model chunk",
+            embedding_vector=axis_vector(0),
+            embedding_model="some-old-model",
+        )
+    )
+    db.add(
+        RagChunk(
+            chunk_id=uuid.uuid4(),
+            source_material_id=material.id,
+            chunk_index=1,
+            source_page=2,
+            chunk_text="current model chunk",
+            embedding_vector=axis_vector(7),
+            embedding_model="nomic-embed-text",
+        )
+    )
+    await db.flush()
+
+    retriever = ChunkRetriever(db, FixedVectorClient(axis_vector(0)), "nomic-embed-text")
+    results = await retriever.search("anything", material.id, k=5)
+
+    assert [r.chunk_text for r in results] == ["current model chunk"]
