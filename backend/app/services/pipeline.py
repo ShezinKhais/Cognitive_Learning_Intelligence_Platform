@@ -345,9 +345,15 @@ class MaterialPipeline:
         lecturer_warnings = list(result.warnings)
 
         questions = await self._generate(material_id, owner_id, result.chunks, lecturer_warnings)
-        if self._store is not None and questions:
+        # Only stored drafts are ready for review. Without a store the drafts
+        # go nowhere, and counting them told the lecturer questions were
+        # waiting that no screen could ever show.
+        unstored = 0
+        if questions and self._store is not None:
             await self._store.save_questions(material_id, questions)
-        question_count = len(questions)
+        elif questions:
+            unstored = len(questions)
+        question_count = len(questions) - unstored
 
         warnings = list(lecturer_warnings)
         for missing, what in (
@@ -357,6 +363,8 @@ class MaterialPipeline:
         ):
             if missing:
                 warnings.append(f"{what} is not wired up in this build and was skipped")
+        if unstored:
+            warnings.append(f"{unstored} draft question(s) were generated but not stored")
 
         done_message = (
             f"{question_count} question(s) ready for review."
@@ -491,8 +499,13 @@ class MaterialPipeline:
                 return
 
         current = self._registry.get(material_id)
-        if self._store is not None and current is not None and current.is_finished:
-            await self._record_quietly(current)
+        if current is not None and current.is_finished:
+            # Already announced, whether or not a store is wired. Without a
+            # store this used to fall through and mark a material that had
+            # just reported done as interrupted, sending the lecturer failed
+            # straight after done.
+            if self._store is not None:
+                await self._record_quietly(current)
             return
 
         await self._fail(material_id, owner_id, INTERRUPTED_MESSAGE, INTERRUPTED_ERROR)

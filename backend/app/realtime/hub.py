@@ -21,7 +21,7 @@ import asyncio
 import contextlib
 import logging
 from collections import OrderedDict, defaultdict
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from uuid import UUID
@@ -112,6 +112,25 @@ class SessionHub:
             log.info("user %s connected without a session", connection.user_id)
         else:
             log.info("user %s joined session %s", connection.user_id, connection.session_id)
+
+    async def join_after(
+        self, connection: Connection, send_ready: Callable[[], Awaitable[None]]
+    ) -> None:
+        """Send ready, then join, with nothing published for this user in between.
+
+        Joining first let a progress frame reach the socket ahead of ready.
+        Sending ready and then joining left a gap: an event published between
+        the two went to no socket, and if it was the final done frame nothing
+        later would replace it, so the tab waited forever. Holding the user's
+        delivery lock across both makes delivery wait for the join instead.
+
+        The ready write is bounded like any other, since the lock is held
+        while it runs.
+        """
+        async with self._delivery_lock_for(connection.user_id):
+            async with asyncio.timeout(SEND_TIMEOUT_SECONDS):
+                await send_ready()
+            await self.join(connection)
 
     async def leave(self, connection: Connection) -> None:
         async with self._lock:
@@ -265,9 +284,13 @@ class SessionHub:
                 else:
                     dead.append(connection)
 
-        for connection in dead:
-            log.warning("user-channel send failed for user %s, dropping", user_id)
-            await self._drop(connection)
+            # Forgotten before the lock is released. Dropped after it, a second
+            # upload waiting on the lock could snapshot the same dead socket and
+            # spend another full send timeout on it. The close itself is
+            # detached, so this holds the lock for no longer than the removal.
+            for connection in dead:
+                log.warning("user-channel send failed for user %s, dropping", user_id)
+                await self._drop(connection)
 
         return delivered
 

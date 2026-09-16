@@ -902,3 +902,59 @@ async def test_a_run_leaves_no_bookkeeping_behind(tmp_path: Path) -> None:
 
     assert pipeline._outcomes == {}
     assert failing._outcomes == {}
+
+
+async def test_shutdown_after_done_is_announced_does_not_mark_it_interrupted(
+    tmp_path: Path,
+) -> None:
+    """With no store wired, abandon() skipped the finished check and sent the
+    lecturer failed straight after done."""
+
+    class HangsOnDone(Socket):
+        def __init__(self) -> None:
+            super().__init__()
+            self.finishing = asyncio.Event()
+
+        async def send_json(self, payload: dict) -> None:
+            await super().send_json(payload)
+            if payload["data"]["stage"] == MaterialStage.DONE:
+                self.finishing.set()
+                await asyncio.sleep(3600)
+
+    hub = SessionHub()
+    owner = uuid4()
+    socket = HangsOnDone()
+    await hub.join(Connection(socket, owner, None))
+    pipeline, storage, registry = build(tmp_path, hub=hub)
+    processor = BackgroundProcessor(registry, max_concurrent=1)
+    stored = await stored_text(storage)
+
+    async def work() -> None:
+        await pipeline.run(stored, owner)
+
+    async def interrupted() -> None:
+        await pipeline.abandon(stored.material_id, owner)
+
+    processor.submit(stored.material_id, work, on_cancel=interrupted)
+    await asyncio.wait_for(socket.finishing.wait(), EVENT_TIMEOUT_SECONDS)
+    await processor.drain(grace_seconds=0.0)
+
+    assert registry.get(stored.material_id).stage is MaterialStage.DONE
+    assert MaterialStage.FAILED not in stages(socket)
+
+
+async def test_drafts_with_nowhere_to_be_stored_are_not_announced_as_ready(
+    tmp_path: Path,
+) -> None:
+    """Without a store the lecturer was told questions were ready for review
+    that no screen could ever show."""
+    hub = SessionHub()
+    owner = uuid4()
+    socket = await watching(hub, owner)
+    pipeline, storage, _ = build(tmp_path, hub=hub, generator=Generator(count=3))
+
+    result = await pipeline.run(await stored_text(storage), owner)
+
+    assert result.question_count == 0
+    assert "ready for review" not in (socket.sent[-1]["data"]["message"] or "")
+    assert any("3 draft question(s) were generated but not stored" in w for w in result.warnings)

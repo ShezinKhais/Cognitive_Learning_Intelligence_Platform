@@ -24,6 +24,8 @@ from app.realtime.hub import (
 )
 from app.schemas.events import ServerEventType
 
+EVENT_TIMEOUT_SECONDS = 5.0
+
 
 class _FakeSocket:
     def __init__(self, fail: bool = False) -> None:
@@ -460,3 +462,59 @@ async def test_a_user_with_no_connections_left_is_forgotten() -> None:
     await hub.leave(connection)
 
     assert lecturer not in hub._by_user
+
+
+async def test_progress_published_during_the_handshake_reaches_the_new_tab() -> None:
+    """Ready then join left a gap. A done frame published in it went to no
+    socket, nothing later replaced it, and the tab waited forever."""
+    hub = SessionHub()
+    lecturer = uuid4()
+    socket = _FakeSocket()
+    published: list[asyncio.Task[int]] = []
+
+    async def send_ready() -> None:
+        published.append(
+            asyncio.create_task(
+                hub.send_to_user_channel(lecturer, ServerEventType.MATERIAL_PROGRESS, {})
+            )
+        )
+        await asyncio.sleep(0)
+
+    await hub.join_after(Connection(socket, lecturer, None), send_ready)
+
+    assert await asyncio.wait_for(published[0], EVENT_TIMEOUT_SECONDS) == 1
+
+
+async def test_a_dead_socket_is_forgotten_before_the_next_upload_reports(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dropped after the lock was released, a second upload waiting on it could
+    snapshot the same dead socket and wait out another full send timeout."""
+    monkeypatch.setattr(hub_module, "SEND_TIMEOUT_SECONDS", 0.05)
+    hub = SessionHub()
+    lecturer = uuid4()
+    stalled = _StalledSocket()
+    await hub.join(Connection(stalled, lecturer, None))
+    await hub.join(Connection(_FakeSocket(), lecturer, None))
+
+    # Removal yields, as it does whenever someone else holds the hub-wide lock.
+    real_leave = hub.leave
+
+    async def contended_leave(connection: Connection) -> None:
+        await asyncio.sleep(0)
+        await real_leave(connection)
+
+    monkeypatch.setattr(hub, "leave", contended_leave)
+
+    await asyncio.wait_for(
+        asyncio.gather(
+            hub.send_to_user_channel(lecturer, ServerEventType.MATERIAL_PROGRESS, {}),
+            hub.send_to_user_channel(lecturer, ServerEventType.MATERIAL_PROGRESS, {}),
+        ),
+        EVENT_TIMEOUT_SECONDS,
+    )
+
+    assert stalled.attempts == 1
+    for task in list(hub._closing):
+        task.cancel()
+    await asyncio.gather(*hub._closing, return_exceptions=True)
