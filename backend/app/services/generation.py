@@ -68,8 +68,16 @@ def rejection_reasons(draft: DraftQuestion, chunks: list[RetrievedChunk]) -> lis
     else:
         # The model paraphrases, so exact matching would reject good questions.
         # partial_ratio finds the best-matching window inside the chunk.
+        # Page membership and excerpt matching were checked independently, so a
+        # question could cite page 3 while quoting page 4 and pass both. Match
+        # only against chunks on the page it claims.
+        cited_chunks = (
+            [c for c in chunks if c.source_page == draft.source_slide]
+            if draft.source_slide is not None
+            else chunks
+        )
         best = max(
-            (fuzz.partial_ratio(draft.source_excerpt, chunk.chunk_text) for chunk in chunks),
+            (fuzz.partial_ratio(draft.source_excerpt, c.chunk_text) for c in cited_chunks),
             default=0,
         )
         if best < GROUNDING_THRESHOLD:

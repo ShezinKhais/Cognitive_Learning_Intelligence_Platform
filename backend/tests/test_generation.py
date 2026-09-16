@@ -208,3 +208,25 @@ async def test_generator_returns_nothing_when_retrieval_is_empty():
     outcome = await generator.generate("nothing", uuid.uuid4())
 
     assert outcome.accepted == []
+
+
+def test_catches_excerpt_quoted_from_a_page_it_did_not_cite():
+    """Citing page 3 while quoting page 9 passed before: the page check and the
+    excerpt check ran independently."""
+    other_page = RetrievedChunk(
+        chunk_id=uuid.uuid4(),
+        chunk_index=1,
+        chunk_text="Dropout randomly disables neurons during training.",
+        source_page=9,
+        distance=0.2,
+    )
+
+    reasons = rejection_reasons(
+        draft(
+            source_slide=3,
+            source_excerpt="Dropout randomly disables neurons during training",
+        ),
+        chunks() + [other_page],
+    )
+
+    assert any("not grounded" in r for r in reasons)
