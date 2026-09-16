@@ -319,3 +319,16 @@ def test_file_with_no_text_is_rejected(tmp_path):
     f.write_text("   \n  ")
     with pytest.raises(ValidationError):
         process_material(str(f), material_id=uuid.uuid4())
+
+
+def test_consecutive_chunks_actually_share_text():
+    """The older overlap test uses a repeating pattern, so every 100-character
+    window looks alike and it passes with or without overlap. Total length is
+    the honest check: overlapping chunks must exceed the input."""
+    text = "Transfer learning reuses a pretrained network. " * 30
+    els = [ExtractedElement("text", text, 1)]
+
+    chunks = chunk_elements(els, material_id=uuid.uuid4(), size=500, overlap=100)
+
+    assert len(chunks) > 1
+    assert sum(len(c.chunk_text) for c in chunks) > len(text)
