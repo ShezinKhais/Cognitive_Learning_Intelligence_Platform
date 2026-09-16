@@ -443,7 +443,7 @@ def chunk_elements(
     # Group by page first. A PDF page arrives as one large element and a PPTX
     # slide as many small ones; chunking per element made the same content
     # produce completely different chunk sizes depending on the parser.
-    pages: list[tuple[int, list[str]]] = []
+    pages: list[tuple[int, str, list[str]]] = []
     for el in elements:
         if el.el_type == "image":
             continue
@@ -454,36 +454,43 @@ def chunk_elements(
             heading_page = el.page
             continue
 
-        text = f"{current_heading}\n{el.content}" if current_heading else el.content
         if pages and pages[-1][0] == el.page:
-            pages[-1][1].append(text)
+            pages[-1][2].append(el.content)
         else:
-            pages.append((el.page, [text]))
+            # The heading is held per page and prefixed once per chunk below.
+            # Prefixing it per element repeated it for every bullet on a slide,
+            # which wastes the chunk budget and skews the embedding.
+            pages.append((el.page, current_heading, [el.content]))
 
-    for page, blocks in pages:
+    for page, heading, blocks in pages:
         flat: list[str] = []
         for block in blocks:
             for part in re.split(r"\n\s*\n|\n", block):
                 if part.strip():
                     flat.append(part.strip())
 
+        prefix = f"{heading}\n" if heading else ""
+        budget = size - len(prefix)
+
         buffer = ""
         carried = ""
         for block in flat:
-            for piece in _split_oversized(block, size):
+            for piece in _split_oversized(block, budget):
                 joined = f"{buffer}\n{piece}".strip() if buffer else piece
-                if len(joined) > size:
+                if len(joined) > budget:
                     if buffer:
-                        chunks.append(ContentChunk(uuid.uuid4(), index, material_id, buffer, page))
+                        chunks.append(
+                            ContentChunk(uuid.uuid4(), index, material_id, prefix + buffer, page)
+                        )
                         index += 1
                         carried = _tail(buffer, overlap)
                     seed = f"{carried} {piece}".strip() if carried else piece
-                    buffer = seed if len(seed) <= size else piece
+                    buffer = seed if len(seed) <= budget else piece
                 else:
                     buffer = joined
 
         if buffer.strip():
-            chunks.append(ContentChunk(uuid.uuid4(), index, material_id, buffer, page))
+            chunks.append(ContentChunk(uuid.uuid4(), index, material_id, prefix + buffer, page))
             index += 1
 
     return chunks

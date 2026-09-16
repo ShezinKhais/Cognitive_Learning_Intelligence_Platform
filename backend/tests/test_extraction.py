@@ -332,3 +332,16 @@ def test_consecutive_chunks_actually_share_text():
 
     assert len(chunks) > 1
     assert sum(len(c.chunk_text) for c in chunks) > len(text)
+
+
+def test_heading_appears_once_per_chunk_not_once_per_bullet():
+    """Prefixing the heading to every element repeated it for every bullet on
+    a slide, wasting the chunk budget and skewing the embedding."""
+    els = [ExtractedElement("heading", "Transfer learning", 3)] + [
+        ExtractedElement("text", f"Bullet point number {i}", 3) for i in range(6)
+    ]
+
+    chunks = chunk_elements(els, material_id=uuid.uuid4())
+
+    assert len(chunks) == 1
+    assert chunks[0].chunk_text.count("Transfer learning") == 1
