@@ -5,13 +5,14 @@ import uuid
 
 import pytest
 
+from app.schemas.content import Difficulty, QuestionType
 from app.services.generation import (
-    DraftQuestion,
     QuestionGenerator,
     build_prompt,
     parse_drafts,
     rejection_reasons,
 )
+from app.services.pipeline import DraftQuestion
 from app.services.retrieval import RetrievedChunk
 
 CHUNK_TEXT = (
@@ -35,8 +36,10 @@ def chunks():
 def draft(**overrides):
     """A valid draft, unless a test overrides one field to break it."""
     base = dict(
+        type=QuestionType.MCQ,
+        difficulty=Difficulty.MEDIUM,
         prompt="What happens to the base layers in transfer learning?",
-        options=["They are frozen", "They are deleted", "They are doubled", "They are shuffled"],
+        options=("They are frozen", "They are deleted", "They are doubled", "They are shuffled"),
         correct_option=0,
         topic="Transfer learning",
         source_slide=3,
@@ -108,7 +111,7 @@ def test_missing_fields_become_a_rejectable_draft_not_a_crash():
     """A malformed item must survive parsing so the validator can explain it."""
     drafts = parse_drafts('[{"prompt": "Q?"}]')
 
-    assert drafts[0].options == []
+    assert drafts[0].options == ()
     assert drafts[0].correct_option == -1
 
 
@@ -250,4 +253,4 @@ def test_non_numeric_fields_do_not_abort_the_batch():
 
     assert drafts[0].correct_option == -1
     assert drafts[0].source_slide is None
-    assert drafts[0].options == []
+    assert drafts[0].options == ()

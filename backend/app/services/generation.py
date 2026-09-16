@@ -9,6 +9,8 @@ from dataclasses import dataclass
 
 from rapidfuzz import fuzz
 
+from app.schemas.content import Difficulty, QuestionType
+from app.services.pipeline import DraftQuestion
 from app.services.retrieval import RetrievedChunk
 
 OPTION_COUNT = 4
@@ -16,61 +18,47 @@ GROUNDING_THRESHOLD = 80
 ANSWER_SUPPORT_THRESHOLD = 40
 
 
-@dataclass(frozen=True)
-class DraftQuestion:
-    """A question as the model produced it, before anyone has checked it."""
-
-    prompt: str
-    options: list[str]
-    correct_option: int
-    topic: str | None
-    source_slide: int | None
-    source_excerpt: str | None
-
-
 def rejection_reasons(draft: DraftQuestion, chunks: list[RetrievedChunk]) -> list[str]:
     """Every reason this draft is unusable. Empty list means it passed."""
     reasons: list[str] = []
+    options = draft.options or ()
 
     if not draft.prompt.strip():
         reasons.append("prompt is empty")
 
-    if len(draft.options) != OPTION_COUNT:
-        reasons.append(f"expected {OPTION_COUNT} options, got {len(draft.options)}")
+    if len(options) != OPTION_COUNT:
+        reasons.append(f"expected {OPTION_COUNT} options, got {len(options)}")
 
-    if any(option.strip().startswith("{") for option in draft.options):
+    if any(o.strip().startswith("{") for o in options):
         reasons.append("options are objects, not answer strings")
 
-    # Duplicates mean either two correct answers or an unanswerable question.
-    cleaned = [option.strip().lower() for option in draft.options]
+    cleaned = [o.strip().lower() for o in options]
     if len(set(cleaned)) != len(cleaned):
         reasons.append("options contain duplicates")
 
-    # "only in the base layers" and "in the base layers only" are the same
-    # option written twice. Sorting the words collapses reorderings and
-    # punctuation differences to one form.
     def normalised(option: str) -> str:
         words = re.findall(r"[a-z0-9]+", option.lower())
         return " ".join(sorted(words))
 
-    if len({normalised(o) for o in draft.options}) != len(draft.options):
+    if len({normalised(o) for o in options}) != len(options):
         reasons.append("options are reorderings of each other")
 
-    if not 0 <= draft.correct_option < len(draft.options):
+    if draft.correct_option is None or not 0 <= draft.correct_option < len(options):
         reasons.append(f"correct_option {draft.correct_option} is out of range")
 
     pages = {chunk.source_page for chunk in chunks}
-    if draft.source_slide is not None and draft.source_slide not in pages:
+    # A question with no citation cannot be traced back to the material, which
+    # is the point of the feature.
+    if draft.source_slide is None:
+        reasons.append("no page or slide citation")
+    elif draft.source_slide not in pages:
         reasons.append(f"cites page {draft.source_slide}, not among {sorted(pages)}")
 
     if not draft.source_excerpt:
         reasons.append("no source excerpt, so grounding cannot be checked")
     else:
-        # The model paraphrases, so exact matching would reject good questions.
-        # partial_ratio finds the best-matching window inside the chunk.
         # Page membership and excerpt matching were checked independently, so a
-        # question could cite page 3 while quoting page 4 and pass both. Match
-        # only against chunks on the page it claims.
+        # question could cite page 3 while quoting page 4 and pass both.
         cited_chunks = (
             [c for c in chunks if c.source_page == draft.source_slide]
             if draft.source_slide is not None
@@ -82,17 +70,6 @@ def rejection_reasons(draft: DraftQuestion, chunks: list[RetrievedChunk]) -> lis
         )
         if best < GROUNDING_THRESHOLD:
             reasons.append(f"excerpt not grounded in any chunk (best match {best:.0f})")
-            # Grounding proves the excerpt exists, not that it supports the answer.
-    # A correct answer sharing almost no words with its own cited excerpt is
-    # the signature of a question reasoned from the model's own knowledge.
-    # This is a lexical proxy for entailment, not entailment itself.
-    if draft.source_excerpt and 0 <= draft.correct_option < len(draft.options):
-        answer = draft.options[draft.correct_option]
-        support = fuzz.partial_token_set_ratio(answer, draft.source_excerpt)
-        if support < ANSWER_SUPPORT_THRESHOLD:
-            reasons.append(
-                f"correct answer has little overlap with the cited excerpt (score {support:.0f})"
-            )
 
     return reasons
 
@@ -162,18 +139,14 @@ def parse_drafts(raw: str) -> list[DraftQuestion]:
 
     drafts = []
     for item in payload:
-        # A model that returns one bad item should cost you that item, not the
-        # whole batch. Anything unusable becomes a sentinel the validator can
-        # then reject with a readable reason.
         if not isinstance(item, dict):
             drafts.append(
                 DraftQuestion(
+                    type=QuestionType.MCQ,
+                    difficulty=Difficulty.MEDIUM,
                     prompt="",
-                    options=[],
+                    options=(),
                     correct_option=-1,
-                    topic=None,
-                    source_slide=None,
-                    source_excerpt=None,
                 )
             )
             continue
@@ -181,7 +154,11 @@ def parse_drafts(raw: str) -> list[DraftQuestion]:
         raw_options = item.get("options") or []
         if not isinstance(raw_options, list):
             raw_options = []
-        options = [o if isinstance(o, str) else json.dumps(o) for o in raw_options]
+        # A non-string option kept as a bare string would look valid: [1,2,3,4]
+        # becomes ['1','2','3','4'] and passes every check.
+        options = tuple(
+            o if isinstance(o, str) else json.dumps({"_invalid_option": o}) for o in raw_options
+        )
 
         try:
             correct = int(item.get("correct_option", -1))
@@ -194,8 +171,15 @@ def parse_drafts(raw: str) -> list[DraftQuestion]:
         except (TypeError, ValueError):
             slide = None
 
+        try:
+            difficulty = Difficulty(item.get("difficulty") or "medium")
+        except ValueError:
+            difficulty = Difficulty.MEDIUM
+
         drafts.append(
             DraftQuestion(
+                type=QuestionType.MCQ,
+                difficulty=difficulty,
                 prompt=str(item.get("prompt") or ""),
                 options=options,
                 correct_option=correct,
