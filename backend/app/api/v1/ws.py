@@ -30,11 +30,12 @@ from uuid import UUID
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.websockets import WebSocketState
 
 from app.api.deps import AppSettings, DbSession
 from app.auth.service import user_from_token
 from app.core.security import TokenValidationError
-from app.realtime.hub import Connection, hub
+from app.realtime.hub import CLOSE_TRY_AGAIN_LATER, Connection, hub
 from app.schemas.events import (
     AuthPayload,
     ClientEventType,
@@ -66,7 +67,15 @@ async def _send(
 
     seq is 0 because these are not part of a session's ordered stream; clients
     only track gaps in events that carry a non-zero seq.
+
+    The hub closes a socket from another task when a delivery to it fails. A
+    ping already on its way was then answered on a closed socket, Starlette
+    raised RuntimeError, and the endpoint logged a traceback for what is an
+    ordinary disconnect. It is reported as the disconnect it is instead. No
+    await separates the check from the send, so the state cannot change between.
     """
+    if websocket.application_state is not WebSocketState.CONNECTED:
+        raise WebSocketDisconnect(code=CLOSE_TRY_AGAIN_LATER)
 
     event = ServerEvent(
         type=event_type,
@@ -261,9 +270,7 @@ async def session_socket(
         session_id=session_id,
     )
 
-    await hub.join(connection)
-
-    try:
+    async def send_ready() -> None:
         await _send(
             websocket,
             ServerEventType.READY,
@@ -272,6 +279,13 @@ async def session_socket(
                 "session_id": (str(session_id) if session_id else None),
             },
         )
+
+    try:
+        # Ready goes first, as this module documents, and the join follows
+        # with delivery to this user held until it completes, so a frame
+        # published during the handshake arrives after ready rather than
+        # before it or not at all.
+        await hub.join_after(connection, send_ready)
 
         while True:
             raw = await _receive_event(websocket)

@@ -25,7 +25,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app import main as main_module
 from app.api.v1 import content
+from app.auth.store import LECTURER_ID
 from app.core.config import Settings
 from app.main import lifespan
 from app.realtime.hub import SessionHub
@@ -71,8 +73,13 @@ def await_terminal_state(registry: JobRegistry, material_id: str):
 
 
 @pytest.fixture
-def live_client(app: FastAPI):
-    """A client whose event loop stays up between calls."""
+def live_client(app: FastAPI, uploads):
+    """A client whose event loop stays up between calls.
+
+    Depends on uploads so it is torn down first. The other order undid the
+    patched processor before the client shut down, and the lifespan drained
+    the real singleton instead of the jobs these tests submitted.
+    """
     with TestClient(app) as running:
         yield running
 
@@ -100,6 +107,9 @@ def uploads(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setattr(content, "get_material_storage", lambda: storage)
     monkeypatch.setattr(content, "get_material_pipeline", lambda: pipeline)
     monkeypatch.setattr(content, "get_background_processor", lambda: processor)
+    # Shutdown drains through its own reference. Patched only in the route,
+    # the lifespan drained the real singleton and this processor never.
+    monkeypatch.setattr(main_module, "get_background_processor", lambda: processor)
     return registry
 
 
@@ -139,14 +149,37 @@ def test_a_lecturer_upload_is_accepted_without_waiting_for_the_parse(
 
 
 def test_the_material_is_queued_before_the_response_is_returned(
-    live_client: TestClient, uploads
+    live_client: TestClient, uploads, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A status read between the 202 and the worker must not report nothing."""
+    processor = content.get_background_processor()
+    pipeline = content.get_material_pipeline()
+    at_submit: list = []
+    owners: list[UUID] = []
+    real_submit, real_run = processor.submit, pipeline.run
+
+    def submit(material_id, work, on_cancel=None):
+        task = real_submit(material_id, work, on_cancel=on_cancel)
+        at_submit.append((uploads.get(material_id), on_cancel))
+        return task
+
+    async def run(stored, owner_id):
+        owners.append(owner_id)
+        return await real_run(stored, owner_id)
+
+    monkeypatch.setattr(processor, "submit", submit)
+    monkeypatch.setattr(pipeline, "run", run)
     headers = login(live_client, "lecturer@clip.example.com", LECTURER_PASSWORD)
 
     material_id = upload(live_client, headers, "notes.txt", LECTURE_NOTES).json()["id"]
+    await_terminal_state(uploads, material_id)
 
-    assert uploads.get(UUID(material_id)) is not None
+    status, on_cancel = at_submit[0]
+    assert status.status is MaterialStatus.PENDING
+    # Without the hook, a shutdown mid-parse is never reported or recorded.
+    assert on_cancel is not None
+    # Progress goes to the channel of whoever uploaded, not anyone else's.
+    assert owners == [LECTURER_ID]
 
 
 def test_the_upload_is_processed_after_the_response(live_client: TestClient, uploads) -> None:
@@ -198,10 +231,21 @@ def test_an_empty_upload_is_refused(live_client: TestClient, uploads) -> None:
     assert response.status_code == 422
 
 
-async def test_shutdown_waits_for_a_job_that_is_still_running(app: FastAPI) -> None:
+async def test_shutdown_waits_for_a_job_that_is_still_running(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A deploy that does not wait kills a parse halfway, and the lecturer is
     left watching a bar stuck at twenty per cent with no record of why."""
     processor = get_background_processor()
+    drained_with: list[int] = []
+    real_drain = processor.drain
+
+    async def drain(*args, **kwargs) -> None:
+        # Recorded, so a startup slower than the job cannot pass this vacuously.
+        drained_with.append(processor.in_flight)
+        await real_drain(*args, **kwargs)
+
+    monkeypatch.setattr(processor, "drain", drain)
     running = asyncio.Event()
 
     async def slow() -> None:
@@ -215,6 +259,7 @@ async def test_shutdown_waits_for_a_job_that_is_still_running(app: FastAPI) -> N
     async with lifespan(app):
         pass
 
+    assert drained_with == [1]
     assert processor.in_flight == 0
 
 
@@ -235,3 +280,32 @@ def test_a_spreadsheet_is_refused_rather_than_accepted_and_failed(
 
     assert response.status_code == 422
     assert name.rsplit(".", 1)[1] in response.json()["error"]["message"]
+
+
+def test_a_job_limit_of_zero_is_refused_at_startup() -> None:
+    """Zero queued every upload forever; a negative limit made each one a 500."""
+    from pydantic import ValidationError as SettingsError
+
+    with pytest.raises(SettingsError):
+        Settings(_env_file=None, max_concurrent_material_jobs=0)
+
+
+def test_the_shown_filename_is_the_stored_one_not_the_raw_client_value(
+    live_client: TestClient, uploads
+) -> None:
+    headers = login(live_client, "lecturer@clip.example.com", LECTURER_PASSWORD)
+
+    response = upload(live_client, headers, "C:\\Users\\bob\\notes.txt", LECTURE_NOTES)
+
+    assert response.json()["filename"] == "notes.txt"
+
+
+def test_the_real_wiring_uses_the_configured_limits() -> None:
+    """Every other test replaces these singletons, so check what they build."""
+    from app.core.config import get_settings
+    from app.services.uploads import get_material_storage
+
+    settings = get_settings()
+
+    assert get_background_processor()._max_concurrent == settings.max_concurrent_material_jobs
+    assert get_material_storage()._allowed == material_extensions(settings)

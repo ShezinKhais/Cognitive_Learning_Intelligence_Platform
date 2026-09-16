@@ -26,11 +26,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shutil
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Protocol
 from uuid import UUID
 
@@ -76,6 +77,30 @@ class MaterialStorage(Protocol):
         ...
 
 
+# The width of source_material.filename.
+MAX_DISPLAY_NAME = 255
+
+
+def display_name(filename: str) -> str:
+    """The last component of a client-supplied filename, whatever the host OS.
+
+    Some browsers send the full client path. Path(...).name only splits on the
+    server's own separator, so on a Linux host "C:\\Users\\bob\\notes.txt" came
+    back whole. PureWindowsPath splits on both separators and drops a drive.
+    """
+    # source_material.filename is VARCHAR(255) and Postgres text cannot hold
+    # NUL, so a name that fails either would be accepted with a 202 here and
+    # then break the insert once persistence is wired. Control characters are
+    # dropped and the name is bounded, keeping the extension visible.
+    name = "".join(ch for ch in PureWindowsPath(filename).name if ch.isprintable())
+    if len(name) <= MAX_DISPLAY_NAME:
+        return name
+    stem, dot, extension = name.rpartition(".")
+    if not dot or len(extension) >= MAX_DISPLAY_NAME:
+        return name[:MAX_DISPLAY_NAME]
+    return stem[: MAX_DISPLAY_NAME - len(extension) - 1] + dot + extension
+
+
 def validated_extension(filename: str, allowed: set[str]) -> str:
     """Return the lowercase extension, or refuse the file.
 
@@ -84,12 +109,12 @@ def validated_extension(filename: str, allowed: set[str]) -> str:
     than trusted. Suffix comes from PurePath, so a name like `notes.pdf.exe`
     yields `exe` and is refused instead of being read as a PDF.
     """
-    extension = Path(filename).suffix.lower().lstrip(".")
+    extension = PureWindowsPath(filename).suffix.lower().lstrip(".")
 
     if not extension:
         raise ValidationError(
             "This file has no extension, so there is no way to tell what it is.",
-            {"filename": Path(filename).name},
+            {"filename": display_name(filename)},
         )
 
     if extension not in allowed:
@@ -134,6 +159,11 @@ class LocalDiskStorage:
         extension = validated_extension(filename, self._allowed)
         await asyncio.to_thread(self._root.mkdir, parents=True, exist_ok=True)
         destination = self._path_for(material_id, extension)
+        # Written under a temporary name and renamed once complete. A kill or
+        # host crash mid-stream skips the cleanup below, and a partial file at
+        # the final key would later be parsed as the lecturer's document. The
+        # partial name still matches delete()'s pattern, so it is not stranded.
+        partial = destination.with_name(destination.name + ".part")
 
         # Every disk touch goes through a worker thread. A 50 MB upload written
         # inline holds the event loop for the whole write, which stalls the
@@ -141,7 +171,7 @@ class LocalDiskStorage:
         # be the thing that does not block the API.
         written = 0
         try:
-            handle = await asyncio.to_thread(destination.open, "wb")
+            handle = await asyncio.to_thread(partial.open, "wb")
             try:
                 async for block in source:
                     written += len(block)
@@ -158,18 +188,20 @@ class LocalDiskStorage:
         except BaseException:
             # A partial file is worse than none: the parser would read it and
             # report corrupt content rather than a failed upload.
-            await asyncio.to_thread(destination.unlink, missing_ok=True)
+            await asyncio.to_thread(partial.unlink, missing_ok=True)
             raise
 
         if written == 0:
-            await asyncio.to_thread(destination.unlink, missing_ok=True)
-            raise ValidationError("File is empty", {"filename": Path(filename).name})
+            await asyncio.to_thread(partial.unlink, missing_ok=True)
+            raise ValidationError("File is empty", {"filename": display_name(filename)})
+
+        await asyncio.to_thread(os.replace, partial, destination)
 
         log.info("stored material %s as %s (%d bytes)", material_id, destination.name, written)
 
         return StoredFile(
             material_id=material_id,
-            filename=Path(filename).name,
+            filename=display_name(filename),
             extension=extension,
             size_bytes=written,
             key=str(destination),

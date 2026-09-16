@@ -182,7 +182,7 @@
       "type": "object"
     }
   },
-  "description": "C.L.I.P WebSocket contract. Every message is {type, data}; server messages also carry seq and ts. seq increases monotonically per session so clients can detect gaps and request replay.",
+  "description": "C.L.I.P WebSocket contract. Every message is {type, data}; server messages also carry seq and ts. seq increases monotonically per channel, which is a session or a user's own channel, so clients can detect gaps and request replay.",
   "envelopes": {
     "client": {
       "$defs": {
@@ -244,7 +244,7 @@
           "type": "object"
         },
         "seq": {
-          "description": "Monotonic per session. Clients use it to detect gaps.",
+          "description": "Monotonic per channel (a session, or a user's own channel). Clients use it to detect gaps.",
           "title": "Seq",
           "type": "integer"
         },

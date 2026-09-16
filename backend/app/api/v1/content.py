@@ -89,7 +89,10 @@ async def upload_material(file: UploadFile, principal: CurrentUser) -> MaterialO
     async def work() -> None:
         await pipeline.run(stored, principal.user_id)
 
-    get_background_processor().submit(material_id, work)
+    async def interrupted() -> None:
+        await pipeline.abandon(material_id, principal.user_id)
+
+    get_background_processor().submit(material_id, work, on_cancel=interrupted)
 
     # Built from what the request knows. Persisting the row is BBIS's Phase 2
     # responsibility. Until that lands, page and chunk counts remain unset

@@ -51,6 +51,22 @@ STAGE_PERCENT: dict[MaterialStage, int] = {
 
 TERMINAL_STAGES = {MaterialStage.DONE, MaterialStage.FAILED}
 
+# What a lecturer is told when a deploy stops their upload. Shared by the
+# processor and the pipeline so the wording cannot drift between the job that
+# was waiting for a slot and the job that was halfway through a parse.
+INTERRUPTED_MESSAGE = "Processing was interrupted while the server was stopping."
+
+# Machine-readable codes for JobStatus.error, in the same UPPER_SNAKE form as
+# the API's error envelope. The lecturer-facing text is JobStatus.message; an
+# exception class name is an implementation detail and belongs in the log.
+INTERRUPTED_ERROR = "INTERRUPTED"
+INTERNAL_ERROR = "INTERNAL_ERROR"
+
+# How long a cancel hook may run at shutdown. It tells the lecturer and
+# writes to the database, and a deploy must not wait indefinitely on either;
+# a database that has stopped answering would otherwise hold the process open.
+ABANDON_TIMEOUT_SECONDS = 10.0
+
 
 @dataclass(frozen=True)
 class JobStatus:
@@ -67,6 +83,28 @@ class JobStatus:
     @property
     def is_finished(self) -> bool:
         return self.stage in TERMINAL_STAGES
+
+    @classmethod
+    def for_stage(
+        cls,
+        material_id: UUID,
+        stage: MaterialStage,
+        message: str | None = None,
+        error: str | None = None,
+    ) -> JobStatus:
+        """The status a material holds once it reaches `stage`.
+
+        Built without touching the registry, so a terminal state can be written
+        to the database before anything announces it.
+        """
+        return cls(
+            material_id=material_id,
+            status=_status_for(stage),
+            stage=stage,
+            percent=STAGE_PERCENT[stage],
+            message=message,
+            error=error,
+        )
 
 
 def _status_for(stage: MaterialStage) -> MaterialStatus:
@@ -104,16 +142,7 @@ class JobRegistry:
         message: str | None = None,
         error: str | None = None,
     ) -> JobStatus:
-        return self.record(
-            JobStatus(
-                material_id=material_id,
-                status=_status_for(stage),
-                stage=stage,
-                percent=STAGE_PERCENT[stage],
-                message=message,
-                error=error,
-            )
-        )
+        return self.record(JobStatus.for_stage(material_id, stage, message=message, error=error))
 
     def get(self, material_id: UUID) -> JobStatus | None:
         return self._jobs.get(material_id)
@@ -149,8 +178,14 @@ class BackgroundProcessor:
     """Accepts work, runs it later, and never lets a failure disappear."""
 
     def __init__(self, registry: JobRegistry, max_concurrent: int = 2) -> None:
+        # Zero is accepted by Semaphore and queues every job forever with no
+        # error anywhere, so it is refused here rather than discovered later.
+        if max_concurrent < 1:
+            raise ValueError(f"max_concurrent must be at least 1, got {max_concurrent}")
         self._registry = registry
-        self._limit = asyncio.Semaphore(max_concurrent)
+        self._max_concurrent = max_concurrent
+        self._limit: asyncio.Semaphore | None = None
+        self._limit_loop: asyncio.AbstractEventLoop | None = None
         # Strong references to running tasks. asyncio only holds a weak one, so
         # a task nothing else references can be garbage collected mid-await and
         # the job vanishes with no error anywhere.
@@ -164,12 +199,19 @@ class BackgroundProcessor:
         self,
         material_id: UUID,
         work: Callable[[], Awaitable[None]],
+        on_cancel: Callable[[], Awaitable[None]] | None = None,
     ) -> asyncio.Task:
         """Queue work and return immediately.
 
         The material is marked queued here rather than inside the task, so a
         status read between the 202 and the worker starting reports pending
         instead of "no such material".
+
+        `on_cancel` runs when a shutdown stops the job, whether it was halfway
+        through or still waiting for a slot. The registry is memory only and
+        dies with the process, so this is the caller's one chance to tell the
+        lecturer and the database; without it a restart leaves both believing
+        the upload is still processing.
         """
         self._registry.record(
             JobStatus(
@@ -182,7 +224,7 @@ class BackgroundProcessor:
         )
 
         task = asyncio.create_task(
-            self._run(material_id, work),
+            self._run(material_id, work, on_cancel),
             name=f"material-{material_id}",
         )
         self._running.add(task)
@@ -193,33 +235,84 @@ class BackgroundProcessor:
         self,
         material_id: UUID,
         work: Callable[[], Awaitable[None]],
+        on_cancel: Callable[[], Awaitable[None]] | None,
     ) -> None:
-        async with self._limit:
-            try:
+        # Waiting for a slot is inside the try. A job cancelled while still
+        # queued raises from the semaphore, and outside the try that skipped
+        # every handler below and left the material pending forever.
+        try:
+            async with self._slot():
                 await work()
-            except asyncio.CancelledError:
-                # Shutdown, not a bad file. Say so rather than blaming the
-                # upload, and let the cancellation continue to propagate.
+        except asyncio.CancelledError:
+            await self._abandon(material_id, on_cancel)
+            raise
+        except Exception:
+            # The pipeline marks its own failures. Reaching here means
+            # something outside it broke, and a job that ends with no
+            # terminal state is a spinner that never stops.
+            log.exception("processing material %s failed", material_id)
+            current = self._registry.get(material_id)
+            if current is None or not current.is_finished:
                 self._registry.advance(
                     material_id,
                     MaterialStage.FAILED,
-                    message="Processing was interrupted while the server was stopping.",
-                    error="cancelled",
+                    message="Processing failed unexpectedly.",
+                    error=INTERNAL_ERROR,
                 )
-                raise
-            except Exception as exc:
-                # The pipeline marks its own failures. Reaching here means
-                # something outside it broke, and a job that ends with no
-                # terminal state is a spinner that never stops.
-                log.exception("processing material %s failed", material_id)
-                current = self._registry.get(material_id)
-                if current is None or not current.is_finished:
-                    self._registry.advance(
-                        material_id,
-                        MaterialStage.FAILED,
-                        message="Processing failed unexpectedly.",
-                        error=type(exc).__name__,
-                    )
+
+    async def _abandon(
+        self,
+        material_id: UUID,
+        on_cancel: Callable[[], Awaitable[None]] | None,
+    ) -> None:
+        """Record that a shutdown stopped this job, then let cancellation go on.
+
+        Shutdown, not a bad file, so the upload is not blamed.
+
+        The hook runs even when the registry already shows a terminal state.
+        The registry changes the moment a failure is announced, before it is
+        written to the database, so a finished entry here does not mean the
+        outcome was recorded. Only the caller knows that; the pipeline's hook
+        checks what it actually wrote. Without a hook, a finished job is left
+        alone, since cancellation can land between its last write and the task
+        returning.
+        """
+        if on_cancel is None:
+            current = self._registry.get(material_id)
+            if current is not None and current.is_finished:
+                return
+        else:
+            try:
+                async with asyncio.timeout(ABANDON_TIMEOUT_SECONDS):
+                    await on_cancel()
+            except Exception:
+                log.exception("could not report the interruption of material %s", material_id)
+
+        # The registry is the backstop whether or not the caller managed to
+        # report it, so the job still ends in a terminal state here.
+        current = self._registry.get(material_id)
+        if current is None or not current.is_finished:
+            self._registry.advance(
+                material_id,
+                MaterialStage.FAILED,
+                message=INTERRUPTED_MESSAGE,
+                error=INTERRUPTED_ERROR,
+            )
+
+    def _slot(self) -> asyncio.Semaphore:
+        """The concurrency limit for the loop this job is running on.
+
+        The processor is a process-wide singleton, and a Semaphore binds itself
+        to the first loop that has to wait on it. A second loop in the same
+        process, as a test run or a reloaded app produces, then failed every
+        job that queued with "bound to a different event loop", recorded as an
+        unexpected processing failure. Built per loop, each gets its own.
+        """
+        loop = asyncio.get_running_loop()
+        if self._limit is None or self._limit_loop is not loop:
+            self._limit = asyncio.Semaphore(self._max_concurrent)
+            self._limit_loop = loop
+        return self._limit
 
     async def drain(self, grace_seconds: float = 30.0) -> None:
         """Wait for in-flight work at shutdown, then cancel what is left.
