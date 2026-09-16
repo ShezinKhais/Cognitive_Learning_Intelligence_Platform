@@ -35,11 +35,11 @@ def make_chunks(n):
 
 async def test_batches_instead_of_one_call_per_chunk():
     client = FakeEmbeddingClient()
-    embedder = OllamaEmbedder(client, batch_size=32)
+    embedder = OllamaEmbedder(client, "nomic-embed-text", batch_size=32)
 
-    vectors = await embedder.embed(make_chunks(70))
+    batch = await embedder.embed(make_chunks(70))
 
-    assert len(vectors) == 70
+    assert len(batch.vectors) == 70
     assert len(client.calls) == 3
 
 
@@ -54,14 +54,14 @@ class ShortBatchClient:
 
 
 async def test_rejects_a_short_batch():
-    embedder = OllamaEmbedder(ShortBatchClient(), batch_size=32)
+    embedder = OllamaEmbedder(ShortBatchClient(), "nomic-embed-text", batch_size=32)
 
     with pytest.raises(ValueError):
         await embedder.embed(make_chunks(5))
 
 
 async def test_rejects_vectors_of_the_wrong_dimension():
-    embedder = OllamaEmbedder(WrongSizeClient(), batch_size=32)
+    embedder = OllamaEmbedder(WrongSizeClient(), "nomic-embed-text", batch_size=32)
 
     with pytest.raises(ValueError):
         await embedder.embed(make_chunks(3))
@@ -69,9 +69,17 @@ async def test_rejects_vectors_of_the_wrong_dimension():
 
 async def test_no_chunks_means_no_calls():
     client = FakeEmbeddingClient()
-    embedder = OllamaEmbedder(client, batch_size=32)
-
-    vectors = await embedder.embed([])
-
-    assert vectors == []
+    embedder = OllamaEmbedder(client, "nomic-embed-text", batch_size=32)
+    batch = await embedder.embed([])
+    assert batch.vectors == []
     assert client.calls == []
+
+
+async def test_batch_reports_the_model_that_made_it():
+    client = FakeEmbeddingClient()
+    embedder = OllamaEmbedder(client, "nomic-embed-text", batch_size=32)
+
+    batch = await embedder.embed(make_chunks(3))
+
+    assert batch.model == "nomic-embed-text"
+    assert batch.dim == 768

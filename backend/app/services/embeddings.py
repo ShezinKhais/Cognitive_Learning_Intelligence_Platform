@@ -14,6 +14,7 @@ from collections.abc import Sequence
 
 from app.core.config import get_settings
 from app.services.extraction import ContentChunk
+from app.services.pipeline import EmbeddingBatch
 
 BATCH_SIZE = 32
 
@@ -34,16 +35,23 @@ class OllamaEmbeddingClient:
 
 
 class OllamaEmbedder:
-    def __init__(self, client, batch_size: int = BATCH_SIZE):
+    def __init__(self, client, model: str, batch_size: int = BATCH_SIZE):
         self._client = client
+        # The model that actually produced the vectors, not the configured one:
+        # a store reading settings would mislabel every chunk embedded before a
+        # model change.
+        self._model = model
         self._batch_size = batch_size
 
-    async def embed(self, chunks: Sequence[ContentChunk]) -> Sequence[Sequence[float]]:
+    async def embed(self, chunks: Sequence[ContentChunk]) -> EmbeddingBatch:
+        expected = get_settings().embedding_dim
         vectors: list[Sequence[float]] = []
+
         for start in range(0, len(chunks), self._batch_size):
             batch = chunks[start : start + self._batch_size]
             texts = [c.chunk_text for c in batch]
             batch_vectors = await self._client.embed(texts)
+
             # Vectors are paired to chunks by position, so a short batch
             # misaligns every chunk after it rather than losing one.
             if len(batch_vectors) != len(batch):
@@ -51,7 +59,7 @@ class OllamaEmbedder:
                     f"Embedding client returned {len(batch_vectors)} vectors "
                     f"for {len(batch)} chunks."
                 )
-            expected = get_settings().embedding_dim
+
             for vector in batch_vectors:
                 if len(vector) != expected:
                     raise ValueError(
@@ -59,5 +67,7 @@ class OllamaEmbedder:
                         f"expected {expected}. Check embedding_model in config "
                         f"matches embedding_dim."
                     )
+
             vectors.extend(batch_vectors)
-        return vectors
+
+        return EmbeddingBatch(vectors=vectors, model=self._model, dim=expected)
