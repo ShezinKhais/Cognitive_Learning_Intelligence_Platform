@@ -175,44 +175,6 @@ class FakeChatClient:
         return R()
 
 
-class FakeRetriever:
-    def __init__(self, result):
-        self._result = result
-
-    async def search(self, query, material_id, k=5):
-        return self._result
-
-
-async def test_generator_separates_accepted_from_rejected():
-    good = (
-        '{"prompt": "What happens to the base layers?",'
-        ' "options": ["They are frozen", "Deleted", "Doubled", "Shuffled"],'
-        ' "correct_option": 0, "topic": "T", "source_slide": 3,'
-        ' "source_excerpt": "the base layers are frozen"}'
-    )
-    bad = (
-        '{"prompt": "Invented?", "options": ["a","b","c","d"],'
-        ' "correct_option": 0, "topic": "T", "source_slide": 3,'
-        ' "source_excerpt": "Gradient descent converges faster with momentum"}'
-    )
-    generator = QuestionGenerator(
-        FakeChatClient(f"[{good},{bad}]"), "test-model", FakeRetriever(chunks())
-    )
-
-    outcome = await generator.generate("transfer learning", uuid.uuid4())
-
-    assert len(outcome.accepted) == 1
-    assert len(outcome.rejected) == 1
-
-
-async def test_generator_returns_nothing_when_retrieval_is_empty():
-    generator = QuestionGenerator(FakeChatClient("[]"), "test-model", FakeRetriever([]))
-
-    outcome = await generator.generate("nothing", uuid.uuid4())
-
-    assert outcome.accepted == []
-
-
 def test_catches_excerpt_quoted_from_a_page_it_did_not_cite():
     """Citing page 3 while quoting page 9 passed before: the page check and the
     excerpt check ran independently."""
@@ -254,3 +216,43 @@ def test_non_numeric_fields_do_not_abort_the_batch():
     assert drafts[0].correct_option == -1
     assert drafts[0].source_slide is None
     assert drafts[0].options == ()
+
+
+async def test_generator_separates_accepted_from_rejected():
+    good = (
+        '{"prompt": "What happens to the base layers?",'
+        ' "options": ["They are frozen", "Deleted", "Doubled", "Shuffled"],'
+        ' "correct_option": 0, "topic": "T", "source_slide": 3,'
+        ' "source_excerpt": "the base layers are frozen"}'
+    )
+    bad = (
+        '{"prompt": "Invented?", "options": ["a","b","c","d"],'
+        ' "correct_option": 0, "topic": "T", "source_slide": 3,'
+        ' "source_excerpt": "Gradient descent converges faster with momentum"}'
+    )
+    generator = QuestionGenerator(FakeChatClient(f"[{good},{bad}]"), "test-model")
+
+    outcome = await generator._draft(chunks())
+
+    assert len(outcome.accepted) == 1
+    assert len(outcome.rejected) == 1
+
+
+async def test_generate_returns_only_accepted_drafts():
+    good = (
+        '{"prompt": "What happens to the base layers?",'
+        ' "options": ["They are frozen", "Deleted", "Doubled", "Shuffled"],'
+        ' "correct_option": 0, "topic": "T", "source_slide": 3,'
+        ' "source_excerpt": "the base layers are frozen"}'
+    )
+    generator = QuestionGenerator(FakeChatClient(f"[{good}]"), "test-model")
+
+    drafts = await generator.generate(uuid.uuid4(), chunks())
+
+    assert len(drafts) == 1
+
+
+async def test_generator_returns_nothing_without_chunks():
+    generator = QuestionGenerator(FakeChatClient("[]"), "test-model")
+
+    assert await generator.generate(uuid.uuid4(), []) == []

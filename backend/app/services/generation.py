@@ -5,11 +5,14 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
+from uuid import UUID
 
 from rapidfuzz import fuzz
 
 from app.schemas.content import Difficulty, QuestionType
+from app.services.extraction import ContentChunk
 from app.services.pipeline import DraftQuestion
 from app.services.retrieval import RetrievedChunk
 
@@ -192,23 +195,34 @@ def parse_drafts(raw: str) -> list[DraftQuestion]:
 
 
 class QuestionGenerator:
-    """Retrieves grounding chunks, asks the model, keeps only valid drafts."""
+    """Asks the model for questions about the given chunks, keeps the valid ones.
 
-    def __init__(self, client, model: str, retriever) -> None:
+    Chunks arrive from the pipeline rather than from retrieval: at upload time
+    every chunk of the material is new, so there is nothing to search against.
+    Retrieval serves the student feedback path instead.
+    """
+
+    def __init__(self, client, model: str, count: int = 5) -> None:
         self._client = client
         self._model = model
-        self._retriever = retriever
+        self._count = count
 
     async def generate(
-        self, topic: str, material_id, count: int = 5, k: int = 5
-    ) -> GenerationOutcome:
-        chunks = await self._retriever.search(topic, material_id, k=k)
+        self, material_id: UUID, chunks: Sequence[ContentChunk]
+    ) -> Sequence[DraftQuestion]:
         if not chunks:
-            return GenerationOutcome(accepted=[], rejected=[])
+            return []
 
+        outcome = await self._draft(chunks)
+        for _, reasons in outcome.rejected:
+            logger.info("rejected draft question: %s", "; ".join(reasons))
+        return outcome.accepted
+
+    async def _draft(self, chunks) -> GenerationOutcome:
+        """Kept separate so tests can see what was rejected and why."""
         response = await self._client.chat.completions.create(
             model=self._model,
-            messages=[{"role": "user", "content": build_prompt(chunks, count)}],
+            messages=[{"role": "user", "content": build_prompt(chunks, self._count)}],
         )
         drafts = parse_drafts(response.choices[0].message.content or "")
 
@@ -217,7 +231,6 @@ class QuestionGenerator:
             reasons = rejection_reasons(draft, chunks)
             if reasons:
                 rejected.append((draft, reasons))
-                logger.info("rejected draft question: %s", "; ".join(reasons))
             else:
                 accepted.append(draft)
 
