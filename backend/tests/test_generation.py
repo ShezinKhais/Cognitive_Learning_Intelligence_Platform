@@ -5,7 +5,13 @@ import uuid
 
 import pytest
 
-from app.services.generation import DraftQuestion, build_prompt, parse_drafts, rejection_reasons
+from app.services.generation import (
+    DraftQuestion,
+    QuestionGenerator,
+    build_prompt,
+    parse_drafts,
+    rejection_reasons,
+)
 from app.services.retrieval import RetrievedChunk
 
 CHUNK_TEXT = (
@@ -142,3 +148,63 @@ def test_catches_options_that_are_reorderings():
         chunks(),
     )
     assert any("reorderings" in r for r in reasons)
+
+
+class FakeChatClient:
+    def __init__(self, content):
+        self._content = content
+        self.chat = self
+
+    @property
+    def completions(self):
+        return self
+
+    async def create(self, model, messages):
+        class M:
+            content = self._content
+
+        class C:
+            message = M()
+
+        class R:
+            choices = [C()]
+
+        return R()
+
+
+class FakeRetriever:
+    def __init__(self, result):
+        self._result = result
+
+    async def search(self, query, material_id, k=5):
+        return self._result
+
+
+async def test_generator_separates_accepted_from_rejected():
+    good = (
+        '{"prompt": "What happens to the base layers?",'
+        ' "options": ["They are frozen", "Deleted", "Doubled", "Shuffled"],'
+        ' "correct_option": 0, "topic": "T", "source_slide": 3,'
+        ' "source_excerpt": "the base layers are frozen"}'
+    )
+    bad = (
+        '{"prompt": "Invented?", "options": ["a","b","c","d"],'
+        ' "correct_option": 0, "topic": "T", "source_slide": 3,'
+        ' "source_excerpt": "Gradient descent converges faster with momentum"}'
+    )
+    generator = QuestionGenerator(
+        FakeChatClient(f"[{good},{bad}]"), "test-model", FakeRetriever(chunks())
+    )
+
+    outcome = await generator.generate("transfer learning", uuid.uuid4())
+
+    assert len(outcome.accepted) == 1
+    assert len(outcome.rejected) == 1
+
+
+async def test_generator_returns_nothing_when_retrieval_is_empty():
+    generator = QuestionGenerator(FakeChatClient("[]"), "test-model", FakeRetriever([]))
+
+    outcome = await generator.generate("nothing", uuid.uuid4())
+
+    assert outcome.accepted == []

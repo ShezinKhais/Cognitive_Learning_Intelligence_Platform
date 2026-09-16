@@ -173,3 +173,36 @@ def parse_drafts(raw: str) -> list[DraftQuestion]:
             )
         )
     return drafts
+
+
+class QuestionGenerator:
+    """Retrieves grounding chunks, asks the model, keeps only valid drafts."""
+
+    def __init__(self, client, model: str, retriever) -> None:
+        self._client = client
+        self._model = model
+        self._retriever = retriever
+
+    async def generate(
+        self, topic: str, material_id, count: int = 5, k: int = 5
+    ) -> GenerationOutcome:
+        chunks = await self._retriever.search(topic, material_id, k=k)
+        if not chunks:
+            return GenerationOutcome(accepted=[], rejected=[])
+
+        response = await self._client.chat.completions.create(
+            model=self._model,
+            messages=[{"role": "user", "content": build_prompt(chunks, count)}],
+        )
+        drafts = parse_drafts(response.choices[0].message.content or "")
+
+        accepted, rejected = [], []
+        for draft in drafts:
+            reasons = rejection_reasons(draft, chunks)
+            if reasons:
+                rejected.append((draft, reasons))
+                logger.info("rejected draft question: %s", "; ".join(reasons))
+            else:
+                accepted.append(draft)
+
+        return GenerationOutcome(accepted=accepted, rejected=rejected)
