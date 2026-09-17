@@ -9,8 +9,11 @@ Luna-Phase-2 commit 62800db3dd7a022bb0ce17791f3bedda513d7d3d
 Original result:
 1 passed, 4 failed.
 
-The four failing cases are marked xfail while the documented AI-grounding
-weaknesses remain unresolved.
+Luna's newer AI 1 implementation now passes the unrelated-question and
+unsupported-answer checks, so those are normal regression tests.
+
+The two remaining known grounding weaknesses are marked strict xfail so they
+remain visible without hiding an unexpected fix or regression.
 
 If the AI 1 retrieval or generation modules are not yet integrated into the
 branch, this test module is skipped instead of breaking backend collection.
@@ -51,7 +54,7 @@ MALICIOUS_TEXT = (
 
 KNOWN_AI_GROUNDING_WEAKNESS = pytest.mark.xfail(
     reason="Known AI 1 grounding weakness documented by Cyber 1",
-    strict=False,
+    strict=True,
 )
 
 
@@ -111,7 +114,6 @@ def test_legitimate_grounded_question_is_accepted():
     assert reasons == []
 
 
-@KNOWN_AI_GROUNDING_WEAKNESS
 def test_unrelated_question_with_real_citation_is_rejected():
     """A real citation must not make an unrelated question appear grounded."""
     draft = make_draft(
@@ -128,7 +130,6 @@ def test_unrelated_question_with_real_citation_is_rejected():
     assert reasons, "Unrelated question was accepted because the citation was real."
 
 
-@KNOWN_AI_GROUNDING_WEAKNESS
 def test_wrong_answer_with_real_citation_is_rejected():
     """The selected correct answer must be supported by the cited material."""
     draft = make_draft(
