@@ -19,6 +19,7 @@ from app.schemas.common import Page
 from app.schemas.content import (
     MaterialOut,
     QuestionBulkReviewRequest,
+    QuestionBulkReviewResult,
     QuestionOut,
     QuestionReviewRequest,
 )
@@ -98,18 +99,17 @@ async def review_question(
     principal: CurrentUser,
     db: DbSession,
 ) -> QuestionOut:
-    """Approve, edit or reject a generated question.
-
-    No question reaches a student without passing through here. A lecturer
-    may only act on questions belonging to a session they are the
-    instructor of and that belong to material_id; admins may act on any
-    question. A question that exists but belongs to a different material,
-    or a different lecturer's session, is rejected the same way a
-    nonexistent question is -- see app.services.question_ownership for why.
-    Invalid status transitions (e.g. skipping straight to delivered, or
-    editing a staged/delivered question) are rejected by the repository
-    with a 409; see QuestionRepository.apply_review.
+    """Approve, edit or reject a generated question. No question reaches a
+    student without passing through here.
     """
+    # A lecturer may only act on questions belonging to a session they are
+    # the instructor of and that belong to material_id; admins may act on
+    # any question. A question that exists but belongs to a different
+    # material, or a different lecturer's session, is rejected the same
+    # way a nonexistent question is -- see app.services.question_ownership
+    # for why. Invalid status transitions (e.g. skipping straight to
+    # delivered, or editing a staged/delivered question) are rejected by
+    # the repository with a 409; see QuestionRepository.apply_review.
     repo = QuestionRepository(db)
     question = await get_owned_question(question_id, principal, repo, material_id=material_id)
 
@@ -126,33 +126,30 @@ async def review_question(
     return _to_question_out(updated)
 
 
-@review.post("/{material_id}/questions:bulk", response_model=list[QuestionOut])
+@review.post("/{material_id}/questions:bulk", response_model=QuestionBulkReviewResult)
 async def bulk_review_questions(
     material_id: UUID,
     payload: QuestionBulkReviewRequest,
     principal: CurrentUser,
     db: DbSession,
-) -> list[QuestionOut]:
+) -> QuestionBulkReviewResult:
     """Backs the 'approve all' and 'stage N questions' actions.
-
-    Same ownership and material-scoping rule as review_question, applied
-    per question: any id in the request that does not exist, does not
-    belong to material_id, or belongs to another lecturer's session, is
-    silently skipped rather than failing the whole batch. A lecturer
-    selecting "approve all" on their own review queue should not have that
-    fail because one row in the batch turned out stale or reassigned
-    between page load and submit.
-
-    A question whose current status does not allow the requested
-    transition is also skipped rather than failing the batch, for the same
-    reason -- one stale row should not block the rest of a bulk action.
     """
+    # Same ownership and material-scoping rule as review_question, applied
+    # per question. A question that is unowned, belongs to a different
+    # material, or whose current status doesn't allow the requested
+    # transition, is skipped rather than failing the whole batch -- one
+    # stale or reassigned row should not block the rest of a bulk action.
+    # Every skipped id is reported back in skipped_ids rather than silently
+    # dropped, so a lecturer can tell "all N approved" from "N approved, M
+    # skipped" instead of a response that looks identical either way.
     repo = QuestionRepository(db)
-    owned, _rejected = await filter_owned_questions(
+    owned, rejected = await filter_owned_questions(
         payload.question_ids, principal, repo, material_id=material_id
     )
 
     updated = []
+    skipped_ids = list(rejected)
     for question in owned:
         try:
             updated.append(
@@ -163,9 +160,12 @@ async def bulk_review_questions(
                 )
             )
         except ConflictError:
-            continue
+            skipped_ids.append(question.question_id)
 
-    return [_to_question_out(q) for q in updated]
+    return QuestionBulkReviewResult(
+        updated=[_to_question_out(q) for q in updated],
+        skipped_ids=skipped_ids,
+    )
 
 
 router.include_router(review)
