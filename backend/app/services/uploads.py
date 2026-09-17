@@ -18,9 +18,12 @@ from collections.abc import AsyncIterator
 from functools import lru_cache
 
 from fastapi import UploadFile
+from openai import AsyncOpenAI
 
 from app.core.config import Settings, get_settings
+from app.services.embeddings import OllamaEmbedder, OllamaEmbeddingClient
 from app.services.extraction import SUPPORTED
+from app.services.generation import QuestionGenerator
 from app.services.jobs import BackgroundProcessor, JobRegistry
 from app.services.pipeline import MaterialPipeline
 from app.services.storage import CHUNK_BYTES, LocalDiskStorage
@@ -71,13 +74,22 @@ def get_background_processor() -> BackgroundProcessor:
 def get_material_pipeline() -> MaterialPipeline:
     """The pipeline with its collaborators as they stand.
 
-    The embedder, generator and store seams are left unset until AI 1's #37 and
-    BBIS's #36 land. When the store is wired in, note that it cannot hold the
+    The embedder and generator are AI 1's (#37). The store seam is still unset
+    until BBIS's #36 lands, so chunks, vectors and drafts are produced but not
+    persisted yet. When the store is wired in, note that it cannot hold the
     request's database session: the request has returned long before the job
     runs, so the store has to open a session of its own.
     """
+    settings = get_settings()
+    client = AsyncOpenAI(base_url=settings.ollama_base_url, api_key="ollama")
+
     return MaterialPipeline(
         storage=get_material_storage(),
         registry=get_job_registry(),
-        settings=get_settings(),
+        settings=settings,
+        embedder=OllamaEmbedder(
+            OllamaEmbeddingClient(client, settings.embedding_model),
+            settings.embedding_model,
+        ),
+        generator=QuestionGenerator(client, settings.ollama_model),
     )
