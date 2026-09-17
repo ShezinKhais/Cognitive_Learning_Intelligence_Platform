@@ -24,6 +24,7 @@ GROUNDING_THRESHOLD = 80
 # rejected - the first scored a correct one-word answer at 27, the second put
 # unrelated answers at 44.
 ANSWER_SUPPORT_THRESHOLD = 50
+MAX_PROMPT_CHUNKS = 12
 
 
 def answer_coverage(answer: str, excerpt: str) -> float:
@@ -157,7 +158,11 @@ class GenerationOutcome:
 
 
 def build_prompt(chunks: list[RetrievedChunk], count: int) -> str:
-    excerpts = "\n\n".join(f"[page {chunk.source_page}]\n{chunk.chunk_text}" for chunk in chunks)
+    # Every chunk of a 60-slide deck is far past the model's context window,
+    # and it truncates silently rather than erroring - so questions would be
+    # generated from whatever happened to fit.
+    used = chunks[:MAX_PROMPT_CHUNKS]
+    excerpts = "\n\n".join(f"[page {chunk.source_page}]\n{chunk.chunk_text}" for chunk in used)
     return PROMPT_TEMPLATE.format(excerpts=excerpts, count=count)
 
 

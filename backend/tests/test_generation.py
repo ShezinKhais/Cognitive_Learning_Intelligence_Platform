@@ -290,3 +290,22 @@ async def test_unparseable_output_costs_the_batch_not_the_material():
     drafts = await generator.generate(uuid.uuid4(), chunks())
 
     assert drafts == []
+
+
+def test_prompt_is_bounded_regardless_of_material_size():
+    """qwen2.5:3b has a 4096-token window. 200 chunks would truncate silently."""
+    many = [
+        RetrievedChunk(
+            chunk_id=uuid.uuid4(),
+            chunk_index=i,
+            chunk_text=f"Chunk number {i}. " * 30,
+            source_page=i + 1,
+            distance=0.1,
+        )
+        for i in range(200)
+    ]
+
+    text = build_prompt(many, count=5)
+
+    assert "[page 13]" not in text
+    assert len(text) < 10_000
