@@ -81,7 +81,12 @@ def get_material_pipeline() -> MaterialPipeline:
     runs, so the store has to open a session of its own.
     """
     settings = get_settings()
-    client = AsyncOpenAI(base_url=settings.ollama_base_url, api_key="ollama")
+    client = AsyncOpenAI(
+        base_url=settings.ollama_base_url,
+        api_key="ollama",
+        timeout=120.0,
+        max_retries=1,
+    )
 
     return MaterialPipeline(
         storage=get_material_storage(),
