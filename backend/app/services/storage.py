@@ -18,7 +18,7 @@ and copies nothing.
 
 The client's filename never reaches the filesystem. The on-disk name is the
 material id plus a validated extension, so `../../etc/passwd` and a 400
-character unicode name are both stored as `<uuid>.csv`. The original is kept as
+character unicode name are both stored as `<uuid>.pdf`. The original is kept as
 metadata for display only.
 """
 
@@ -27,9 +27,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import shutil
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import Protocol
@@ -68,7 +67,7 @@ class MaterialStorage(Protocol):
         """Write an upload down and return a handle to it."""
         ...
 
-    def materialise(self, stored: StoredFile):  # -> AsyncContextManager[Path]
+    def materialise(self, stored: StoredFile) -> AbstractAsyncContextManager[Path]:
         """Yield a local filesystem path the parsers can open."""
         ...
 
@@ -143,10 +142,6 @@ class LocalDiskStorage:
         # and failing a minute later in a job nobody is watching.
         self._allowed = settings.upload_extensions if allowed is None else allowed
 
-    @property
-    def root(self) -> Path:
-        return self._root
-
     def _path_for(self, material_id: UUID, extension: str) -> Path:
         return self._root / f"{material_id}.{extension}"
 
@@ -185,17 +180,14 @@ class LocalDiskStorage:
                     await asyncio.to_thread(handle.write, block)
             finally:
                 await asyncio.to_thread(handle.close)
+            if written == 0:
+                raise ValidationError("File is empty", {"filename": display_name(filename)})
+            await asyncio.to_thread(os.replace, partial, destination)
         except BaseException:
             # A partial file is worse than none: the parser would read it and
             # report corrupt content rather than a failed upload.
             await asyncio.to_thread(partial.unlink, missing_ok=True)
             raise
-
-        if written == 0:
-            await asyncio.to_thread(partial.unlink, missing_ok=True)
-            raise ValidationError("File is empty", {"filename": display_name(filename)})
-
-        await asyncio.to_thread(os.replace, partial, destination)
 
         log.info("stored material %s as %s (%d bytes)", material_id, destination.name, written)
 
@@ -222,7 +214,3 @@ class LocalDiskStorage:
         matches = await asyncio.to_thread(lambda: list(self._root.glob(f"{material_id}.*")))
         for path in matches:
             await asyncio.to_thread(path.unlink, missing_ok=True)
-
-    def purge_all(self) -> None:
-        """Drop the whole storage root. Tests and local resets only."""
-        shutil.rmtree(self._root, ignore_errors=True)

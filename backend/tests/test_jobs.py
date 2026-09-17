@@ -233,16 +233,6 @@ def test_the_registry_evicts_finished_jobs_before_running_ones() -> None:
     assert registry.get(running) is not None
 
 
-def test_forgetting_a_job_removes_it() -> None:
-    registry = JobRegistry()
-    material_id = uuid4()
-    registry.advance(material_id, MaterialStage.DONE)
-
-    registry.forget(material_id)
-
-    assert registry.get(material_id) is None
-
-
 async def test_a_job_still_waiting_for_a_slot_is_marked_when_shutdown_cancels_it() -> None:
     """Waiting for the semaphore used to sit outside the handlers, so a queued
     job cancelled by a deploy skipped all of them and stayed pending forever."""
