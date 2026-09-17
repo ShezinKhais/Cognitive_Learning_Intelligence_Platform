@@ -125,16 +125,21 @@ class MaterialPipeline:
         return outcome
 
     async def _discard_raw_file(self, material_id: UUID) -> None:
-        """Delete the uploaded bytes once the material's outcome is recorded.
+        """Delete the uploaded bytes once the extracted material is stored.
 
         The design keeps a lecture file's metadata, filename and extracted
         chunks, and discards the raw content once processing has used it
         (Design Document 4.1). Reached only after the completed material is
         written, so a store that fails leaves the file for a retry.
 
+        With no store wired, nothing was persisted and the upload is the only
+        durable copy, so it is kept until #36 can record what it produced.
+
         A file that will not delete does not undo a finished material, so the
         error is logged rather than raised.
         """
+        if self._store is None:
+            return
         try:
             await self._storage.delete(material_id)
         except Exception:
