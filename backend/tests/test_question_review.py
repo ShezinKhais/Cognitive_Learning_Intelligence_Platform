@@ -318,7 +318,7 @@ async def test_bulk_review_approves_only_owned_questions(db_client, app):
         body = resp.json()
         # Only the owned question comes back approved; the other lecturer's
         # question is silently skipped, not a 403 for the whole batch.
-        returned_ids = {item["id"] for item in body}
+        returned_ids = {item["id"] for item in body["updated"]}
         assert str(q_owned) in returned_ids
         assert str(q_not_owned) not in returned_ids
     finally:
@@ -343,7 +343,9 @@ async def test_bulk_review_with_no_owned_ids_returns_empty_list(db_client, app):
         )
 
         assert resp.status_code == 200
-        assert resp.json() == []
+        body = resp.json()
+        assert body["updated"] == []
+        assert len(body["skipped_ids"]) == 1
     finally:
         await _cleanup(session_factory, q)
         app.dependency_overrides.pop(get_principal, None)
@@ -435,7 +437,9 @@ async def test_bulk_review_excludes_questions_from_a_different_material(db_clien
         )
 
         assert resp.status_code == 200
-        assert resp.json() == []  # the question is real and owned, but not in this material
+        body = resp.json()
+        assert body["updated"] == []  # the question is real and owned, but not in this material
+        assert len(body["skipped_ids"]) == 1
     finally:
         await _cleanup(session_factory, question_id)
         app.dependency_overrides.pop(get_principal, None)
@@ -597,7 +601,8 @@ async def test_bulk_review_skips_a_question_with_an_invalid_transition(db_client
         )
 
         assert resp.status_code == 200
-        returned_ids = {item["id"] for item in resp.json()}
+        body = resp.json()
+        returned_ids = {item["id"] for item in body["updated"]}
         assert str(deliverable_q) in returned_ids
         assert str(already_delivered_q) not in returned_ids
     finally:
