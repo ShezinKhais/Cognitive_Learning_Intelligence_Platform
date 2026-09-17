@@ -14,7 +14,7 @@ from collections.abc import Sequence
 
 from app.core.config import get_settings
 from app.services.extraction import ContentChunk
-from app.services.pipeline import EmbeddingBatch
+from app.services.material_seams import EmbeddingBatch
 
 BATCH_SIZE = 32
 

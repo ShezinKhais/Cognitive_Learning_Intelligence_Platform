@@ -8,16 +8,17 @@ vectors and as validated draft questions, with only the model calls faked.
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator
 from pathlib import Path
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from app.core.config import Settings, get_settings
 from app.realtime.hub import SessionHub
 from app.services.embeddings import OllamaEmbedder
 from app.services.generation import QuestionGenerator
-from app.services.jobs import JobRegistry, JobStatus
-from app.services.pipeline import EmbeddingBatch, MaterialPipeline
+from app.services.jobs import JobRegistry
+from app.services.material_seams import CompletedMaterial
+from app.services.pipeline import MaterialPipeline
 from app.services.storage import LocalDiskStorage
 
 LECTURE_TEXT = (
@@ -83,20 +84,14 @@ class CapturingStore:
     """BBIS's seam. Records what the pipeline handed it."""
 
     def __init__(self) -> None:
-        self.embeddings: EmbeddingBatch | None = None
-        self.chunk_count = 0
-        self.questions: list = []
-        self.outcomes: list[JobStatus] = []
+        self.completed: CompletedMaterial | None = None
+        self.failures: list = []
 
-    async def save_chunks(self, result, embeddings) -> None:
-        self.chunk_count = len(result.chunks)
-        self.embeddings = embeddings
+    async def record_completed(self, material: CompletedMaterial) -> None:
+        self.completed = material
 
-    async def save_questions(self, material_id: UUID, questions: Sequence) -> None:
-        self.questions = list(questions)
-
-    async def record_outcome(self, status, page_count=None, chunk_count=None, warnings=()) -> None:
-        self.outcomes.append(status)
+    async def record_failed(self, status) -> None:
+        self.failures.append(status)
 
 
 async def test_a_lecture_reaches_the_store_as_vectors_and_grounded_questions(
@@ -121,13 +116,14 @@ async def test_a_lecture_reaches_the_store_as_vectors_and_grounded_questions(
 
     assert result is not None
 
-    # One vector per chunk, labelled with the model that made them.
-    assert store.embeddings is not None
-    assert len(store.embeddings.vectors) == store.chunk_count
-    assert store.embeddings.model == "nomic-embed-text"
-    assert store.embeddings.dim == DIM
+    assert store.completed is not None
+    batch = store.completed.embeddings
+    assert batch is not None
+    assert len(batch.vectors) == len(store.completed.result.chunks)
+    assert batch.model == "nomic-embed-text"
+    assert batch.dim == DIM
 
     # The invented question cites a real page but quotes text that is not in
     # the material, so only the grounded one survives.
-    assert len(store.questions) == 1
-    assert store.questions[0].topic == "Normalisation"
+    assert len(store.completed.questions) == 1
+    assert store.completed.questions[0].topic == "Normalisation"

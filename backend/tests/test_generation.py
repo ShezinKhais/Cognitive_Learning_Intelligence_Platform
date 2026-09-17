@@ -12,7 +12,7 @@ from app.services.generation import (
     parse_drafts,
     rejection_reasons,
 )
-from app.services.pipeline import DraftQuestion
+from app.services.material_seams import DraftQuestion
 from app.services.retrieval import RetrievedChunk
 
 CHUNK_TEXT = (

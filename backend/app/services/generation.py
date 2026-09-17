@@ -13,7 +13,7 @@ from rapidfuzz import fuzz
 
 from app.schemas.content import Difficulty, QuestionType
 from app.services.extraction import ContentChunk
-from app.services.pipeline import DraftQuestion
+from app.services.material_seams import DraftQuestion
 from app.services.retrieval import RetrievedChunk
 
 OPTION_COUNT = 4
