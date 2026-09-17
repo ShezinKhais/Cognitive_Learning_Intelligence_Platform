@@ -161,8 +161,19 @@ def build_prompt(chunks: list[RetrievedChunk], count: int) -> str:
     # Every chunk of a 60-slide deck is far past the model's context window,
     # and it truncates silently rather than erroring - so questions would be
     # generated from whatever happened to fit.
-    used = chunks[:MAX_PROMPT_CHUNKS]
-    excerpts = "\n\n".join(f"[page {chunk.source_page}]\n{chunk.chunk_text}" for chunk in used)
+    if len(chunks) <= MAX_PROMPT_CHUNKS:
+        used = chunks
+    else:
+        last_index = len(chunks) - 1
+        indexes = [
+            round(i * last_index / (MAX_PROMPT_CHUNKS - 1))
+            for i in range(MAX_PROMPT_CHUNKS)
+        ]
+        used = [chunks[index] for index in indexes]
+
+    excerpts = "\n\n".join(
+        f"[page {chunk.source_page}]\n{chunk.chunk_text}" for chunk in used
+    )
     return PROMPT_TEMPLATE.format(excerpts=excerpts, count=count)
 
 

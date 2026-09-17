@@ -7,6 +7,7 @@ import pytest
 
 from app.schemas.content import Difficulty, QuestionType
 from app.services.generation import (
+    MAX_PROMPT_CHUNKS,
     QuestionGenerator,
     build_prompt,
     parse_drafts,
@@ -125,7 +126,23 @@ def test_prompt_includes_page_numbers_for_citation():
 
     assert "[page 3]" in text
     assert "3 multiple-choice questions" in text
+def test_prompt_samples_chunks_across_the_whole_material():
+    many_chunks = [
+        RetrievedChunk(
+            chunk_id=uuid.uuid4(),
+            chunk_index=i,
+            chunk_text=f"Content from page {i + 1}",
+            source_page=i + 1,
+            distance=0.1,
+        )
+        for i in range(60)
+    ]
 
+    text = build_prompt(many_chunks, count=5)
+
+    assert "[page 1]" in text
+    assert "[page 60]" in text
+    assert text.count("[page ") == MAX_PROMPT_CHUNKS
 
 def test_page_number_returned_as_a_string_is_still_a_number():
     """Qwen returns source_slide as "3" rather than 3."""
@@ -216,7 +233,7 @@ def test_non_numeric_fields_do_not_abort_the_batch():
     assert drafts[0].correct_option == -1
     assert drafts[0].source_slide is None
     assert drafts[0].options == ()
-    
+
 def test_boolean_correct_option_is_rejected():
     raw = (
         '[{"prompt": "Q?", "options": ["a","b","c","d"], "correct_option": true,'
