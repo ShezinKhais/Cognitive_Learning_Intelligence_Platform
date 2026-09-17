@@ -282,9 +282,9 @@ async def session_socket(
 
     try:
         # Ready goes first, as this module documents, and the join follows
-        # with delivery to this user held until it completes, so a frame
-        # published during the handshake arrives after ready rather than
-        # before it or not at all.
+        # with delivery on this connection's channel held until it completes,
+        # so a frame published during the handshake arrives after ready rather
+        # than before it or not at all.
         await hub.join_after(connection, send_ready)
 
         while True:
