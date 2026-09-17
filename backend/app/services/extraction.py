@@ -355,7 +355,7 @@ def clean_text(text: str, is_heading: bool = False) -> str:
     return text
 
 
-def _split_oversized(text: str, size: int) -> list[str]:
+def _split_oversized(text: str, size: int, overlap: int = 0) -> list[str]:
     """A block too big for one chunk: sentences, then words, then characters.
 
     Each level is a fallback for the one above. Characters are the last resort
@@ -379,8 +379,13 @@ def _split_oversized(text: str, size: int) -> list[str]:
                 if current:
                     pieces.append(current)
                     current = ""
-                for start in range(0, len(word), size):
+                min_step = max(1, size // 10)
+                char_overlap = min(overlap, max(0, size - min_step))
+                step = max(1, size - char_overlap)
+                for start in range(0, len(word), step):
                     pieces.append(word[start : start + size])
+                    if start + size >= len(word):
+                        break
                 continue
             candidate = f"{current} {word}".strip()
             if len(candidate) > size:
@@ -482,7 +487,7 @@ def chunk_elements(
         buffer = ""
         carried = ""
         for block in flat:
-            for piece in _split_oversized(block, budget):
+            for piece in _split_oversized(block, budget, overlap):
                 joined = f"{buffer}\n{piece}".strip() if buffer else piece
                 if len(joined) > budget:
                     if buffer:
@@ -491,8 +496,13 @@ def chunk_elements(
                         )
                         index += 1
                         carried = _tail(buffer, overlap)
-                    seed = f"{carried} {piece}".strip() if carried else piece
-                    buffer = seed if len(seed) <= budget else piece
+                    # Character-fallback pieces already contain their overlap. Do not
+                    # prepend the same carried text a second time.
+                    if carried and piece.startswith(carried):
+                        buffer = piece
+                    else:
+                        seed = f"{carried} {piece}".strip() if carried else piece
+                        buffer = seed if len(seed) <= budget else piece
                 else:
                     buffer = joined
 

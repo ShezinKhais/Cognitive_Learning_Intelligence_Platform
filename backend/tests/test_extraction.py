@@ -107,6 +107,22 @@ def test_chunks_overlap():
     assert chunks[0].chunk_text[-100:] == chunks[1].chunk_text[:100]
 
 
+def test_long_unbroken_token_preserves_real_overlap():
+    token = "a" * 400 + "b" * 100 + "c" * 400 + "d" * 100 + "e" * 200
+    els = [ExtractedElement("text", token, 1)]
+
+    chunks = chunk_elements(
+        els,
+        material_id=uuid.uuid4(),
+        size=500,
+        overlap=100,
+    )
+
+    assert len(chunks) > 1
+    assert chunks[0].chunk_text[-100:] == chunks[1].chunk_text[:100]
+    assert all(len(chunk.chunk_text) <= 500 for chunk in chunks)
+
+
 def test_heading_is_prefixed_to_following_text():
     els = [
         ExtractedElement("heading", "Planetary Boundaries", 2),
