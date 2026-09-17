@@ -296,6 +296,21 @@ def test_the_shown_filename_is_the_stored_one_not_the_raw_client_value(
     assert response.json()["filename"] == "notes.txt"
 
 
+def test_the_reported_type_comes_from_the_extension_not_the_client_header(
+    live_client: TestClient, uploads
+) -> None:
+    headers = login(live_client, "lecturer@clip.example.com", LECTURER_PASSWORD)
+
+    response = live_client.post(
+        "/api/v1/materials",
+        headers=headers,
+        files={"file": ("notes.txt", LECTURE_NOTES, "text/html")},
+    )
+
+    assert response.status_code == 202
+    assert response.json()["content_type"] == "text/plain"
+
+
 def test_the_real_wiring_uses_the_configured_limits() -> None:
     """Every other test replaces these singletons, so check what they build."""
     from app.core.config import get_settings

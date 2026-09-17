@@ -153,7 +153,7 @@ async def test_a_dead_socket_is_dropped_from_the_user_channel() -> None:
         )
         == 1
     )
-    assert [c.websocket for c in hub._by_user[lecturer]] == [alive]
+    assert [c.websocket for c in hub._channels[lecturer]] == [alive]
 
     # The dead socket is gone, so the next send does not retry it.
     assert (
@@ -232,38 +232,21 @@ async def test_leaving_clears_the_user_index() -> None:
     )
 
 
-async def test_a_session_connection_is_reachable_on_both_channels() -> None:
-    """Joining a session must not cost a connection its own address."""
+async def test_a_session_connection_is_on_its_session_channel_only() -> None:
+    """One socket, one numbered stream. On both channels a session socket got
+    session seq and user-channel seq interleaved, and the single last_seq a
+    client reconnects with cannot describe two streams."""
     hub = SessionHub()
     session = uuid4()
     student = uuid4()
     socket = _FakeSocket()
 
-    await hub.join(
-        Connection(
-            socket,
-            student,
-            session,
-        )
-    )  # type: ignore[arg-type]
+    await hub.join(Connection(socket, student, session))  # type: ignore[arg-type]
 
     assert hub.participant_count(session) == 1
-    assert (
-        await hub.send_to_user_channel(
-            student,
-            ServerEventType.MATERIAL_PROGRESS,
-            {},
-        )
-        == 1
-    )
-    assert (
-        await hub.broadcast(
-            session,
-            ServerEventType.SESSION_STATE,
-            {},
-        )
-        == 1
-    )
+    assert await hub.send_to_user_channel(student, ServerEventType.MATERIAL_PROGRESS, {}) == 0
+    assert await hub.broadcast(session, ServerEventType.SESSION_STATE, {}) == 1
+    assert [frame["seq"] for frame in socket.sent] == [1]
 
 
 async def test_concurrent_progress_arrives_in_sequence_order() -> None:
@@ -461,7 +444,7 @@ async def test_a_user_with_no_connections_left_is_forgotten() -> None:
 
     await hub.leave(connection)
 
-    assert lecturer not in hub._by_user
+    assert lecturer not in hub._channels
 
 
 async def test_progress_published_during_the_handshake_reaches_the_new_tab() -> None:

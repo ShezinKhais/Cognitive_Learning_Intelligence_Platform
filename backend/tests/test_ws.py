@@ -623,6 +623,6 @@ def test_a_closed_socket_is_removed_from_the_hub(client: TestClient) -> None:
         # The pong comes from the receive loop, which starts after the join.
         ws.send_json({"type": ClientEventType.PING.value, "data": {}})
         ws.receive_json()
-        assert STUDENT_ID in ws_module.hub._by_user
+        assert STUDENT_ID in ws_module.hub._channels
 
-    assert STUDENT_ID not in ws_module.hub._by_user
+    assert STUDENT_ID not in ws_module.hub._channels
