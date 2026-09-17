@@ -133,8 +133,7 @@ async def bulk_review_questions(
     principal: CurrentUser,
     db: DbSession,
 ) -> QuestionBulkReviewResult:
-    """Backs the 'approve all' and 'stage N questions' actions.
-    """
+    """Backs the 'approve all' and 'stage N questions' actions."""
     # Same ownership and material-scoping rule as review_question, applied
     # per question. A question that is unowned, belongs to a different
     # material, or whose current status doesn't allow the requested

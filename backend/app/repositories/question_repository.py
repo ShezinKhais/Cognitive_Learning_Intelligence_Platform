@@ -189,9 +189,7 @@ class QuestionRepository:
                 {"current_status": current},
             )
 
-        _validate_option_shape(
-            question.options, options, question.correct_option, correct_option
-        )
+        _validate_option_shape(question.options, options, question.correct_option, correct_option)
 
         question.status = status
         question.reviewed_by = reviewer_id
