@@ -17,7 +17,7 @@ afterwards. On local disk that context manager yields the stored file directly
 and copies nothing.
 
 The client's filename never reaches the filesystem. The on-disk name is the
-material id plus a validated extension, so `../../etc/passwd` and a 400
+material id plus a validated extension, so `../../etc/passwd.pdf` and a 400
 character unicode name are both stored as `<uuid>.pdf`. The original is kept as
 metadata for display only.
 """

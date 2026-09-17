@@ -214,10 +214,22 @@ async def test_a_store_that_fails_keeps_the_raw_file(tmp_path: Path) -> None:
     assert exists(stored.key)
 
 
+async def test_without_a_store_the_raw_file_is_kept(tmp_path: Path) -> None:
+    """Nothing was persisted, so the upload is still the only durable copy."""
+    pipeline, storage, registry = build(tmp_path)
+    stored = await stored_text(storage)
+
+    result = await pipeline.run(stored, uuid4())
+
+    assert result is not None
+    assert exists(stored.key)
+    assert registry.get(stored.material_id).stage is MaterialStage.DONE
+
+
 async def test_a_file_that_will_not_delete_does_not_fail_the_material(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    pipeline, storage, registry = build(tmp_path)
+    pipeline, storage, registry = build(tmp_path, store=Store())
     stored = await stored_text(storage)
 
     async def refuse(material_id: UUID) -> None:
