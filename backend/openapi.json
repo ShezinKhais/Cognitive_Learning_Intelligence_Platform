@@ -566,6 +566,32 @@
         "title": "QuestionBulkReviewRequest",
         "type": "object"
       },
+      "QuestionBulkReviewResult": {
+        "description": "Response for the bulk review endpoint.\n\nSeparate from a bare list[QuestionOut] so a lecturer can tell \"all N\napproved\" from \"N approved, M skipped\" -- a bulk action that silently\ndrops ids a lecturer expected to be included looks identical to success\nunless the skipped ones are reported back.",
+        "properties": {
+          "skipped_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Skipped Ids",
+            "type": "array"
+          },
+          "updated": {
+            "items": {
+              "$ref": "#/components/schemas/QuestionOut"
+            },
+            "title": "Updated",
+            "type": "array"
+          }
+        },
+        "required": [
+          "updated",
+          "skipped_ids"
+        ],
+        "title": "QuestionBulkReviewResult",
+        "type": "object"
+      },
       "QuestionOut": {
         "properties": {
           "correct_option": {
@@ -1588,7 +1614,7 @@
     },
     "/api/v1/materials/{material_id}/questions/{question_id}": {
       "patch": {
-        "description": "Approve, edit or reject a generated question.\n\nNo question reaches a student without passing through here. A lecturer\nmay only act on questions belonging to a session they are the\ninstructor of and that belong to material_id; admins may act on any\nquestion. A question that exists but belongs to a different material,\nor a different lecturer's session, is rejected the same way a\nnonexistent question is -- see app.services.question_ownership for why.\nInvalid status transitions (e.g. skipping straight to delivered, or\nediting a staged/delivered question) are rejected by the repository\nwith a 409; see QuestionRepository.apply_review.",
+        "description": "Approve, edit or reject a generated question. No question reaches a\nstudent without passing through here.",
         "operationId": "review_question_api_v1_materials__material_id__questions__question_id__patch",
         "parameters": [
           {
@@ -1652,7 +1678,7 @@
     },
     "/api/v1/materials/{material_id}/questions:bulk": {
       "post": {
-        "description": "Backs the 'approve all' and 'stage N questions' actions.\n\nSame ownership and material-scoping rule as review_question, applied\nper question: any id in the request that does not exist, does not\nbelong to material_id, or belongs to another lecturer's session, is\nsilently skipped rather than failing the whole batch. A lecturer\nselecting \"approve all\" on their own review queue should not have that\nfail because one row in the batch turned out stale or reassigned\nbetween page load and submit.\n\nA question whose current status does not allow the requested\ntransition is also skipped rather than failing the batch, for the same\nreason -- one stale row should not block the rest of a bulk action.",
+        "description": "Backs the 'approve all' and 'stage N questions' actions.",
         "operationId": "bulk_review_questions_api_v1_materials__material_id__questions_bulk_post",
         "parameters": [
           {
@@ -1681,11 +1707,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/QuestionOut"
-                  },
-                  "title": "Response Bulk Review Questions Api V1 Materials  Material Id  Questions Bulk Post",
-                  "type": "array"
+                  "$ref": "#/components/schemas/QuestionBulkReviewResult"
                 }
               }
             },
