@@ -279,3 +279,14 @@ def test_truncated_json_raises_value_error_not_a_decode_error():
     json.loads happens to raise."""
     with pytest.raises(ValueError):
         parse_drafts('[{"prompt": "Q?", "options": ["a","b"')
+
+
+async def test_unparseable_output_costs_the_batch_not_the_material():
+    """A truncated or chatty reply should lose this batch, not fail the upload."""
+    generator = QuestionGenerator(
+        FakeChatClient("Here are your questions: [{'prompt': "), "test-model"
+    )
+
+    drafts = await generator.generate(uuid.uuid4(), chunks())
+
+    assert drafts == []

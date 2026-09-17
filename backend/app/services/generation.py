@@ -263,7 +263,12 @@ class QuestionGenerator:
             model=self._model,
             messages=[{"role": "user", "content": build_prompt(chunks, self._count)}],
         )
-        drafts = parse_drafts(response.choices[0].message.content or "")
+        try:
+            drafts = parse_drafts(response.choices[0].message.content or "")
+        except ValueError as exc:
+            # A truncated or chatty reply costs this batch, not the material.
+            logger.info("could not parse model output: %s", exc)
+            return GenerationOutcome(accepted=[], rejected=[])
 
         accepted, rejected = [], []
         for draft in drafts:
