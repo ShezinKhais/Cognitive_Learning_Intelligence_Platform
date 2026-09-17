@@ -130,7 +130,7 @@ def rejection_reasons(draft: DraftQuestion, chunks: list[RetrievedChunk]) -> lis
     if draft.correct_option is None or not 0 <= draft.correct_option < len(options):
         reasons.append(f"correct_option {draft.correct_option} is out of range")
 
-    pages = {chunk.source_page for chunk in chunks}
+    pages = {chunk.source_page for chunk in chunks if chunk.source_page is not None}
     # A question with no citation cannot be traced back to the material, which
     # is the point of the feature.
     if draft.source_slide is None:

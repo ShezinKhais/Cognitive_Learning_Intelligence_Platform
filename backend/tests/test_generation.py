@@ -74,6 +74,25 @@ def test_catches_invented_page_number():
     assert any("cites page 12" in r for r in reasons)
 
 
+def test_invalid_page_does_not_crash_when_some_chunks_have_no_page():
+    mixed_chunks = chunks() + [
+        RetrievedChunk(
+            chunk_id=uuid.uuid4(),
+            chunk_index=1,
+            chunk_text="Unpaged material",
+            source_page=None,
+            distance=0.2,
+        )
+    ]
+
+    reasons = rejection_reasons(
+        draft(source_slide=12),
+        mixed_chunks,
+    )
+
+    assert any("cites page 12" in reason for reason in reasons)
+
+
 def test_catches_ungrounded_excerpt():
     """The hallucination case: fluent, plausible, and not in the material."""
     reasons = rejection_reasons(
