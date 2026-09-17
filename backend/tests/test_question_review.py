@@ -347,3 +347,279 @@ async def test_bulk_review_with_no_owned_ids_returns_empty_list(db_client, app):
     finally:
         await _cleanup(session_factory, q)
         app.dependency_overrides.pop(get_principal, None)
+
+
+# --- role guard: review routes require lecturer or admin, not just any authenticated user ---
+
+
+async def test_student_role_is_rejected_even_if_they_own_the_session(db_client, app):
+    """Ownership alone is not enough: a caller whose role is student must be
+    rejected at the router even if their user_id happens to match the
+    session's instructor_id (e.g. a demoted or misconfigured account)."""
+    test_client, session_factory = db_client
+    student_id = uuid4()
+    material_id, question_id = await _seed_question(session_factory, instructor_id=student_id)
+    try:
+        _as(app, student_id, Role.STUDENT, "student@uni.test")
+
+        resp = test_client.patch(
+            f"/api/v1/materials/{material_id}/questions/{question_id}",
+            json={"status": "approved"},
+        )
+
+        assert resp.status_code == 403
+        assert resp.json()["error"]["code"] == "FORBIDDEN"
+    finally:
+        await _cleanup(session_factory, question_id)
+        app.dependency_overrides.pop(get_principal, None)
+
+
+async def test_student_role_is_rejected_on_bulk_review(db_client, app):
+    test_client, session_factory = db_client
+    student_id = uuid4()
+    material_id, question_id = await _seed_question(session_factory, instructor_id=student_id)
+    try:
+        _as(app, student_id, Role.STUDENT, "student@uni.test")
+
+        resp = test_client.post(
+            f"/api/v1/materials/{material_id}/questions:bulk",
+            json={"question_ids": [str(question_id)], "status": "approved"},
+        )
+
+        assert resp.status_code == 403
+        assert resp.json()["error"]["code"] == "FORBIDDEN"
+    finally:
+        await _cleanup(session_factory, question_id)
+        app.dependency_overrides.pop(get_principal, None)
+
+
+# --- material_id scoping: a question must belong to the material_id in the path ---
+
+
+async def test_wrong_material_id_returns_404_not_the_question(db_client, app):
+    """A lecturer who owns the question must still be rejected if they hit
+    it through a different material's URL -- the path's material_id is
+    enforced, not just decorative."""
+    test_client, session_factory = db_client
+    lecturer_id = uuid4()
+    _real_material_id, question_id = await _seed_question(
+        session_factory, instructor_id=lecturer_id
+    )
+    try:
+        _as(app, lecturer_id, Role.LECTURER, "lecturer@uni.test")
+        wrong_material_id = uuid4()
+
+        resp = test_client.patch(
+            f"/api/v1/materials/{wrong_material_id}/questions/{question_id}",
+            json={"status": "approved"},
+        )
+
+        assert resp.status_code == 404
+        assert resp.json()["error"]["code"] == "NOT_FOUND"
+    finally:
+        await _cleanup(session_factory, question_id)
+        app.dependency_overrides.pop(get_principal, None)
+
+
+async def test_bulk_review_excludes_questions_from_a_different_material(db_client, app):
+    test_client, session_factory = db_client
+    lecturer_id = uuid4()
+    real_material_id, question_id = await _seed_question(session_factory, instructor_id=lecturer_id)
+    try:
+        _as(app, lecturer_id, Role.LECTURER, "lecturer@uni.test")
+        wrong_material_id = uuid4()
+
+        resp = test_client.post(
+            f"/api/v1/materials/{wrong_material_id}/questions:bulk",
+            json={"question_ids": [str(question_id)], "status": "approved"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == []  # the question is real and owned, but not in this material
+    finally:
+        await _cleanup(session_factory, question_id)
+        app.dependency_overrides.pop(get_principal, None)
+
+
+# --- status transitions: the QuestionStatus docstring's guarantee has to be
+# enforced server-side ---
+
+
+async def test_draft_cannot_jump_straight_to_delivered(db_client, app):
+    test_client, session_factory = db_client
+    lecturer_id = uuid4()
+    material_id, question_id = await _seed_question(session_factory, instructor_id=lecturer_id)
+    try:
+        _as(app, lecturer_id, Role.LECTURER, "lecturer@uni.test")
+
+        resp = test_client.patch(
+            f"/api/v1/materials/{material_id}/questions/{question_id}",
+            json={"status": "delivered"},
+        )
+
+        assert resp.status_code == 409
+        assert resp.json()["error"]["code"] == "CONFLICT"
+    finally:
+        await _cleanup(session_factory, question_id)
+        app.dependency_overrides.pop(get_principal, None)
+
+
+async def test_delivered_question_cannot_be_edited(db_client, app):
+    """Regression: this used to silently accept a new correct_option on an
+    already-delivered question, which would change what past student
+    responses meant without anyone knowing."""
+    test_client, session_factory = db_client
+    lecturer_id = uuid4()
+    material_id, question_id = await _seed_question(
+        session_factory, instructor_id=lecturer_id, status="delivered"
+    )
+    try:
+        _as(app, lecturer_id, Role.LECTURER, "lecturer@uni.test")
+
+        resp = test_client.patch(
+            f"/api/v1/materials/{material_id}/questions/{question_id}",
+            json={"status": "delivered", "correct_option": 2},
+        )
+
+        assert resp.status_code == 409
+        assert resp.json()["error"]["code"] == "CONFLICT"
+    finally:
+        await _cleanup(session_factory, question_id)
+        app.dependency_overrides.pop(get_principal, None)
+
+
+async def test_rejected_question_cannot_be_reopened(db_client, app):
+    test_client, session_factory = db_client
+    lecturer_id = uuid4()
+    material_id, question_id = await _seed_question(
+        session_factory, instructor_id=lecturer_id, status="rejected"
+    )
+    try:
+        _as(app, lecturer_id, Role.LECTURER, "lecturer@uni.test")
+
+        resp = test_client.patch(
+            f"/api/v1/materials/{material_id}/questions/{question_id}",
+            json={"status": "approved"},
+        )
+
+        assert resp.status_code == 409
+        assert resp.json()["error"]["code"] == "CONFLICT"
+    finally:
+        await _cleanup(session_factory, question_id)
+        app.dependency_overrides.pop(get_principal, None)
+
+
+async def test_approved_can_be_staged(db_client, app):
+    test_client, session_factory = db_client
+    lecturer_id = uuid4()
+    material_id, question_id = await _seed_question(
+        session_factory, instructor_id=lecturer_id, status="approved"
+    )
+    try:
+        _as(app, lecturer_id, Role.LECTURER, "lecturer@uni.test")
+
+        resp = test_client.patch(
+            f"/api/v1/materials/{material_id}/questions/{question_id}",
+            json={"status": "staged"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "staged"
+    finally:
+        await _cleanup(session_factory, question_id)
+        app.dependency_overrides.pop(get_principal, None)
+
+
+async def test_bulk_review_skips_a_question_with_an_invalid_transition(db_client, app):
+    """One stale/already-delivered row in a bulk request must not fail the
+    rest of the batch -- it's silently excluded from the result, the same
+    treatment as an unowned or wrong-material id."""
+    test_client, session_factory = db_client
+    lecturer_id = uuid4()
+    material_id, deliverable_q = await _seed_question(
+        session_factory, instructor_id=lecturer_id, status="approved"
+    )
+    # A second question owned by the same lecturer: _seed_question always
+    # creates a fresh User row, so a second call with the same lecturer_id
+    # would collide on the user table's primary key. Insert this one's
+    # session/material/question directly against the lecturer already
+    # seeded above instead of going through _seed_question again.
+    async with session_factory() as seed:
+        course = Course(code=f"C{uuid4().hex[:8]}", name="Test Course")
+        seed.add(course)
+        await seed.flush()
+
+        other_material = Material(
+            course_id=course.id,
+            filename="lecture.pdf",
+            content_type="application/pdf",
+            size_bytes=1024,
+            status="completed",
+        )
+        seed.add(other_material)
+        await seed.flush()
+
+        now = datetime.now(UTC)
+        other_session = SessionModel(
+            instructor_id=lecturer_id,
+            course_id=course.id,
+            start_time=now,
+            end_time=now + timedelta(hours=1),
+            mode="in_person",
+            status="prepared",
+        )
+        seed.add(other_session)
+        await seed.flush()
+
+        already_delivered = Question(
+            source_material_id=other_material.id,
+            question_text="Already delivered question",
+            session_id=other_session.session_id,
+            question_type="mcq",
+            status="delivered",
+            difficulty="medium",
+            options=["A", "B"],
+            correct_option=0,
+        )
+        seed.add(already_delivered)
+        await seed.commit()
+        already_delivered_q = already_delivered.question_id
+
+    try:
+        _as(app, lecturer_id, Role.LECTURER, "lecturer@uni.test")
+
+        resp = test_client.post(
+            f"/api/v1/materials/{material_id}/questions:bulk",
+            json={
+                "question_ids": [str(deliverable_q), str(already_delivered_q)],
+                "status": "staged",
+            },
+        )
+
+        assert resp.status_code == 200
+        returned_ids = {item["id"] for item in resp.json()}
+        assert str(deliverable_q) in returned_ids
+        assert str(already_delivered_q) not in returned_ids
+    finally:
+        # Clean up already_delivered_q's rows manually rather than via
+        # _cleanup: both questions' sessions share the same instructor_id,
+        # and _cleanup unconditionally deletes the User row it finds, so
+        # calling it twice for two sessions on one shared user races
+        # against whichever session row is still pointing at that user.
+        async with session_factory() as cleanup:
+            await cleanup.execute(
+                text("delete from question where question_id = :qid"),
+                {"qid": already_delivered_q},
+            )
+            await cleanup.execute(
+                text("delete from session where session_id = :sid"),
+                {"sid": other_session.session_id},
+            )
+            await cleanup.execute(
+                text("delete from source_material where id = :mid"),
+                {"mid": other_material.id},
+            )
+            await cleanup.execute(text("delete from course where id = :cid"), {"cid": course.id})
+            await cleanup.commit()
+        await _cleanup(session_factory, deliverable_q)
+        app.dependency_overrides.pop(get_principal, None)

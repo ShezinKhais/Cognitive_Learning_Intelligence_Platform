@@ -1588,7 +1588,7 @@
     },
     "/api/v1/materials/{material_id}/questions/{question_id}": {
       "patch": {
-        "description": "Approve, edit or reject a generated question.\n\nNo question reaches a student without passing through here. A lecturer\nmay only act on questions belonging to a session they are the\ninstructor of; admins may act on any question. material_id is not used\nto scope the lookup (question_id already uniquely identifies the row)\nbut is kept in the path per the frozen contract -- it also means a\nrequest against the wrong material_id for a real question_id still\nsucceeds, which mirrors how the id, not the path, is the source of\ntruth elsewhere in this API.",
+        "description": "Approve, edit or reject a generated question.\n\nNo question reaches a student without passing through here. A lecturer\nmay only act on questions belonging to a session they are the\ninstructor of and that belong to material_id; admins may act on any\nquestion. A question that exists but belongs to a different material,\nor a different lecturer's session, is rejected the same way a\nnonexistent question is -- see app.services.question_ownership for why.\nInvalid status transitions (e.g. skipping straight to delivered, or\nediting a staged/delivered question) are rejected by the repository\nwith a 409; see QuestionRepository.apply_review.",
         "operationId": "review_question_api_v1_materials__material_id__questions__question_id__patch",
         "parameters": [
           {
@@ -1652,7 +1652,7 @@
     },
     "/api/v1/materials/{material_id}/questions:bulk": {
       "post": {
-        "description": "Backs the 'approve all' and 'stage N questions' actions.\n\nSame ownership rule as review_question, applied per question: any id in\nthe request that does not exist, or belongs to another lecturer's\nsession, is silently skipped rather than failing the whole batch. A\nlecturer selecting \"approve all\" on their own review queue should not\nhave that fail because one row in the batch turned out stale or\nreassigned between page load and submit.",
+        "description": "Backs the 'approve all' and 'stage N questions' actions.\n\nSame ownership and material-scoping rule as review_question, applied\nper question: any id in the request that does not exist, does not\nbelong to material_id, or belongs to another lecturer's session, is\nsilently skipped rather than failing the whole batch. A lecturer\nselecting \"approve all\" on their own review queue should not have that\nfail because one row in the batch turned out stale or reassigned\nbetween page load and submit.\n\nA question whose current status does not allow the requested\ntransition is also skipped rather than failing the batch, for the same\nreason -- one stale row should not block the rest of a bulk action.",
         "operationId": "bulk_review_questions_api_v1_materials__material_id__questions_bulk_post",
         "parameters": [
           {

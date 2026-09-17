@@ -27,18 +27,28 @@ async def get_owned_question(
     question_id: uuid.UUID,
     principal: Principal,
     repo: QuestionRepository,
+    *,
+    material_id: uuid.UUID | None = None,
 ) -> Question:
     """Fetch a question, or raise, after checking the caller may act on it.
 
-    Raises NotFoundError if the question does not exist -- deliberately not
-    PermissionError_ in that case, so a lecturer probing random ids cannot
-    distinguish "not yours" from "does not exist" for a resource that isn't
-    theirs, which would otherwise leak which question ids are valid.
+    material_id, when given, is enforced as part of the lookup itself (see
+    QuestionRepository.get_with_owner): a question that exists but belongs
+    to a different material is treated the same as one that doesn't exist
+    at all, so a lecturer cannot reach a question that isn't theirs by
+    guessing at a different material_id in the URL for a question_id they
+    already know.
+
+    Raises NotFoundError if the question does not exist (or does not
+    belong to material_id, when given) -- deliberately not PermissionError_
+    in that case, so a caller probing random ids cannot distinguish "not
+    yours" from "does not exist" for a resource that isn't theirs, which
+    would otherwise leak which question ids are valid.
 
     Raises PermissionError_ if the question exists but its session belongs
     to a different lecturer. Admins skip this check entirely.
     """
-    found = await repo.get_with_owner(question_id)
+    found = await repo.get_with_owner(question_id, material_id=material_id)
     if found is None:
         raise NotFoundError(
             "Question not found.",
@@ -60,8 +70,15 @@ async def filter_owned_questions(
     question_ids: list[uuid.UUID],
     principal: Principal,
     repo: QuestionRepository,
+    *,
+    material_id: uuid.UUID | None = None,
 ) -> tuple[list[Question], list[uuid.UUID]]:
     """Bulk version of get_owned_question.
+
+    material_id, when given, is enforced the same way as in
+    get_owned_question: an id in the request that belongs to a different
+    material comes back in rejected, indistinguishable from an id that
+    doesn't exist at all or belongs to a different lecturer.
 
     Returns (owned, rejected_ids). A bulk request naming a mix of the
     caller's own questions and someone else's does not fail the whole
@@ -70,7 +87,7 @@ async def filter_owned_questions(
     convenient action, not an all-or-nothing transaction that one stray id
     can block.
     """
-    found = await repo.list_by_ids_with_owner(question_ids)
+    found = await repo.list_by_ids_with_owner(question_ids, material_id=material_id)
     found_by_id = {q.question_id: (q, owner_id) for q, owner_id in found}
 
     owned: list[Question] = []

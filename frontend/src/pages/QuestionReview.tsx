@@ -72,6 +72,18 @@ export default function QuestionReview() {
           }
         : prev,
     )
+    // A question that just changed status (via its own Approve/Reject/Save)
+    // is no longer eligible for bulk selection regardless of what it was
+    // before -- drop it from `selected` so a stale checkbox state can never
+    // cause "Approve selected" to act on a question that isn't draft
+    // anymore (this is what let rejecting a question, then bulk-approving,
+    // silently re-approve it).
+    setSelected((prev) => {
+      if (!prev.has(updated.id)) return prev
+      const next = new Set(prev)
+      next.delete(updated.id)
+      return next
+    })
   }
 
   function toggleSelected(id: string) {
@@ -85,10 +97,20 @@ export default function QuestionReview() {
 
   async function handleApproveAll() {
     if (!materialId || selected.size === 0) return
+    // Belt-and-braces on top of updateQuestion already pruning `selected`:
+    // only ever send ids that are still draft in the latest state, so a
+    // stale selection can never reach the bulk endpoint even if some other
+    // code path added to `selected` without going through toggleSelected.
+    const draftIds =
+      state.status === 'ready'
+        ? state.questions.filter((q) => q.status === 'draft' && selected.has(q.id)).map((q) => q.id)
+        : []
+    if (draftIds.length === 0) return
+
     setBulkBusy(true)
     setBulkError(null)
     try {
-      const updated = await bulkReviewQuestions(materialId, [...selected], 'approved')
+      const updated = await bulkReviewQuestions(materialId, draftIds, 'approved')
       const byId = new Map(updated.map((q) => [q.id, q]))
       setState((prev) =>
         prev.status === 'ready'
@@ -184,6 +206,8 @@ function QuestionCard({
   onToggleSelected: () => void
   onUpdated: (q: Question) => void
 }) {
+  const isMcq = question.type === 'mcq'
+
   const [editing, setEditing] = useState(false)
   const [prompt, setPrompt] = useState(question.prompt)
   const [options, setOptions] = useState(question.options ?? [])
@@ -200,6 +224,28 @@ function QuestionCard({
     muted: 'bg-muted text-muted-foreground',
   }[tone]
 
+  function startEditing() {
+    // Reset the draft fields from the current question every time editing
+    // opens, not just on mount: without this, cancelling out of an edit
+    // and reopening it kept whatever was typed before cancelling, since
+    // useState's initial value only applies once per component instance.
+    setPrompt(question.prompt)
+    setOptions(question.options ?? [])
+    setCorrectOption(question.correct_option ?? 0)
+    setDifficulty(question.difficulty)
+    setError(null)
+    setEditing(true)
+  }
+
+  function cancelEditing() {
+    setPrompt(question.prompt)
+    setOptions(question.options ?? [])
+    setCorrectOption(question.correct_option ?? 0)
+    setDifficulty(question.difficulty)
+    setError(null)
+    setEditing(false)
+  }
+
   async function act(
     status: QuestionStatus,
     extra?: { prompt?: string; options?: string[]; correct_option?: number; difficulty?: Difficulty },
@@ -215,6 +261,19 @@ function QuestionCard({
     } finally {
       setBusy(false)
     }
+  }
+
+  function saveAndApprove() {
+    // Only send MCQ fields for an actual MCQ. A free-text question has no
+    // options or correct_option, and submitting options=[] / correct_
+    // option=0 for one would silently turn it into what looks like an MCQ
+    // with an empty option list.
+    act(
+      'approved',
+      isMcq
+        ? { prompt, options, correct_option: correctOption, difficulty }
+        : { prompt, difficulty },
+    )
   }
 
   return (
@@ -279,7 +338,7 @@ function QuestionCard({
         </div>
       )}
 
-      {question.type === 'mcq' && (
+      {isMcq && (
         <ul className="mt-3 space-y-1.5">
           {(editing ? options : question.options ?? []).map((opt, i) => (
             <li key={i} className="flex items-center gap-2 text-sm">
@@ -328,9 +387,7 @@ function QuestionCard({
             <button
               type="button"
               disabled={busy}
-              onClick={() =>
-                act('approved', { prompt, options, correct_option: correctOption, difficulty })
-              }
+              onClick={saveAndApprove}
               className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
             >
               Save and approve
@@ -338,7 +395,7 @@ function QuestionCard({
             <button
               type="button"
               disabled={busy}
-              onClick={() => setEditing(false)}
+              onClick={cancelEditing}
               className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium"
             >
               Cancel
@@ -359,7 +416,7 @@ function QuestionCard({
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => setEditing(true)}
+                  onClick={startEditing}
                   className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium"
                 >
                   Edit
