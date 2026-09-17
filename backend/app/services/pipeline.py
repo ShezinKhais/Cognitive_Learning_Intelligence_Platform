@@ -107,6 +107,7 @@ class MaterialPipeline:
         material_id = stored.material_id
         try:
             outcome = await self._process(stored, owner_id)
+            await self._discard_raw_file(material_id)
         except ValidationError as exc:
             log.info("material %s rejected: %s", material_id, exc.message)
             await self._fail(material_id, owner_id, exc.message, exc.code)
@@ -122,6 +123,22 @@ class MaterialPipeline:
             raise
         self._settling.pop(material_id, None)
         return outcome
+
+    async def _discard_raw_file(self, material_id: UUID) -> None:
+        """Delete the uploaded bytes once the material's outcome is recorded.
+
+        The design keeps a lecture file's metadata, filename and extracted
+        chunks, and discards the raw content once processing has used it
+        (Design Document 4.1). Reached only after the completed material is
+        written, so a store that fails leaves the file for a retry.
+
+        A file that will not delete does not undo a finished material, so the
+        error is logged rather than raised.
+        """
+        try:
+            await self._storage.delete(material_id)
+        except Exception:
+            log.warning("could not discard the raw file for material %s", material_id)
 
     async def abandon(self, material_id: UUID, owner_id: UUID) -> None:
         """Make sure a material stopped by shutdown ends in a recorded state.

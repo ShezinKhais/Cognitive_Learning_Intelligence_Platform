@@ -184,6 +184,53 @@ async def test_an_unreadable_file_is_not_left_on_disk(tmp_path: Path) -> None:
     assert not exists(stored.key)
 
 
+async def test_the_raw_file_is_discarded_once_the_material_is_recorded(tmp_path: Path) -> None:
+    """Chunks and metadata are kept; the uploaded bytes are not (Design 4.1)."""
+    store = Store()
+    pipeline, storage, registry = build(tmp_path, store=store)
+    stored = await stored_text(storage)
+
+    result = await pipeline.run(stored, uuid4())
+
+    assert result is not None
+    assert store.completed
+    assert not exists(stored.key)
+    assert registry.get(stored.material_id).stage is MaterialStage.DONE
+
+
+async def test_a_store_that_fails_keeps_the_raw_file(tmp_path: Path) -> None:
+    """Nothing was recorded, so the upload is still the only copy."""
+
+    class FailingStore(Store):
+        async def record_completed(self, material: CompletedMaterial) -> None:
+            raise ConnectionError("database unavailable")
+
+    pipeline, storage, _ = build(tmp_path, store=FailingStore())
+    stored = await stored_text(storage)
+
+    with pytest.raises(ConnectionError):
+        await pipeline.run(stored, uuid4())
+
+    assert exists(stored.key)
+
+
+async def test_a_file_that_will_not_delete_does_not_fail_the_material(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pipeline, storage, registry = build(tmp_path)
+    stored = await stored_text(storage)
+
+    async def refuse(material_id: UUID) -> None:
+        raise PermissionError("file in use")
+
+    monkeypatch.setattr(storage, "delete", refuse)
+
+    result = await pipeline.run(stored, uuid4())
+
+    assert result is not None
+    assert registry.get(stored.material_id).stage is MaterialStage.DONE
+
+
 async def test_a_failure_that_may_be_transient_keeps_the_file(tmp_path: Path) -> None:
     """The embedding model being down is not a reason to make the lecturer
     upload the deck again."""
