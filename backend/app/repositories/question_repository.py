@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import ConflictError
+from app.core.errors import ConflictError, ValidationError
 from app.models.question import Question
 from app.models.session import Session as SessionModel
 
@@ -28,6 +28,40 @@ _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "staged": {"staged", "delivered"},
     "delivered": set(),  # terminal: a delivered question is never rewritten
 }
+
+
+def _validate_option_shape(
+    current_options: list[str] | None,
+    new_options: list[str] | None,
+    current_correct_option: int | None,
+    new_correct_option: int | None,
+) -> None:
+    """Check that the option list and correct_option that will actually be
+    stored after this edit agree with each other.
+
+    Checked against the values that will be written after the edit, not
+    just the values the caller supplied: options alone can shrink below an
+    existing correct_option even when correct_option itself isn't part of
+    this request, and correct_option alone can point past the end of the
+    existing options list. Either combination, once written, is an answer
+    key that points at nothing.
+    """
+    effective_options = new_options if new_options is not None else current_options
+    effective_correct = (
+        new_correct_option if new_correct_option is not None else current_correct_option
+    )
+
+    if effective_correct is None:
+        return  # free-text questions have no options to check against
+
+    if not effective_options or not (0 <= effective_correct < len(effective_options)):
+        raise ValidationError(
+            "correct_option must be a valid index into options.",
+            {
+                "options_count": len(effective_options) if effective_options else 0,
+                "correct_option": effective_correct,
+            },
+        )
 
 
 class QuestionRepository:
@@ -133,6 +167,12 @@ class QuestionRepository:
         delivery, silently changing its prompt or correct_option would
         change what past or in-flight student responses meant without
         anyone knowing.
+
+        Raises ValidationError if the options/correct_option that will
+        actually be stored after this edit don't agree with each other
+        (see _validate_option_shape) -- an out-of-range correct_option, or
+        an options list shrunk below an existing correct_option, would
+        otherwise silently save an answer key that points at nothing.
         """
         current = question.status
         allowed = _ALLOWED_TRANSITIONS.get(current, set())
@@ -148,6 +188,10 @@ class QuestionRepository:
                 f"Cannot edit a question that is already '{current}'.",
                 {"current_status": current},
             )
+
+        _validate_option_shape(
+            question.options, options, question.correct_option, correct_option
+        )
 
         question.status = status
         question.reviewed_by = reviewer_id
