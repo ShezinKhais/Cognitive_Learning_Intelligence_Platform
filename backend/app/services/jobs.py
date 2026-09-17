@@ -56,6 +56,10 @@ TERMINAL_STAGES = {MaterialStage.DONE, MaterialStage.FAILED}
 # was waiting for a slot and the job that was halfway through a parse.
 INTERRUPTED_MESSAGE = "Processing was interrupted while the server was stopping."
 
+# What a lecturer is told when processing raises something nobody anticipated.
+# Shared for the same reason: the processor and the pipeline both report it.
+UNEXPECTED_FAILURE_MESSAGE = "Processing failed unexpectedly."
+
 # Machine-readable codes for JobStatus.error, in the same UPPER_SNAKE form as
 # the API's error envelope. The lecturer-facing text is JobStatus.message; an
 # exception class name is an implementation detail and belongs in the log.
@@ -146,9 +150,6 @@ class JobRegistry:
 
     def get(self, material_id: UUID) -> JobStatus | None:
         return self._jobs.get(material_id)
-
-    def forget(self, material_id: UUID) -> None:
-        self._jobs.pop(material_id, None)
 
     def __len__(self) -> int:
         return len(self._jobs)
@@ -251,14 +252,7 @@ class BackgroundProcessor:
             # something outside it broke, and a job that ends with no
             # terminal state is a spinner that never stops.
             log.exception("processing material %s failed", material_id)
-            current = self._registry.get(material_id)
-            if current is None or not current.is_finished:
-                self._registry.advance(
-                    material_id,
-                    MaterialStage.FAILED,
-                    message="Processing failed unexpectedly.",
-                    error=INTERNAL_ERROR,
-                )
+            self._fail_unless_finished(material_id, UNEXPECTED_FAILURE_MESSAGE, INTERNAL_ERROR)
 
     async def _abandon(
         self,
@@ -290,14 +284,12 @@ class BackgroundProcessor:
 
         # The registry is the backstop whether or not the caller managed to
         # report it, so the job still ends in a terminal state here.
+        self._fail_unless_finished(material_id, INTERRUPTED_MESSAGE, INTERRUPTED_ERROR)
+
+    def _fail_unless_finished(self, material_id: UUID, message: str, error: str) -> None:
         current = self._registry.get(material_id)
         if current is None or not current.is_finished:
-            self._registry.advance(
-                material_id,
-                MaterialStage.FAILED,
-                message=INTERRUPTED_MESSAGE,
-                error=INTERRUPTED_ERROR,
-            )
+            self._registry.advance(material_id, MaterialStage.FAILED, message=message, error=error)
 
     def _slot(self) -> asyncio.Semaphore:
         """The concurrency limit for the loop this job is running on.

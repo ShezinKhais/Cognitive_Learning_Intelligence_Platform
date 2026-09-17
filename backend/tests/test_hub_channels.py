@@ -24,6 +24,8 @@ from app.realtime.hub import (
 )
 from app.schemas.events import ServerEventType
 
+EVENT_TIMEOUT_SECONDS = 5.0
+
 
 class _FakeSocket:
     def __init__(self, fail: bool = False) -> None:
@@ -151,7 +153,7 @@ async def test_a_dead_socket_is_dropped_from_the_user_channel() -> None:
         )
         == 1
     )
-    assert [c.websocket for c in hub._by_user[lecturer]] == [alive]
+    assert [c.websocket for c in hub._channels[lecturer]] == [alive]
 
     # The dead socket is gone, so the next send does not retry it.
     assert (
@@ -230,38 +232,21 @@ async def test_leaving_clears_the_user_index() -> None:
     )
 
 
-async def test_a_session_connection_is_reachable_on_both_channels() -> None:
-    """Joining a session must not cost a connection its own address."""
+async def test_a_session_connection_is_on_its_session_channel_only() -> None:
+    """One socket, one numbered stream. On both channels a session socket got
+    session seq and user-channel seq interleaved, and the single last_seq a
+    client reconnects with cannot describe two streams."""
     hub = SessionHub()
     session = uuid4()
     student = uuid4()
     socket = _FakeSocket()
 
-    await hub.join(
-        Connection(
-            socket,
-            student,
-            session,
-        )
-    )  # type: ignore[arg-type]
+    await hub.join(Connection(socket, student, session))  # type: ignore[arg-type]
 
     assert hub.participant_count(session) == 1
-    assert (
-        await hub.send_to_user_channel(
-            student,
-            ServerEventType.MATERIAL_PROGRESS,
-            {},
-        )
-        == 1
-    )
-    assert (
-        await hub.broadcast(
-            session,
-            ServerEventType.SESSION_STATE,
-            {},
-        )
-        == 1
-    )
+    assert await hub.send_to_user_channel(student, ServerEventType.MATERIAL_PROGRESS, {}) == 0
+    assert await hub.broadcast(session, ServerEventType.SESSION_STATE, {}) == 1
+    assert [frame["seq"] for frame in socket.sent] == [1]
 
 
 async def test_concurrent_progress_arrives_in_sequence_order() -> None:
@@ -459,4 +444,60 @@ async def test_a_user_with_no_connections_left_is_forgotten() -> None:
 
     await hub.leave(connection)
 
-    assert lecturer not in hub._by_user
+    assert lecturer not in hub._channels
+
+
+async def test_progress_published_during_the_handshake_reaches_the_new_tab() -> None:
+    """Ready then join left a gap. A done frame published in it went to no
+    socket, nothing later replaced it, and the tab waited forever."""
+    hub = SessionHub()
+    lecturer = uuid4()
+    socket = _FakeSocket()
+    published: list[asyncio.Task[int]] = []
+
+    async def send_ready() -> None:
+        published.append(
+            asyncio.create_task(
+                hub.send_to_user_channel(lecturer, ServerEventType.MATERIAL_PROGRESS, {})
+            )
+        )
+        await asyncio.sleep(0)
+
+    await hub.join_after(Connection(socket, lecturer, None), send_ready)
+
+    assert await asyncio.wait_for(published[0], EVENT_TIMEOUT_SECONDS) == 1
+
+
+async def test_a_dead_socket_is_forgotten_before_the_next_upload_reports(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dropped after the lock was released, a second upload waiting on it could
+    snapshot the same dead socket and wait out another full send timeout."""
+    monkeypatch.setattr(hub_module, "SEND_TIMEOUT_SECONDS", 0.05)
+    hub = SessionHub()
+    lecturer = uuid4()
+    stalled = _StalledSocket()
+    await hub.join(Connection(stalled, lecturer, None))
+    await hub.join(Connection(_FakeSocket(), lecturer, None))
+
+    # Removal yields, as it does whenever someone else holds the hub-wide lock.
+    real_leave = hub.leave
+
+    async def contended_leave(connection: Connection) -> None:
+        await asyncio.sleep(0)
+        await real_leave(connection)
+
+    monkeypatch.setattr(hub, "leave", contended_leave)
+
+    await asyncio.wait_for(
+        asyncio.gather(
+            hub.send_to_user_channel(lecturer, ServerEventType.MATERIAL_PROGRESS, {}),
+            hub.send_to_user_channel(lecturer, ServerEventType.MATERIAL_PROGRESS, {}),
+        ),
+        EVENT_TIMEOUT_SECONDS,
+    )
+
+    assert stalled.attempts == 1
+    for task in list(hub._closing):
+        task.cancel()
+    await asyncio.gather(*hub._closing, return_exceptions=True)

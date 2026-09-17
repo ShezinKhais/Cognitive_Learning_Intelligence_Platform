@@ -270,7 +270,7 @@ async def session_socket(
         session_id=session_id,
     )
 
-    try:
+    async def send_ready() -> None:
         await _send(
             websocket,
             ServerEventType.READY,
@@ -280,14 +280,12 @@ async def session_socket(
             },
         )
 
-        # Joined only once ready is on the wire. Joining first made the
-        # connection visible to delivery before the handshake had finished, so
-        # an upload already in progress could put a material.progress frame
-        # ahead of ready, and a client that waits for ready as this module
-        # documents would drop it. An event emitted in the moment before the
-        # join is missed instead, which costs nothing: every progress frame
-        # carries the whole state, so the next one supersedes it.
-        await hub.join(connection)
+    try:
+        # Ready goes first, as this module documents, and the join follows
+        # with delivery to this user held until it completes, so a frame
+        # published during the handshake arrives after ready rather than
+        # before it or not at all.
+        await hub.join_after(connection, send_ready)
 
         while True:
             raw = await _receive_event(websocket)

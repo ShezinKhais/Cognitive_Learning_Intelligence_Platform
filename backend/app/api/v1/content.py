@@ -39,6 +39,17 @@ router = APIRouter(
 
 DEFAULT_CONTENT_TYPE = "application/octet-stream"
 
+# The response reports the type of what was stored, which is decided by the
+# validated extension. The client's Content-Type header is whatever the browser
+# or script chose to send, so echoing it let a .txt upload come back labelled
+# text/html.
+CONTENT_TYPES = {
+    "pdf": "application/pdf",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "txt": "text/plain",
+}
+
 
 @router.post("", response_model=MaterialOut, status_code=status.HTTP_202_ACCEPTED)
 async def upload_material(file: UploadFile, principal: CurrentUser) -> MaterialOut:
@@ -75,7 +86,7 @@ async def upload_material(file: UploadFile, principal: CurrentUser) -> MaterialO
     return MaterialOut(
         id=material_id,
         filename=stored.filename,
-        content_type=file.content_type or DEFAULT_CONTENT_TYPE,
+        content_type=CONTENT_TYPES.get(stored.extension, DEFAULT_CONTENT_TYPE),
         size_bytes=stored.size_bytes,
         status=MaterialStatus.PENDING,
         uploaded_at=datetime.now(UTC),

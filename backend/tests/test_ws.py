@@ -4,6 +4,7 @@ The hub itself is exercised directly rather than through a socket, so these run
 without a server or a database.
 """
 
+import asyncio
 from uuid import uuid4
 
 import pytest
@@ -559,12 +560,16 @@ def test_ready_is_the_first_frame_even_with_an_upload_in_progress(
     real_join = ws_module.hub.join
 
     async def join_while_an_upload_reports(connection) -> None:
-        await real_join(connection)
-        await ws_module.hub.send_to_user_channel(
-            connection.user_id,
-            ServerEventType.MATERIAL_PROGRESS,
-            {"material_id": str(uuid4()), "stage": "extracting", "percent": 20},
+        # An upload reports mid-handshake, from its own task as a real one would.
+        asyncio.get_running_loop().create_task(
+            ws_module.hub.send_to_user_channel(
+                connection.user_id,
+                ServerEventType.MATERIAL_PROGRESS,
+                {"material_id": str(uuid4()), "stage": "extracting", "percent": 20},
+            )
         )
+        await asyncio.sleep(0)
+        await real_join(connection)
 
     monkeypatch.setattr(ws_module.hub, "join", join_while_an_upload_reports)
 
@@ -618,6 +623,6 @@ def test_a_closed_socket_is_removed_from_the_hub(client: TestClient) -> None:
         # The pong comes from the receive loop, which starts after the join.
         ws.send_json({"type": ClientEventType.PING.value, "data": {}})
         ws.receive_json()
-        assert STUDENT_ID in ws_module.hub._by_user
+        assert STUDENT_ID in ws_module.hub._channels
 
-    assert STUDENT_ID not in ws_module.hub._by_user
+    assert STUDENT_ID not in ws_module.hub._channels

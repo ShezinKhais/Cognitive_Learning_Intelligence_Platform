@@ -197,3 +197,36 @@ async def test_a_full_client_path_is_shown_as_just_the_file_name(tmp_path: Path,
     stored = await storage(tmp_path).save(uuid4(), sent, feed(b"%PDF-1.4 minimal"))
 
     assert stored.filename == "notes.pdf"
+
+
+async def test_the_display_name_fits_the_column_and_has_no_control_characters(
+    tmp_path: Path,
+) -> None:
+    """source_material.filename is VARCHAR(255) and Postgres rejects NUL, so
+    either would fail the insert after the upload had already been accepted."""
+    stored = await storage(tmp_path).save(
+        uuid4(), "lecture\x00" + "A" * 300 + ".pdf", feed(b"%PDF-1.4 minimal")
+    )
+
+    assert len(stored.filename) == 255
+    assert stored.filename.endswith(".pdf")
+    assert "\x00" not in stored.filename
+
+
+async def test_an_interrupted_write_never_leaves_a_file_at_the_final_key(tmp_path: Path) -> None:
+    """A kill mid-stream skips cleanup. The final key must only ever hold a
+    complete file, or the parser would read the fragment as the document."""
+    store = storage(tmp_path)
+    material_id = uuid4()
+    seen_during_write: list[bool] = []
+
+    async def slow() -> AsyncIterator[bytes]:
+        yield b"%PDF-1.4 first half "
+        seen_during_write.extend(path.name.endswith(".pdf") for path in listing(tmp_path))
+        yield b"second half"
+
+    stored = await store.save(material_id, "notes.pdf", slow())
+
+    assert seen_during_write == [False]
+    assert resolved(stored.key).name == f"{material_id}.pdf"
+    assert [path.name for path in listing(tmp_path)] == [f"{material_id}.pdf"]

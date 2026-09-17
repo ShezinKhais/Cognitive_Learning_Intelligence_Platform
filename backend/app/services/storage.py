@@ -18,7 +18,7 @@ and copies nothing.
 
 The client's filename never reaches the filesystem. The on-disk name is the
 material id plus a validated extension, so `../../etc/passwd` and a 400
-character unicode name are both stored as `<uuid>.csv`. The original is kept as
+character unicode name are both stored as `<uuid>.pdf`. The original is kept as
 metadata for display only.
 """
 
@@ -26,9 +26,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import shutil
+import os
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import Protocol
@@ -67,13 +67,17 @@ class MaterialStorage(Protocol):
         """Write an upload down and return a handle to it."""
         ...
 
-    def materialise(self, stored: StoredFile):  # -> AsyncContextManager[Path]
+    def materialise(self, stored: StoredFile) -> AbstractAsyncContextManager[Path]:
         """Yield a local filesystem path the parsers can open."""
         ...
 
     async def delete(self, material_id: UUID) -> None:
         """Remove a stored file. Missing is not an error."""
         ...
+
+
+# The width of source_material.filename.
+MAX_DISPLAY_NAME = 255
 
 
 def display_name(filename: str) -> str:
@@ -83,7 +87,17 @@ def display_name(filename: str) -> str:
     server's own separator, so on a Linux host "C:\\Users\\bob\\notes.txt" came
     back whole. PureWindowsPath splits on both separators and drops a drive.
     """
-    return PureWindowsPath(filename).name
+    # source_material.filename is VARCHAR(255) and Postgres text cannot hold
+    # NUL, so a name that fails either would be accepted with a 202 here and
+    # then break the insert once persistence is wired. Control characters are
+    # dropped and the name is bounded, keeping the extension visible.
+    name = "".join(ch for ch in PureWindowsPath(filename).name if ch.isprintable())
+    if len(name) <= MAX_DISPLAY_NAME:
+        return name
+    stem, dot, extension = name.rpartition(".")
+    if not dot or len(extension) >= MAX_DISPLAY_NAME:
+        return name[:MAX_DISPLAY_NAME]
+    return stem[: MAX_DISPLAY_NAME - len(extension) - 1] + dot + extension
 
 
 def validated_extension(filename: str, allowed: set[str]) -> str:
@@ -128,10 +142,6 @@ class LocalDiskStorage:
         # and failing a minute later in a job nobody is watching.
         self._allowed = settings.upload_extensions if allowed is None else allowed
 
-    @property
-    def root(self) -> Path:
-        return self._root
-
     def _path_for(self, material_id: UUID, extension: str) -> Path:
         return self._root / f"{material_id}.{extension}"
 
@@ -144,6 +154,11 @@ class LocalDiskStorage:
         extension = validated_extension(filename, self._allowed)
         await asyncio.to_thread(self._root.mkdir, parents=True, exist_ok=True)
         destination = self._path_for(material_id, extension)
+        # Written under a temporary name and renamed once complete. A kill or
+        # host crash mid-stream skips the cleanup below, and a partial file at
+        # the final key would later be parsed as the lecturer's document. The
+        # partial name still matches delete()'s pattern, so it is not stranded.
+        partial = destination.with_name(destination.name + ".part")
 
         # Every disk touch goes through a worker thread. A 50 MB upload written
         # inline holds the event loop for the whole write, which stalls the
@@ -151,7 +166,7 @@ class LocalDiskStorage:
         # be the thing that does not block the API.
         written = 0
         try:
-            handle = await asyncio.to_thread(destination.open, "wb")
+            handle = await asyncio.to_thread(partial.open, "wb")
             try:
                 async for block in source:
                     written += len(block)
@@ -165,15 +180,14 @@ class LocalDiskStorage:
                     await asyncio.to_thread(handle.write, block)
             finally:
                 await asyncio.to_thread(handle.close)
+            if written == 0:
+                raise ValidationError("File is empty", {"filename": display_name(filename)})
+            await asyncio.to_thread(os.replace, partial, destination)
         except BaseException:
             # A partial file is worse than none: the parser would read it and
             # report corrupt content rather than a failed upload.
-            await asyncio.to_thread(destination.unlink, missing_ok=True)
+            await asyncio.to_thread(partial.unlink, missing_ok=True)
             raise
-
-        if written == 0:
-            await asyncio.to_thread(destination.unlink, missing_ok=True)
-            raise ValidationError("File is empty", {"filename": display_name(filename)})
 
         log.info("stored material %s as %s (%d bytes)", material_id, destination.name, written)
 
@@ -200,7 +214,3 @@ class LocalDiskStorage:
         matches = await asyncio.to_thread(lambda: list(self._root.glob(f"{material_id}.*")))
         for path in matches:
             await asyncio.to_thread(path.unlink, missing_ok=True)
-
-    def purge_all(self) -> None:
-        """Drop the whole storage root. Tests and local resets only."""
-        shutil.rmtree(self._root, ignore_errors=True)
