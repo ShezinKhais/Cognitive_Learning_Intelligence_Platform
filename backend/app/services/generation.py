@@ -201,21 +201,32 @@ def parse_drafts(raw: str) -> list[DraftQuestion]:
         raw_options = item.get("options") or []
         if not isinstance(raw_options, list):
             raw_options = []
-        # A non-string option kept as a bare string would look valid: [1,2,3,4]
-        # becomes ['1','2','3','4'] and passes every check.
+
+        # A non-string option kept as a bare string would look valid:
+        # [1, 2, 3, 4] becomes ["1", "2", "3", "4"] and passes every check.
         options = tuple(
-            o if isinstance(o, str) else json.dumps({"_invalid_option": o}) for o in raw_options
+            o if isinstance(o, str) else json.dumps({"_invalid_option": o})
+            for o in raw_options
         )
 
-        try:
-            correct = int(item.get("correct_option", -1))
-        except (TypeError, ValueError):
+        raw_correct = item.get("correct_option", -1)
+        if isinstance(raw_correct, bool):
+            correct = -1
+        elif isinstance(raw_correct, int):
+            correct = raw_correct
+        elif isinstance(raw_correct, str) and raw_correct.strip().lstrip("-").isdigit():
+            correct = int(raw_correct)
+        else:
             correct = -1
 
-        try:
-            slide = item.get("source_slide")
-            slide = int(slide) if slide is not None else None
-        except (TypeError, ValueError):
+        raw_slide = item.get("source_slide")
+        if isinstance(raw_slide, bool):
+            slide = None
+        elif isinstance(raw_slide, int):
+            slide = raw_slide
+        elif isinstance(raw_slide, str) and raw_slide.strip().lstrip("-").isdigit():
+            slide = int(raw_slide)
+        else:
             slide = None
 
         try:
@@ -223,16 +234,22 @@ def parse_drafts(raw: str) -> list[DraftQuestion]:
         except ValueError:
             difficulty = Difficulty.MEDIUM
 
+        raw_prompt = item.get("prompt")
+        prompt = raw_prompt if isinstance(raw_prompt, str) else ""
+
+        raw_excerpt = item.get("source_excerpt")
+        source_excerpt = raw_excerpt if isinstance(raw_excerpt, str) else None
+
         drafts.append(
             DraftQuestion(
                 type=QuestionType.MCQ,
                 difficulty=difficulty,
-                prompt=str(item.get("prompt") or ""),
+                prompt=prompt,
                 options=options,
                 correct_option=correct,
                 topic=item.get("topic"),
                 source_slide=slide,
-                source_excerpt=item.get("source_excerpt"),
+                source_excerpt=source_excerpt,
             )
         )
     return drafts

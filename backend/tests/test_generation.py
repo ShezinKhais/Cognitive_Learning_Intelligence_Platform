@@ -216,7 +216,56 @@ def test_non_numeric_fields_do_not_abort_the_batch():
     assert drafts[0].correct_option == -1
     assert drafts[0].source_slide is None
     assert drafts[0].options == ()
+    
+def test_boolean_correct_option_is_rejected():
+    raw = (
+        '[{"prompt": "Q?", "options": ["a","b","c","d"], "correct_option": true,'
+        ' "topic": "T", "source_slide": 3, "source_excerpt": "x"}]'
+    )
 
+    parsed = parse_drafts(raw)
+
+    assert parsed[0].correct_option == -1
+
+
+def test_boolean_source_slide_is_rejected():
+    raw = (
+        '[{"prompt": "Q?", "options": ["a","b","c","d"], "correct_option": 0,'
+        ' "topic": "T", "source_slide": true, "source_excerpt": "x"}]'
+    )
+
+    parsed = parse_drafts(raw)
+
+    assert parsed[0].source_slide is None
+
+
+def test_non_string_prompt_becomes_rejectable_draft():
+    raw = (
+        '[{"prompt": {"text": "Q?"}, "options": ["a","b","c","d"],'
+        ' "correct_option": 0, "topic": "T", "source_slide": 3,'
+        ' "source_excerpt": "x"}]'
+    )
+
+    parsed = parse_drafts(raw)
+
+    assert parsed[0].prompt == ""
+    assert any("prompt is empty" in r for r in rejection_reasons(parsed[0], chunks()))
+
+
+def test_non_string_source_excerpt_becomes_rejectable_draft():
+    raw = (
+        '[{"prompt": "Q?", "options": ["a","b","c","d"],'
+        ' "correct_option": 0, "topic": "T", "source_slide": 3,'
+        ' "source_excerpt": {"text": "x"}}]'
+    )
+
+    parsed = parse_drafts(raw)
+
+    assert parsed[0].source_excerpt is None
+    assert any(
+        "no source excerpt" in r
+        for r in rejection_reasons(parsed[0], chunks())
+    )
 
 async def test_generator_separates_accepted_from_rejected():
     good = (
