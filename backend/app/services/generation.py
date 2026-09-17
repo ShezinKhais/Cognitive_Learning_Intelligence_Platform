@@ -166,14 +166,11 @@ def build_prompt(chunks: list[RetrievedChunk], count: int) -> str:
     else:
         last_index = len(chunks) - 1
         indexes = [
-            round(i * last_index / (MAX_PROMPT_CHUNKS - 1))
-            for i in range(MAX_PROMPT_CHUNKS)
+            round(i * last_index / (MAX_PROMPT_CHUNKS - 1)) for i in range(MAX_PROMPT_CHUNKS)
         ]
         used = [chunks[index] for index in indexes]
 
-    excerpts = "\n\n".join(
-        f"[page {chunk.source_page}]\n{chunk.chunk_text}" for chunk in used
-    )
+    excerpts = "\n\n".join(f"[page {chunk.source_page}]\n{chunk.chunk_text}" for chunk in used)
     return PROMPT_TEMPLATE.format(excerpts=excerpts, count=count)
 
 
@@ -216,8 +213,7 @@ def parse_drafts(raw: str) -> list[DraftQuestion]:
         # A non-string option kept as a bare string would look valid:
         # [1, 2, 3, 4] becomes ["1", "2", "3", "4"] and passes every check.
         options = tuple(
-            o if isinstance(o, str) else json.dumps({"_invalid_option": o})
-            for o in raw_options
+            o if isinstance(o, str) else json.dumps({"_invalid_option": o}) for o in raw_options
         )
 
         raw_correct = item.get("correct_option", -1)

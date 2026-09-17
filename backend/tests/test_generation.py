@@ -126,6 +126,8 @@ def test_prompt_includes_page_numbers_for_citation():
 
     assert "[page 3]" in text
     assert "3 multiple-choice questions" in text
+
+
 def test_prompt_samples_chunks_across_the_whole_material():
     many_chunks = [
         RetrievedChunk(
@@ -143,6 +145,7 @@ def test_prompt_samples_chunks_across_the_whole_material():
     assert "[page 1]" in text
     assert "[page 60]" in text
     assert text.count("[page ") == MAX_PROMPT_CHUNKS
+
 
 def test_page_number_returned_as_a_string_is_still_a_number():
     """Qwen returns source_slide as "3" rather than 3."""
@@ -234,6 +237,7 @@ def test_non_numeric_fields_do_not_abort_the_batch():
     assert drafts[0].source_slide is None
     assert drafts[0].options == ()
 
+
 def test_boolean_correct_option_is_rejected():
     raw = (
         '[{"prompt": "Q?", "options": ["a","b","c","d"], "correct_option": true,'
@@ -279,10 +283,8 @@ def test_non_string_source_excerpt_becomes_rejectable_draft():
     parsed = parse_drafts(raw)
 
     assert parsed[0].source_excerpt is None
-    assert any(
-        "no source excerpt" in r
-        for r in rejection_reasons(parsed[0], chunks())
-    )
+    assert any("no source excerpt" in r for r in rejection_reasons(parsed[0], chunks()))
+
 
 async def test_generator_separates_accepted_from_rejected():
     good = (
