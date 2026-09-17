@@ -79,7 +79,15 @@ async def get_material(material_id: UUID, principal: CurrentUser, db: DbSession)
 async def list_questions(
     material_id: UUID, principal: CurrentUser, db: DbSession, page: Paginated
 ) -> Page[QuestionOut]:
-    raise not_implemented("AI 1", "Phase 2")
+    repo = QuestionRepository(db)
+    questions = await repo.list_by_material(material_id, limit=page.limit, offset=page.offset)
+    total = await repo.count_by_material(material_id)
+    return Page(
+        items=[_to_question_out(q) for q in questions],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
 
 
 @review.patch("/{material_id}/questions/{question_id}", response_model=QuestionOut)
