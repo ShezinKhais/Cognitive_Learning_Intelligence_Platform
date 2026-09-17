@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, UploadFile, status
+from fastapi import APIRouter, Depends, UploadFile, status
 
-from app.api.deps import CurrentUser, DbSession, Paginated
+from app.api.deps import CurrentUser, DbSession, Paginated, require_roles
 from app.core.errors import NotFoundError, not_implemented
 from app.repositories.material_repository import MaterialRepository
 from app.schemas.common import Page
@@ -22,6 +22,7 @@ from app.schemas.content import (
     QuestionOut,
     QuestionReviewRequest,
 )
+from app.schemas.identity import Role
 
 router = APIRouter(prefix="/materials", tags=["content"])
 
@@ -36,16 +37,24 @@ async def upload_material(file: UploadFile, principal: CurrentUser, db: DbSessio
     raise not_implemented("AI 1", "Phase 2")
 
 
-@router.get("", response_model=Page[MaterialOut])
+@router.get(
+    "",
+    response_model=Page[MaterialOut],
+    dependencies=[
+        Depends(require_roles(Role.LECTURER, Role.ADMIN)),
+    ],
+)
 async def list_materials(
     principal: CurrentUser,
     db: DbSession,
     page: Paginated,
 ) -> Page[MaterialOut]:
+    uploaded_by_user_id = None if principal.is_(Role.ADMIN) else principal.user_id
     repository = MaterialRepository(db)
     materials, total = await repository.list_page(
         limit=page.limit,
         offset=page.offset,
+        uploaded_by_user_id=uploaded_by_user_id,
     )
 
     return Page[MaterialOut](
@@ -58,14 +67,24 @@ async def list_materials(
     )
 
 
-@router.get("/{material_id}", response_model=MaterialOut)
+@router.get(
+    "/{material_id}",
+    response_model=MaterialOut,
+    dependencies=[
+        Depends(require_roles(Role.LECTURER, Role.ADMIN)),
+    ],
+)
 async def get_material(
     material_id: UUID,
     principal: CurrentUser,
     db: DbSession,
 ) -> MaterialOut:
+    uploaded_by_user_id = None if principal.is_(Role.ADMIN) else principal.user_id
     repository = MaterialRepository(db)
-    material = await repository.get_by_id(material_id)
+    material = await repository.get_by_id(
+        material_id,
+        uploaded_by_user_id=uploaded_by_user_id,
+    )
 
     if material is None:
         raise NotFoundError(

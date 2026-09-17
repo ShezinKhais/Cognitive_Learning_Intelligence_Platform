@@ -23,7 +23,6 @@ from app.models.comprehension_result import ComprehensionResult  # noqa: F401
 from app.models.consent import Consent  # noqa: F401
 from app.models.course import Course  # noqa: F401
 from app.models.dynamic_prompt import DynamicPrompt  # noqa: F401
-from app.models.embedding import Embedding  # noqa: F401
 from app.models.engagement_record import EngagementRecord  # noqa: F401
 from app.models.extraction_element import ExtractionElement  # noqa: F401
 from app.models.material import Material  # noqa: F401

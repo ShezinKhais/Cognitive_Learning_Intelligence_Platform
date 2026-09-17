@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -25,6 +25,15 @@ class MaterialProcessingStatus(Base):
             "percent >= 0 AND percent <= 100",
             name="ck_material_processing_status_percent",
         ),
+        CheckConstraint(
+            "sequence >= 1",
+            name="ck_material_processing_status_sequence_positive",
+        ),
+        UniqueConstraint(
+            "source_material_id",
+            "sequence",
+            name="uq_material_processing_status_material_sequence",
+        ),
     )
 
     status_id: Mapped[uuid.UUID] = mapped_column(
@@ -38,6 +47,7 @@ class MaterialProcessingStatus(Base):
         nullable=False,
         index=True,
     )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     stage: Mapped[str] = mapped_column(String(20), nullable=False)
     percent: Mapped[int] = mapped_column(Integer, nullable=False)
     message: Mapped[str | None] = mapped_column(String(500), nullable=True)

@@ -6,6 +6,7 @@ from app.api.deps import Principal, get_principal
 from app.auth.store import (
     ADMIN_ID,
     LECTURER_ID,
+    STUDENT_ID,
     get_consent_repository,
     get_login_security_store,
 )
@@ -54,6 +55,33 @@ def as_lecturer(app: FastAPI):
 
     get_consent_repository(settings).record(
         LECTURER_ID,
+        ConsentType.TERMS,
+        True,
+    )
+
+    app.dependency_overrides[get_principal] = _principal
+
+    with TestClient(app) as test_client:
+        yield test_client
+
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def as_student(app: FastAPI):
+    """Authenticated student with required terms consent."""
+
+    settings = get_settings()
+
+    def _principal() -> Principal:
+        return Principal(
+            user_id=STUDENT_ID,
+            role=Role.STUDENT,
+            email="student@clip.example.com",
+        )
+
+    get_consent_repository(settings).record(
+        STUDENT_ID,
         ConsentType.TERMS,
         True,
     )

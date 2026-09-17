@@ -7,6 +7,8 @@ This is the pattern for anything touching the schema: take the `db` fixture,
 and let it skip rather than fail when the database is absent.
 """
 
+import uuid
+
 import pytest
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -16,7 +18,6 @@ from app.core.config import get_settings
 from app.models.ai_model_run import AIModelRun
 from app.models.consent import Consent
 from app.models.course import Course
-from app.models.embedding import Embedding
 from app.models.extraction_element import ExtractionElement
 from app.models.material import Material
 from app.models.material_processing_status import MaterialProcessingStatus
@@ -128,19 +129,6 @@ def test_ai_model_runs_are_traceable_by_material() -> None:
     assert "ck_ai_model_run_status" in constraint_names
 
 
-def test_embeddings_are_traceable_by_chunk_and_model_run() -> None:
-    columns = Embedding.__table__.c
-    constraint_names = {constraint.name for constraint in Embedding.__table__.constraints}
-
-    assert {key.target_fullname for key in columns.chunk_id.foreign_keys} == {"rag_chunk.chunk_id"}
-    assert {key.target_fullname for key in columns.model_run_id.foreign_keys} == {
-        "ai_model_run.run_id"
-    }
-    assert columns.vector.type.dim == get_settings().embedding_dim
-    assert columns.vector.nullable is False
-    assert "uq_embedding_chunk_model" in constraint_names
-
-
 @pytest.fixture
 async def db():
     """A session on an engine built for this test only.
@@ -205,6 +193,7 @@ async def test_phase_two_pipeline_is_traceable_by_material(db: AsyncSession) -> 
     )
     progress = MaterialProcessingStatus(
         source_material_id=material.id,
+        sequence=1,
         stage="embedding",
         percent=75,
         message="Creating vectors",
@@ -222,17 +211,10 @@ async def test_phase_two_pipeline_is_traceable_by_material(db: AsyncSession) -> 
         chunk_index=0,
         source_page=1,
         chunk_text="Stored source content",
+        embedding_vector=[0.0] * get_settings().embedding_dim,
+        embedding_model=model_run.model_name,
     )
     db.add_all([extraction, progress, model_run, chunk])
-    await db.flush()
-
-    embedding = Embedding(
-        chunk_id=chunk.chunk_id,
-        model_run_id=model_run.run_id,
-        vector=[0.0] * get_settings().embedding_dim,
-        model_name=model_run.model_name,
-    )
-    db.add(embedding)
     await db.flush()
 
     stored_progress = (
@@ -247,34 +229,58 @@ async def test_phase_two_pipeline_is_traceable_by_material(db: AsyncSession) -> 
             select(ExtractionElement).where(ExtractionElement.source_material_id == material.id)
         )
     ).scalar_one()
-    stored_embedding = (
-        await db.execute(
-            select(Embedding)
-            .join(RagChunk, Embedding.chunk_id == RagChunk.chunk_id)
-            .where(RagChunk.source_material_id == material.id)
-        )
+
+    stored_chunk = (
+        await db.execute(select(RagChunk).where(RagChunk.source_material_id == material.id))
+    ).scalar_one()
+
+    stored_model_run = (
+        await db.execute(select(AIModelRun).where(AIModelRun.source_material_id == material.id))
     ).scalar_one()
 
     assert stored_progress.stage == "embedding"
     assert stored_extraction.content == "Stored source content"
-    assert stored_embedding.model_run_id == model_run.run_id
+    assert stored_chunk.embedding_model == model_run.model_name
+    assert stored_model_run.run_id == model_run.run_id
 
 
 async def test_material_repository_persists_queries_and_tracks_progress(
     db: AsyncSession,
 ) -> None:
+    lecturer = User(
+        name="Repository Lecturer",
+        role="lecturer",
+        email=f"repository-{uuid.uuid4()}@example.com",
+    )
+    db.add(lecturer)
+    await db.flush()
     repository = MaterialRepository(db)
 
     material = await repository.create(
         filename="week-4.pdf",
         content_type="application/pdf",
         size_bytes=4096,
+        uploaded_by_user_id=lecturer.user_id,
     )
 
-    stored = await repository.get_by_id(material.id)
-    materials, total = await repository.list_page(limit=200, offset=0)
+    stored = await repository.get_by_id(
+        material.id,
+        uploaded_by_user_id=lecturer.user_id,
+    )
+    materials, total = await repository.list_page(
+        limit=200,
+        offset=0,
+        uploaded_by_user_id=lecturer.user_id,
+    )
 
     assert stored is material
+    assert (
+        await repository.get_by_id(
+            material.id,
+            uploaded_by_user_id=uuid.uuid4(),
+        )
+        is None
+    )
     assert material.id in {item.id for item in materials}
     assert total >= 1
     assert material.status == "pending"
@@ -288,6 +294,7 @@ async def test_material_repository_persists_queries_and_tracks_progress(
     history = await repository.list_status_history(material.id)
 
     assert recorded is not None
+    assert recorded.sequence == 1
     assert recorded.source_material_id == material.id
     assert material.status == "processing"
     assert [(item.stage, item.percent) for item in history] == [("extracting", 30)]

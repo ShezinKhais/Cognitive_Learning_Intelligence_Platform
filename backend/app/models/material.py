@@ -19,8 +19,14 @@ class Material(Base):
         nullable=True,
         index=True,
     )
+    uploaded_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("user.user_id"),
+        nullable=True,
+        index=True,
+    )
     filename: Mapped[str] = mapped_column(String(255))
-    content_type: Mapped[str] = mapped_column(String(50))
+    content_type: Mapped[str] = mapped_column(String(100))
     size_bytes: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(20), default="pending")
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -25,24 +25,39 @@ class MaterialRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def get_by_id(self, material_id: uuid.UUID) -> Material | None:
-        return await self.session.get(Material, material_id)
+    async def get_by_id(
+        self,
+        material_id: uuid.UUID,
+        *,
+        uploaded_by_user_id: uuid.UUID | None = None,
+    ) -> Material | None:
+        query = select(Material).where(Material.id == material_id)
+
+        if uploaded_by_user_id is not None:
+            query = query.where(Material.uploaded_by_user_id == uploaded_by_user_id)
+
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
 
     async def list_page(
         self,
         *,
         limit: int,
         offset: int,
+        uploaded_by_user_id: uuid.UUID | None = None,
     ) -> tuple[list[Material], int]:
-        total = (
-            await self.session.execute(select(func.count()).select_from(Material))
-        ).scalar_one()
+        query = select(Material)
+        count_query = select(func.count()).select_from(Material)
+
+        if uploaded_by_user_id is not None:
+            owner_filter = Material.uploaded_by_user_id == uploaded_by_user_id
+            query = query.where(owner_filter)
+            count_query = count_query.where(owner_filter)
+
+        total = (await self.session.execute(count_query)).scalar_one()
 
         result = await self.session.execute(
-            select(Material)
-            .order_by(Material.uploaded_at.desc(), Material.id)
-            .limit(limit)
-            .offset(offset)
+            query.order_by(Material.uploaded_at.desc(), Material.id).limit(limit).offset(offset)
         )
 
         return list(result.scalars().all()), total
@@ -53,10 +68,12 @@ class MaterialRepository:
         filename: str,
         content_type: str,
         size_bytes: int,
+        uploaded_by_user_id: uuid.UUID,
         course_id: uuid.UUID | None = None,
     ) -> Material:
         material = Material(
             course_id=course_id,
+            uploaded_by_user_id=uploaded_by_user_id,
             filename=filename,
             content_type=content_type,
             size_bytes=size_bytes,
@@ -75,13 +92,28 @@ class MaterialRepository:
         percent: int,
         message: str | None = None,
     ) -> MaterialProcessingStatus | None:
-        material = await self.get_by_id(material_id)
+        material = (
+            await self.session.execute(
+                select(Material).where(Material.id == material_id).with_for_update()
+            )
+        ).scalar_one_or_none()
 
         if material is None:
             return None
-
+        next_sequence = (
+            await self.session.execute(
+                select(
+                    func.coalesce(
+                        func.max(MaterialProcessingStatus.sequence),
+                        0,
+                    )
+                    + 1
+                ).where(MaterialProcessingStatus.source_material_id == material_id)
+            )
+        ).scalar_one()
         progress = MaterialProcessingStatus(
             source_material_id=material_id,
+            sequence=next_sequence,
             stage=stage.value,
             percent=percent,
             message=message,
@@ -105,9 +137,6 @@ class MaterialRepository:
         result = await self.session.execute(
             select(MaterialProcessingStatus)
             .where(MaterialProcessingStatus.source_material_id == material_id)
-            .order_by(
-                MaterialProcessingStatus.recorded_at,
-                MaterialProcessingStatus.status_id,
-            )
+            .order_by(MaterialProcessingStatus.sequence)
         )
         return list(result.scalars().all())

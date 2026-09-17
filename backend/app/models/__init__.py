@@ -7,7 +7,6 @@ from app.models.comprehension_result import ComprehensionResult
 from app.models.consent import Consent
 from app.models.course import Course
 from app.models.dynamic_prompt import DynamicPrompt
-from app.models.embedding import Embedding
 from app.models.engagement_record import EngagementRecord
 from app.models.extraction_element import ExtractionElement
 from app.models.material import Material
@@ -35,7 +34,6 @@ __all__ = [
     "StudentResponse",
     "User",
     "AIModelRun",
-    "Embedding",
     "ExtractionElement",
     "MaterialProcessingStatus",
 ]
