@@ -78,9 +78,9 @@ async def upload_material(file: UploadFile, principal: CurrentUser) -> MaterialO
     """
     stored = await accept_upload(file, principal.user_id)
 
-    # Built from what the request knows. Persisting the row is BBIS's #36, and
-    # until it lands the counts stay null exactly as they would while a real
-    # row is still processing.
+    # Built from what the request knows. Until the Phase 2 material store is
+    # connected nothing is persisted, and the counts stay null exactly as they
+    # would while a real row is still processing.
     return MaterialOut(
         id=stored.material_id,
         filename=stored.filename,

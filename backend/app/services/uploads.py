@@ -96,11 +96,11 @@ def get_background_processor() -> BackgroundProcessor:
 def get_material_pipeline() -> MaterialPipeline:
     """The pipeline with its collaborators as they stand.
 
-    The embedder and generator are AI 1's (#37). The store seam is still unset
-    until BBIS's #36 lands, so chunks, vectors and drafts are produced but not
-    persisted yet. When the store is wired in, note that it cannot hold the
-    request's database session: the request has returned long before the job
-    runs, so the store has to open a session of its own.
+    The embedder and generator are AI 1's. The store seam is unset until the
+    Phase 2 material store is connected, so chunks, vectors and drafts are
+    produced but not persisted yet. When the store is wired in, note that it
+    cannot hold the request's database session: the request has returned long
+    before the job runs, so the store has to open a session of its own.
     """
     settings = get_settings()
     client = AsyncOpenAI(

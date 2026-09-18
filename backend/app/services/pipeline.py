@@ -20,9 +20,9 @@ flight, lives on the job, so a shutdown that interrupts it is handed back the
 same object that was running rather than having to look it up.
 
 Persistence is the one seam in app.services.material_seams that may still be
-missing, until BBIS's #36 supplies it. Without it nothing is written, the
-drafts are not offered for review, and the raw upload is kept as the only
-durable copy.
+missing, until the Phase 2 material store is connected. Without it nothing is
+written, the drafts are not offered for review, and the raw upload is kept as
+the only durable copy.
 """
 
 from __future__ import annotations
@@ -349,7 +349,7 @@ class MaterialJob:
         written, so a store that fails leaves the file for a retry.
 
         With no store wired, nothing was persisted and the upload is the only
-        durable copy, so it is kept until #36 can record what it produced.
+        durable copy, so it is kept until a store can record what it produced.
 
         A file that will not delete does not undo a finished material, so the
         error is logged rather than raised.

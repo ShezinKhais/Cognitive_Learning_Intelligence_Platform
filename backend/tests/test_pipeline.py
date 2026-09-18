@@ -262,7 +262,7 @@ async def test_a_miscounting_embedder_is_refused_rather_than_zipped(tmp_path: Pa
 
 
 async def test_missing_persistence_is_a_note_for_the_log(tmp_path: Path) -> None:
-    """Until #36 lands nothing is stored, and whoever reads the log is told so."""
+    """Without a store nothing is saved, and whoever reads the log is told so."""
     hub = SessionHub()
     owner = uuid4()
     socket = await watching(hub, owner)

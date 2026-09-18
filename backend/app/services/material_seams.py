@@ -3,8 +3,8 @@
 Owner: General CS, Phase 2.
 
 The pipeline in app.services.pipeline orchestrates; the work it orchestrates
-belongs to others. Embedding and question generation are AI 1's (issue #37)
-and persistence is BBIS's (issue #36). Each side codes against the Protocols
+belongs to others. Embedding and question generation are AI 1's and
+persistence is BBIS's, all in Phase 2. Each side codes against the Protocols
 and value types here, so neither has to import the other's implementation.
 """
 
@@ -115,7 +115,7 @@ class CompletedMaterial:
 
 
 class ChunkEmbedder(Protocol):
-    """Owner: AI 1, issue #37."""
+    """Owner: AI 1, Phase 2."""
 
     async def embed(self, chunks: Sequence[ContentChunk]) -> EmbeddingBatch:
         """One vector per chunk, in the order the chunks were given."""
@@ -123,7 +123,7 @@ class ChunkEmbedder(Protocol):
 
 
 class QuestionGenerator(Protocol):
-    """Owner: AI 1, issue #37.
+    """Owner: AI 1, Phase 2.
 
     Returns the drafts rather than writing them, so a material's chunks and
     questions reach the store together or not at all.
@@ -135,7 +135,7 @@ class QuestionGenerator(Protocol):
 
 
 class MaterialStore(Protocol):
-    """Owner: BBIS, issue #36.
+    """Owner: BBIS, Phase 2.
 
     One call per outcome. Recording chunks, questions and the done status as
     separate calls left a material half-written whenever a later call failed:
@@ -144,7 +144,7 @@ class MaterialStore(Protocol):
 
     The source_material row these write against has to exist first, and
     nothing creates it yet: the upload route knows the filename and size, and
-    inserting the row there is part of wiring #36 in.
+    inserting the row there is part of connecting the store.
     """
 
     async def record_completed(self, material: CompletedMaterial) -> None:
