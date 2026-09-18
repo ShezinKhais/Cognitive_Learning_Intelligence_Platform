@@ -3,6 +3,7 @@ import type { CurrentUser, Role } from './api'
 export function defaultPathForRole(role: Role): string {
   if (role === 'student') return '/student'
   if (role === 'admin') return '/admin'
+  if (role === 'lecturer') return '/lecturer/materials'
   return '/access-denied'
 }
 
@@ -15,6 +16,10 @@ export function intendedPathForRole(
   }
 
   if (role === 'admin' && requestedPath?.startsWith('/admin')) {
+    return requestedPath
+  }
+
+  if (role === 'lecturer' && requestedPath?.startsWith('/lecturer')) {
     return requestedPath
   }
 
