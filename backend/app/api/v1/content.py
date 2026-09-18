@@ -8,16 +8,19 @@ Contract frozen in Phase 1. Handler bodies are owned by:
 
 from __future__ import annotations
 
-from uuid import UUID
+from datetime import UTC, datetime
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, UploadFile, status
 
 from app.api.deps import CurrentUser, DbSession, Paginated, require_roles
-from app.core.errors import ConflictError, ValidationError, not_implemented
+from app.core.errors import ConflictError, NotFoundError, ValidationError
+from app.repositories.material_repository import MaterialRepository
 from app.repositories.question_repository import QuestionRepository
 from app.schemas.common import Page
 from app.schemas.content import (
     MaterialOut,
+    MaterialStatus,
     QuestionBulkReviewRequest,
     QuestionBulkReviewResult,
     QuestionOut,
@@ -25,8 +28,31 @@ from app.schemas.content import (
 )
 from app.schemas.identity import Role
 from app.services.question_ownership import filter_owned_questions, get_owned_question
+from app.services.uploads import (
+    get_background_processor,
+    get_material_pipeline,
+    get_material_storage,
+    stream_upload,
+)
 
-router = APIRouter(prefix="/materials", tags=["content"])
+router = APIRouter(
+    prefix="/materials",
+    tags=["content"],
+    dependencies=[Depends(require_roles(Role.LECTURER, Role.ADMIN))],
+)
+
+DEFAULT_CONTENT_TYPE = "application/octet-stream"
+
+# The response reports the type of what was stored, which is decided by the
+# validated extension. The client's Content-Type header is whatever the browser
+# or script chose to send, so echoing it let a .txt upload come back labelled
+# text/html.
+CONTENT_TYPES = {
+    "pdf": "application/pdf",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "txt": "text/plain",
+}
 
 # The review actions are restricted to lecturer/admin at the router level,
 # same pattern as /admin in identity.py. Ownership (app.services.question_
@@ -55,25 +81,103 @@ def _to_question_out(question) -> QuestionOut:  # noqa: ANN001 - app.models.Ques
 
 
 @router.post("", response_model=MaterialOut, status_code=status.HTTP_202_ACCEPTED)
-async def upload_material(file: UploadFile, principal: CurrentUser, db: DbSession) -> MaterialOut:
+async def upload_material(file: UploadFile, principal: CurrentUser) -> MaterialOut:
     """Accepts PDF, PPTX, DOCX or TXT.
 
     Returns 202 immediately: processing runs in the background and reports
     progress over the WebSocket as `material.progress` events.
     """
-    raise not_implemented("AI 1", "Phase 2")
+    # This docstring is the public description in openapi.json, so the
+    # implementation note stays out here: the request ends at the return
+    # below, and nothing downstream may hold anything scoped to it. That is
+    # why the file is written to storage rather than handed on as an open
+    # handle, and why this handler takes no database session.
+    material_id = uuid4()
+    storage = get_material_storage()
+    pipeline = get_material_pipeline()
+
+    # Writing the file is the only part the lecturer waits for. An unsupported
+    # extension or an oversized upload is refused here, while there is still a
+    # response to refuse it with.
+    stored = await storage.save(material_id, file.filename or "", stream_upload(file))
+
+    async def work() -> None:
+        await pipeline.run(stored, principal.user_id)
+
+    async def interrupted() -> None:
+        await pipeline.abandon(material_id, principal.user_id)
+
+    get_background_processor().submit(material_id, work, on_cancel=interrupted)
+
+    # Built from what the request knows. Persisting the row is BBIS's #36, and
+    # until it lands the counts stay null exactly as they would while a real
+    # row is still processing.
+    return MaterialOut(
+        id=material_id,
+        filename=stored.filename,
+        content_type=CONTENT_TYPES.get(stored.extension, DEFAULT_CONTENT_TYPE),
+        size_bytes=stored.size_bytes,
+        status=MaterialStatus.PENDING,
+        uploaded_at=datetime.now(UTC),
+    )
 
 
-@router.get("", response_model=Page[MaterialOut])
+@router.get(
+    "",
+    response_model=Page[MaterialOut],
+    dependencies=[
+        Depends(require_roles(Role.LECTURER, Role.ADMIN)),
+    ],
+)
 async def list_materials(
-    principal: CurrentUser, db: DbSession, page: Paginated
+    principal: CurrentUser,
+    db: DbSession,
+    page: Paginated,
 ) -> Page[MaterialOut]:
-    raise not_implemented("BBIS", "Phase 2")
+    uploaded_by_user_id = None if principal.is_(Role.ADMIN) else principal.user_id
+    repository = MaterialRepository(db)
+    materials, total = await repository.list_page(
+        limit=page.limit,
+        offset=page.offset,
+        uploaded_by_user_id=uploaded_by_user_id,
+    )
+
+    return Page[MaterialOut](
+        items=[
+            MaterialOut.model_validate(material, from_attributes=True) for material in materials
+        ],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
 
 
-@router.get("/{material_id}", response_model=MaterialOut)
-async def get_material(material_id: UUID, principal: CurrentUser, db: DbSession) -> MaterialOut:
-    raise not_implemented("BBIS", "Phase 2")
+@router.get(
+    "/{material_id}",
+    response_model=MaterialOut,
+    dependencies=[
+        Depends(require_roles(Role.LECTURER, Role.ADMIN)),
+    ],
+)
+async def get_material(
+    material_id: UUID,
+    principal: CurrentUser,
+    db: DbSession,
+) -> MaterialOut:
+    uploaded_by_user_id = None if principal.is_(Role.ADMIN) else principal.user_id
+    repository = MaterialRepository(db)
+    material = await repository.get_by_id(
+        material_id,
+        uploaded_by_user_id=uploaded_by_user_id,
+    )
+
+    if material is None:
+        raise NotFoundError(
+            "Material was not found.",
+            {"material_id": str(material_id)},
+        )
+
+    return MaterialOut.model_validate(material, from_attributes=True)
 
 
 @review.get("/{material_id}/questions", response_model=Page[QuestionOut])

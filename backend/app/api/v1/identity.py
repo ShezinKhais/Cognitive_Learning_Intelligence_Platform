@@ -15,6 +15,7 @@ from app.api.deps import (
     AppSettings,
     CurrentUser,
     DbSession,
+    require_consents,
     require_roles,
 )
 from app.auth.login_security import PersistentLoginSecurityStore
@@ -70,6 +71,7 @@ admin = APIRouter(
     tags=["admin"],
     dependencies=[
         Depends(require_roles(Role.ADMIN)),
+        Depends(require_consents(ConsentType.TERMS)),
     ],
 )
 
@@ -308,7 +310,7 @@ async def record_consent(
 
     if principal.role != Role.STUDENT and payload.consent_type != ConsentType.TERMS:
         raise PermissionError_(
-            ("Student monitoring permissions do not apply to this role."),
+            "Student monitoring permissions do not apply to this role.",
             {"invalid_consent_types": [payload.consent_type.value]},
         )
 
@@ -379,7 +381,7 @@ async def import_timetable(
         rows_read=rows_read,
         sessions_created=0,
         conflicts=conflicts,
-        unmatched_lecturers=(unmatched_lecturers),
+        unmatched_lecturers=unmatched_lecturers,
         unmatched_students=[],
     )
 
@@ -415,7 +417,7 @@ async def import_roster(
         sessions_created=0,
         conflicts=[],
         unmatched_lecturers=[],
-        unmatched_students=(unmatched_students),
+        unmatched_students=unmatched_students,
     )
 
 

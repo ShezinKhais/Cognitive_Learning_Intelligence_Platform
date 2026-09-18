@@ -7,6 +7,7 @@ import {
 } from 'react'
 
 import { phaseOneStudentApi } from './studentApi'
+import { hasRequiredConsent } from '../../authRouting'
 import type {
   StudentSession,
   StudentUser,
@@ -124,6 +125,16 @@ export function StudentAppProvider({
         }
 
         if (currentUser.role !== 'student') {
+          dispatch({
+            type: 'loaded',
+            currentUser,
+            sessions: [],
+          })
+
+          return
+        }
+
+        if (!hasRequiredConsent(currentUser)) {
           dispatch({
             type: 'loaded',
             currentUser,

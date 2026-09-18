@@ -25,6 +25,7 @@ pages, which is a later phase.
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -354,6 +355,69 @@ def clean_text(text: str, is_heading: bool = False) -> str:
     return text
 
 
+def _split_oversized(text: str, size: int, overlap: int = 0) -> list[str]:
+    """A block too big for one chunk: sentences, then words, then characters.
+
+    Each level is a fallback for the one above. Characters are the last resort
+    and only reached by a single token longer than a whole chunk - a URL or a
+    base64 blob, where there is no boundary to respect anyway.
+    """
+    if len(text) <= size:
+        return [text]
+
+    pieces: list[str] = []
+    for sentence in re.split(r"(?<=[.!?])\s+", text):
+        if not sentence.strip():
+            continue
+        if len(sentence) <= size:
+            pieces.append(sentence)
+            continue
+
+        current = ""
+        for word in sentence.split():
+            if len(word) > size:
+                if current:
+                    pieces.append(current)
+                    current = ""
+                min_step = max(1, size // 10)
+                char_overlap = min(overlap, max(0, size - min_step))
+                step = max(1, size - char_overlap)
+                for start in range(0, len(word), step):
+                    pieces.append(word[start : start + size])
+                    if start + size >= len(word):
+                        break
+                continue
+            candidate = f"{current} {word}".strip()
+            if len(candidate) > size:
+                pieces.append(current)
+                current = word
+            else:
+                current = candidate
+        if current:
+            pieces.append(current)
+
+    return pieces or [text[:size]]
+
+
+def _tail(text: str, overlap: int) -> str:
+    """The last whole words of a chunk, up to `overlap` characters.
+
+    Text with no usable word boundary - one long token - has no words that
+    fit, so character overlap is the only option left.
+    """
+    if overlap <= 0:
+        return ""
+
+    tail = ""
+    for word in reversed(text.split()):
+        candidate = f"{word} {tail}".strip()
+        if len(candidate) > overlap:
+            break
+        tail = candidate
+
+    return tail or text[-overlap:]
+
+
 def chunk_elements(
     elements: list[ExtractedElement],
     material_id: uuid.UUID,
@@ -379,13 +443,15 @@ def chunk_elements(
     chunks: list[ContentChunk] = []
     index = 0
     current_heading = ""
-    heading_page = None  # page the current heading belongs to
+    heading_page = None
 
+    # Group by page first. A PDF page arrives as one large element and a PPTX
+    # slide as many small ones; chunking per element made the same content
+    # produce completely different chunk sizes depending on the parser.
+    pages: list[tuple[int, str, list[str]]] = []
     for el in elements:
         if el.el_type == "image":
             continue
-        # a heading only applies to text on its own page - reset when the page
-        # changes so a page-1 heading does not leak onto page-9 text.
         if el.page != heading_page:
             current_heading = ""
         if el.el_type == "heading":
@@ -393,14 +459,56 @@ def chunk_elements(
             heading_page = el.page
             continue
 
-        text = f"{current_heading}\n{el.content}" if current_heading else el.content
+        if pages and pages[-1][0] == el.page and pages[-1][1] == current_heading:
+            pages[-1][2].append(el.content)
+        else:
+            # The heading is held per page and prefixed once per chunk below.
+            # Prefixing it per element repeated it for every bullet on a slide,
+            # which wastes the chunk budget and skews the embedding.
+            # A new heading on the same page starts a new group: grouping by
+            # page alone filed a whole DOCX, where every element is page 1,
+            # under its first heading.
+            pages.append((el.page, current_heading, [el.content]))
 
-        step = max(size - overlap, 1)
-        for start in range(0, len(text), step):
-            piece = text[start : start + size]
-            if piece.strip():
-                chunks.append(ContentChunk(uuid.uuid4(), index, material_id, piece, el.page))
-                index += 1
+    for page, heading, blocks in pages:
+        flat: list[str] = []
+        for block in blocks:
+            for part in re.split(r"\n\s*\n|\n", block):
+                if part.strip():
+                    flat.append(part.strip())
+
+        # A heading longer than a whole chunk would leave no room for content
+        # and drive the budget negative, breaking the size invariant.
+        prefix = f"{heading}\n" if heading else ""
+        if len(prefix) > size // 2:
+            prefix = prefix[: size // 2]
+        budget = size - len(prefix)
+
+        buffer = ""
+        carried = ""
+        for block in flat:
+            for piece in _split_oversized(block, budget, overlap):
+                joined = f"{buffer}\n{piece}".strip() if buffer else piece
+                if len(joined) > budget:
+                    if buffer:
+                        chunks.append(
+                            ContentChunk(uuid.uuid4(), index, material_id, prefix + buffer, page)
+                        )
+                        index += 1
+                        carried = _tail(buffer, overlap)
+                    # Character-fallback pieces already contain their overlap. Do not
+                    # prepend the same carried text a second time.
+                    if carried and piece.startswith(carried):
+                        buffer = piece
+                    else:
+                        seed = f"{carried} {piece}".strip() if carried else piece
+                        buffer = seed if len(seed) <= budget else piece
+                else:
+                    buffer = joined
+
+        if buffer.strip():
+            chunks.append(ContentChunk(uuid.uuid4(), index, material_id, prefix + buffer, page))
+            index += 1
 
     return chunks
 

@@ -1,7 +1,7 @@
 """add question review columns
 
 Revision ID: 2d155233838b
-Revises: cd914692a316
+Revises: b5c496365765
 Create Date: 2026-08-15 00:00:00.000000
 
 Adds the columns app.schemas.content.QuestionOut requires that the Phase 1
@@ -18,7 +18,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "2d155233838b"
-down_revision: str | Sequence[str] | None = "cd914692a316"
+down_revision: str | Sequence[str] | None = "b5c496365765"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

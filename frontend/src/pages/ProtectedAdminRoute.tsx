@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router'
 
 import { ApiError, getAccessToken, getCurrentUser, type CurrentUser } from '../api'
+import { hasRequiredConsent } from '../authRouting'
 
 type State =
   | { status: 'loading' }
@@ -52,6 +53,9 @@ export default function ProtectedAdminRoute() {
   }
   if (state.user.role !== 'admin') {
     return <Navigate to="/access-denied" replace />
+  }
+  if (!hasRequiredConsent(state.user)) {
+    return <Navigate to="/consent" replace state={{ from: location.pathname }} />
   }
   return <Outlet />
 }
