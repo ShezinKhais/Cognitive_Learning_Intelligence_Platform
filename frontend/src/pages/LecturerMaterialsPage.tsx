@@ -11,7 +11,6 @@ import {
   FileText,
   Image as ImageIcon,
   LoaderCircle,
-  LogOut,
   RotateCcw,
   UploadCloud,
   Wifi,
@@ -22,6 +21,7 @@ import {
   ApiError,
   clearAccessToken,
 } from '../api'
+import SignOutButton from '../components/SignOutButton'
 import {
   getMaterial,
   uploadMaterial,
@@ -261,17 +261,7 @@ export default function LecturerMaterialsPage() {
             {MATERIAL_PIPELINE_ENABLED && (
               <ConnectionBadge status={connectionStatus} />
             )}
-            <button
-              type="button"
-              onClick={() => {
-                clearAccessToken()
-                window.location.assign('/login')
-              }}
-              className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted"
-            >
-              <LogOut aria-hidden="true" size={16} />
-              <span className="hidden sm:inline">Sign out</span>
-            </button>
+            <SignOutButton />
           </div>
         </div>
       </header>
