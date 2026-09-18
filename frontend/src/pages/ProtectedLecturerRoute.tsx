@@ -1,7 +1,20 @@
-import { useEffect, useState } from 'react'
-import { Navigate, Outlet, useLocation } from 'react-router'
+import {
+  useEffect,
+  useState,
+} from 'react'
+import {
+  Navigate,
+  Outlet,
+  useLocation,
+} from 'react-router'
 
-import { ApiError, getAccessToken, getCurrentUser, type CurrentUser } from '../api'
+import {
+  ApiError,
+  getAccessToken,
+  getCurrentUser,
+  type CurrentUser,
+} from '../api'
+import { hasRequiredConsent } from '../authRouting'
 
 type State =
   | { status: 'loading' }
@@ -20,18 +33,22 @@ export default function ProtectedLecturerRoute() {
     }
 
     let cancelled = false
+
     getCurrentUser()
       .then((user) => {
         if (!cancelled) setState({ status: 'ready', user })
       })
-      .catch((caught) => {
+      .catch((caught: unknown) => {
         if (cancelled) return
+
         if (caught instanceof ApiError && caught.status === 401) {
           setState({ status: 'unauthenticated' })
         } else {
           setState({
             status: 'error',
-            message: caught instanceof Error ? caught.message : 'Could not verify access.',
+            message: caught instanceof Error
+              ? caught.message
+              : 'Could not verify access.',
           })
         }
       })
@@ -44,20 +61,22 @@ export default function ProtectedLecturerRoute() {
   if (state.status === 'loading') {
     return <main className="min-h-screen grid place-items-center">Checking access...</main>
   }
+
   if (state.status === 'unauthenticated') {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />
   }
+
   if (state.status === 'error') {
-    return (
-      <main className="p-8 text-critical" role="alert">
-        {state.message}
-      </main>
-    )
+    return <main className="p-8 text-critical" role="alert">{state.message}</main>
   }
-  // Admins can also review questions -- the backend's ownership check
-  // allows it -- so this only blocks students, not admins.
+
   if (state.user.role !== 'lecturer' && state.user.role !== 'admin') {
     return <Navigate to="/access-denied" replace />
   }
+
+  if (!hasRequiredConsent(state.user)) {
+    return <Navigate to="/consent" replace state={{ from: location.pathname }} />
+  }
+
   return <Outlet />
 }

@@ -5,6 +5,7 @@ That is exactly what happened when routes moved under /api/v1 and the frontend
 kept calling /api/health, so this checks the two agree.
 """
 
+import json
 import re
 from pathlib import Path
 
@@ -13,6 +14,8 @@ import pytest
 from app.main import API_V1
 
 API_TS = Path(__file__).resolve().parents[2] / "frontend" / "src" / "api.ts"
+APP_TSX = API_TS.parent / "App.tsx"
+TEAMS_MANIFEST = API_TS.parents[2] / "teams-app" / "manifest.json"
 
 
 def _api_base() -> str:
@@ -40,6 +43,19 @@ def test_frontend_does_not_hardcode_paths_elsewhere() -> None:
                 offenders.append(f"{path.name}:{number}")
 
     assert not offenders, f"hardcoded API paths outside api.ts: {offenders}"
+
+
+@pytest.mark.skipif(
+    not APP_TSX.exists() or not TEAMS_MANIFEST.exists(),
+    reason="frontend or Teams manifest not present",
+)
+def test_teams_lecturer_tab_has_a_matching_frontend_route() -> None:
+    """The Teams lecturer tab must not fall through to the student page."""
+    manifest = json.loads(TEAMS_MANIFEST.read_text(encoding="utf-8"))
+    lecturer_tab = next(tab for tab in manifest["staticTabs"] if tab["entityId"] == "clip.lecturer")
+    route = lecturer_tab["contentUrl"].replace("${{BASE_URL}}", "")
+
+    assert f'path="{route}"' in APP_TSX.read_text(encoding="utf-8")
 
 
 ENTRY_POINT = API_TS.parent / "main.tsx"

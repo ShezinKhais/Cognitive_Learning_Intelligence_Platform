@@ -23,7 +23,9 @@ function user(
 test('terms consent is the only required consent', () => {
   assert.equal(hasRequiredConsent(user('student', [])), false)
   assert.equal(hasRequiredConsent(user('admin', [])), false)
+  assert.equal(hasRequiredConsent(user('lecturer', [])), false)
   assert.equal(hasRequiredConsent(user('student', ['terms'])), true)
+  assert.equal(hasRequiredConsent(user('lecturer', ['terms'])), true)
   assert.equal(
     hasRequiredConsent(
       user('student', [
@@ -60,9 +62,17 @@ test('administrators return only to admin pages', () => {
   )
 })
 
-test('lecturers continue to the access-denied page', () => {
+test('lecturers return only to lecturer pages', () => {
+  assert.equal(
+    intendedPathForRole('lecturer'),
+    '/lecturer/materials',
+  )
+  assert.equal(
+    intendedPathForRole('lecturer', '/lecturer/materials'),
+    '/lecturer/materials',
+  )
   assert.equal(
     intendedPathForRole('lecturer', '/admin'),
-    '/access-denied',
+    '/lecturer/materials',
   )
 })

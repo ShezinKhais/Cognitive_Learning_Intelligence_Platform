@@ -77,6 +77,20 @@
           "default": null,
           "title": "Session Id"
         },
+        "stream_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Sequence-stream generation received in the previous ready event.",
+          "title": "Stream Id"
+        },
         "token": {
           "maxLength": 4096,
           "title": "Token",
@@ -182,7 +196,7 @@
       "type": "object"
     }
   },
-  "description": "C.L.I.P WebSocket contract. Every message is {type, data}; server messages also carry seq and ts. seq increases monotonically per channel, which is a session or a user's own channel, so clients can detect gaps and request replay.",
+  "description": "C.L.I.P WebSocket contract. Every message is {type, data}; server messages also carry seq and ts. seq increases monotonically per authenticated delivery channel so clients can detect gaps and request replay. A successful handshake sends ready before any replayed or live channel event.",
   "envelopes": {
     "client": {
       "$defs": {
@@ -244,7 +258,7 @@
           "type": "object"
         },
         "seq": {
-          "description": "Monotonic per channel (a session, or a user's own channel). Clients use it to detect gaps.",
+          "description": "Monotonic per channel. Clients use it to detect gaps.",
           "title": "Seq",
           "type": "integer"
         },
@@ -672,7 +686,7 @@
             }
           ],
           "default": null,
-          "description": "Set when the server replayed missed events.",
+          "description": "Set when the server continued the requested sequence stream.",
           "title": "Resumed From Seq"
         },
         "session_id": {
@@ -687,6 +701,20 @@
           ],
           "default": null,
           "title": "Session Id"
+        },
+        "stream_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Generation identifier for reconnecting to this ordered stream.",
+          "title": "Stream Id"
         },
         "user_id": {
           "format": "uuid",

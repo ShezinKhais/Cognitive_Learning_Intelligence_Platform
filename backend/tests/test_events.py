@@ -139,6 +139,7 @@ def test_an_answer_must_carry_exactly_one_answer(label: str, data: dict) -> None
     [
         ("oversized token", "auth", {"token": "t" * 5000}),
         ("negative last_seq", "auth", {"token": "t", "last_seq": -1}),
+        ("invalid stream_id", "auth", {"token": "t", "stream_id": "old-server"}),
         ("oversized room label", "room.confirm", {"room_label": "r" * 200}),
         ("empty room label", "room.confirm", {"room_label": ""}),
         ("zero attention window", "signal.attention", {"window_seconds": 0}),

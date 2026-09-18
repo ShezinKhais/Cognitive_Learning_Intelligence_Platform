@@ -5,12 +5,11 @@ payload. Both directions are versioned together with the REST API.
 
 Ordering and replay
 -------------------
-Server events carry a monotonically increasing `seq` per channel. A channel is
-either a session or a single user's own channel, which carries
-`material.progress` for the lecturer who uploaded the file. A client that
-reconnects sends `last_seq` so the server can replay what it missed. The replay
-buffer itself lands in Phase 3; the protocol reserves the field now so clients
-do not need changing later.
+Server events carry a monotonically increasing `seq` per session or user
+channel. A client that reconnects sends `last_seq` and the stream generation
+from READY so the server can replay missed material-progress events without
+confusing a restarted counter for the previous process. Session-wide replay
+lands in Phase 3.
 
 Privacy
 -------
@@ -113,6 +112,10 @@ class AuthPayload(BaseModel):
         default=None,
         ge=0,
         description="Highest seq already received. Triggers replay on reconnect.",
+    )
+    stream_id: UUID | None = Field(
+        default=None,
+        description="Sequence-stream generation received in the previous ready event.",
     )
 
 
@@ -285,7 +288,11 @@ class ReadyPayload(BaseModel):
     user_id: UUID
     session_id: UUID | None = None
     resumed_from_seq: int | None = Field(
-        default=None, description="Set when the server replayed missed events."
+        default=None, description="Set when the server continued the requested sequence stream."
+    )
+    stream_id: UUID | None = Field(
+        default=None,
+        description="Generation identifier for reconnecting to this ordered stream.",
     )
 
 
@@ -296,10 +303,7 @@ class ErrorPayload(BaseModel):
 
 class ServerEvent(BaseModel):
     type: ServerEventType
-    seq: int = Field(
-        description="Monotonic per channel (a session, or a user's own channel). "
-        "Clients use it to detect gaps."
-    )
+    seq: int = Field(description="Monotonic per channel. Clients use it to detect gaps.")
     ts: datetime
     data: dict[str, Any] = Field(default_factory=dict)
 

@@ -150,6 +150,10 @@ export function apiGet<T>(path: string): Promise<T> {
   return request<T>(path)
 }
 
+export function apiAuthenticatedGet<T>(path: string): Promise<T> {
+  return request<T>(path, {}, true)
+}
+
 export function login(
   email: string,
   password: string,

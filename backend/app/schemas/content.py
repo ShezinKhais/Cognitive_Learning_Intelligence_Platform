@@ -43,6 +43,17 @@ class Difficulty(StrEnum):
     HARD = "hard"
 
 
+class MaterialPageOut(BaseModel):
+    """Extracted text and quality indicators for one source page or slide."""
+
+    page_number: int = Field(ge=1)
+    text: str
+    word_count: int | None = Field(default=None, ge=0)
+    visual_element_count: int | None = Field(default=None, ge=0)
+    is_thin: bool = False
+    is_visual_heavy: bool = False
+
+
 class MaterialOut(BaseModel):
     id: UUID
     filename: str
@@ -53,6 +64,8 @@ class MaterialOut(BaseModel):
     chunk_count: int | None = None
     error: str | None = None
     uploaded_at: datetime
+    warnings: list[str] = Field(default_factory=list)
+    pages: list[MaterialPageOut] = Field(default_factory=list)
 
 
 class QuestionOut(BaseModel):

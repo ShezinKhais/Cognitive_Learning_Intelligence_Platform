@@ -8,6 +8,7 @@ import { StudentAppProvider } from './features/student/StudentAppContext'
 import AccessDeniedPage from './pages/AccessDeniedPage'
 import AdminConsole from './pages/AdminConsole'
 import ConsentPage from './pages/ConsentPage'
+import LecturerMaterialsPage from './pages/LecturerMaterialsPage'
 import LoginPage from './pages/LoginPage'
 import ProtectedAdminRoute from './pages/ProtectedAdminRoute'
 import ProtectedLecturerRoute from './pages/ProtectedLecturerRoute'
@@ -62,10 +63,23 @@ export default function App() {
         />
       </Route>
 
-      {/* Same layout-guard pattern: lecturers (and admins, who can review
-          on any lecturer's behalf per the backend's ownership check) reach
-          the review screen; students never see it mount. */}
+      {/* Lecturers, and admins who can review on any lecturer's behalf per
+          the backend's ownership check, reach the materials workspace and the
+          review screen; students never see either mount. */}
       <Route element={<ProtectedLecturerRoute />}>
+        <Route
+          path="/lecturer"
+          element={
+            <Navigate
+              to="/lecturer/materials"
+              replace
+            />
+          }
+        />
+        <Route
+          path="/lecturer/materials"
+          element={<LecturerMaterialsPage />}
+        />
         <Route
           path="/materials/:materialId/review"
           element={<QuestionReview />}

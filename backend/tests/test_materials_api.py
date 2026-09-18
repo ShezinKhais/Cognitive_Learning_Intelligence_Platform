@@ -95,6 +95,8 @@ def test_list_materials_returns_paginated_results(
                 "chunk_count": 8,
                 "error": None,
                 "uploaded_at": materials[1].uploaded_at.isoformat().replace("+00:00", "Z"),
+                "warnings": [],
+                "pages": [],
             }
         ],
         "total": 2,
