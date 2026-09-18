@@ -26,6 +26,8 @@ from app.models.user import User
 from app.repositories.material_repository import MaterialRepository
 from app.schemas.events import MaterialStage
 
+from .database_support import require_database
+
 REQUIRED_EXTENSIONS = {"vector", "pg_trgm", "uuid-ossp"}
 
 
@@ -138,13 +140,8 @@ async def db():
     hands the second test a connection from a pool tied to a dead loop. NullPool
     and a per-test engine avoid that entirely.
     """
+    require_database()
     engine = create_async_engine(get_settings().database_url, poolclass=NullPool)
-    try:
-        async with engine.connect() as conn:
-            await conn.execute(text("select 1"))
-    except Exception as exc:
-        await engine.dispose()
-        pytest.skip(f"no database reachable ({type(exc).__name__})")
 
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with session_factory() as session:

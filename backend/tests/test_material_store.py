@@ -39,16 +39,13 @@ from app.services.material_seams import (
 from app.services.material_store import DatabaseMaterialStore
 from app.services.storage import StoredFile
 
+from .database_support import require_database
+
 
 @pytest.fixture
 async def sessions() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    require_database()
     engine = create_async_engine(get_settings().database_url, poolclass=NullPool)
-    try:
-        async with engine.connect() as connection:
-            await connection.execute(text("select 1"))
-    except Exception as exc:
-        await engine.dispose()
-        pytest.skip(f"no database reachable ({type(exc).__name__})")
     yield async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     await engine.dispose()
 

@@ -37,17 +37,14 @@ from app.models.session import Session as SessionModel
 from app.models.user import User
 from app.schemas.identity import ConsentType, Role
 
+from .database_support import require_database
+
 
 @pytest.fixture
 async def db_client(app):
     """A TestClient plus a session_factory sharing one engine with get_db."""
+    require_database()
     engine = create_async_engine(get_settings().database_url, poolclass=NullPool)
-    try:
-        async with engine.connect() as conn:
-            await conn.execute(text("select 1"))
-    except Exception as exc:
-        await engine.dispose()
-        pytest.skip(f"no database reachable ({type(exc).__name__})")
 
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

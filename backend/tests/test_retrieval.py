@@ -4,7 +4,6 @@ happens in pgvector, not in Python — faking it would prove nothing."""
 import uuid
 
 import pytest
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -12,6 +11,8 @@ from app.core.config import get_settings
 from app.models.material import Material
 from app.models.rag_chunk import RagChunk
 from app.services.retrieval import ChunkRetriever
+
+from .database_support import require_database
 
 DIM = get_settings().embedding_dim
 
@@ -35,13 +36,8 @@ class FixedVectorClient:
 
 @pytest.fixture
 async def db():
+    require_database()
     engine = create_async_engine(get_settings().database_url, poolclass=NullPool)
-    try:
-        async with engine.connect() as conn:
-            await conn.execute(text("select 1"))
-    except Exception as exc:
-        await engine.dispose()
-        pytest.skip(f"no database reachable ({type(exc).__name__})")
 
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with session_factory() as session:

@@ -195,3 +195,50 @@ async def test_nothing_changes_when_no_replacement_can_be_made(
     finally:
         await _tidy(session_factory, material_id, question_id)
         app.dependency_overrides.pop(get_principal, None)
+
+
+async def test_a_question_reviewed_while_the_model_runs_is_not_replaced(
+    db_client,  # noqa: F811
+    app,
+    generator,
+):
+    """Generation takes seconds and the request no longer holds a transaction
+    across it. A review landing in that window must win, not be overwritten by
+    a replacement built for a draft that no longer exists."""
+    test_client, session_factory = db_client
+    lecturer = uuid4()
+    material_id, question_id = await _seed_question(session_factory, uploaded_by=lecturer)
+    await _with_chunk(session_factory, material_id)
+
+    class ReviewedMeanwhile(StandInGenerator):
+        async def generate(self, material_id, chunks, count=None):
+            async with session_factory() as other, other.begin():
+                await other.execute(
+                    text("update question set status = 'approved' where question_id = :q"),
+                    {"q": question_id},
+                )
+            return await super().generate(material_id, chunks, count)
+
+    generator(ReviewedMeanwhile())
+    try:
+        _as(app, lecturer, Role.LECTURER, "lecturer@uni.test")
+
+        response = test_client.post(
+            f"/api/v1/materials/{material_id}/questions/{question_id}:regenerate"
+        )
+
+        assert response.status_code == 409
+        async with session_factory() as check:
+            rows = (
+                (
+                    await check.execute(
+                        select(Question).where(Question.source_material_id == material_id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert [(row.question_id, row.status) for row in rows] == [(question_id, "approved")]
+    finally:
+        await _tidy(session_factory, material_id, question_id)
+        app.dependency_overrides.pop(get_principal, None)

@@ -85,11 +85,16 @@ export default function QuestionReview() {
     setState({ ...state, loadingMore: true })
     try {
       const page = await listQuestions(materialId, PAGE_SIZE, state.offset)
+      // A regenerated draft is shown as soon as it exists but sorts last on
+      // the server, so a later page can bring it back a second time.
       setState((prev) =>
         prev.status === 'ready'
           ? {
               status: 'ready',
-              questions: [...prev.questions, ...page.items],
+              questions: [
+                ...prev.questions,
+                ...page.items.filter((item) => !prev.questions.some((q) => q.id === item.id)),
+              ],
               total: page.total,
               offset: prev.offset + page.items.length,
               loadingMore: false,

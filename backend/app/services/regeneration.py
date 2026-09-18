@@ -50,11 +50,7 @@ async def regenerate(
     Only a draft can be replaced. Once a question is approved a lecturer has
     vouched for it, and swapping it silently would undo that.
     """
-    if question.status != "draft":
-        raise ConflictError(
-            "Only a draft question can be regenerated.",
-            {"question_id": str(question.question_id), "status": question.status},
-        )
+    _require_draft(question)
 
     material_id = question.source_material_id
     materials = MaterialRepository(session)
@@ -77,6 +73,10 @@ async def regenerate(
         )
         for chunk in stored
     ]
+    # Generation takes seconds. Ending the read transaction first returns the
+    # connection to the pool instead of holding it for the whole model call,
+    # so a lecturer regenerating a batch cannot starve every other request.
+    await session.commit()
     try:
         drafts = await generator.generate(material_id, chunks, count=REPLACEMENT_CANDIDATES)
     except Exception:
@@ -92,6 +92,12 @@ async def regenerate(
             {"candidates": len(drafts)},
         )
 
+    # The question may have been reviewed, or regenerated from another tab,
+    # while the model ran. Re-read it under a row lock so only one of two
+    # overlapping requests can replace it.
+    await session.refresh(question, with_for_update=True)
+    _require_draft(question)
+
     await QuestionRepository(session).apply_review(
         question, status="rejected", reviewer_id=reviewer_id
     )
@@ -100,6 +106,14 @@ async def regenerate(
     await session.flush()
     await session.refresh(new)
     return new
+
+
+def _require_draft(question: Question) -> None:
+    if question.status != "draft":
+        raise ConflictError(
+            "Only a draft question can be regenerated.",
+            {"question_id": str(question.question_id), "status": question.status},
+        )
 
 
 def _first_usable(drafts, replaced_prompt: str) -> DraftQuestion | None:

@@ -196,7 +196,7 @@ class QuestionRepository:
             select(Question)
             .join(Material, Question.source_material_id == Material.id)
             .where(*conditions)
-            .order_by(Question.created_at)
+            .order_by(Question.created_at, Question.question_id)
             .limit(limit)
             .offset(offset)
         )
@@ -208,7 +208,7 @@ class QuestionRepository:
         result = await self.session.execute(
             select(Question)
             .where(Question.source_material_id == material_id)
-            .order_by(Question.created_at)
+            .order_by(Question.created_at, Question.question_id)
             .limit(limit)
             .offset(offset)
         )
