@@ -37,7 +37,12 @@ async def accept_upload(file: UploadFile, owner_id: UUID) -> StoredFile:
     so an executable renamed lecture.pdf is refused now rather than failing a
     job nobody is watching. A refused file is removed before the error goes back.
     """
+    # Assembled before anything is written, so a wiring fault fails the
+    # request without leaving a checked file behind that no job will process.
     storage = get_material_storage()
+    pipeline = get_material_pipeline()
+    processor = get_background_processor()
+
     stored = await storage.save(uuid4(), file.filename or "", stream_upload(file))
     try:
         async with storage.materialise(stored) as path:
@@ -50,7 +55,7 @@ async def accept_upload(file: UploadFile, owner_id: UUID) -> StoredFile:
         await storage.delete(stored.material_id)
         raise
 
-    get_background_processor().submit(get_material_pipeline().job(stored, owner_id))
+    processor.submit(pipeline.job(stored, owner_id))
     return stored
 
 

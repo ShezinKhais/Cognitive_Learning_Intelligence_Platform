@@ -72,9 +72,9 @@ class Connection:
         return self.session_id is None
 
     def describe(self) -> str:
-        if self.session_id is None:
-            return f"user {self.user_id} on their user channel"
-        return f"user {self.user_id} in session {self.session_id}"
+        """Which stream this is, for log lines: "user X (user channel)"."""
+        where = "user channel" if self.session_id is None else f"session {self.session_id}"
+        return f"user {self.user_id} ({where})"
 
 
 class _Stream:
