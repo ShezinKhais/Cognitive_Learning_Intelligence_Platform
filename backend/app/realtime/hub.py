@@ -43,6 +43,9 @@ MAX_REPLAY_EVENTS_PER_CHANNEL = 128
 SEND_TIMEOUT_SECONDS = 1.0
 SEND_TIMEOUT_CLOSE_CODE = 1011
 
+# RFC 6455: reconnect and retry after the server drops a stale socket.
+CLOSE_TRY_AGAIN_LATER = 1013
+
 
 class Connection:
     def __init__(self, websocket: WebSocket, user_id: UUID, session_id: UUID | None) -> None:
