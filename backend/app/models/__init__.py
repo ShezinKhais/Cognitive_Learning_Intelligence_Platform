@@ -1,5 +1,6 @@
 """Database model exports."""
 
+from app.models.ai_model_run import AIModelRun
 from app.models.audit_log import AuditLog
 from app.models.breakout_room import BreakoutRoom
 from app.models.comprehension_result import ComprehensionResult
@@ -7,7 +8,9 @@ from app.models.consent import Consent
 from app.models.course import Course
 from app.models.dynamic_prompt import DynamicPrompt
 from app.models.engagement_record import EngagementRecord
+from app.models.extraction_element import ExtractionElement
 from app.models.material import Material
+from app.models.material_processing_status import MaterialProcessingStatus
 from app.models.question import Question
 from app.models.rag_chunk import RagChunk
 from app.models.session import Session
@@ -30,4 +33,7 @@ __all__ = [
     "Student",
     "StudentResponse",
     "User",
+    "AIModelRun",
+    "ExtractionElement",
+    "MaterialProcessingStatus",
 ]
