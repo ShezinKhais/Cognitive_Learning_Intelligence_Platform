@@ -136,6 +136,10 @@ export default function QuestionReview() {
     })
   }
 
+  function selectAllDrafts() {
+    setSelected(new Set(draftQuestions.map((q) => q.id)))
+  }
+
   async function handleApproveAll() {
     if (!materialId || selected.size === 0) return
     // Belt-and-braces on top of updateQuestion already pruning `selected`:
@@ -188,14 +192,24 @@ export default function QuestionReview() {
             </p>
           </div>
           {draftQuestions.length > 0 && (
-            <button
-              type="button"
-              onClick={handleApproveAll}
-              disabled={selected.size === 0 || bulkBusy}
-              className="shrink-0 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
-            >
-              {bulkBusy ? 'Approving...' : `Approve selected (${selected.size})`}
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={selectAllDrafts}
+                disabled={selected.size === draftQuestions.length}
+                className="rounded-lg border border-border px-4 py-2 text-sm font-medium disabled:opacity-50"
+              >
+                Select all ({draftQuestions.length})
+              </button>
+              <button
+                type="button"
+                onClick={handleApproveAll}
+                disabled={selected.size === 0 || bulkBusy}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+              >
+                {bulkBusy ? 'Approving...' : `Approve selected (${selected.size})`}
+              </button>
+            </div>
           )}
         </div>
 
