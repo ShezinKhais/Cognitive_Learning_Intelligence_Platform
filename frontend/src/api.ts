@@ -48,33 +48,6 @@ export interface TimetableImportResult {
   unmatched_students: string[]
 }
 
-export type QuestionType = 'mcq' | 'free_text'
-
-export type QuestionStatus = 'draft' | 'approved' | 'rejected' | 'staged' | 'delivered'
-
-export type Difficulty = 'easy' | 'medium' | 'hard'
-
-export interface Question {
-  id: string
-  material_id: string
-  type: QuestionType
-  status: QuestionStatus
-  difficulty: Difficulty
-  prompt: string
-  options: string[] | null
-  correct_option: number | null
-  topic: string | null
-  source_slide: number | null
-  source_excerpt: string | null
-}
-
-export interface Page<T> {
-  items: T[]
-  total: number
-  limit: number
-  offset: number
-}
-
 export function apiUrl(path: string): string {
   return `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`
 }
@@ -229,7 +202,38 @@ export function apiUploadFile<T = TimetableImportResult>(
   )
 }
 
-export function listQuestions(materialId: string, limit = 50, offset = 0): Promise<Page<Question>> {
+export type QuestionType = 'mcq' | 'free_text'
+
+export type QuestionStatus = 'draft' | 'approved' | 'rejected' | 'staged' | 'delivered'
+
+export type Difficulty = 'easy' | 'medium' | 'hard'
+
+export interface Question {
+  id: string
+  material_id: string
+  type: QuestionType
+  status: QuestionStatus
+  difficulty: Difficulty
+  prompt: string
+  options: string[] | null
+  correct_option: number | null
+  topic: string | null
+  source_slide: number | null
+  source_excerpt: string | null
+}
+
+export interface Page<T> {
+  items: T[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export function listQuestions(
+  materialId: string,
+  limit = 50,
+  offset = 0,
+): Promise<Page<Question>> {
   return request<Page<Question>>(
     `/materials/${materialId}/questions?limit=${limit}&offset=${offset}`,
     {},
@@ -260,12 +264,17 @@ export function reviewQuestion(
   )
 }
 
+export interface QuestionBulkReviewResult {
+  updated: Question[]
+  skipped_ids: string[]
+}
+
 export function bulkReviewQuestions(
   materialId: string,
   questionIds: string[],
   status: QuestionStatus,
-): Promise<Question[]> {
-  return request<Question[]>(
+): Promise<QuestionBulkReviewResult> {
+  return request<QuestionBulkReviewResult>(
     `/materials/${materialId}/questions:bulk`,
     {
       method: 'POST',
