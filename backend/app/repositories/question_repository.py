@@ -267,6 +267,10 @@ class QuestionRepository:
             )
 
         _validate_option_shape(question.options, options, question.correct_option, correct_option)
+        effective_prompt = prompt if prompt is not None else question.question_text
+        _validate_prompt(effective_prompt)
+
+        question.status = status
 
         question.status = status
         question.reviewed_by = reviewer_id
