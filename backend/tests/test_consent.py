@@ -65,6 +65,22 @@ def _headers(
     }
 
 
+def _grant_terms(
+    client: TestClient,
+    token: str,
+) -> None:
+    response = client.post(
+        "/api/v1/auth/consent",
+        headers=_headers(token),
+        json={
+            "consent_type": "terms",
+            "granted": True,
+        },
+    )
+
+    assert response.status_code == 201
+
+
 def test_consent_can_be_granted_and_appears_in_me(
     client: TestClient,
 ) -> None:
@@ -198,3 +214,103 @@ def test_single_consent_requires_authentication(
     )
 
     assert response.status_code == 401
+
+
+def test_me_remains_accessible_before_terms_consent(
+    client: TestClient,
+) -> None:
+    token = _student_token(client)
+
+    response = client.get(
+        "/api/v1/auth/me",
+        headers=_headers(token),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["consents"] == []
+
+
+def test_student_without_terms_is_blocked_from_protected_sessions(
+    client: TestClient,
+) -> None:
+    token = _student_token(client)
+
+    response = client.get(
+        "/api/v1/sessions",
+        headers=_headers(token),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "CONSENT_REQUIRED"
+    assert response.json()["error"]["detail"]["missing"] == ["terms"]
+
+
+def test_student_with_terms_passes_the_consent_gate(
+    client: TestClient,
+) -> None:
+    token = _student_token(client)
+
+    _grant_terms(client, token)
+
+    response = client.get(
+        "/api/v1/sessions",
+        headers=_headers(token),
+    )
+
+    # The Phase 3 handler is still a stub. Reaching NOT_IMPLEMENTED proves
+    # Cyber 1's consent gate allowed the consented student through.
+    assert response.status_code == 501
+    assert response.json()["error"]["code"] == "NOT_IMPLEMENTED"
+
+
+def test_admin_without_terms_is_blocked_from_admin_routes(
+    client: TestClient,
+) -> None:
+    token = _admin_token(client)
+
+    timetable = (
+        b"course_code,lecturer,day,start_time,end_time,room\nCS101,Dr Test,Monday,09:00,10:00,A1\n"
+    )
+
+    response = client.post(
+        "/api/v1/admin/timetable",
+        headers=_headers(token),
+        files={
+            "file": (
+                "timetable.csv",
+                timetable,
+                "text/csv",
+            ),
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "CONSENT_REQUIRED"
+    assert response.json()["error"]["detail"]["missing"] == ["terms"]
+
+
+def test_admin_with_terms_passes_the_consent_gate(
+    client: TestClient,
+) -> None:
+    token = _admin_token(client)
+
+    _grant_terms(client, token)
+
+    timetable = (
+        b"course_code,lecturer,day,start_time,end_time,room\nCS101,Dr Test,Monday,09:00,10:00,A1\n"
+    )
+
+    response = client.post(
+        "/api/v1/admin/timetable",
+        headers=_headers(token),
+        files={
+            "file": (
+                "timetable.csv",
+                timetable,
+                "text/csv",
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["rows_read"] == 1
