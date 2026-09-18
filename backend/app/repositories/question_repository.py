@@ -25,6 +25,8 @@ _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "draft": {"draft", "approved", "rejected"},
     "approved": {"approved", "rejected", "staged"},
     "rejected": {"rejected"},
+    # Reached only from session delivery; the review routes cannot request
+    # it (see ReviewDecision).
     "staged": {"staged", "delivered"},
     "delivered": set(),  # terminal: a delivered question is never rewritten
 }

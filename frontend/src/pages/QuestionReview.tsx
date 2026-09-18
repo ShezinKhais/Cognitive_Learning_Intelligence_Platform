@@ -9,6 +9,7 @@ import {
   type Difficulty,
   type Question,
   type QuestionStatus,
+  type ReviewDecision,
 } from '../api'
 import SignOutButton from '../components/SignOutButton'
 
@@ -330,7 +331,7 @@ function QuestionCard({
   }
 
   async function act(
-    status: QuestionStatus,
+    status: ReviewDecision,
     extra?: { prompt?: string; options?: string[]; correct_option?: number; difficulty?: Difficulty },
   ) {
     setBusy(true)

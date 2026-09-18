@@ -37,6 +37,20 @@ class QuestionStatus(StrEnum):
     DELIVERED = "delivered"
 
 
+class ReviewDecision(StrEnum):
+    """The statuses a lecturer may set through the review routes.
+
+    Every QuestionStatus except DELIVERED. A question becomes delivered when
+    the session actually sends it to students; set by hand, it would freeze a
+    question as "already asked" when no student ever saw it.
+    """
+
+    DRAFT = "draft"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    STAGED = "staged"
+
+
 class Difficulty(StrEnum):
     EASY = "easy"
     MEDIUM = "medium"
@@ -94,7 +108,7 @@ class QuestionOut(BaseModel):
 class QuestionReviewRequest(BaseModel):
     """A lecturer approving, editing or rejecting a generated question."""
 
-    status: QuestionStatus
+    status: ReviewDecision
     prompt: str | None = None
     options: list[str] | None = None
     correct_option: int | None = None
@@ -103,7 +117,7 @@ class QuestionReviewRequest(BaseModel):
 
 class QuestionBulkReviewRequest(BaseModel):
     question_ids: list[UUID]
-    status: QuestionStatus
+    status: ReviewDecision
 
 
 class QuestionBulkReviewResult(BaseModel):

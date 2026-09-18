@@ -624,7 +624,7 @@
             "type": "array"
           },
           "status": {
-            "$ref": "#/components/schemas/QuestionStatus"
+            "$ref": "#/components/schemas/ReviewDecision"
           }
         },
         "required": [
@@ -808,7 +808,7 @@
             "title": "Prompt"
           },
           "status": {
-            "$ref": "#/components/schemas/QuestionStatus"
+            "$ref": "#/components/schemas/ReviewDecision"
           }
         },
         "required": [
@@ -940,6 +940,17 @@
         ],
         "title": "ResponseOut",
         "type": "object"
+      },
+      "ReviewDecision": {
+        "description": "The statuses a lecturer may set through the review routes.\n\nEvery QuestionStatus except DELIVERED. A question becomes delivered when\nthe session actually sends it to students; set by hand, it would freeze a\nquestion as \"already asked\" when no student ever saw it.",
+        "enum": [
+          "draft",
+          "approved",
+          "rejected",
+          "staged"
+        ],
+        "title": "ReviewDecision",
+        "type": "string"
       },
       "Role": {
         "enum": [

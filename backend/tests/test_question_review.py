@@ -453,20 +453,31 @@ async def test_bulk_review_excludes_questions_from_a_different_material(db_clien
 # enforced server-side ---
 
 
-async def test_draft_cannot_jump_straight_to_delivered(db_client, app):
+async def test_the_review_api_cannot_mark_a_question_delivered(db_client, app):
+    """Delivered means students were sent it. Set by hand it froze a question
+    as already asked when no student ever saw it, even from staged."""
     test_client, session_factory = db_client
     lecturer_id = uuid4()
-    material_id, question_id = await _seed_question(session_factory, instructor_id=lecturer_id)
+    material_id, question_id = await _seed_question(
+        session_factory, instructor_id=lecturer_id, status="staged"
+    )
     try:
         _as(app, lecturer_id, Role.LECTURER, "lecturer@uni.test")
 
-        resp = test_client.patch(
+        single = test_client.patch(
             f"/api/v1/materials/{material_id}/questions/{question_id}",
             json={"status": "delivered"},
         )
+        bulk = test_client.post(
+            f"/api/v1/materials/{material_id}/questions:bulk",
+            json={"question_ids": [str(question_id)], "status": "delivered"},
+        )
 
-        assert resp.status_code == 409
-        assert resp.json()["error"]["code"] == "CONFLICT"
+        assert single.status_code == 422
+        assert single.json()["error"]["code"] == "VALIDATION_ERROR"
+        assert bulk.status_code == 422
+        async with session_factory() as check:
+            assert (await check.get(Question, question_id)).status == "staged"
     finally:
         await _cleanup(session_factory, question_id)
         app.dependency_overrides.pop(get_principal, None)
@@ -486,7 +497,7 @@ async def test_delivered_question_cannot_be_edited(db_client, app):
 
         resp = test_client.patch(
             f"/api/v1/materials/{material_id}/questions/{question_id}",
-            json={"status": "delivered", "correct_option": 2},
+            json={"status": "approved", "correct_option": 2},
         )
 
         assert resp.status_code == 409

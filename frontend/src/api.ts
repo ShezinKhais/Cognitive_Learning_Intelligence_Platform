@@ -210,6 +210,10 @@ export type QuestionType = 'mcq' | 'free_text'
 
 export type QuestionStatus = 'draft' | 'approved' | 'rejected' | 'staged' | 'delivered'
 
+// What a lecturer may set. Delivered is set by the session that sends the
+// question, never by review, and the API refuses it here.
+export type ReviewDecision = Exclude<QuestionStatus, 'delivered'>
+
 export type Difficulty = 'easy' | 'medium' | 'hard'
 
 export interface Question {
@@ -246,7 +250,7 @@ export function listQuestions(
 }
 
 export interface ReviewQuestionPayload {
-  status: QuestionStatus
+  status: ReviewDecision
   prompt?: string
   options?: string[]
   correct_option?: number
@@ -276,7 +280,7 @@ export interface QuestionBulkReviewResult {
 export function bulkReviewQuestions(
   materialId: string,
   questionIds: string[],
-  status: QuestionStatus,
+  status: ReviewDecision,
 ): Promise<QuestionBulkReviewResult> {
   return request<QuestionBulkReviewResult>(
     `/materials/${materialId}/questions:bulk`,
