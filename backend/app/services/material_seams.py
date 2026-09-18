@@ -18,6 +18,7 @@ from uuid import UUID
 from app.schemas.content import Difficulty, QuestionType
 from app.services.extraction import ContentChunk, ProcessingResult
 from app.services.jobs import JobStatus
+from app.services.storage import StoredFile
 
 Embedding = Sequence[float]
 
@@ -100,11 +101,22 @@ class DraftQuestion:
 
 
 @dataclass(frozen=True)
+class ModelRun:
+    """One call a material's processing made to a model, for ai_model_run."""
+
+    operation: str  # "embedding" or "question_generation"
+    model: str
+    succeeded: bool
+    detail: str | None = None
+
+
+@dataclass(frozen=True)
 class CompletedMaterial:
     """Everything processing found for one material, written in one go.
 
     `warnings` are for the lecturer. `embeddings` holds one vector per chunk
-    in `result.chunks`, in the same order.
+    in `result.chunks`, in the same order. `model_runs` says which models
+    produced the vectors and the drafts, so both stay traceable.
     """
 
     status: JobStatus
@@ -112,6 +124,7 @@ class CompletedMaterial:
     embeddings: EmbeddingBatch
     questions: tuple[DraftQuestion, ...]
     warnings: tuple[str, ...]
+    model_runs: tuple[ModelRun, ...] = ()
 
 
 class ChunkEmbedder(Protocol):
@@ -126,11 +139,14 @@ class QuestionGenerator(Protocol):
     """Owner: AI 1, Phase 2.
 
     Returns the drafts rather than writing them, so a material's chunks and
-    questions reach the store together or not at all.
+    questions reach the store together or not at all. `model` names the model
+    that wrote them, for the material's ai_model_run record.
     """
 
+    model: str
+
     async def generate(
-        self, material_id: UUID, chunks: Sequence[ContentChunk]
+        self, material_id: UUID, chunks: Sequence[ContentChunk], count: int | None = None
     ) -> Sequence[DraftQuestion]: ...
 
 
@@ -142,10 +158,18 @@ class MaterialStore(Protocol):
     chunks stored and retrievable against a material the database said had
     failed, and duplicated by the re-upload that followed.
 
-    The source_material row these write against has to exist first, and
-    nothing creates it yet: the upload route knows the filename and size, and
-    inserting the row there is part of connecting the store.
+    The material's row is created by record_accepted while the upload request
+    is still open, with the id the lecturer is given back, so every later
+    write has a row to attach to and GET /materials/{id} finds it at once.
     """
+
+    async def record_accepted(self, stored: StoredFile, owner_id: UUID) -> None:
+        """Create the material's row, pending, owned by the uploader."""
+        ...
+
+    async def record_progress(self, status: JobStatus) -> None:
+        """Append a stage to the material's processing history."""
+        ...
 
     async def record_completed(self, material: CompletedMaterial) -> None:
         """Store the chunks, their vectors, the drafts (status draft) and the

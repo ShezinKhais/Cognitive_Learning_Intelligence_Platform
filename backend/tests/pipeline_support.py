@@ -82,12 +82,14 @@ def mcq(prompt: str = "Which layer routes packets?") -> DraftQuestion:
 class Generator:
     """Seam owned by AI 1."""
 
+    model = "test-generate"
+
     def __init__(self, count: int = 3, drafts: Sequence[DraftQuestion] | None = None) -> None:
         self.drafts = list(drafts) if drafts is not None else [mcq() for _ in range(count)]
         self.called = False
 
     async def generate(
-        self, material_id: UUID, chunks: Sequence[ContentChunk]
+        self, material_id: UUID, chunks: Sequence[ContentChunk], count: int | None = None
     ) -> list[DraftQuestion]:
         self.called = True
         return self.drafts
@@ -97,8 +99,16 @@ class Store:
     """Seam owned by BBIS. Records what it was handed."""
 
     def __init__(self) -> None:
+        self.accepted: list[StoredFile] = []
+        self.progress: list[JobStatus] = []
         self.completed: list[CompletedMaterial] = []
         self.outcomes: list[JobStatus] = []
+
+    async def record_accepted(self, stored: StoredFile, owner_id: UUID) -> None:
+        self.accepted.append(stored)
+
+    async def record_progress(self, status: JobStatus) -> None:
+        self.progress.append(status)
 
     async def record_completed(self, material: CompletedMaterial) -> None:
         self.completed.append(material)

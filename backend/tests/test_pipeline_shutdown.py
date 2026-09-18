@@ -204,7 +204,9 @@ async def test_shutdown_while_questions_generate_records_the_interruption(
         def __init__(self) -> None:
             self.generating = asyncio.Event()
 
-        async def generate(self, material_id, chunks):
+        model = "test-generate"
+
+        async def generate(self, material_id, chunks, count=None):
             self.generating.set()
             await asyncio.sleep(3600)
             return []

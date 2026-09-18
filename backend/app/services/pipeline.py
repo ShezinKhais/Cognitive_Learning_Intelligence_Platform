@@ -19,10 +19,11 @@ single material, the uploader, the stored file and the terminal step in
 flight, lives on the job, so a shutdown that interrupts it is handed back the
 same object that was running rather than having to look it up.
 
-Persistence is the one seam in app.services.material_seams that may still be
-missing, until the Phase 2 material store is connected. Without it nothing is
-written, the drafts are not offered for review, and the raw upload is kept as
-the only durable copy.
+Persistence is the store seam in app.services.material_seams. Every stage is
+added to the material's history as it is announced, and the outcome is written
+in one transaction before it is announced. A pipeline built without a store,
+as some tests build it, writes nothing, offers no drafts for review, and keeps
+the raw upload as the only durable copy.
 """
 
 from __future__ import annotations
@@ -54,6 +55,7 @@ from app.services.material_seams import (
     DraftQuestion,
     EmbeddingBatch,
     MaterialStore,
+    ModelRun,
     QuestionGenerator,
 )
 from app.services.processing_security import validate_processing_result
@@ -87,6 +89,17 @@ class MaterialPipeline:
 
     def job(self, stored: StoredFile, owner_id: UUID) -> MaterialJob:
         return MaterialJob(self, stored, owner_id)
+
+    async def admit(self, stored: StoredFile, owner_id: UUID) -> MaterialJob:
+        """Record an accepted upload and return the job that will process it.
+
+        Called while the upload request is still open, so the material's row
+        exists, under the id the lecturer is given, before any work is queued
+        and before GET /materials/{id} can be asked about it.
+        """
+        if self.store is not None:
+            await self.store.record_accepted(stored, owner_id)
+        return self.job(stored, owner_id)
 
 
 class MaterialJob:
@@ -189,7 +202,7 @@ class MaterialJob:
         # For the lecturer, and stored. The build notes below are for whoever
         # reads the log, and a lecturer has no use for them.
         warnings = list(result.warnings)
-        questions = await self._generate(result.chunks, warnings)
+        questions, generation = await self._generate(result.chunks, warnings)
 
         build_notes: list[str] = []
         if pipeline.store is None:
@@ -218,6 +231,10 @@ class MaterialJob:
                 embeddings=embeddings,
                 questions=tuple(questions),
                 warnings=tuple(warnings),
+                model_runs=(
+                    ModelRun(operation="embedding", model=embeddings.model, succeeded=True),
+                    generation,
+                ),
             )
         )
 
@@ -263,18 +280,26 @@ class MaterialJob:
 
     async def _generate(
         self, chunks: Sequence[ContentChunk], warnings: list[str]
-    ) -> list[DraftQuestion]:
+    ) -> tuple[list[DraftQuestion], ModelRun]:
+        """The usable drafts, and the record of the model call that wrote them."""
+        generator = self._pipeline.generator
         await self._report(MaterialStage.GENERATING, "Drafting questions.")
         try:
-            drafts = await self._pipeline.generator.generate(self.material_id, chunks)
-        except Exception:
+            drafts = await generator.generate(self.material_id, chunks)
+        except Exception as exc:
             # Questions are the one stage a material is still useful without:
             # the chunks are extracted and indexed, and the lecturer can retry
             # generation. A model reply that would not parse used to fail the
             # whole material, after everything before it had succeeded.
             log.exception("question generation failed for material %s", self.material_id)
             warnings.append("Questions could not be generated for this material.")
-            return []
+            failed = ModelRun(
+                operation="question_generation",
+                model=generator.model,
+                succeeded=False,
+                detail=type(exc).__name__,
+            )
+            return [], failed
 
         # A model will sometimes return an answer key that points past the
         # options. Storing it would mark every student wrong on that question,
@@ -289,7 +314,9 @@ class MaterialJob:
                     "material %s: dropped draft %d, which %s", self.material_id, index, problem
                 )
                 warnings.append(f"draft question {index} {problem} and was dropped")
-        return usable
+        return usable, ModelRun(
+            operation="question_generation", model=generator.model, succeeded=True
+        )
 
     async def _succeed(self, material: CompletedMaterial) -> None:
         store = self._pipeline.store
@@ -362,7 +389,20 @@ class MaterialJob:
             log.warning("could not discard the raw file for material %s", self.material_id)
 
     async def _report(self, stage: MaterialStage, message: str) -> None:
-        await self._announce(JobStatus.for_stage(self.material_id, stage, message=message))
+        """Announce a stage, then add it to the material's stored history.
+
+        The history is for tracing a material afterwards, so a write that
+        fails is logged rather than allowed to stop the processing it records.
+        """
+        status = JobStatus.for_stage(self.material_id, stage, message=message)
+        await self._announce(status)
+        store = self._pipeline.store
+        if store is None:
+            return
+        try:
+            await store.record_progress(status)
+        except Exception:
+            log.warning("could not record the %s stage of material %s", stage, self.material_id)
 
     async def _announce(self, status: JobStatus) -> None:
         """Tell the uploader where their material has got to.

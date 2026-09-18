@@ -11,6 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router, ws_router
+from app.auth.dev_seed import ensure_dev_users
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, request_id_var
@@ -45,6 +46,7 @@ async def lifespan(app: FastAPI):
         log.warning("Teams credentials set but the adapter is not implemented yet")
     else:
         log.info("Running without Teams integration")
+    await ensure_dev_users(get_settings())
     yield
     # Material processing outlives the request that started it, so a shutdown
     # that does not wait for it kills a parse halfway and leaves the lecturer

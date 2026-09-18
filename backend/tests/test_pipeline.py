@@ -551,7 +551,9 @@ async def test_a_generator_that_fails_leaves_the_material_usable(tmp_path: Path)
     after extraction and embedding had already succeeded."""
 
     class Unparseable:
-        async def generate(self, material_id, chunks):
+        model = "test-generate"
+
+        async def generate(self, material_id, chunks, count=None):
             raise ValueError("model did not return valid JSON")
 
     hub = SessionHub()

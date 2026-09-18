@@ -29,6 +29,7 @@ from app.schemas.content import (
 )
 from app.schemas.identity import ConsentType, Role
 from app.services.extraction import CONTENT_TYPES
+from app.services.material_pages import page_previews
 from app.services.question_ownership import filter_owned_questions, get_owned_question
 from app.services.uploads import accept_upload
 
@@ -148,7 +149,12 @@ async def get_material(
             {"material_id": str(material_id)},
         )
 
-    return MaterialOut.model_validate(material, from_attributes=True)
+    # The page preview is only on the single-material read. Built for every
+    # row of a list it would load the full text of every upload a lecturer has.
+    pages = page_previews(await repository.list_elements(material.id))
+    return MaterialOut.model_validate(material, from_attributes=True).model_copy(
+        update={"pages": pages}
+    )
 
 
 @router.get("/{material_id}/questions", response_model=Page[QuestionOut])

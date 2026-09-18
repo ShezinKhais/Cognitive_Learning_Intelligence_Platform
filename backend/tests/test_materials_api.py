@@ -49,6 +49,9 @@ class FakeMaterialRepository:
             None,
         )
 
+    async def list_elements(self, material_id: uuid.UUID) -> list:
+        return []
+
 
 def _material(
     filename: str,
@@ -64,6 +67,7 @@ def _material(
         page_count=4,
         chunk_count=8,
         error=None,
+        warnings=[],
         uploaded_at=datetime.now(UTC),
     )
 

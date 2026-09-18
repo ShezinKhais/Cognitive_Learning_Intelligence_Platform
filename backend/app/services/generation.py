@@ -416,12 +416,15 @@ class QuestionGenerator:
 
     def __init__(self, client, model: str, count: int = 5) -> None:
         self._client = client
-        self._model = model
+        # Public: the pipeline records which model wrote a material's drafts.
+        self.model = model
         self._count = count
 
     async def generate(
-        self, material_id: UUID, chunks: Sequence[ContentChunk]
+        self, material_id: UUID, chunks: Sequence[ContentChunk], count: int | None = None
     ) -> Sequence[DraftQuestion]:
+        """Drafts about `chunks`. `count` overrides how many are asked for, as a
+        lecturer replacing a single question needs only a few candidates."""
         usable = screened(chunks)
         if len(usable) < len(chunks):
             logger.warning(
@@ -433,12 +436,12 @@ class QuestionGenerator:
         if not usable:
             return []
 
-        outcome = await self._draft(chunks)
+        outcome = await self._draft(chunks, count)
         for _, reasons in outcome.rejected:
             logger.info("rejected draft question: %s", "; ".join(reasons))
         return outcome.accepted
 
-    async def _draft(self, chunks) -> GenerationOutcome:
+    async def _draft(self, chunks, count: int | None = None) -> GenerationOutcome:
         """Kept separate so tests can see what was rejected and why.
 
         The model is shown only the screened chunks, while drafts are checked
@@ -446,8 +449,13 @@ class QuestionGenerator:
         instruction is still rejected.
         """
         response = await self._client.chat.completions.create(
-            model=self._model,
-            messages=[{"role": "user", "content": build_prompt(screened(chunks), self._count)}],
+            model=self.model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": build_prompt(screened(chunks), count or self._count),
+                }
+            ],
         )
         try:
             drafts = parse_drafts(response.choices[0].message.content or "")

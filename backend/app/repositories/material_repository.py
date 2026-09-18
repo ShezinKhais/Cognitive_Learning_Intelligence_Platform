@@ -5,6 +5,7 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.extraction_element import ExtractionElement
 from app.models.material import Material
 from app.models.material_processing_status import MaterialProcessingStatus
 from app.schemas.content import MaterialStatus
@@ -60,8 +61,16 @@ class MaterialRepository:
         size_bytes: int,
         uploaded_by_user_id: uuid.UUID,
         course_id: uuid.UUID | None = None,
+        material_id: uuid.UUID | None = None,
     ) -> Material:
+        """Insert a pending material.
+
+        material_id lets the upload keep the id it has already used for the
+        stored file, the progress events and the 202 response, so all of them
+        name the same row.
+        """
         material = Material(
+            id=material_id or uuid.uuid4(),
             course_id=course_id,
             uploaded_by_user_id=uploaded_by_user_id,
             filename=filename,
@@ -128,5 +137,14 @@ class MaterialRepository:
             select(MaterialProcessingStatus)
             .where(MaterialProcessingStatus.source_material_id == material_id)
             .order_by(MaterialProcessingStatus.sequence)
+        )
+        return list(result.scalars().all())
+
+    async def list_elements(self, material_id: uuid.UUID) -> list[ExtractionElement]:
+        """The material's extracted content, in document order."""
+        result = await self.session.execute(
+            select(ExtractionElement)
+            .where(ExtractionElement.source_material_id == material_id)
+            .order_by(ExtractionElement.element_index)
         )
         return list(result.scalars().all())
