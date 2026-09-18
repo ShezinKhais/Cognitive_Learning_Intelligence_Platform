@@ -5,7 +5,9 @@ payload. Both directions are versioned together with the REST API.
 
 Ordering and replay
 -------------------
-Server events carry a monotonically increasing `seq` per session. A client that
+Server events carry a monotonically increasing `seq` per channel. A channel is
+either a session or a single user's own channel, which carries
+`material.progress` for the lecturer who uploaded the file. A client that
 reconnects sends `last_seq` so the server can replay what it missed. The replay
 buffer itself lands in Phase 3; the protocol reserves the field now so clients
 do not need changing later.
@@ -294,7 +296,10 @@ class ErrorPayload(BaseModel):
 
 class ServerEvent(BaseModel):
     type: ServerEventType
-    seq: int = Field(description="Monotonic per session. Clients use it to detect gaps.")
+    seq: int = Field(
+        description="Monotonic per channel (a session, or a user's own channel). "
+        "Clients use it to detect gaps."
+    )
     ts: datetime
     data: dict[str, Any] = Field(default_factory=dict)
 

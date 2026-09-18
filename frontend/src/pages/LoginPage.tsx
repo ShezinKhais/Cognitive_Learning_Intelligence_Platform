@@ -9,9 +9,14 @@ import {
 
 import {
   ApiError,
+  getCurrentUser,
   login,
   saveAccessToken,
 } from '../api'
+import {
+  hasRequiredConsent,
+  intendedPathForRole,
+} from '../authRouting'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -37,22 +42,27 @@ export default function LoginPage() {
 
       saveAccessToken(result.access_token)
 
+      const currentUser = await getCurrentUser()
+
       const requestedPath = (
         location.state as { from?: string } | null
       )?.from
 
-      // Lecturers have no workspace until Phase 3, so access-denied stays
-      // their landing point. Sending admins there too stranded them on a
-      // page with no way out while the console they own sat unreachable.
-      const defaultPath =
-        result.role === 'student'
-          ? '/student'
-          : result.role === 'admin'
-            ? '/admin'
-            : '/access-denied'
+      const destination = intendedPathForRole(
+        currentUser.role,
+        requestedPath,
+      )
+
+      if (!hasRequiredConsent(currentUser)) {
+        navigate('/consent', {
+          replace: true,
+          state: { from: destination },
+        })
+        return
+      }
 
       navigate(
-        requestedPath ?? defaultPath,
+        destination,
         {
           replace: true,
         },
