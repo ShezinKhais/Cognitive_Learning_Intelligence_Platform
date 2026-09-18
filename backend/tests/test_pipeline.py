@@ -22,6 +22,7 @@ from app.schemas.events import MaterialProgressPayload, MaterialStage, ServerEve
 from app.services.extraction import ProcessingResult
 from app.services.jobs import INTERNAL_ERROR, JobStatus
 from app.services.material_seams import CompletedMaterial, DraftQuestion, EmbeddingBatch
+from app.services.pipeline import NO_QUESTIONS_WARNING
 
 from .pipeline_support import (
     SAMPLES,
@@ -573,3 +574,19 @@ async def test_a_generator_that_fails_leaves_the_material_usable(tmp_path: Path)
     [written] = store.completed
     assert written.questions == ()
     assert "Questions could not be generated for this material." in written.warnings
+
+
+async def test_a_material_with_no_usable_drafts_says_so(tmp_path: Path) -> None:
+    """Generation can succeed and still produce nothing usable, for text with
+    little to ask about. The material then read as finished with nothing said,
+    and the lecturer met an empty review screen with no reason given."""
+    store = Store()
+    pipeline, storage, _ = build(tmp_path, generator=Generator(count=0), store=store)
+    stored = await stored_text(storage)
+
+    result = await pipeline.job(stored, uuid4()).run()
+
+    assert result is not None
+    assert result.question_count == 0
+    [written] = store.completed
+    assert NO_QUESTIONS_WARNING in written.warnings

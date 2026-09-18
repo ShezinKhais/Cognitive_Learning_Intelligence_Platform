@@ -63,6 +63,10 @@ from app.services.storage import MaterialStorage, StoredFile
 
 log = logging.getLogger("clip.pipeline")
 
+NO_QUESTIONS_WARNING = (
+    "No questions could be drafted from this material. Material with more "
+    "explanatory text gives the generator more to work from."
+)
 UNSTORED_NOTE = "persistence is not wired up in this build and was skipped"
 
 
@@ -314,6 +318,10 @@ class MaterialJob:
                     "material %s: dropped draft %d, which %s", self.material_id, index, problem
                 )
                 warnings.append(f"draft question {index} {problem} and was dropped")
+        if not usable:
+            # Otherwise the material reads as finished with questions to
+            # review, and the review screen is empty with nothing saying why.
+            warnings.append(NO_QUESTIONS_WARNING)
         return usable, ModelRun(
             operation="question_generation", model=generator.model, succeeded=True
         )
