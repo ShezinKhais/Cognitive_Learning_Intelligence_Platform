@@ -474,7 +474,7 @@ function ReviewPrompt({ material }: { material: Material }) {
   return (
     <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-success/20 bg-card p-4 shadow-[var(--shadow-card)]">
       <p className="text-sm text-card-foreground">
-        Processing is finished. Draft questions from this material are waiting for your review.
+        Processing is finished. Any questions generated from this material are ready to review.
       </p>
       <Link
         to={`/materials/${material.id}/review`}

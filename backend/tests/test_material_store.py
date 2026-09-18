@@ -141,6 +141,9 @@ async def test_an_accepted_upload_has_a_pending_row_under_its_own_id(sessions, l
     assert row.status == "pending"
     assert row.content_type == "application/pdf"
     assert row.warnings == []
+    # Read back with its time zone, as the upload response gives it; a bare
+    # timestamp is taken as local time by every client not on UTC.
+    assert row.uploaded_at.utcoffset() is not None
 
 
 async def test_a_finished_material_is_recorded_whole_and_reviewable(sessions, lecturer) -> None:

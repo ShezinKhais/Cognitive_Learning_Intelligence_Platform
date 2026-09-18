@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import re
 import uuid
@@ -46,8 +48,13 @@ async def lifespan(app: FastAPI):
         log.warning("Teams credentials set but the adapter is not implemented yet")
     else:
         log.info("Running without Teams integration")
-    await ensure_dev_users(get_settings())
+    # In the background, so a database that is slow or absent never holds up
+    # startup; it is only needed once a development account uploads.
+    seeding = asyncio.create_task(ensure_dev_users(get_settings()), name="dev-user-seed")
     yield
+    seeding.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await seeding
     # Material processing outlives the request that started it, so a shutdown
     # that does not wait for it kills a parse halfway and leaves the lecturer
     # watching a bar stuck at 20 per cent with no record of why.
