@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router'
 
 import {
@@ -11,9 +11,11 @@ import {
   type QuestionStatus,
 } from '../api'
 
+const PAGE_SIZE = 50
+
 type LoadState =
   | { status: 'loading' }
-  | { status: 'ready'; questions: Question[] }
+  | { status: 'ready'; questions: Question[]; total: number; offset: number; loadingMore: boolean }
   | { status: 'error'; message: string }
 
 const STATUS_TONE: Record<QuestionStatus, 'success' | 'warning' | 'critical' | 'muted'> = {
@@ -43,9 +45,26 @@ export default function QuestionReview() {
     if (!materialId) return
     let cancelled = false
 
-    listQuestions(materialId)
+    // Reset to loading and clear the selection before the new material's
+    // request even starts -- otherwise the previous material's questions
+    // (and a selection referring to ids that don't exist for this material)
+    // stay on screen until the new page arrives, which reads as the wrong
+    // material's queue for however long the request takes.
+    setState({ status: 'loading' })
+    setSelected(new Set())
+    setBulkError(null)
+
+    listQuestions(materialId, PAGE_SIZE, 0)
       .then((page) => {
-        if (!cancelled) setState({ status: 'ready', questions: page.items })
+        if (!cancelled) {
+          setState({
+            status: 'ready',
+            questions: page.items,
+            total: page.total,
+            offset: page.items.length,
+            loadingMore: false,
+          })
+        }
       })
       .catch((err) => {
         if (cancelled) return
@@ -58,6 +77,28 @@ export default function QuestionReview() {
     }
   }, [materialId])
 
+  const loadMore = useCallback(async () => {
+    if (!materialId || state.status !== 'ready' || state.loadingMore) return
+    setState({ ...state, loadingMore: true })
+    try {
+      const page = await listQuestions(materialId, PAGE_SIZE, state.offset)
+      setState((prev) =>
+        prev.status === 'ready'
+          ? {
+              status: 'ready',
+              questions: [...prev.questions, ...page.items],
+              total: page.total,
+              offset: prev.offset + page.items.length,
+              loadingMore: false,
+            }
+          : prev,
+      )
+    } catch (err) {
+      setBulkError(err instanceof ApiError ? err.message : 'Could not load more questions.')
+      setState((prev) => (prev.status === 'ready' ? { ...prev, loadingMore: false } : prev))
+    }
+  }, [materialId, state])
+
   const draftQuestions = useMemo(
     () => (state.status === 'ready' ? state.questions.filter((q) => q.status === 'draft') : []),
     [state],
@@ -67,7 +108,7 @@ export default function QuestionReview() {
     setState((prev) =>
       prev.status === 'ready'
         ? {
-            status: 'ready',
+            ...prev,
             questions: prev.questions.map((q) => (q.id === updated.id ? updated : q)),
           }
         : prev,
@@ -110,14 +151,20 @@ export default function QuestionReview() {
     setBulkBusy(true)
     setBulkError(null)
     try {
-      const updated = await bulkReviewQuestions(materialId, draftIds, 'approved')
-      const byId = new Map(updated.map((q) => [q.id, q]))
+      const result = await bulkReviewQuestions(materialId, draftIds, 'approved')
+      const byId = new Map(result.updated.map((q) => [q.id, q]))
       setState((prev) =>
         prev.status === 'ready'
-          ? { status: 'ready', questions: prev.questions.map((q) => byId.get(q.id) ?? q) }
+          ? { ...prev, questions: prev.questions.map((q) => byId.get(q.id) ?? q) }
           : prev,
       )
       setSelected(new Set())
+      if (result.skipped_ids.length > 0) {
+        setBulkError(
+          `${result.updated.length} approved, ${result.skipped_ids.length} skipped ` +
+            `(already reviewed elsewhere or no longer eligible).`,
+        )
+      }
     } catch (err) {
       setBulkError(err instanceof ApiError ? err.message : 'Bulk approve failed.')
     } finally {
@@ -147,7 +194,7 @@ export default function QuestionReview() {
               disabled={selected.size === 0 || bulkBusy}
               className="shrink-0 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
             >
-              {bulkBusy ? 'Approving…' : `Approve selected (${selected.size})`}
+              {bulkBusy ? 'Approving...' : `Approve selected (${selected.size})`}
             </button>
           )}
         </div>
@@ -159,7 +206,7 @@ export default function QuestionReview() {
         )}
 
         {state.status === 'loading' && (
-          <p className="mt-8 text-sm text-muted-foreground">Loading questions…</p>
+          <p className="mt-8 text-sm text-muted-foreground">Loading questions...</p>
         )}
 
         {state.status === 'error' && (
@@ -175,18 +222,36 @@ export default function QuestionReview() {
         )}
 
         {state.status === 'ready' && state.questions.length > 0 && (
-          <div className="mt-8 space-y-4">
-            {state.questions.map((question) => (
-              <QuestionCard
-                key={question.id}
-                materialId={materialId}
-                question={question}
-                selected={selected.has(question.id)}
-                onToggleSelected={() => toggleSelected(question.id)}
-                onUpdated={updateQuestion}
-              />
-            ))}
-          </div>
+          <>
+            <div className="mt-8 space-y-4">
+              {state.questions.map((question) => (
+                <QuestionCard
+                  key={question.id}
+                  materialId={materialId}
+                  question={question}
+                  selected={selected.has(question.id)}
+                  onToggleSelected={() => toggleSelected(question.id)}
+                  onUpdated={updateQuestion}
+                />
+              ))}
+            </div>
+
+            {state.questions.length < state.total && (
+              <div className="mt-6 flex flex-col items-center gap-2">
+                <p className="text-xs text-muted-foreground">
+                  Showing {state.questions.length} of {state.total}
+                </p>
+                <button
+                  type="button"
+                  onClick={loadMore}
+                  disabled={state.loadingMore}
+                  className="rounded-lg border border-border px-4 py-2 text-sm font-medium disabled:opacity-50"
+                >
+                  {state.loadingMore ? 'Loading...' : 'Load more'}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </main>
@@ -312,6 +377,7 @@ function QuestionCard({
             onChange={(e) => setPrompt(e.target.value)}
             className="w-full rounded-lg border border-border bg-background p-2 text-sm"
             rows={2}
+            aria-label="Question prompt"
           />
         ) : (
           <p className="text-sm text-card-foreground">{question.prompt}</p>
@@ -349,6 +415,7 @@ function QuestionCard({
                     name={`correct-${question.id}`}
                     checked={correctOption === i}
                     onChange={() => setCorrectOption(i)}
+                    aria-label={`Mark "${opt || `option ${i + 1}`}" as the correct answer`}
                   />
                   <input
                     value={opt}
@@ -358,13 +425,14 @@ function QuestionCard({
                       setOptions(next)
                     }}
                     className="flex-1 rounded border border-border bg-background px-2 py-1 text-sm"
+                    aria-label={`Option ${i + 1} text`}
                   />
                 </>
               ) : (
                 <span
                   className={i === question.correct_option ? 'font-medium text-success' : ''}
                 >
-                  {i === question.correct_option ? '✓ ' : ''}
+                  {i === question.correct_option ? '\u2713 ' : ''}
                   {opt}
                 </span>
               )}
@@ -432,7 +500,7 @@ function QuestionCard({
                 <button
                   type="button"
                   disabled
-                  title="Regeneration needs a backend route that doesn't exist in the frozen Phase 2 contract yet (see AI 1)"
+                  title="Regeneration is being built as a follow-up once the generation module lands in main (agreed with AI 1)"
                   className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium opacity-40"
                 >
                   Regenerate
