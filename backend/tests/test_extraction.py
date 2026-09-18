@@ -107,6 +107,22 @@ def test_chunks_overlap():
     assert chunks[0].chunk_text[-100:] == chunks[1].chunk_text[:100]
 
 
+def test_long_unbroken_token_preserves_real_overlap():
+    token = "a" * 400 + "b" * 100 + "c" * 400 + "d" * 100 + "e" * 200
+    els = [ExtractedElement("text", token, 1)]
+
+    chunks = chunk_elements(
+        els,
+        material_id=uuid.uuid4(),
+        size=500,
+        overlap=100,
+    )
+
+    assert len(chunks) > 1
+    assert chunks[0].chunk_text[-100:] == chunks[1].chunk_text[:100]
+    assert all(len(chunk.chunk_text) <= 500 for chunk in chunks)
+
+
 def test_heading_is_prefixed_to_following_text():
     els = [
         ExtractedElement("heading", "Planetary Boundaries", 2),
@@ -167,6 +183,32 @@ def test_heading_does_not_leak_across_pages():
 def test_images_are_not_chunked():
     els = [ExtractedElement("image", "[image]", 1)]
     assert chunk_elements(els, material_id=uuid.uuid4()) == []
+
+
+def test_chunks_never_exceed_the_size_limit():
+    els = [ExtractedElement("text", "Transfer learning is useful. " * 60, 1)]
+    chunks = chunk_elements(els, material_id=uuid.uuid4(), size=500, overlap=100)
+    assert all(len(c.chunk_text) <= 500 for c in chunks)
+
+
+def test_prose_is_split_on_sentence_boundaries():
+    """Character slicing cut words in half, which the embedder then saw as
+    broken tokens at both edges of every chunk."""
+    els = [ExtractedElement("text", "Transfer learning is useful. " * 60, 1)]
+    chunks = chunk_elements(els, material_id=uuid.uuid4(), size=500, overlap=100)
+    assert len(chunks) > 1
+    for chunk in chunks[:-1]:
+        assert chunk.chunk_text.rstrip().endswith(".")
+
+
+def test_small_blocks_on_one_page_are_packed_together():
+    """A PPTX slide arrives as one element per bullet. Chunking per element
+    embedded four-word fragments with no surrounding context."""
+    els = [ExtractedElement("text", f"Bullet point number {i}", 3) for i in range(6)]
+    chunks = chunk_elements(els, material_id=uuid.uuid4())
+    assert len(chunks) == 1
+    assert "number 0" in chunks[0].chunk_text
+    assert "number 5" in chunks[0].chunk_text
 
 
 # --- end to end, one per supported format ------------------------------------
@@ -293,3 +335,60 @@ def test_file_with_no_text_is_rejected(tmp_path):
     f.write_text("   \n  ")
     with pytest.raises(ValidationError):
         process_material(str(f), material_id=uuid.uuid4())
+
+
+def test_consecutive_chunks_actually_share_text():
+    """The older overlap test uses a repeating pattern, so every 100-character
+    window looks alike and it passes with or without overlap. Total length is
+    the honest check: overlapping chunks must exceed the input."""
+    text = "Transfer learning reuses a pretrained network. " * 30
+    els = [ExtractedElement("text", text, 1)]
+
+    chunks = chunk_elements(els, material_id=uuid.uuid4(), size=500, overlap=100)
+
+    assert len(chunks) > 1
+    assert sum(len(c.chunk_text) for c in chunks) > len(text)
+
+
+def test_heading_appears_once_per_chunk_not_once_per_bullet():
+    """Prefixing the heading to every element repeated it for every bullet on
+    a slide, wasting the chunk budget and skewing the embedding."""
+    els = [ExtractedElement("heading", "Transfer learning", 3)] + [
+        ExtractedElement("text", f"Bullet point number {i}", 3) for i in range(6)
+    ]
+
+    chunks = chunk_elements(els, material_id=uuid.uuid4())
+
+    assert len(chunks) == 1
+    assert chunks[0].chunk_text.count("Transfer learning") == 1
+
+
+def test_an_oversized_heading_cannot_break_the_size_limit():
+    """A heading longer than a chunk would drive the budget negative."""
+    els = [
+        ExtractedElement("heading", "H" * 800, 1),
+        ExtractedElement("text", "Some body text about normalisation.", 1),
+    ]
+
+    chunks = chunk_elements(els, material_id=uuid.uuid4(), size=500, overlap=100)
+
+    assert chunks
+    assert all(len(c.chunk_text) <= 500 for c in chunks)
+
+
+def test_a_second_heading_on_a_page_applies_to_the_text_after_it():
+    """DOCX puts every element on page 1, so grouping by page alone filed a
+    whole document under its first heading."""
+    els = [
+        ExtractedElement("heading", "Normalisation", 1),
+        ExtractedElement("text", "Redundancy is removed from the schema.", 1),
+        ExtractedElement("heading", "Indexing", 1),
+        ExtractedElement("text", "A B-tree keeps lookups fast.", 1),
+    ]
+
+    chunks = chunk_elements(els, material_id=uuid.uuid4())
+
+    indexing = [c for c in chunks if "B-tree" in c.chunk_text]
+    assert indexing
+    assert all("Normalisation" not in c.chunk_text for c in indexing)
+    assert any("Indexing" in c.chunk_text for c in indexing)
