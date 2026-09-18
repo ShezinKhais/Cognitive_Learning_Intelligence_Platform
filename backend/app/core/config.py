@@ -98,15 +98,26 @@ class Settings(BaseSettings):
     # Uploads (Includes CSV and XLSX for admin timetable/roster imports)
     max_upload_bytes: int = 52_428_800
     allowed_upload_extensions: str = "pdf,pptx,docx,txt,csv,xlsx"
+
     # Uploads are processed after the request returns, so the bytes are written
     # here rather than held in memory until a worker reaches them. Relative to
     # the backend working directory in development; a deployment points this at
     # a mounted volume, or swaps LocalDiskStorage for a blob backend.
     upload_storage_dir: str = "var/uploads"
+
     # Extraction holds a CPU for fifteen to eighteen seconds per document, so
     # more parsers than cores means every lecturer waits longer than they would
     # have queued. Two is right for a laptop; a deployed host raises it.
     max_concurrent_material_jobs: int = Field(default=2, ge=1)
+
+    # Cyber 1: compressed Office archive security limits.
+    max_material_archive_entries: int = 4096
+    max_material_uncompressed_bytes: int = 209_715_200  # 200 MiB
+
+    # Cyber 1: post-extraction processing security limits.
+    max_material_pages: int = 1000
+    max_extracted_characters: int = 2_000_000
+    max_material_chunks: int = 5000
 
     # Retention (UAE PDPL)
     data_retention_days: int = 90

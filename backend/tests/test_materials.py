@@ -192,17 +192,21 @@ def test_the_upload_is_processed_after_the_response(live_client: TestClient, upl
     assert status.status is MaterialStatus.COMPLETED
 
 
-def test_an_unreadable_file_finishes_as_failed_rather_than_never(
+def test_a_fake_pdf_is_rejected_before_background_processing(
     live_client: TestClient, uploads
 ) -> None:
-    """The 202 already went out, so the only way to report this is the job."""
+    """A file renamed to PDF must fail before it reaches the parser."""
     headers = login(live_client, "lecturer@clip.example.com", LECTURER_PASSWORD)
 
-    material_id = upload(live_client, headers, "broken.pdf", b"this is not a PDF").json()["id"]
+    response = upload(
+        live_client,
+        headers,
+        "broken.pdf",
+        b"this is not a PDF",
+    )
 
-    status = await_terminal_state(uploads, material_id)
-    assert status.stage is MaterialStage.FAILED
-    assert "could not be read" in status.message
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
 @pytest.mark.parametrize("name", ["notes.exe", "notes.pdf.exe", "notes"])
@@ -296,9 +300,22 @@ def test_the_shown_filename_is_the_stored_one_not_the_raw_client_value(
     assert response.json()["filename"] == "notes.txt"
 
 
-def test_the_reported_type_comes_from_the_extension_not_the_client_header(
+def test_the_reported_type_comes_from_the_extension_not_a_generic_client_header(
     live_client: TestClient, uploads
 ) -> None:
+    headers = login(live_client, "lecturer@clip.example.com", LECTURER_PASSWORD)
+
+    response = live_client.post(
+        "/api/v1/materials",
+        headers=headers,
+        files={"file": ("notes.txt", LECTURE_NOTES, "application/octet-stream")},
+    )
+
+    assert response.status_code == 202
+    assert response.json()["content_type"] == "text/plain"
+
+
+def test_a_specific_mismatched_client_mime_is_rejected(live_client: TestClient, uploads) -> None:
     headers = login(live_client, "lecturer@clip.example.com", LECTURER_PASSWORD)
 
     response = live_client.post(
@@ -307,8 +324,7 @@ def test_the_reported_type_comes_from_the_extension_not_the_client_header(
         files={"file": ("notes.txt", LECTURE_NOTES, "text/html")},
     )
 
-    assert response.status_code == 202
-    assert response.json()["content_type"] == "text/plain"
+    assert response.status_code == 422
 
 
 def test_the_real_wiring_uses_the_configured_limits() -> None:
