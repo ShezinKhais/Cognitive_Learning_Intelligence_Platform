@@ -11,6 +11,7 @@ comparing the seq it receives against the last one it saw.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections import OrderedDict, defaultdict, deque
 from collections.abc import Awaitable, Callable
@@ -43,8 +44,10 @@ MAX_REPLAY_EVENTS_PER_CHANNEL = 128
 SEND_TIMEOUT_SECONDS = 1.0
 SEND_TIMEOUT_CLOSE_CODE = 1011
 
-# RFC 6455: reconnect and retry after the server drops a stale socket.
+# RFC 6455's "try again later" code tells a client whose socket stopped
+# receiving to reconnect and resume from its last progress cursor.
 CLOSE_TRY_AGAIN_LATER = 1013
+CLOSE_TIMEOUT_SECONDS = 5.0
 
 
 class Connection:
@@ -53,6 +56,11 @@ class Connection:
         self.user_id = user_id
         self.session_id = session_id
         self.connected_at = datetime.now(UTC)
+
+    @property
+    def channel(self) -> UUID:
+        """The connection's single ordered event stream."""
+        return self.session_id if self.session_id is not None else self.user_id
 
 
 class SessionHub:
@@ -66,6 +74,10 @@ class SessionHub:
     def __init__(self) -> None:
         self._rooms: dict[UUID, set[Connection]] = defaultdict(set)
         self._by_user: dict[UUID, set[Connection]] = defaultdict(set)
+        # Unified view used by connection lifecycle and diagnostics. Keeping a
+        # single entry per socket prevents session and user sequence streams
+        # from being mixed on one connection.
+        self._channels: dict[UUID, set[Connection]] = defaultdict(set)
         # Ordered so the least recently used counter is the first eviction
         # candidate once the map reaches MAX_TRACKED_SESSIONS.
         self._seq: OrderedDict[UUID, int] = OrderedDict()
@@ -78,11 +90,16 @@ class SessionHub:
             lambda: deque(maxlen=MAX_REPLAY_EVENTS_PER_CHANNEL)
         )
         self._lock = asyncio.Lock()
+        self._closing: set[asyncio.Task[None]] = set()
         # Publication and replay must be ordered for one user, but a slow
         # lecturer connection must never hold up every other lecturer. Weak
         # values keep this per-user lock registry bounded once a channel is no
         # longer active.
         self._user_delivery_locks: WeakValueDictionary[UUID, asyncio.Lock] = WeakValueDictionary()
+        # Compatibility names shared with the channel-based hub. Weak values
+        # disappear once a delivery finishes, so this registry stays bounded.
+        self._delivery_locks = self._user_delivery_locks
+        self._delivery_waiters: dict[UUID, int] = {}
 
     def _user_delivery_lock(self, user_id: UUID) -> asyncio.Lock:
         lock = self._user_delivery_locks.get(user_id)
@@ -101,6 +118,7 @@ class SessionHub:
                 self._by_user[connection.user_id].add(connection)
             else:
                 self._rooms[connection.session_id].add(connection)
+            self._channels[connection.channel].add(connection)
 
         if connection.session_id is None:
             log.info("user %s joined their user channel", connection.user_id)
@@ -122,6 +140,12 @@ class SessionHub:
                     if not room:
                         del self._rooms[connection.session_id]
 
+            members = self._channels.get(connection.channel)
+            if members:
+                members.discard(connection)
+                if not members:
+                    del self._channels[connection.channel]
+
         if connection.session_id is None:
             log.info("user %s left their user channel", connection.user_id)
         else:
@@ -139,6 +163,7 @@ class SessionHub:
         running restarts seq at 1, which clients read as a gap.
         """
         self._rooms.pop(session_id, None)
+        self._channels.pop(session_id, None)
         self._seq.pop(session_id, None)
 
     def participant_count(self, session_id: UUID) -> int:
@@ -164,7 +189,7 @@ class SessionHub:
         would restart its seq at 1, and every client watching that stream would
         read the restart as a gap, so an oversized map is the better failure.
         """
-        idle = next((session for session in self._seq if not self._rooms.get(session)), None)
+        idle = next((session for session in self._seq if not self._channels.get(session)), None)
         if idle is not None:
             del self._seq[idle]
             log.info("dropped the sequence counter for idle session %s", idle)
@@ -270,20 +295,37 @@ class SessionHub:
         except Exception:
             log.warning("%s failed for user %s, dropping", context, connection.user_id)
 
-        await self.leave(connection)
-        try:
-            await asyncio.wait_for(
-                connection.websocket.close(
-                    code=SEND_TIMEOUT_CLOSE_CODE,
-                    reason="client stopped receiving events",
-                ),
-                timeout=SEND_TIMEOUT_SECONDS,
-            )
-        except Exception:
-            # The send often failed because the peer was already gone. Closing
-            # is best-effort after the connection has left both indexes.
-            pass
+        await self._drop(connection)
         return False
+
+    async def _drop(self, connection: Connection) -> None:
+        """Forget a dead socket immediately and close it without blocking delivery."""
+        await self.leave(connection)
+        task = asyncio.create_task(self._close_quietly(connection))
+        self._closing.add(task)
+        task.add_done_callback(self._closing.discard)
+        # Let an immediately-closeable socket finish before returning while a
+        # stalled close remains safely detached from the delivery path.
+        await asyncio.sleep(0)
+
+    async def _close_quietly(self, connection: Connection) -> None:
+        with contextlib.suppress(Exception):
+            async with asyncio.timeout(CLOSE_TIMEOUT_SECONDS):
+                await connection.websocket.close(
+                    code=CLOSE_TRY_AGAIN_LATER,
+                    reason="client stopped receiving events",
+                )
+
+    async def join_after(
+        self,
+        connection: Connection,
+        send_ready: Callable[[], Awaitable[None]],
+    ) -> None:
+        """Send READY and join atomically with respect to channel delivery."""
+        async with self._user_delivery_lock(connection.channel):
+            async with asyncio.timeout(SEND_TIMEOUT_SECONDS):
+                await send_ready()
+            await self.join(connection)
 
     async def send_to_user_channel(
         self,
