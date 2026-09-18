@@ -45,7 +45,8 @@ def build_events() -> dict:
         "description": (
             "C.L.I.P WebSocket contract. Every message is {type, data}; server "
             "messages also carry seq and ts. seq increases monotonically per "
-            "session so clients can detect gaps and request replay."
+            "channel, which is a session or a user's own channel, so clients "
+            "can detect gaps and request replay."
         ),
         "envelopes": {
             "client": ClientEvent.model_json_schema(),
