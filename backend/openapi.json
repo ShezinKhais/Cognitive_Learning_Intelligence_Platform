@@ -620,6 +620,7 @@
               "format": "uuid",
               "type": "string"
             },
+            "maxItems": 500,
             "title": "Question Ids",
             "type": "array"
           },

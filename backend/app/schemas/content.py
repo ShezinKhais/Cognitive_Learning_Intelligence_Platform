@@ -10,7 +10,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class MaterialStatus(StrEnum):
@@ -115,9 +115,20 @@ class QuestionReviewRequest(BaseModel):
     difficulty: Difficulty | None = None
 
 
+# Far above any one material's question count. Unbounded, a single request
+# could name enough ids to make the lookup query itself the problem.
+MAX_BULK_REVIEW_IDS = 500
+
+
 class QuestionBulkReviewRequest(BaseModel):
-    question_ids: list[UUID]
+    question_ids: list[UUID] = Field(max_length=MAX_BULK_REVIEW_IDS)
     status: ReviewDecision
+
+    @field_validator("question_ids")
+    @classmethod
+    def _once_each(cls, ids: list[UUID]) -> list[UUID]:
+        # A repeated id was reviewed twice and listed twice in the result.
+        return list(dict.fromkeys(ids))
 
 
 class QuestionBulkReviewResult(BaseModel):

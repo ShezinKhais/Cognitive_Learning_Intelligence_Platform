@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
 } from 'react'
@@ -182,6 +183,18 @@ export default function LecturerMaterialsPage() {
     },
   )
 
+  // Once live updates have stopped for good, the stored status is the only
+  // way left to learn how processing ended. Asking the lecturer to refresh
+  // instead lost the material they were watching, since it lives only here.
+  const watchedId = material?.id
+  const stillProcessing =
+    material !== null && material.status !== 'completed' && material.status !== 'failed'
+  useEffect(() => {
+    if (connectionStatus !== 'unavailable' || !stillProcessing || !watchedId) return
+    const timer = window.setInterval(() => void refreshMaterial(watchedId), STATUS_POLL_MS)
+    return () => window.clearInterval(timer)
+  }, [connectionStatus, stillProcessing, watchedId, refreshMaterial])
+
   async function handleFile(file: File) {
     const validationMessage = validateUpload(file)
     const nextLocalFile = {
@@ -344,6 +357,9 @@ function PipelineUnavailable() {
     </section>
   )
 }
+
+// How often the stored status is checked when live updates are unavailable.
+const STATUS_POLL_MS = 5000
 
 const CONNECTION_LABEL: Record<ProgressConnectionStatus, string> = {
   connected: 'Live updates on',
@@ -552,7 +568,7 @@ function ProcessingStatus({
         {!completed && !failed && connectionStatus !== 'connected' && (
           <span>
             {connectionStatus === 'unavailable'
-              ? 'Live updates unavailable. Refresh the page to try again.'
+              ? 'Live updates unavailable. Checking for the result every few seconds.'
               : 'Live updates reconnecting'}
           </span>
         )}

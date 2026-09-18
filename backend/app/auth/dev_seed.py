@@ -8,6 +8,7 @@ lecturer failed on that key. Never runs in production, where accounts are real.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from sqlalchemy.dialects.postgresql import insert
@@ -20,22 +21,42 @@ from app.models.user import User
 
 log = logging.getLogger("clip.auth")
 
-# Startup waits on this, so an unreachable database must fail fast rather than
-# after the driver's default minute.
+# An unreachable database should fail an attempt fast rather than after the
+# driver's default minute.
 CONNECT_TIMEOUT_SECONDS = 3
+# Between attempts while the database is not there yet.
+RETRY_SECONDS = 5.0
 
 
-async def ensure_dev_users(settings: Settings) -> None:
+async def ensure_dev_users(settings: Settings, retry_seconds: float = RETRY_SECONDS) -> None:
     """Insert any development account the user table does not have yet.
 
-    Uses a short-lived engine of its own so nothing it opens is bound to the
-    startup event loop. A database that cannot be reached is logged, not
+    Runs in the background from startup and keeps trying until it succeeds or
+    the app shuts down. The backend is often started before the database, and
+    a single attempt left every upload failing on the missing user until the
+    next restart. A database that cannot be reached is logged once, not
     raised: authentication does not need it, and the tests that run without
     one should still start the app.
     """
     if settings.is_production:
         return
 
+    warned = False
+    while not await _insert_dev_users(settings):
+        if not warned:
+            log.warning(
+                "development accounts could not be written to the user table yet; "
+                "uploads by them will fail until the database is reachable. Retrying."
+            )
+            warned = True
+        await asyncio.sleep(retry_seconds)
+    if warned:
+        log.info("development accounts written to the user table")
+
+
+async def _insert_dev_users(settings: Settings) -> bool:
+    """One attempt. Uses a short-lived engine of its own so nothing it opens is
+    bound to the startup event loop."""
     rows = [
         {
             "user_id": record.id,
@@ -56,10 +77,8 @@ async def ensure_dev_users(settings: Settings) -> None:
         async with engine.begin() as connection:
             await connection.execute(insert(User).values(rows).on_conflict_do_nothing())
     except Exception as exc:
-        log.warning(
-            "development accounts could not be written to the user table (%s); "
-            "uploads by them will fail until the database is reachable",
-            type(exc).__name__,
-        )
+        log.debug("development account insert failed: %s", type(exc).__name__)
+        return False
     finally:
         await engine.dispose()
+    return True

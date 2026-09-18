@@ -80,9 +80,8 @@ async def upload_material(file: UploadFile, principal: CurrentUser) -> MaterialO
     """
     stored = await accept_upload(file, principal.user_id)
 
-    # Built from what the request knows. Until the Phase 2 material store is
-    # connected nothing is persisted, and the counts stay null exactly as they
-    # would while a real row is still processing.
+    # Built from what the request knows. The row was written under this id
+    # before the job was queued; its counts stay null until processing ends.
     return MaterialOut(
         id=stored.material_id,
         filename=stored.filename,
@@ -199,12 +198,11 @@ async def review_question(
     """Approve, edit or reject a generated question. No question reaches a
     student without passing through here.
     """
-    # A lecturer may only act on questions belonging to a session they are
-    # the instructor of and that belong to material_id; admins may act on
-    # any question. A question that exists but belongs to a different
-    # material, or a different lecturer's session, is rejected the same
-    # way a nonexistent question is -- see app.services.question_ownership
-    # for why. Invalid status transitions (e.g. skipping straight to
+    # A lecturer may only act on questions from material they uploaded that
+    # belong to material_id; admins may act on any question. A question that
+    # exists but belongs to a different material is rejected the same way a
+    # nonexistent question is -- see app.services.question_ownership for
+    # why. Invalid status transitions (e.g. skipping straight to
     # delivered, or editing a staged/delivered question) are rejected by
     # the repository with a 409; see QuestionRepository.apply_review.
     repo = QuestionRepository(db)

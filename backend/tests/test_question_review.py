@@ -22,6 +22,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -864,3 +865,19 @@ async def test_bulk_review_skips_a_question_with_an_invalid_answer_key(db_client
             await cleanup.commit()
         await _cleanup(session_factory, good_q)
         app.dependency_overrides.pop(get_principal, None)
+
+
+def test_a_bulk_request_is_bounded_and_names_each_question_once():
+    """Unbounded, one request could name enough ids to make the lookup the
+    problem. A repeated id was reviewed twice and reported twice."""
+    from app.schemas.content import MAX_BULK_REVIEW_IDS, QuestionBulkReviewRequest
+
+    repeated = uuid4()
+    other = uuid4()
+    request = QuestionBulkReviewRequest(question_ids=[repeated, other, repeated], status="approved")
+    assert request.question_ids == [repeated, other]
+
+    with pytest.raises(PydanticValidationError):
+        QuestionBulkReviewRequest(
+            question_ids=[uuid4() for _ in range(MAX_BULK_REVIEW_IDS + 1)], status="approved"
+        )
