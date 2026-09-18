@@ -33,7 +33,7 @@ def _accept_terms(client: TestClient, token: str) -> None:
     assert response.status_code == 201
 
 
-def test_admin_route_does_not_require_student_consent(
+def test_admin_route_requires_terms_consent(
     client: TestClient,
 ) -> None:
     token = _login(
@@ -54,7 +54,8 @@ def test_admin_route_does_not_require_student_consent(
         },
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "CONSENT_REQUIRED"
 
 
 def test_student_and_lecturer_cannot_upload_a_timetable(client: TestClient) -> None:
