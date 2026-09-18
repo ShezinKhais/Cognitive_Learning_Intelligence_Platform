@@ -33,12 +33,12 @@ from app.services.question_ownership import filter_owned_questions, get_owned_qu
 from app.services.uploads import accept_upload
 
 # Every route here, the review actions included, is lecturer and admin work,
-# so the role guard sits on the router. Ownership (app.services.question_
-# ownership) narrows a lecturer down to their own sessions on top of this;
-# neither check alone is enough -- role without ownership would let any
-# lecturer touch any other lecturer's questions, and ownership without role
-# would let a user whose account still matches a session's instructor_id
-# keep acting on it even after their role changed away from lecturer.
+# so the role guard sits on the router. Ownership narrows a lecturer down to
+# the material they uploaded on top of this, for materials and their
+# questions alike; neither check alone is enough -- role without ownership
+# would let any lecturer touch any other lecturer's questions, and ownership
+# without role would let a user who uploaded material keep acting on it
+# after their role changed away from lecturer.
 router = APIRouter(
     prefix="/materials",
     tags=["content"],
@@ -162,8 +162,8 @@ async def list_questions(
 
     Lecturer/admin only, same as the mutation routes --
     QuestionOut carries correct_option, which must never reach a student or
-    a lecturer who doesn't teach the sessions this material's questions
-    belong to. A lecturer sees only their own; an admin sees everything.
+    a lecturer who didn't upload this material. A lecturer sees only their
+    own; an admin sees everything.
     """
     repo = QuestionRepository(db)
     questions, total = await repo.list_owned_by_material(

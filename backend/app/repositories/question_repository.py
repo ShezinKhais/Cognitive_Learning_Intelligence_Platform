@@ -7,8 +7,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ConflictError, ValidationError
+from app.models.material import Material
 from app.models.question import Question
-from app.models.session import Session as SessionModel
 
 # The contract's own docstring on QuestionStatus says delivery only ever
 # happens from STAGED, so nothing reaches a class without a lecturer
@@ -112,12 +112,14 @@ class QuestionRepository:
     async def get_with_owner(
         self, question_id: uuid.UUID, *, material_id: uuid.UUID | None = None
     ) -> tuple[Question, uuid.UUID] | None:
-        """Question plus the instructor_id that owns its session, in one query.
+        """Question plus the user who uploaded its material, in one query.
 
         The review routes need both: the question to act on, and the owning
         lecturer's id to check against the caller. Doing this as a join
         avoids a second round trip per request and avoids the TOCTOU gap of
-        fetching the question, then separately fetching its session.
+        fetching the question, then separately fetching its material. The
+        owner is None for material with no recorded uploader, which no
+        lecturer owns.
 
         material_id, when given, scopes the lookup so a question only
         resolves when it actually belongs to that material -- otherwise a
@@ -129,8 +131,8 @@ class QuestionRepository:
             conditions.append(Question.source_material_id == material_id)
 
         result = await self.session.execute(
-            select(Question, SessionModel.instructor_id)
-            .join(SessionModel, Question.session_id == SessionModel.session_id)
+            select(Question, Material.uploaded_by_user_id)
+            .join(Material, Question.source_material_id == Material.id)
             .where(*conditions)
         )
         row = result.first()
@@ -140,7 +142,7 @@ class QuestionRepository:
 
     async def list_by_ids_with_owner(
         self, question_ids: list[uuid.UUID], *, material_id: uuid.UUID | None = None
-    ) -> list[tuple[Question, uuid.UUID]]:
+    ) -> list[tuple[Question, uuid.UUID | None]]:
         """Same shape as get_with_owner, for the bulk-review route.
 
         Returns only the questions that actually exist (and, when
@@ -154,8 +156,8 @@ class QuestionRepository:
             conditions.append(Question.source_material_id == material_id)
 
         result = await self.session.execute(
-            select(Question, SessionModel.instructor_id)
-            .join(SessionModel, Question.session_id == SessionModel.session_id)
+            select(Question, Material.uploaded_by_user_id)
+            .join(Material, Question.source_material_id == Material.id)
             .where(*conditions)
         )
         return [(row[0], row[1]) for row in result.all()]
@@ -171,29 +173,28 @@ class QuestionRepository:
     ) -> tuple[list[Question], int]:
         """Questions for a material, scoped to what the caller may see.
 
-        An admin sees every question for the material. A lecturer sees only
-        the ones whose session they are the instructor of -- a material can
-        in principle carry sessions taught by more than one lecturer, and
-        QuestionOut includes correct_option, which must never reach a caller
-        who isn't the question's own reviewer or an admin. Returns
+        An admin sees every question for the material. A lecturer sees them
+        only if they uploaded the material -- QuestionOut includes
+        correct_option, which must never reach a caller who isn't the
+        question's own reviewer or an admin. Returns
         (questions, total) so the caller can build a Page without a second
         round trip for the count.
         """
         conditions = [Question.source_material_id == material_id]
         if not is_admin:
-            conditions.append(SessionModel.instructor_id == principal_user_id)
+            conditions.append(Material.uploaded_by_user_id == principal_user_id)
 
         count_result = await self.session.execute(
             select(func.count())
             .select_from(Question)
-            .join(SessionModel, Question.session_id == SessionModel.session_id)
+            .join(Material, Question.source_material_id == Material.id)
             .where(*conditions)
         )
         total = count_result.scalar_one()
 
         result = await self.session.execute(
             select(Question)
-            .join(SessionModel, Question.session_id == SessionModel.session_id)
+            .join(Material, Question.source_material_id == Material.id)
             .where(*conditions)
             .order_by(Question.created_at)
             .limit(limit)

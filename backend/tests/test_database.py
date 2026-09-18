@@ -178,6 +178,20 @@ async def test_the_migrated_schema_bounds_progress_percent(db: AsyncSession) -> 
     assert "percent <= 100" in definition
 
 
+async def test_a_generated_question_needs_no_session(db: AsyncSession) -> None:
+    """Questions are generated at upload, before any class session exists."""
+    nullable = (
+        await db.execute(
+            text(
+                "select is_nullable from information_schema.columns "
+                "where table_name = 'question' and column_name = 'session_id'"
+            )
+        )
+    ).scalar_one()
+
+    assert nullable == "YES"
+
+
 async def test_vector_column_round_trips(db: AsyncSession) -> None:
     """Proves pgvector is usable, not merely present."""
     await db.execute(text("create temporary table _probe (id int primary key, v vector(3))"))
