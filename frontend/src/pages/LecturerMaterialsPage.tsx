@@ -16,6 +16,7 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react'
+import { Link } from 'react-router'
 
 import {
   ApiError,
@@ -304,6 +305,8 @@ export default function LecturerMaterialsPage() {
               />
             )}
 
+            {material?.status === 'completed' && <ReviewPrompt material={material} />}
+
             {material && (
               <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
                 <ContentPreview
@@ -463,6 +466,22 @@ function FileSummary({
         <RotateCcw aria-hidden="true" size={15} />
         Upload another
       </button>
+    </section>
+  )
+}
+
+function ReviewPrompt({ material }: { material: Material }) {
+  return (
+    <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-success/20 bg-card p-4 shadow-[var(--shadow-card)]">
+      <p className="text-sm text-card-foreground">
+        Processing is finished. Draft questions from this material are waiting for your review.
+      </p>
+      <Link
+        to={`/materials/${material.id}/review`}
+        className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+      >
+        Review questions
+      </Link>
     </section>
   )
 }

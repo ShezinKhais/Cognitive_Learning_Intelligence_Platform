@@ -1756,6 +1756,60 @@
         ]
       }
     },
+    "/api/v1/materials/{material_id}/questions/{question_id}:regenerate": {
+      "post": {
+        "description": "Replace a draft question with a newly generated one from the same page.\n\nThe draft is rejected rather than deleted and the replacement is returned\nas a new draft. Refused with 409 for a question that is not a draft, and\n503 when the generator is unavailable or returns nothing usable.",
+        "operationId": "regenerate_question_api_v1_materials__material_id__questions__question_id__regenerate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "material_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Material Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "question_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Question Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Regenerate Question",
+        "tags": [
+          "content"
+        ]
+      }
+    },
     "/api/v1/materials/{material_id}/questions:bulk": {
       "post": {
         "description": "Backs the 'approve all' and 'stage N questions' actions.",

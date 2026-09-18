@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.extraction_element import ExtractionElement
 from app.models.material import Material
 from app.models.material_processing_status import MaterialProcessingStatus
+from app.models.rag_chunk import RagChunk
 from app.schemas.content import MaterialStatus
 from app.schemas.events import MaterialStage
 
@@ -147,4 +148,14 @@ class MaterialRepository:
             .where(ExtractionElement.source_material_id == material_id)
             .order_by(ExtractionElement.element_index)
         )
+        return list(result.scalars().all())
+
+    async def list_chunks(
+        self, material_id: uuid.UUID, *, page: int | None = None
+    ) -> list[RagChunk]:
+        """The material's stored chunks in order, optionally from one page only."""
+        query = select(RagChunk).where(RagChunk.source_material_id == material_id)
+        if page is not None:
+            query = query.where(RagChunk.source_page == page)
+        result = await self.session.execute(query.order_by(RagChunk.chunk_index))
         return list(result.scalars().all())

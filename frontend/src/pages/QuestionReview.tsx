@@ -5,6 +5,7 @@ import {
   ApiError,
   bulkReviewQuestions,
   listQuestions,
+  regenerateQuestion,
   reviewQuestion,
   type Difficulty,
   type Question,
@@ -105,6 +106,28 @@ export default function QuestionReview() {
     () => (state.status === 'ready' ? state.questions.filter((q) => q.status === 'draft') : []),
     [state],
   )
+
+  // The replaced draft stays in the list, now rejected, with its
+  // replacement directly after it, so the lecturer sees what changed.
+  function replaceQuestion(replacedId: string, fresh: Question) {
+    setState((prev) =>
+      prev.status === 'ready'
+        ? {
+            ...prev,
+            total: prev.total + 1,
+            questions: prev.questions.flatMap((q) =>
+              q.id === replacedId ? [{ ...q, status: 'rejected' as const }, fresh] : [q],
+            ),
+          }
+        : prev,
+    )
+    setSelected((prev) => {
+      if (!prev.has(replacedId)) return prev
+      const next = new Set(prev)
+      next.delete(replacedId)
+      return next
+    })
+  }
 
   function updateQuestion(updated: Question) {
     setState((prev) =>
@@ -251,6 +274,7 @@ export default function QuestionReview() {
                   selected={selected.has(question.id)}
                   onToggleSelected={() => toggleSelected(question.id)}
                   onUpdated={updateQuestion}
+                  onReplaced={replaceQuestion}
                 />
               ))}
             </div>
@@ -283,12 +307,14 @@ function QuestionCard({
   selected,
   onToggleSelected,
   onUpdated,
+  onReplaced,
 }: {
   materialId: string
   question: Question
   selected: boolean
   onToggleSelected: () => void
   onUpdated: (q: Question) => void
+  onReplaced: (replacedId: string, fresh: Question) => void
 }) {
   const isMcq = question.type === 'mcq'
 
@@ -328,6 +354,19 @@ function QuestionCard({
     setDifficulty(question.difficulty)
     setError(null)
     setEditing(false)
+  }
+
+  async function regenerate() {
+    setBusy(true)
+    setError(null)
+    try {
+      const fresh = await regenerateQuestion(materialId, question.id)
+      onReplaced(question.id, fresh)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not regenerate this question.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function act(
@@ -518,11 +557,12 @@ function QuestionCard({
                 </button>
                 <button
                   type="button"
-                  disabled
-                  title="Regeneration is being built as a follow-up once the generation module lands in main (agreed with AI 1)"
-                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium opacity-40"
+                  disabled={busy}
+                  onClick={regenerate}
+                  title="Replace this draft with a new question from the same page"
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium disabled:opacity-50"
                 >
-                  Regenerate
+                  {busy ? 'Working...' : 'Regenerate'}
                 </button>
               </>
             )}

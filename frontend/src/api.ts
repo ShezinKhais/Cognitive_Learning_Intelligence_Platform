@@ -272,6 +272,16 @@ export function reviewQuestion(
   )
 }
 
+// Replaces a draft with a newly generated one from the same page. The old
+// draft comes back rejected on the next list; the new one is returned here.
+export function regenerateQuestion(materialId: string, questionId: string): Promise<Question> {
+  return request<Question>(
+    `/materials/${materialId}/questions/${questionId}:regenerate`,
+    { method: 'POST' },
+    true,
+  )
+}
+
 export interface QuestionBulkReviewResult {
   updated: Question[]
   skipped_ids: string[]

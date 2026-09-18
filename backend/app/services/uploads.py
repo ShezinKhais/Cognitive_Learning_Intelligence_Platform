@@ -96,6 +96,11 @@ def get_background_processor() -> BackgroundProcessor:
     return BackgroundProcessor(max_concurrent=get_settings().max_concurrent_material_jobs)
 
 
+def get_question_generator() -> QuestionGenerator:
+    """The generator the pipeline uses, for regenerating a single question."""
+    return get_material_pipeline().generator
+
+
 @lru_cache
 def get_material_pipeline() -> MaterialPipeline:
     """The pipeline with its collaborators as they stand.

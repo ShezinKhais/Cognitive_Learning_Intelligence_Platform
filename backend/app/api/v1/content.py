@@ -31,7 +31,8 @@ from app.schemas.identity import ConsentType, Role
 from app.services.extraction import CONTENT_TYPES
 from app.services.material_pages import page_previews
 from app.services.question_ownership import filter_owned_questions, get_owned_question
-from app.services.uploads import accept_upload
+from app.services.regeneration import regenerate
+from app.services.uploads import accept_upload, get_question_generator
 
 # Every route here, the review actions included, is lecturer and admin work,
 # so the role guard sits on the router. Ownership narrows a lecturer down to
@@ -220,6 +221,29 @@ async def review_question(
     )
 
     return _to_question_out(updated)
+
+
+@router.post(
+    "/{material_id}/questions/{question_id}:regenerate",
+    response_model=QuestionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def regenerate_question(
+    material_id: UUID,
+    question_id: UUID,
+    principal: CurrentUser,
+    db: DbSession,
+) -> QuestionOut:
+    """Replace a draft question with a newly generated one from the same page.
+
+    The draft is rejected rather than deleted and the replacement is returned
+    as a new draft. Refused with 409 for a question that is not a draft, and
+    503 when the generator is unavailable or returns nothing usable.
+    """
+    repo = QuestionRepository(db)
+    question = await get_owned_question(question_id, principal, repo, material_id=material_id)
+    replacement = await regenerate(question, principal.user_id, db, get_question_generator())
+    return _to_question_out(replacement)
 
 
 @router.post("/{material_id}/questions:bulk", response_model=QuestionBulkReviewResult)

@@ -30,7 +30,7 @@ from app.models.rag_chunk import RagChunk
 from app.repositories.material_repository import MaterialRepository
 from app.services.extraction import CONTENT_TYPES
 from app.services.jobs import JobStatus
-from app.services.material_seams import CompletedMaterial
+from app.services.material_seams import CompletedMaterial, DraftQuestion
 from app.services.storage import StoredFile
 
 log = logging.getLogger("clip.material_store")
@@ -42,6 +42,30 @@ MAX_MESSAGE_LENGTH = 500
 
 def _bounded(text: str | None) -> str | None:
     return text if text is None or len(text) <= MAX_MESSAGE_LENGTH else text[:MAX_MESSAGE_LENGTH]
+
+
+def question_row(
+    material_id: UUID, draft: DraftQuestion, session_id: UUID | None = None
+) -> Question:
+    """A draft question as a row, awaiting a lecturer's review.
+
+    A draft belongs to no session unless it replaces one that did; a session is
+    assigned when a question is staged for a class. Review access follows the
+    material's uploader, not the session.
+    """
+    return Question(
+        source_material_id=material_id,
+        session_id=session_id,
+        question_text=draft.prompt,
+        question_type=draft.type.value,
+        status="draft",
+        difficulty=draft.difficulty.value,
+        options=list(draft.options) if draft.options is not None else None,
+        correct_option=draft.correct_option,
+        topic=draft.topic,
+        source_slide=draft.source_slide,
+        source_excerpt=draft.source_excerpt,
+    )
 
 
 class DatabaseMaterialStore:
@@ -117,23 +141,7 @@ class DatabaseMaterialStore:
                 )
                 for chunk, vector in zip(result.chunks, material.embeddings.vectors, strict=True)
             )
-            # Drafts belong to no session yet; one is assigned when a question
-            # is staged for a class. Review access follows the uploader.
-            session.add_all(
-                Question(
-                    source_material_id=material_id,
-                    question_text=draft.prompt,
-                    question_type=draft.type.value,
-                    status="draft",
-                    difficulty=draft.difficulty.value,
-                    options=list(draft.options) if draft.options is not None else None,
-                    correct_option=draft.correct_option,
-                    topic=draft.topic,
-                    source_slide=draft.source_slide,
-                    source_excerpt=draft.source_excerpt,
-                )
-                for draft in material.questions
-            )
+            session.add_all(question_row(material_id, draft) for draft in material.questions)
             finished = datetime.now(UTC)
             session.add_all(
                 AIModelRun(
