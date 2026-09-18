@@ -15,17 +15,20 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, UploadFile, status
 
 from app.api.deps import CurrentUser, DbSession, Paginated, require_roles
-from app.core.errors import NotFoundError, not_implemented
+from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.repositories.material_repository import MaterialRepository
+from app.repositories.question_repository import QuestionRepository
 from app.schemas.common import Page
 from app.schemas.content import (
     MaterialOut,
     MaterialStatus,
     QuestionBulkReviewRequest,
+    QuestionBulkReviewResult,
     QuestionOut,
     QuestionReviewRequest,
 )
 from app.schemas.identity import Role
+from app.services.question_ownership import filter_owned_questions, get_owned_question
 from app.services.upload_security import validate_uploaded_file
 from app.services.uploads import (
     get_background_processor,
@@ -52,6 +55,31 @@ CONTENT_TYPES = {
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "txt": "text/plain",
 }
+
+# The review actions are restricted to lecturer/admin at the router level,
+# same pattern as /admin in identity.py. Ownership (app.services.question_
+# ownership) narrows a lecturer down to their own sessions on top of this;
+# neither check alone is enough -- role without ownership would let any
+# lecturer touch any other lecturer's questions, and ownership without role
+# would let a user whose account still matches a session's instructor_id
+# keep acting on it even after their role changed away from lecturer.
+review = APIRouter(dependencies=[Depends(require_roles(Role.LECTURER, Role.ADMIN))])
+
+
+def _to_question_out(question) -> QuestionOut:  # noqa: ANN001 - app.models.Question
+    return QuestionOut(
+        id=question.question_id,
+        material_id=question.source_material_id,
+        type=question.question_type,
+        status=question.status,
+        difficulty=question.difficulty,
+        prompt=question.question_text,
+        options=question.options,
+        correct_option=question.correct_option,
+        topic=question.topic,
+        source_slide=question.source_slide,
+        source_excerpt=question.source_excerpt,
+    )
 
 
 @router.post("", response_model=MaterialOut, status_code=status.HTTP_202_ACCEPTED)
@@ -177,20 +205,37 @@ async def get_material(
     return MaterialOut.model_validate(material, from_attributes=True)
 
 
-@router.get("/{material_id}/questions", response_model=Page[QuestionOut])
+@review.get("/{material_id}/questions", response_model=Page[QuestionOut])
 async def list_questions(
     material_id: UUID,
     principal: CurrentUser,
     db: DbSession,
     page: Paginated,
 ) -> Page[QuestionOut]:
-    raise not_implemented("AI 1", "Phase 2")
+    """The review queue for a material.
+
+    On the lecturer/admin review router, same as the mutation routes --
+    QuestionOut carries correct_option, which must never reach a student or
+    a lecturer who doesn't teach the sessions this material's questions
+    belong to. A lecturer sees only their own; an admin sees everything.
+    """
+    repo = QuestionRepository(db)
+    questions, total = await repo.list_owned_by_material(
+        material_id,
+        principal.user_id,
+        is_admin=principal.role == Role.ADMIN,
+        limit=page.limit,
+        offset=page.offset,
+    )
+    return Page(
+        items=[_to_question_out(q) for q in questions],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
 
 
-@router.patch(
-    "/{material_id}/questions/{question_id}",
-    response_model=QuestionOut,
-)
+@review.patch("/{material_id}/questions/{question_id}", response_model=QuestionOut)
 async def review_question(
     material_id: UUID,
     question_id: UUID,
@@ -198,22 +243,77 @@ async def review_question(
     principal: CurrentUser,
     db: DbSession,
 ) -> QuestionOut:
-    """Approve, edit or reject a generated question.
-
-    No question reaches a student without passing through here.
+    """Approve, edit or reject a generated question. No question reaches a
+    student without passing through here.
     """
-    raise not_implemented("Cyber 2", "Phase 2")
+    # A lecturer may only act on questions belonging to a session they are
+    # the instructor of and that belong to material_id; admins may act on
+    # any question. A question that exists but belongs to a different
+    # material, or a different lecturer's session, is rejected the same
+    # way a nonexistent question is -- see app.services.question_ownership
+    # for why. Invalid status transitions (e.g. skipping straight to
+    # delivered, or editing a staged/delivered question) are rejected by
+    # the repository with a 409; see QuestionRepository.apply_review.
+    repo = QuestionRepository(db)
+    question = await get_owned_question(question_id, principal, repo, material_id=material_id)
+
+    updated = await repo.apply_review(
+        question,
+        status=payload.status.value,
+        reviewer_id=principal.user_id,
+        prompt=payload.prompt,
+        options=payload.options,
+        correct_option=payload.correct_option,
+        difficulty=payload.difficulty.value if payload.difficulty else None,
+    )
+
+    return _to_question_out(updated)
 
 
-@router.post(
-    "/{material_id}/questions:bulk",
-    response_model=list[QuestionOut],
-)
+@review.post("/{material_id}/questions:bulk", response_model=QuestionBulkReviewResult)
 async def bulk_review_questions(
     material_id: UUID,
     payload: QuestionBulkReviewRequest,
     principal: CurrentUser,
     db: DbSession,
-) -> list[QuestionOut]:
+) -> QuestionBulkReviewResult:
     """Backs the 'approve all' and 'stage N questions' actions."""
-    raise not_implemented("Cyber 2", "Phase 2")
+    # Same ownership and material-scoping rule as review_question, applied
+    # per question. A question that is unowned, belongs to a different
+    # material, or whose current status doesn't allow the requested
+    # transition, is skipped rather than failing the whole batch -- one
+    # stale or reassigned row should not block the rest of a bulk action.
+    # Every skipped id is reported back in skipped_ids rather than silently
+    # dropped, so a lecturer can tell "all N approved" from "N approved, M
+    # skipped" instead of a response that looks identical either way.
+    repo = QuestionRepository(db)
+    owned, rejected = await filter_owned_questions(
+        payload.question_ids, principal, repo, material_id=material_id
+    )
+
+    updated = []
+    skipped_ids = list(rejected)
+    for question in owned:
+        try:
+            updated.append(
+                await repo.apply_review(
+                    question,
+                    status=payload.status.value,
+                    reviewer_id=principal.user_id,
+                )
+            )
+        except (ConflictError, ValidationError):
+            # A bad transition or a malformed answer key on one question
+            # must not fail the rest of the batch -- same treatment as an
+            # unowned or wrong-material id, for the same reason: "approve
+            # all" is one convenient action, not an all-or-nothing
+            # transaction that one stale or malformed row can block.
+            skipped_ids.append(question.question_id)
+
+    return QuestionBulkReviewResult(
+        updated=[_to_question_out(q) for q in updated],
+        skipped_ids=skipped_ids,
+    )
+
+
+router.include_router(review)
