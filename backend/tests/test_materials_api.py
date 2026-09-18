@@ -164,4 +164,3 @@ def test_lecturer_cannot_read_another_lecturers_material(
     assert listed.json()["total"] == 0
     assert found.status_code == 404
     assert found.json()["error"]["code"] == "NOT_FOUND"
-
