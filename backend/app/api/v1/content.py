@@ -14,7 +14,8 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, UploadFile, status
 
 from app.api.deps import CurrentUser, DbSession, Paginated, require_roles
-from app.core.errors import not_implemented
+from app.core.errors import NotFoundError, not_implemented
+from app.repositories.material_repository import MaterialRepository
 from app.schemas.common import Page
 from app.schemas.content import (
     MaterialOut,
@@ -93,16 +94,62 @@ async def upload_material(file: UploadFile, principal: CurrentUser) -> MaterialO
     )
 
 
-@router.get("", response_model=Page[MaterialOut])
+@router.get(
+    "",
+    response_model=Page[MaterialOut],
+    dependencies=[
+        Depends(require_roles(Role.LECTURER, Role.ADMIN)),
+    ],
+)
 async def list_materials(
-    principal: CurrentUser, db: DbSession, page: Paginated
+    principal: CurrentUser,
+    db: DbSession,
+    page: Paginated,
 ) -> Page[MaterialOut]:
-    raise not_implemented("BBIS", "Phase 2")
+    uploaded_by_user_id = None if principal.is_(Role.ADMIN) else principal.user_id
+    repository = MaterialRepository(db)
+    materials, total = await repository.list_page(
+        limit=page.limit,
+        offset=page.offset,
+        uploaded_by_user_id=uploaded_by_user_id,
+    )
+
+    return Page[MaterialOut](
+        items=[
+            MaterialOut.model_validate(material, from_attributes=True) for material in materials
+        ],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
 
 
-@router.get("/{material_id}", response_model=MaterialOut)
-async def get_material(material_id: UUID, principal: CurrentUser, db: DbSession) -> MaterialOut:
-    raise not_implemented("BBIS", "Phase 2")
+@router.get(
+    "/{material_id}",
+    response_model=MaterialOut,
+    dependencies=[
+        Depends(require_roles(Role.LECTURER, Role.ADMIN)),
+    ],
+)
+async def get_material(
+    material_id: UUID,
+    principal: CurrentUser,
+    db: DbSession,
+) -> MaterialOut:
+    uploaded_by_user_id = None if principal.is_(Role.ADMIN) else principal.user_id
+    repository = MaterialRepository(db)
+    material = await repository.get_by_id(
+        material_id,
+        uploaded_by_user_id=uploaded_by_user_id,
+    )
+
+    if material is None:
+        raise NotFoundError(
+            "Material was not found.",
+            {"material_id": str(material_id)},
+        )
+
+    return MaterialOut.model_validate(material, from_attributes=True)
 
 
 @router.get("/{material_id}/questions", response_model=Page[QuestionOut])
