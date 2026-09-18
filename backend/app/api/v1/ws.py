@@ -270,29 +270,8 @@ async def session_socket(
         session_id=session_id,
     )
 
-    async def send_ready(
-        resumed_from_seq: int | None,
-        ready_stream_id: UUID | None,
-    ) -> None:
-        await _send(
-            websocket,
-            ServerEventType.READY,
-            {
-                "user_id": str(user_id),
-                "session_id": (str(session_id) if session_id else None),
-                "resumed_from_seq": resumed_from_seq,
-                "stream_id": (str(ready_stream_id) if ready_stream_id else None),
-            },
-        )
-
     try:
-        joined = await hub.join_and_replay(
-            connection,
-            last_seq,
-            stream_id,
-            send_ready,
-        )
-        if joined is None:
+        if not await hub.connect(connection, last_seq, stream_id):
             return
 
         while True:

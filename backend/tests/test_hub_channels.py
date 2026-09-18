@@ -2,9 +2,9 @@
 
 Owner: General CS, Phase 2.
 
-Separate from test_ws.py, which covers the socket handshake and the client
-protocol. These exercise the hub object directly: who an event can be addressed
-to, and in what order it arrives.
+Who an event can be addressed to, in what order it arrives, and what happens
+to a socket that stops reading. Session rooms are in test_hub_sessions.py, the
+reconnect handshake in test_hub_replay.py and the endpoint in test_ws.py.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import pytest
 
 from app.realtime import hub as hub_module
 from app.realtime.hub import (
-    MAX_TRACKED_SESSIONS,
+    MAX_TRACKED_STREAMS,
     Connection,
     SessionHub,
 )
@@ -153,7 +153,7 @@ async def test_a_dead_socket_is_dropped_from_the_user_channel() -> None:
         )
         == 1
     )
-    assert [c.websocket for c in hub._channels[lecturer]] == [alive]
+    assert {c.websocket for c in hub._streams[lecturer].members} == {alive}
 
     # The dead socket is gone, so the next send does not retry it.
     assert (
@@ -168,46 +168,20 @@ async def test_a_dead_socket_is_dropped_from_the_user_channel() -> None:
 
 
 async def test_a_live_user_channel_keeps_its_counter_when_the_ceiling_is_reached() -> None:
-    """Eviction looks at rooms and at users.
-
-    Consulting only the room index marks every user channel idle, and a
-    lecturer watching an upload sees the seq restart at 1 mid-import.
-    """
+    """Only streams nobody is connected to are evicted. Evicting a live one
+    restarts its seq at 1, and a lecturer watching an upload reads a gap."""
     hub = SessionHub()
     lecturer = uuid4()
+    socket = _FakeSocket()
+    await hub.join(Connection(socket, lecturer, None))  # type: ignore[arg-type]
 
-    await hub.join(
-        Connection(
-            _FakeSocket(),
-            lecturer,
-            None,
-        )
-    )  # type: ignore[arg-type]
+    await hub.send_to_user_channel(lecturer, ServerEventType.MATERIAL_PROGRESS, {})
+    for _ in range(MAX_TRACKED_STREAMS + 50):
+        await hub.send_to_user_channel(uuid4(), ServerEventType.PONG, {})
+    await hub.send_to_user_channel(lecturer, ServerEventType.MATERIAL_PROGRESS, {})
 
-    assert (
-        hub.build(
-            lecturer,
-            ServerEventType.MATERIAL_PROGRESS,
-            {},
-        ).seq
-        == 1
-    )
-
-    for _ in range(MAX_TRACKED_SESSIONS + 50):
-        hub.build(
-            uuid4(),
-            ServerEventType.PONG,
-            {},
-        )
-
-    assert (
-        hub.build(
-            lecturer,
-            ServerEventType.MATERIAL_PROGRESS,
-            {},
-        ).seq
-        == 2
-    )
+    assert [frame["seq"] for frame in socket.sent] == [1, 2]
+    assert hub.tracked_stream_count() <= MAX_TRACKED_STREAMS
 
 
 async def test_leaving_clears_the_user_index() -> None:
@@ -230,6 +204,24 @@ async def test_leaving_clears_the_user_index() -> None:
         )
         == 0
     )
+
+
+async def test_user_channel_is_private_to_the_authenticated_user() -> None:
+    """Not another user's tabs, and not the same user's live-class socket."""
+    hub = SessionHub()
+    target_id = uuid4()
+    target, bystander, session_socket = _FakeSocket(), _FakeSocket(), _FakeSocket()
+
+    await hub.join(Connection(target, target_id, None))  # type: ignore[arg-type]
+    await hub.join(Connection(bystander, uuid4(), None))  # type: ignore[arg-type]
+    await hub.join(Connection(session_socket, target_id, uuid4()))  # type: ignore[arg-type]
+
+    delivered = await hub.send_to_user_channel(target_id, ServerEventType.MATERIAL_PROGRESS, {})
+
+    assert delivered == 1
+    assert len(target.sent) == 1
+    assert bystander.sent == []
+    assert session_socket.sent == []
 
 
 async def test_a_session_connection_is_on_its_session_channel_only() -> None:
@@ -371,8 +363,7 @@ async def test_per_user_delivery_locks_are_released_once_idle() -> None:
         ]
     )
 
-    assert hub._delivery_locks == {}
-    assert hub._delivery_waiters == {}
+    assert len(hub._delivery_locks) == 0
 
 
 async def test_a_dropped_connection_is_closed_so_the_client_reconnects(
@@ -435,37 +426,32 @@ async def test_a_close_that_stalls_is_given_up_on(monkeypatch: pytest.MonkeyPatc
         await asyncio.gather(*hub._closing)
 
 
-async def test_a_user_with_no_connections_left_is_forgotten() -> None:
-    """Otherwise every lecturer who ever connected stays in the index."""
-    hub = SessionHub()
-    lecturer = uuid4()
-    connection = Connection(_FakeSocket(), lecturer, None)
-    await hub.join(connection)
-
-    await hub.leave(connection)
-
-    assert lecturer not in hub._channels
-
-
 async def test_progress_published_during_the_handshake_reaches_the_new_tab() -> None:
     """Ready then join left a gap. A done frame published in it went to no
     socket, nothing later replaced it, and the tab waited forever."""
     hub = SessionHub()
     lecturer = uuid4()
-    socket = _FakeSocket()
     published: list[asyncio.Task[int]] = []
 
-    async def send_ready() -> None:
-        published.append(
-            asyncio.create_task(
-                hub.send_to_user_channel(lecturer, ServerEventType.MATERIAL_PROGRESS, {})
-            )
-        )
-        await asyncio.sleep(0)
+    class PublishesDuringReady(_FakeSocket):
+        async def send_json(self, payload: dict) -> None:
+            if payload["type"] == ServerEventType.READY.value:
+                published.append(
+                    asyncio.create_task(
+                        hub.send_to_user_channel(lecturer, ServerEventType.MATERIAL_PROGRESS, {})
+                    )
+                )
+                await asyncio.sleep(0)
+            await super().send_json(payload)
 
-    await hub.join_after(Connection(socket, lecturer, None), send_ready)
+    socket = PublishesDuringReady()
+    assert await hub.connect(Connection(socket, lecturer, None))  # type: ignore[arg-type]
 
     assert await asyncio.wait_for(published[0], EVENT_TIMEOUT_SECONDS) == 1
+    assert [frame["type"] for frame in socket.sent] == [
+        ServerEventType.READY.value,
+        ServerEventType.MATERIAL_PROGRESS.value,
+    ]
 
 
 async def test_a_dead_socket_is_forgotten_before_the_next_upload_reports(
