@@ -21,6 +21,9 @@ from app.services.jobs import JobStatus
 
 Embedding = Sequence[float]
 
+# The width of question.topic.
+MAX_TOPIC_LENGTH = 255
+
 
 @dataclass(frozen=True)
 class EmbeddingBatch:
@@ -86,6 +89,13 @@ class DraftQuestion:
             return "is free text but carries multiple choice fields"
         if self.source_slide is not None and self.source_slide < 1:
             return "cites a slide before the first"
+        # A model can put anything in the topic, a paragraph or an object. The
+        # column holds 255 characters of text, and one oversized topic would
+        # fail the insert of every chunk and question written with it.
+        if self.topic is not None and (
+            not isinstance(self.topic, str) or len(self.topic) > MAX_TOPIC_LENGTH
+        ):
+            return f"has a topic that is not text of at most {MAX_TOPIC_LENGTH} characters"
         return None
 
 
