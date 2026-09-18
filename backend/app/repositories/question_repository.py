@@ -37,7 +37,7 @@ def _validate_option_shape(
     new_correct_option: int | None,
 ) -> None:
     """Check that the option list and correct_option that will actually be
-    stored after this edit agree with each other.
+    stored after this edit agree with each other, and are themselves usable.
 
     Checked against the values that will be written after the edit, not
     just the values the caller supplied: options alone can shrink below an
@@ -45,6 +45,13 @@ def _validate_option_shape(
     this request, and correct_option alone can point past the end of the
     existing options list. Either combination, once written, is an answer
     key that points at nothing.
+
+    Beyond the index check, an MCQ's options are only meaningful with at
+    least two of them, none blank, and none a duplicate of another -- a
+    correct_option that is technically a valid index into a broken list
+    (one option, or two identical options) still isn't a usable question.
+    A free-text question (effective_correct is None) has no options to
+    check any of this against.
     """
     effective_options = new_options if new_options is not None else current_options
     effective_correct = (
@@ -62,6 +69,35 @@ def _validate_option_shape(
                 "correct_option": effective_correct,
             },
         )
+
+    if len(effective_options) < 2:
+        raise ValidationError(
+            "An MCQ needs at least two options.",
+            {"options_count": len(effective_options)},
+        )
+
+    stripped = [o.strip() for o in effective_options]
+    if any(not o for o in stripped):
+        raise ValidationError(
+            "Options cannot be blank.",
+            {"options": effective_options},
+        )
+
+    if len(set(stripped)) != len(stripped):
+        raise ValidationError(
+            "Options must be distinct.",
+            {"options": effective_options},
+        )
+
+
+def _validate_prompt(prompt: str | None) -> None:
+    """An approved question needs an actual question to ask.
+
+    Separate from _validate_option_shape since a blank prompt is a problem
+    for both MCQ and free-text questions, not just ones with options.
+    """
+    if prompt is not None and not prompt.strip():
+        raise ValidationError("The question prompt cannot be blank.", {})
 
 
 class QuestionRepository:
