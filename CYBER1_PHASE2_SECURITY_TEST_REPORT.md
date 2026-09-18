@@ -334,3 +334,47 @@ tests rather than expected failures.
 Cyber 1 also incorporated the integration fix from commit b0e9ac5 so raw
 uploaded material is retained when no MaterialStore is wired, preventing the
 only durable copy from being deleted before persistence is available.
+
+---
+
+## 13. Integration Review After the Phase 2 Merge (2026-09-18)
+
+Once every Phase 2 branch was on main, the combined code was reviewed again,
+because each branch had been tested on its own. The review found gaps that
+only appear when the pieces are joined. All are fixed on
+`Shezin-Phase-2-Fixes`, with regression tests.
+
+### Findings
+
+| Finding | Before | Now |
+|---|---|---|
+| Paraphrased injection | Three exact phrasings were matched. "Ignore the previous instructions", "ignore all of the above instructions", "Disregard earlier directions", a `SYSTEM:` preamble and a zero-width space inside the phrase all passed. | Text is normalised (NFKC, invisible characters removed, whitespace collapsed) and the patterns allow the words in between. Chat-template markers are caught. Ordinary lecture prose ("skip the previous steps", "System: a set of components") is not flagged. |
+| Flagged text reaching the model | A flagged chunk was still sent to the model, guarded only by a request in the prompt. | Flagged chunks are never sent. Drafts are still checked against every chunk, so a draft citing a page that carried an instruction is still rejected. |
+| Model output not screened | A draft citing a clean page with "visit evil.example" in its prompt was accepted. | A draft is rejected if its own text contains an instruction, or links somewhere the cited material does not mention. |
+| Unbounded topic | The model's topic was stored untyped; a paragraph or an object would fail the insert of the whole material. | Only a string is kept, and a draft whose topic exceeds 255 characters is dropped. |
+| Consent on material routes | `/materials/*` checked the role only; an unconsented lecturer could upload and approve questions directly. | Terms consent is required server-side, as on `/sessions` and `/admin`. |
+| Review ownership | Question access followed the session instructor while materials followed the uploader, so whoever taught a session could approve questions from another lecturer's material. | Both follow the uploader (`source_material.uploaded_by_user_id`). |
+| Marking questions delivered | The review routes accepted `delivered`, freezing a question as already asked when no student had seen it. | Review requests cannot set `delivered` (422). |
+
+### Evidence
+
+Run against a migrated Postgres database:
+
+- `tests/test_ai_security_cyber1.py`: 5 passed (the original five cases, unchanged)
+- `tests/test_generation_screening.py`: 25 passed (paraphrases, invisible
+  characters, fullwidth text, false positives, flagged chunks withheld from
+  the model, output screening, links, topic bounds)
+- `tests/test_upload_security.py`: 15 passed
+- `tests/test_processing_security.py`: 4 passed
+- `tests/test_materials.py`: 19 passed, including an upload refused without
+  terms consent
+
+A live run with the real model (qwen2.5, nomic-embed-text) still produced
+grounded drafts after the stricter screening, so legitimate questions are not
+being lost to it.
+
+### Note on the raw upload
+
+Section 12 records that the raw file is kept when no MaterialStore is wired.
+The store is now wired: the raw file is kept until the material is recorded,
+then discarded, and kept if recording fails so a retry can use it.
