@@ -4,6 +4,7 @@ import {
 } from 'react-router'
 
 import { useStudentApp } from '../features/student/StudentAppContext'
+import { hasRequiredConsent } from '../authRouting'
 import StudentHomePage from './StudentHomePage'
 
 export default function ProtectedStudentPage() {
@@ -57,6 +58,16 @@ export default function ProtectedStudentPage() {
       <Navigate
         to="/access-denied"
         replace
+      />
+    )
+  }
+
+  if (!hasRequiredConsent(currentUser)) {
+    return (
+      <Navigate
+        to="/consent"
+        replace
+        state={{ from: location.pathname }}
       />
     )
   }

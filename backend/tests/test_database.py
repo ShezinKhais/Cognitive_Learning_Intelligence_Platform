@@ -7,17 +7,24 @@ This is the pattern for anything touching the schema: take the `db` fixture,
 and let it skip rather than fail when the database is absent.
 """
 
+import uuid
+
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
+from app.models.ai_model_run import AIModelRun
 from app.models.consent import Consent
 from app.models.course import Course
+from app.models.extraction_element import ExtractionElement
 from app.models.material import Material
+from app.models.material_processing_status import MaterialProcessingStatus
 from app.models.rag_chunk import RagChunk
 from app.models.user import User
+from app.repositories.material_repository import MaterialRepository
+from app.schemas.events import MaterialStage
 
 REQUIRED_EXTENSIONS = {"vector", "pg_trgm", "uuid-ossp"}
 
@@ -79,6 +86,49 @@ def test_consent_model_supports_granular_revocable_consent() -> None:
     assert "uq_consent_user_type" in constraint_names
 
 
+def test_extraction_elements_are_traceable_by_material() -> None:
+    columns = ExtractionElement.__table__.c
+    constraint_names = {constraint.name for constraint in ExtractionElement.__table__.constraints}
+
+    assert {key.target_fullname for key in columns.source_material_id.foreign_keys} == {
+        "source_material.id"
+    }
+    assert columns.source_material_id.index is True
+    assert columns.element_index.nullable is False
+    assert columns.element_type.nullable is False
+    assert columns.metadata.nullable is False
+    assert "uq_extraction_element_material_index" in constraint_names
+
+
+def test_processing_status_matches_material_progress_contract() -> None:
+    columns = MaterialProcessingStatus.__table__.c
+    constraint_names = {
+        constraint.name for constraint in MaterialProcessingStatus.__table__.constraints
+    }
+
+    assert {key.target_fullname for key in columns.source_material_id.foreign_keys} == {
+        "source_material.id"
+    }
+    assert columns.stage.nullable is False
+    assert columns.percent.nullable is False
+    assert columns.recorded_at.nullable is False
+    assert "ck_material_processing_status_stage" in constraint_names
+    assert "ck_material_processing_status_percent" in constraint_names
+
+
+def test_ai_model_runs_are_traceable_by_material() -> None:
+    columns = AIModelRun.__table__.c
+    constraint_names = {constraint.name for constraint in AIModelRun.__table__.constraints}
+
+    assert {key.target_fullname for key in columns.source_material_id.foreign_keys} == {
+        "source_material.id"
+    }
+    assert columns.operation.nullable is False
+    assert columns.model_name.nullable is False
+    assert columns.status.nullable is False
+    assert "ck_ai_model_run_status" in constraint_names
+
+
 @pytest.fixture
 async def db():
     """A session on an engine built for this test only.
@@ -121,6 +171,133 @@ async def test_vector_column_round_trips(db: AsyncSession) -> None:
     ).scalar_one()
 
     assert distance == pytest.approx(1.0)
+
+
+async def test_phase_two_pipeline_is_traceable_by_material(db: AsyncSession) -> None:
+    material = Material(
+        filename="week-3.txt",
+        content_type="text/plain",
+        size_bytes=12,
+        status="processing",
+    )
+    db.add(material)
+    await db.flush()
+
+    extraction = ExtractionElement(
+        source_material_id=material.id,
+        element_index=0,
+        element_type="paragraph",
+        content="Stored source content",
+        source_page=1,
+        metadata_json={"section": "Introduction"},
+    )
+    progress = MaterialProcessingStatus(
+        source_material_id=material.id,
+        sequence=1,
+        stage="embedding",
+        percent=75,
+        message="Creating vectors",
+    )
+    model_run = AIModelRun(
+        source_material_id=material.id,
+        operation="embedding",
+        provider="test",
+        model_name="test-embedding-model",
+        status="completed",
+        parameters={},
+    )
+    chunk = RagChunk(
+        source_material_id=material.id,
+        chunk_index=0,
+        source_page=1,
+        chunk_text="Stored source content",
+        embedding_vector=[0.0] * get_settings().embedding_dim,
+        embedding_model=model_run.model_name,
+    )
+    db.add_all([extraction, progress, model_run, chunk])
+    await db.flush()
+
+    stored_progress = (
+        await db.execute(
+            select(MaterialProcessingStatus).where(
+                MaterialProcessingStatus.source_material_id == material.id
+            )
+        )
+    ).scalar_one()
+    stored_extraction = (
+        await db.execute(
+            select(ExtractionElement).where(ExtractionElement.source_material_id == material.id)
+        )
+    ).scalar_one()
+
+    stored_chunk = (
+        await db.execute(select(RagChunk).where(RagChunk.source_material_id == material.id))
+    ).scalar_one()
+
+    stored_model_run = (
+        await db.execute(select(AIModelRun).where(AIModelRun.source_material_id == material.id))
+    ).scalar_one()
+
+    assert stored_progress.stage == "embedding"
+    assert stored_extraction.content == "Stored source content"
+    assert stored_chunk.embedding_model == model_run.model_name
+    assert stored_model_run.run_id == model_run.run_id
+
+
+async def test_material_repository_persists_queries_and_tracks_progress(
+    db: AsyncSession,
+) -> None:
+    lecturer = User(
+        name="Repository Lecturer",
+        role="lecturer",
+        email=f"repository-{uuid.uuid4()}@example.com",
+    )
+    db.add(lecturer)
+    await db.flush()
+    repository = MaterialRepository(db)
+
+    material = await repository.create(
+        filename="week-4.pdf",
+        content_type="application/pdf",
+        size_bytes=4096,
+        uploaded_by_user_id=lecturer.user_id,
+    )
+
+    stored = await repository.get_by_id(
+        material.id,
+        uploaded_by_user_id=lecturer.user_id,
+    )
+    materials, total = await repository.list_page(
+        limit=200,
+        offset=0,
+        uploaded_by_user_id=lecturer.user_id,
+    )
+
+    assert stored is material
+    assert (
+        await repository.get_by_id(
+            material.id,
+            uploaded_by_user_id=uuid.uuid4(),
+        )
+        is None
+    )
+    assert material.id in {item.id for item in materials}
+    assert total >= 1
+    assert material.status == "pending"
+
+    recorded = await repository.record_progress(
+        material_id=material.id,
+        stage=MaterialStage.EXTRACTING,
+        percent=30,
+        message="Reading pages",
+    )
+    history = await repository.list_status_history(material.id)
+
+    assert recorded is not None
+    assert recorded.sequence == 1
+    assert recorded.source_material_id == material.id
+    assert material.status == "processing"
+    assert [(item.stage, item.percent) for item in history] == [("extracting", 30)]
 
 
 async def test_trigram_similarity_works(db: AsyncSession) -> None:
