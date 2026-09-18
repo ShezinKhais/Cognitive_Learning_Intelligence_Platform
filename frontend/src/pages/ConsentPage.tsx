@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 
 import {
   ApiError,
@@ -8,9 +8,11 @@ import {
   recordConsent,
   type CurrentUser,
 } from '../api'
+import { intendedPathForRole } from '../authRouting'
 
 export default function ConsentPage() {
   const navigate = useNavigate()
+  const location = useLocation()
 
   const [user, setUser] = useState<CurrentUser | null>(null)
 
@@ -110,15 +112,13 @@ export default function ConsentPage() {
         await recordConsent('microphone', microphone)
       }
 
+      const requestedPath = (
+        location.state as { from?: string } | null
+      )?.from
+
       navigate(
-        user.role === 'admin'
-          ? '/admin'
-          : user.role === 'lecturer'
-            ? '/lecturer/materials'
-            : '/',
-        {
-          replace: true,
-        },
+        intendedPathForRole(user.role, requestedPath),
+        { replace: true },
       )
     } catch (caught) {
       setError(
