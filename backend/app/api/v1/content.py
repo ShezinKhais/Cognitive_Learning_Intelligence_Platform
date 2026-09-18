@@ -174,13 +174,6 @@ async def get_material(
             {"material_id": str(material_id)},
         )
 
-@router.get("/{material_id}", response_model=MaterialOut)
-async def get_material(
-    material_id: UUID,
-    principal: CurrentUser,
-    db: DbSession,
-) -> MaterialOut:
-    raise not_implemented("BBIS", "Phase 2")
     return MaterialOut.model_validate(material, from_attributes=True)
 
 
