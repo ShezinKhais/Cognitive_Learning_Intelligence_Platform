@@ -122,6 +122,47 @@ class QuestionRepository:
         )
         return [(row[0], row[1]) for row in result.all()]
 
+    async def list_owned_by_material(
+        self,
+        material_id: uuid.UUID,
+        principal_user_id: uuid.UUID,
+        *,
+        is_admin: bool,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[Question], int]:
+        """Questions for a material, scoped to what the caller may see.
+
+        An admin sees every question for the material. A lecturer sees only
+        the ones whose session they are the instructor of -- a material can
+        in principle carry sessions taught by more than one lecturer, and
+        QuestionOut includes correct_option, which must never reach a caller
+        who isn't the question's own reviewer or an admin. Returns
+        (questions, total) so the caller can build a Page without a second
+        round trip for the count.
+        """
+        conditions = [Question.source_material_id == material_id]
+        if not is_admin:
+            conditions.append(SessionModel.instructor_id == principal_user_id)
+
+        count_result = await self.session.execute(
+            select(func.count())
+            .select_from(Question)
+            .join(SessionModel, Question.session_id == SessionModel.session_id)
+            .where(*conditions)
+        )
+        total = count_result.scalar_one()
+
+        result = await self.session.execute(
+            select(Question)
+            .join(SessionModel, Question.session_id == SessionModel.session_id)
+            .where(*conditions)
+            .order_by(Question.created_at)
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(result.scalars().all()), total
+
     async def list_by_material(
         self, material_id: uuid.UUID, *, limit: int, offset: int
     ) -> list[Question]:

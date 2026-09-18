@@ -1548,6 +1548,7 @@
     },
     "/api/v1/materials/{material_id}/questions": {
       "get": {
+        "description": "The review queue for a material.\n\nOn the lecturer/admin review router, same as the mutation routes --\nQuestionOut carries correct_option, which must never reach a student or\na lecturer who doesn't teach the sessions this material's questions\nbelong to. A lecturer sees only their own; an admin sees everything.",
         "operationId": "list_questions_api_v1_materials__material_id__questions_get",
         "parameters": [
           {

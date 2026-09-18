@@ -13,7 +13,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, UploadFile, status
 
 from app.api.deps import CurrentUser, DbSession, Paginated, require_roles
-from app.core.errors import ConflictError, not_implemented
+from app.core.errors import ConflictError, ValidationError, not_implemented
 from app.repositories.question_repository import QuestionRepository
 from app.schemas.common import Page
 from app.schemas.content import (
@@ -76,13 +76,25 @@ async def get_material(material_id: UUID, principal: CurrentUser, db: DbSession)
     raise not_implemented("BBIS", "Phase 2")
 
 
-@router.get("/{material_id}/questions", response_model=Page[QuestionOut])
+@review.get("/{material_id}/questions", response_model=Page[QuestionOut])
 async def list_questions(
     material_id: UUID, principal: CurrentUser, db: DbSession, page: Paginated
 ) -> Page[QuestionOut]:
+    """The review queue for a material.
+
+    On the lecturer/admin review router, same as the mutation routes --
+    QuestionOut carries correct_option, which must never reach a student or
+    a lecturer who doesn't teach the sessions this material's questions
+    belong to. A lecturer sees only their own; an admin sees everything.
+    """
     repo = QuestionRepository(db)
-    questions = await repo.list_by_material(material_id, limit=page.limit, offset=page.offset)
-    total = await repo.count_by_material(material_id)
+    questions, total = await repo.list_owned_by_material(
+        material_id,
+        principal.user_id,
+        is_admin=principal.role == Role.ADMIN,
+        limit=page.limit,
+        offset=page.offset,
+    )
     return Page(
         items=[_to_question_out(q) for q in questions],
         total=total,
@@ -158,7 +170,12 @@ async def bulk_review_questions(
                     reviewer_id=principal.user_id,
                 )
             )
-        except ConflictError:
+        except (ConflictError, ValidationError):
+            # A bad transition or a malformed answer key on one question
+            # must not fail the rest of the batch -- same treatment as an
+            # unowned or wrong-material id, for the same reason: "approve
+            # all" is one convenient action, not an all-or-nothing
+            # transaction that one stale or malformed row can block.
             skipped_ids.append(question.question_id)
 
     return QuestionBulkReviewResult(

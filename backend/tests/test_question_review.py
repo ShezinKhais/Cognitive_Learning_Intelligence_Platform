@@ -628,3 +628,189 @@ async def test_bulk_review_skips_a_question_with_an_invalid_transition(db_client
             await cleanup.commit()
         await _cleanup(session_factory, deliverable_q)
         app.dependency_overrides.pop(get_principal, None)
+
+
+# --- list_questions: must be role-guarded and ownership-scoped, same as the mutation routes ---
+
+
+async def test_student_cannot_list_questions(db_client, app):
+    """list_questions carries correct_option -- a student must never reach
+    it, the same guard as the mutation routes."""
+    test_client, session_factory = db_client
+    student_id = uuid4()
+    material_id, question_id = await _seed_question(session_factory, instructor_id=student_id)
+    try:
+        _as(app, student_id, Role.STUDENT, "student@uni.test")
+
+        resp = test_client.get(f"/api/v1/materials/{material_id}/questions")
+
+        assert resp.status_code == 403
+        assert resp.json()["error"]["code"] == "FORBIDDEN"
+    finally:
+        await _cleanup(session_factory, question_id)
+        app.dependency_overrides.pop(get_principal, None)
+
+
+async def test_lecturer_only_sees_their_own_questions_in_list(db_client, app):
+    """A material's question list must not leak another lecturer's
+    questions -- or their correct_option -- to a lecturer who doesn't own
+    that session."""
+    test_client, session_factory = db_client
+    owner_id = uuid4()
+    other_lecturer_id = uuid4()
+    material_id, question_id = await _seed_question(session_factory, instructor_id=owner_id)
+    try:
+        _as(app, other_lecturer_id, Role.LECTURER, "notowner@uni.test")
+
+        resp = test_client.get(f"/api/v1/materials/{material_id}/questions")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["items"] == []
+        assert body["total"] == 0
+    finally:
+        await _cleanup(session_factory, question_id)
+        app.dependency_overrides.pop(get_principal, None)
+
+
+async def test_owning_lecturer_sees_their_question_in_list(db_client, app):
+    test_client, session_factory = db_client
+    lecturer_id = uuid4()
+    material_id, question_id = await _seed_question(session_factory, instructor_id=lecturer_id)
+    try:
+        _as(app, lecturer_id, Role.LECTURER, "lecturer@uni.test")
+
+        resp = test_client.get(f"/api/v1/materials/{material_id}/questions")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total"] == 1
+        assert body["items"][0]["id"] == str(question_id)
+        assert body["items"][0]["correct_option"] == 0
+    finally:
+        await _cleanup(session_factory, question_id)
+        app.dependency_overrides.pop(get_principal, None)
+
+
+async def test_admin_sees_every_lecturers_question_in_list(db_client, app):
+    test_client, session_factory = db_client
+    owner_id = uuid4()
+    admin_id = uuid4()
+    material_id, question_id = await _seed_question(session_factory, instructor_id=owner_id)
+    try:
+        async with session_factory() as seed:
+            seed.add(
+                User(
+                    user_id=admin_id,
+                    name="Seed Admin",
+                    role="admin",
+                    email=f"{uuid4().hex[:8]}@uni.test",
+                )
+            )
+            await seed.commit()
+
+        _as(app, admin_id, Role.ADMIN, "admin@uni.test")
+
+        resp = test_client.get(f"/api/v1/materials/{material_id}/questions")
+
+        assert resp.status_code == 200
+        assert resp.json()["total"] == 1
+    finally:
+        await _cleanup(session_factory, question_id)
+        async with session_factory() as cleanup:
+            await cleanup.execute(
+                text('delete from "user" where user_id = :uid'), {"uid": admin_id}
+            )
+            await cleanup.commit()
+        app.dependency_overrides.pop(get_principal, None)
+
+
+# --- bulk review: a malformed answer key on one question must not fail the whole batch ---
+
+
+async def test_bulk_review_skips_a_question_with_an_invalid_answer_key(db_client, app):
+    """A ValidationError from apply_review (out-of-range correct_option) on
+    one question must be caught the same as a ConflictError, not bubble up
+    and fail the entire batch. bulk_review_questions doesn't take per-
+    question edits, so the only way this raises today is a row whose
+    stored options/correct_option are already out of sync -- simulated
+    here by writing that directly, bypassing the validation review_question
+    would normally apply on the way in.
+    """
+    test_client, session_factory = db_client
+    lecturer_id = uuid4()
+    material_id, good_q = await _seed_question(session_factory, instructor_id=lecturer_id)
+
+    async with session_factory() as seed:
+        course = Course(code=f"C{uuid4().hex[:8]}", name="Test Course")
+        seed.add(course)
+        await seed.flush()
+
+        material = Material(
+            course_id=course.id,
+            filename="lecture.pdf",
+            content_type="application/pdf",
+            size_bytes=1024,
+            status="completed",
+        )
+        seed.add(material)
+        await seed.flush()
+
+        now = datetime.now(UTC)
+        db_session = SessionModel(
+            instructor_id=lecturer_id,
+            course_id=course.id,
+            start_time=now,
+            end_time=now + timedelta(hours=1),
+            mode="in_person",
+            status="prepared",
+        )
+        seed.add(db_session)
+        await seed.flush()
+
+        # correct_option already points past the end of options -- a row
+        # that should never exist via the API, but apply_review must still
+        # not let it crash the batch if one is ever encountered.
+        bad_question = Question(
+            source_material_id=material.id,
+            question_text="Malformed question",
+            session_id=db_session.session_id,
+            question_type="mcq",
+            status="draft",
+            difficulty="medium",
+            options=["A"],
+            correct_option=5,
+        )
+        seed.add(bad_question)
+        await seed.commit()
+        bad_q = bad_question.question_id
+
+    try:
+        _as(app, lecturer_id, Role.LECTURER, "lecturer@uni.test")
+
+        resp = test_client.post(
+            f"/api/v1/materials/{material_id}/questions:bulk",
+            json={"question_ids": [str(good_q), str(bad_q)], "status": "approved"},
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        updated_ids = {item["id"] for item in body["updated"]}
+        assert str(good_q) in updated_ids
+        assert str(bad_q) in body["skipped_ids"]
+    finally:
+        async with session_factory() as cleanup:
+            await cleanup.execute(
+                text("delete from question where question_id = :qid"), {"qid": bad_q}
+            )
+            await cleanup.execute(
+                text("delete from session where session_id = :sid"),
+                {"sid": db_session.session_id},
+            )
+            await cleanup.execute(
+                text("delete from source_material where id = :mid"), {"mid": material.id}
+            )
+            await cleanup.execute(text("delete from course where id = :cid"), {"cid": course.id})
+            await cleanup.commit()
+        await _cleanup(session_factory, good_q)
+        app.dependency_overrides.pop(get_principal, None)
