@@ -161,6 +161,23 @@ async def test_extensions_are_installed(db: AsyncSession) -> None:
     assert not missing, f"missing extensions: {sorted(missing)}"
 
 
+async def test_the_migrated_schema_bounds_progress_percent(db: AsyncSession) -> None:
+    """The model has always declared this check; the migrations did not create
+    it, so a migrated database accepted a percent of 150."""
+    definition = (
+        await db.execute(
+            text(
+                "select pg_get_constraintdef(oid) from pg_constraint "
+                "where conname = 'ck_material_processing_status_percent'"
+            )
+        )
+    ).scalar_one_or_none()
+
+    assert definition is not None
+    assert "percent >= 0" in definition
+    assert "percent <= 100" in definition
+
+
 async def test_vector_column_round_trips(db: AsyncSession) -> None:
     """Proves pgvector is usable, not merely present."""
     await db.execute(text("create temporary table _probe (id int primary key, v vector(3))"))
