@@ -76,3 +76,14 @@ test('lecturers return only to lecturer pages', () => {
     '/lecturer/materials',
   )
 })
+
+test('a lecturer signed out on a review link is returned to it', () => {
+  assert.equal(
+    intendedPathForRole('lecturer', '/materials/abc/review'),
+    '/materials/abc/review',
+  )
+  assert.equal(
+    intendedPathForRole('student', '/materials/abc/review'),
+    '/student',
+  )
+})

@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.api.deps import Principal, get_principal
+from app.auth.store import get_consent_repository
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.course import Course
@@ -34,7 +35,7 @@ from app.models.material import Material
 from app.models.question import Question
 from app.models.session import Session as SessionModel
 from app.models.user import User
-from app.schemas.identity import Role
+from app.schemas.identity import ConsentType, Role
 
 
 @pytest.fixture
@@ -69,10 +70,13 @@ async def db_client(app):
 
 
 def _as(app, user_id: UUID, role: Role, email: str):
+    """Act as this user, who has accepted the terms the material routes require."""
+
     def _principal() -> Principal:
         return Principal(user_id=user_id, role=role, email=email)
 
     app.dependency_overrides[get_principal] = _principal
+    get_consent_repository(get_settings()).record(user_id, ConsentType.TERMS, True)
 
 
 async def _seed_question(

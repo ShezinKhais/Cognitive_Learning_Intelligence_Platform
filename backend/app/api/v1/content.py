@@ -14,7 +14,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, UploadFile, status
 
-from app.api.deps import CurrentUser, DbSession, Paginated, require_roles
+from app.api.deps import CurrentUser, DbSession, Paginated, require_consents, require_roles
 from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.repositories.material_repository import MaterialRepository
 from app.repositories.question_repository import QuestionRepository
@@ -27,7 +27,7 @@ from app.schemas.content import (
     QuestionOut,
     QuestionReviewRequest,
 )
-from app.schemas.identity import Role
+from app.schemas.identity import ConsentType, Role
 from app.services.extraction import CONTENT_TYPES
 from app.services.question_ownership import filter_owned_questions, get_owned_question
 from app.services.uploads import accept_upload
@@ -42,7 +42,13 @@ from app.services.uploads import accept_upload
 router = APIRouter(
     prefix="/materials",
     tags=["content"],
-    dependencies=[Depends(require_roles(Role.LECTURER, Role.ADMIN))],
+    dependencies=[
+        Depends(require_roles(Role.LECTURER, Role.ADMIN)),
+        # The same terms gate /sessions and /admin enforce. The lecturer pages
+        # redirect to /consent first, but that is the frontend's courtesy, not
+        # a control: without this an unconsented token uploaded with a 202.
+        Depends(require_consents(ConsentType.TERMS)),
+    ],
 )
 
 

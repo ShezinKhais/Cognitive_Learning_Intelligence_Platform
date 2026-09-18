@@ -47,10 +47,20 @@ LECTURE_NOTES = ("Third normal form removes transitive dependencies. " * 40).enc
 PROCESSING_TIMEOUT_SECONDS = 10.0
 
 
-def login(client: TestClient, email: str, password: str) -> dict[str, str]:
+def login(
+    client: TestClient, email: str, password: str, *, accept_terms: bool = True
+) -> dict[str, str]:
     response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200
-    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+    headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
+    if accept_terms:
+        consent = client.post(
+            "/api/v1/auth/consent",
+            headers=headers,
+            json={"consent_type": "terms", "granted": True},
+        )
+        assert consent.status_code == 201
+    return headers
 
 
 def upload(client: TestClient, headers: dict[str, str], name: str, data: bytes):
@@ -122,6 +132,18 @@ def test_a_student_cannot_upload_lecture_material(live_client: TestClient, uploa
 
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
+def test_a_lecturer_who_has_not_accepted_the_terms_cannot_upload(
+    live_client: TestClient, uploads
+) -> None:
+    """The consent page is the frontend's courtesy; the gate is here."""
+    headers = login(live_client, "lecturer@clip.example.com", LECTURER_PASSWORD, accept_terms=False)
+
+    response = upload(live_client, headers, "notes.txt", LECTURE_NOTES)
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "CONSENT_REQUIRED"
 
 
 def test_an_upload_without_a_token_is_refused(live_client: TestClient, uploads) -> None:
