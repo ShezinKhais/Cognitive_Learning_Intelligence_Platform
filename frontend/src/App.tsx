@@ -13,6 +13,7 @@ import LoginPage from './pages/LoginPage'
 import ProtectedAdminRoute from './pages/ProtectedAdminRoute'
 import ProtectedLecturerRoute from './pages/ProtectedLecturerRoute'
 import ProtectedStudentPage from './pages/ProtectedStudentPage'
+import QuestionReview from './pages/QuestionReview'
 import SystemStatusPage from './pages/SystemStatusPage'
 
 export default function App() {
@@ -62,6 +63,9 @@ export default function App() {
         />
       </Route>
 
+      {/* Lecturers, and admins who can review on any lecturer's behalf per
+          the backend's ownership check, reach the materials workspace and the
+          review screen; students never see either mount. */}
       <Route element={<ProtectedLecturerRoute />}>
         <Route
           path="/lecturer"
@@ -75,6 +79,10 @@ export default function App() {
         <Route
           path="/lecturer/materials"
           element={<LecturerMaterialsPage />}
+        />
+        <Route
+          path="/materials/:materialId/review"
+          element={<QuestionReview />}
         />
       </Route>
 

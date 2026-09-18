@@ -51,6 +51,7 @@ from app.services.material_seams import (
     MaterialStore,
     QuestionGenerator,
 )
+from app.services.processing_security import validate_processing_result
 from app.services.storage import MaterialStorage, StoredFile
 
 log = logging.getLogger("clip.pipeline")
@@ -199,6 +200,10 @@ class MaterialPipeline:
             MaterialStage.CHUNKING,
             f"Split into {len(result.chunks)} chunk(s) across {result.page_count} page(s).",
         )
+
+        # Cyber 1: reject excessive extraction results before embedding,
+        # persistence or question generation use additional resources.
+        validate_processing_result(result, self._settings)
 
         embeddings = await self._embed(material_id, owner_id, result.chunks)
         # For the lecturer, and stored. The build notes below are for whoever

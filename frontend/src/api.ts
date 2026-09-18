@@ -205,3 +205,85 @@ export function apiUploadFile<T = TimetableImportResult>(
     true,
   )
 }
+
+export type QuestionType = 'mcq' | 'free_text'
+
+export type QuestionStatus = 'draft' | 'approved' | 'rejected' | 'staged' | 'delivered'
+
+export type Difficulty = 'easy' | 'medium' | 'hard'
+
+export interface Question {
+  id: string
+  material_id: string
+  type: QuestionType
+  status: QuestionStatus
+  difficulty: Difficulty
+  prompt: string
+  options: string[] | null
+  correct_option: number | null
+  topic: string | null
+  source_slide: number | null
+  source_excerpt: string | null
+}
+
+export interface Page<T> {
+  items: T[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export function listQuestions(
+  materialId: string,
+  limit = 50,
+  offset = 0,
+): Promise<Page<Question>> {
+  return request<Page<Question>>(
+    `/materials/${materialId}/questions?limit=${limit}&offset=${offset}`,
+    {},
+    true,
+  )
+}
+
+export interface ReviewQuestionPayload {
+  status: QuestionStatus
+  prompt?: string
+  options?: string[]
+  correct_option?: number
+  difficulty?: Difficulty
+}
+
+export function reviewQuestion(
+  materialId: string,
+  questionId: string,
+  payload: ReviewQuestionPayload,
+): Promise<Question> {
+  return request<Question>(
+    `/materials/${materialId}/questions/${questionId}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    },
+    true,
+  )
+}
+
+export interface QuestionBulkReviewResult {
+  updated: Question[]
+  skipped_ids: string[]
+}
+
+export function bulkReviewQuestions(
+  materialId: string,
+  questionIds: string[],
+  status: QuestionStatus,
+): Promise<QuestionBulkReviewResult> {
+  return request<QuestionBulkReviewResult>(
+    `/materials/${materialId}/questions:bulk`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ question_ids: questionIds, status }),
+    },
+    true,
+  )
+}

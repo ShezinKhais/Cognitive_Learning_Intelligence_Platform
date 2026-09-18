@@ -104,3 +104,16 @@ class QuestionReviewRequest(BaseModel):
 class QuestionBulkReviewRequest(BaseModel):
     question_ids: list[UUID]
     status: QuestionStatus
+
+
+class QuestionBulkReviewResult(BaseModel):
+    """Response for the bulk review endpoint.
+
+    Separate from a bare list[QuestionOut] so a lecturer can tell "all N
+    approved" from "N approved, M skipped" -- a bulk action that silently
+    drops ids a lecturer expected to be included looks identical to success
+    unless the skipped ones are reported back.
+    """
+
+    updated: list[QuestionOut]
+    skipped_ids: list[UUID]
