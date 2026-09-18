@@ -1,9 +1,10 @@
 """Lecture material and question routes.
 
 Contract frozen in Phase 1. Handler bodies are owned by:
-  AI 1:    upload processing, extraction, question generation
-  Cyber 2: review actions
-  BBIS:    persistence and queries
+  AI 1:     upload processing, extraction, question generation
+  Cyber 1:  upload security validation
+  Cyber 2:  review actions
+  BBIS:     persistence and queries
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from app.schemas.content import (
 )
 from app.schemas.identity import Role
 from app.services.question_ownership import filter_owned_questions, get_owned_question
+from app.services.upload_security import validate_uploaded_file
 from app.services.uploads import (
     get_background_processor,
     get_material_pipeline,
@@ -84,22 +86,45 @@ def _to_question_out(question) -> QuestionOut:  # noqa: ANN001 - app.models.Ques
 async def upload_material(file: UploadFile, principal: CurrentUser) -> MaterialOut:
     """Accepts PDF, PPTX, DOCX or TXT.
 
-    Returns 202 immediately: processing runs in the background and reports
-    progress over the WebSocket as `material.progress` events.
+    Returns 202 immediately after the uploaded file passes security validation.
+    Processing then runs in the background and reports progress over the
+    WebSocket as `material.progress` events.
     """
-    # This docstring is the public description in openapi.json, so the
-    # implementation note stays out here: the request ends at the return
-    # below, and nothing downstream may hold anything scoped to it. That is
-    # why the file is written to storage rather than handed on as an open
-    # handle, and why this handler takes no database session.
+    # The request ends after the 202 response, so the uploaded file has to be
+    # written to storage before background processing begins.
     material_id = uuid4()
     storage = get_material_storage()
     pipeline = get_material_pipeline()
 
-    # Writing the file is the only part the lecturer waits for. An unsupported
-    # extension or an oversized upload is refused here, while there is still a
-    # response to refuse it with.
-    stored = await storage.save(material_id, file.filename or "", stream_upload(file))
+    # Storage already enforces:
+    # - allowed extensions
+    # - maximum upload size
+    # - non-empty uploads
+    # - safe server-side filenames
+    stored = await storage.save(
+        material_id,
+        file.filename or "",
+        stream_upload(file),
+    )
+
+    # Cyber 1 security validation.
+    #
+    # A valid filename extension is not enough. The stored bytes are checked
+    # before any background processing starts so that files such as an
+    # executable renamed to lecture.pdf are rejected during the request.
+    #
+    # If validation fails, remove the file immediately so a malicious or
+    # malformed upload is never left in material storage.
+    try:
+        async with storage.materialise(stored) as path:
+            validate_uploaded_file(
+                str(path),
+                stored.extension,
+                file.content_type,
+            )
+    except Exception:
+        await storage.delete(material_id)
+        raise
 
     async def work() -> None:
         await pipeline.run(stored, principal.user_id)
@@ -109,9 +134,9 @@ async def upload_material(file: UploadFile, principal: CurrentUser) -> MaterialO
 
     get_background_processor().submit(material_id, work, on_cancel=interrupted)
 
-    # Built from what the request knows. Persisting the row is BBIS's #36, and
-    # until it lands the counts stay null exactly as they would while a real
-    # row is still processing.
+    # Built from what the request knows. Persisting the row is BBIS's Phase 2
+    # responsibility. Until that lands, page and chunk counts remain unset
+    # while the material is processing.
     return MaterialOut(
         id=material_id,
         filename=stored.filename,
@@ -182,7 +207,10 @@ async def get_material(
 
 @review.get("/{material_id}/questions", response_model=Page[QuestionOut])
 async def list_questions(
-    material_id: UUID, principal: CurrentUser, db: DbSession, page: Paginated
+    material_id: UUID,
+    principal: CurrentUser,
+    db: DbSession,
+    page: Paginated,
 ) -> Page[QuestionOut]:
     """The review queue for a material.
 
