@@ -62,6 +62,8 @@ export type ProgressConnectionStatus =
   | 'connecting'
   | 'connected'
   | 'disconnected'
+  // The server refused the connection in a way retrying cannot fix.
+  | 'unavailable'
 
 export const PROCESSING_STAGES: Array<{
   key: Exclude<MaterialStage, 'failed'>

@@ -342,6 +342,13 @@ function PipelineUnavailable() {
   )
 }
 
+const CONNECTION_LABEL: Record<ProgressConnectionStatus, string> = {
+  connected: 'Live updates on',
+  connecting: 'Connecting...',
+  disconnected: 'Reconnecting...',
+  unavailable: 'Live updates unavailable',
+}
+
 function ConnectionBadge({ status }: { status: ProgressConnectionStatus }) {
   const connected = status === 'connected'
 
@@ -357,11 +364,7 @@ function ConnectionBadge({ status }: { status: ProgressConnectionStatus }) {
       {connected
         ? <Wifi aria-hidden="true" size={14} />
         : <WifiOff aria-hidden="true" size={14} />}
-      {connected
-        ? 'Live updates on'
-        : status === 'connecting'
-          ? 'Connecting...'
-          : 'Reconnecting...'}
+      {CONNECTION_LABEL[status]}
     </div>
   )
 }
@@ -528,7 +531,11 @@ function ProcessingStatus({
       <div className="mt-2 flex justify-between text-xs text-muted-foreground">
         <span>{failed ? 'Failed' : `${percent}% complete`}</span>
         {!completed && !failed && connectionStatus !== 'connected' && (
-          <span>Live updates reconnecting</span>
+          <span>
+            {connectionStatus === 'unavailable'
+              ? 'Live updates unavailable. Refresh the page to try again.'
+              : 'Live updates reconnecting'}
+          </span>
         )}
       </div>
 
