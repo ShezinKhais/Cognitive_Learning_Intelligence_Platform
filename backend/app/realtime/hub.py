@@ -307,6 +307,8 @@ class SessionHub:
         # Let an immediately-closeable socket finish before returning while a
         # stalled close remains safely detached from the delivery path.
         await asyncio.sleep(0)
+        if task.done():
+            self._closing.discard(task)
 
     async def _close_quietly(self, connection: Connection) -> None:
         with contextlib.suppress(Exception):
