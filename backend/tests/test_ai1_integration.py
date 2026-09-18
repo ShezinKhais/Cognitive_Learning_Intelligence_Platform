@@ -15,8 +15,8 @@ from uuid import uuid4
 from app.core.config import Settings, get_settings
 from app.realtime.hub import SessionHub
 from app.services.embeddings import OllamaEmbedder
+from app.services.extraction import SUPPORTED
 from app.services.generation import QuestionGenerator
-from app.services.jobs import JobRegistry
 from app.services.material_seams import CompletedMaterial
 from app.services.pipeline import MaterialPipeline
 from app.services.storage import LocalDiskStorage
@@ -98,12 +98,11 @@ async def test_a_lecture_reaches_the_store_as_vectors_and_grounded_questions(
     tmp_path: Path,
 ) -> None:
     settings = Settings(upload_storage_dir=str(tmp_path))
-    storage = LocalDiskStorage(settings)
+    storage = LocalDiskStorage(settings, allowed=set(SUPPORTED))
     store = CapturingStore()
 
     pipeline = MaterialPipeline(
         storage=storage,
-        registry=JobRegistry(),
         settings=settings,
         hub=SessionHub(),
         embedder=OllamaEmbedder(FakeEmbeddingClient(), "nomic-embed-text"),
@@ -112,7 +111,7 @@ async def test_a_lecture_reaches_the_store_as_vectors_and_grounded_questions(
     )
 
     stored = await storage.save(uuid4(), "week3.txt", feed(LECTURE_TEXT))
-    result = await pipeline.run(stored, uuid4())
+    result = await pipeline.job(stored, uuid4()).run()
 
     assert result is not None
 

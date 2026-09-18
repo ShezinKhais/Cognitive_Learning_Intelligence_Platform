@@ -10,7 +10,7 @@ Contract frozen in Phase 1. Handler bodies are owned by:
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, UploadFile, status
 
@@ -28,42 +28,22 @@ from app.schemas.content import (
     QuestionReviewRequest,
 )
 from app.schemas.identity import Role
+from app.services.extraction import CONTENT_TYPES
 from app.services.question_ownership import filter_owned_questions, get_owned_question
-from app.services.upload_security import validate_uploaded_file
-from app.services.uploads import (
-    get_background_processor,
-    get_material_pipeline,
-    get_material_storage,
-    stream_upload,
-)
+from app.services.uploads import accept_upload
 
-router = APIRouter(
-    prefix="/materials",
-    tags=["content"],
-    dependencies=[Depends(require_roles(Role.LECTURER, Role.ADMIN))],
-)
-
-DEFAULT_CONTENT_TYPE = "application/octet-stream"
-
-# The response reports the type of what was stored, which is decided by the
-# validated extension. The client's Content-Type header is whatever the browser
-# or script chose to send, so echoing it let a .txt upload come back labelled
-# text/html.
-CONTENT_TYPES = {
-    "pdf": "application/pdf",
-    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "txt": "text/plain",
-}
-
-# The review actions are restricted to lecturer/admin at the router level,
-# same pattern as /admin in identity.py. Ownership (app.services.question_
+# Every route here, the review actions included, is lecturer and admin work,
+# so the role guard sits on the router. Ownership (app.services.question_
 # ownership) narrows a lecturer down to their own sessions on top of this;
 # neither check alone is enough -- role without ownership would let any
 # lecturer touch any other lecturer's questions, and ownership without role
 # would let a user whose account still matches a session's instructor_id
 # keep acting on it even after their role changed away from lecturer.
-review = APIRouter(dependencies=[Depends(require_roles(Role.LECTURER, Role.ADMIN))])
+router = APIRouter(
+    prefix="/materials",
+    tags=["content"],
+    dependencies=[Depends(require_roles(Role.LECTURER, Role.ADMIN))],
+)
 
 
 def _to_question_out(question) -> QuestionOut:  # noqa: ANN001 - app.models.Question
@@ -90,57 +70,17 @@ async def upload_material(file: UploadFile, principal: CurrentUser) -> MaterialO
     Processing then runs in the background and reports progress over the
     WebSocket as `material.progress` events.
     """
-    # The request ends after the 202 response, so the uploaded file has to be
-    # written to storage before background processing begins.
-    material_id = uuid4()
-    storage = get_material_storage()
-    pipeline = get_material_pipeline()
+    stored = await accept_upload(file, principal.user_id)
 
-    # Storage already enforces:
-    # - allowed extensions
-    # - maximum upload size
-    # - non-empty uploads
-    # - safe server-side filenames
-    stored = await storage.save(
-        material_id,
-        file.filename or "",
-        stream_upload(file),
-    )
-
-    # Cyber 1 security validation.
-    #
-    # A valid filename extension is not enough. The stored bytes are checked
-    # before any background processing starts so that files such as an
-    # executable renamed to lecture.pdf are rejected during the request.
-    #
-    # If validation fails, remove the file immediately so a malicious or
-    # malformed upload is never left in material storage.
-    try:
-        async with storage.materialise(stored) as path:
-            validate_uploaded_file(
-                str(path),
-                stored.extension,
-                file.content_type,
-            )
-    except Exception:
-        await storage.delete(material_id)
-        raise
-
-    async def work() -> None:
-        await pipeline.run(stored, principal.user_id)
-
-    async def interrupted() -> None:
-        await pipeline.abandon(material_id, principal.user_id)
-
-    get_background_processor().submit(material_id, work, on_cancel=interrupted)
-
-    # Built from what the request knows. Persisting the row is BBIS's Phase 2
-    # responsibility. Until that lands, page and chunk counts remain unset
-    # while the material is processing.
+    # Built from what the request knows. Persisting the row is BBIS's #36, and
+    # until it lands the counts stay null exactly as they would while a real
+    # row is still processing.
     return MaterialOut(
-        id=material_id,
+        id=stored.material_id,
         filename=stored.filename,
-        content_type=CONTENT_TYPES.get(stored.extension, DEFAULT_CONTENT_TYPE),
+        # The type of what was stored, decided by the validated extension. The
+        # client's Content-Type header is whatever the browser chose to send.
+        content_type=CONTENT_TYPES[stored.extension],
         size_bytes=stored.size_bytes,
         status=MaterialStatus.PENDING,
         uploaded_at=datetime.now(UTC),
@@ -205,7 +145,7 @@ async def get_material(
     return MaterialOut.model_validate(material, from_attributes=True)
 
 
-@review.get("/{material_id}/questions", response_model=Page[QuestionOut])
+@router.get("/{material_id}/questions", response_model=Page[QuestionOut])
 async def list_questions(
     material_id: UUID,
     principal: CurrentUser,
@@ -214,7 +154,7 @@ async def list_questions(
 ) -> Page[QuestionOut]:
     """The review queue for a material.
 
-    On the lecturer/admin review router, same as the mutation routes --
+    Lecturer/admin only, same as the mutation routes --
     QuestionOut carries correct_option, which must never reach a student or
     a lecturer who doesn't teach the sessions this material's questions
     belong to. A lecturer sees only their own; an admin sees everything.
@@ -235,7 +175,7 @@ async def list_questions(
     )
 
 
-@review.patch("/{material_id}/questions/{question_id}", response_model=QuestionOut)
+@router.patch("/{material_id}/questions/{question_id}", response_model=QuestionOut)
 async def review_question(
     material_id: UUID,
     question_id: UUID,
@@ -270,7 +210,7 @@ async def review_question(
     return _to_question_out(updated)
 
 
-@review.post("/{material_id}/questions:bulk", response_model=QuestionBulkReviewResult)
+@router.post("/{material_id}/questions:bulk", response_model=QuestionBulkReviewResult)
 async def bulk_review_questions(
     material_id: UUID,
     payload: QuestionBulkReviewRequest,
@@ -314,6 +254,3 @@ async def bulk_review_questions(
         updated=[_to_question_out(q) for q in updated],
         skipped_ids=skipped_ids,
     )
-
-
-router.include_router(review)

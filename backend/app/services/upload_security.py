@@ -17,13 +17,7 @@ from pathlib import Path
 
 from app.core.config import Settings, get_settings
 from app.core.errors import ValidationError
-
-EXPECTED_MIME_TYPES: dict[str, set[str]] = {
-    "pdf": {"application/pdf"},
-    "docx": {"application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
-    "pptx": {"application/vnd.openxmlformats-officedocument.presentationml.presentation"},
-    "txt": {"text/plain"},
-}
+from app.services.extraction import CONTENT_TYPES
 
 # Browsers and API clients sometimes use this when they do not know the exact
 # MIME type. It is not trusted as proof; the actual bytes are still checked.
@@ -43,15 +37,15 @@ def validate_claimed_mime(extension: str, content_type: str | None) -> None:
     if claimed in GENERIC_MIME_TYPES:
         return
 
-    expected = EXPECTED_MIME_TYPES.get(extension, set())
+    expected = CONTENT_TYPES.get(extension)
 
-    if claimed not in expected:
+    if claimed != expected:
         raise ValidationError(
             "File content type does not match its extension",
             {
                 "extension": extension,
                 "content_type": claimed,
-                "expected": sorted(expected),
+                "expected": [expected] if expected else [],
             },
         )
 

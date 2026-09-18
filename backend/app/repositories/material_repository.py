@@ -10,16 +10,6 @@ from app.models.material_processing_status import MaterialProcessingStatus
 from app.schemas.content import MaterialStatus
 from app.schemas.events import MaterialStage
 
-_STAGE_TO_MATERIAL_STATUS = {
-    MaterialStage.VALIDATING: MaterialStatus.PROCESSING,
-    MaterialStage.EXTRACTING: MaterialStatus.PROCESSING,
-    MaterialStage.CHUNKING: MaterialStatus.PROCESSING,
-    MaterialStage.EMBEDDING: MaterialStatus.PROCESSING,
-    MaterialStage.GENERATING: MaterialStatus.PROCESSING,
-    MaterialStage.DONE: MaterialStatus.COMPLETED,
-    MaterialStage.FAILED: MaterialStatus.FAILED,
-}
-
 
 class MaterialRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -118,7 +108,7 @@ class MaterialRepository:
             percent=percent,
             message=message,
         )
-        material.status = _STAGE_TO_MATERIAL_STATUS[stage].value
+        material.status = stage.material_status.value
 
         if stage is MaterialStage.FAILED:
             material.error = message

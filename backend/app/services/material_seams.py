@@ -93,13 +93,13 @@ class DraftQuestion:
 class CompletedMaterial:
     """Everything processing found for one material, written in one go.
 
-    `warnings` are for the lecturer. `embeddings` is None when no embedder is
-    wired up, in which case the chunks are stored without vectors.
+    `warnings` are for the lecturer. `embeddings` holds one vector per chunk
+    in `result.chunks`, in the same order.
     """
 
     status: JobStatus
     result: ProcessingResult
-    embeddings: EmbeddingBatch | None
+    embeddings: EmbeddingBatch
     questions: tuple[DraftQuestion, ...]
     warnings: tuple[str, ...]
 
