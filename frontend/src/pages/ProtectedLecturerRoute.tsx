@@ -14,6 +14,7 @@ import {
   getCurrentUser,
   type CurrentUser,
 } from '../api'
+import { hasRequiredConsent } from '../authRouting'
 
 type State =
   | { status: 'loading' }
@@ -71,6 +72,10 @@ export default function ProtectedLecturerRoute() {
 
   if (state.user.role !== 'lecturer' && state.user.role !== 'admin') {
     return <Navigate to="/access-denied" replace />
+  }
+
+  if (!hasRequiredConsent(state.user)) {
+    return <Navigate to="/consent" replace state={{ from: location.pathname }} />
   }
 
   return <Outlet />
