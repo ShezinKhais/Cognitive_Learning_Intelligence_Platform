@@ -129,17 +129,23 @@ class BackgroundProcessor:
         # Strong references to running tasks. asyncio only holds a weak one, so
         # a task nothing else references can be garbage collected mid-await and
         # the job vanishes with no error anywhere.
-        self._running: set[asyncio.Task] = set()
+        # Keyed by task, so the material each one is working on is known.
+        self._running: dict[asyncio.Task, UUID] = {}
 
     @property
     def in_flight(self) -> int:
         return len(self._running)
 
+    @property
+    def active_material_ids(self) -> frozenset[UUID]:
+        """Materials this process is still working on, queued ones included."""
+        return frozenset(self._running.values())
+
     def submit(self, job: Job) -> asyncio.Task:
         """Queue a job and return immediately."""
         task = asyncio.create_task(self._run(job), name=f"material-{job.material_id}")
-        self._running.add(task)
-        task.add_done_callback(self._running.discard)
+        self._running[task] = job.material_id
+        task.add_done_callback(lambda done: self._running.pop(done, None))
         return task
 
     async def _run(self, job: Job) -> None:

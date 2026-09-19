@@ -433,27 +433,32 @@ class QuestionGenerator:
                 material_id,
                 len(chunks) - len(usable),
             )
-        if not usable:
+        if not usable or count == 0:
             return []
 
-        outcome = await self._draft(chunks, count)
+        outcome = await self._draft(chunks, count, shown=usable)
         for _, reasons in outcome.rejected:
             logger.info("rejected draft question: %s", "; ".join(reasons))
         return outcome.accepted
 
-    async def _draft(self, chunks, count: int | None = None) -> GenerationOutcome:
+    async def _draft(
+        self, chunks, count: int | None = None, shown: Sequence[ContentChunk] | None = None
+    ) -> GenerationOutcome:
         """Kept separate so tests can see what was rejected and why.
 
         The model is shown only the screened chunks, while drafts are checked
         against all of them, so one citing a page that carried an injected
-        instruction is still rejected.
+        instruction is still rejected. `shown` is the screened set when the
+        caller already has it, so the chunks are not screened twice.
         """
+        if shown is None:
+            shown = screened(chunks)
         response = await self._client.chat.completions.create(
             model=self.model,
             messages=[
                 {
                     "role": "user",
-                    "content": build_prompt(screened(chunks), count or self._count),
+                    "content": build_prompt(shown, self._count if count is None else count),
                 }
             ],
         )

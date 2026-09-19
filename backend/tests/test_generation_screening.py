@@ -165,3 +165,32 @@ def test_a_topic_that_is_not_a_string_is_dropped_while_parsing() -> None:
 def test_a_topic_longer_than_the_column_cannot_be_stored() -> None:
     assert draft(topic="t" * MAX_TOPIC_LENGTH).problem() is None
     assert "topic" in draft(topic="t" * (MAX_TOPIC_LENGTH + 1)).problem()
+
+
+async def test_chunks_are_screened_once_per_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """generate() screened the chunks, threw the result away, and _draft()
+    screened them all again."""
+    from app.services import generation
+
+    calls = []
+    real = generation.screened
+
+    def counting(chunks):
+        calls.append(len(chunks))
+        return real(chunks)
+
+    monkeypatch.setattr(generation, "screened", counting)
+    generator = QuestionGenerator(RecordingChatClient([]), "test-model")
+
+    await generator.generate(uuid.uuid4(), [chunk(LECTURE)])
+
+    assert calls == [1]
+
+
+async def test_asking_for_no_questions_asks_the_model_for_none() -> None:
+    """count=0 read as "not given" and fell back to the default of five."""
+    client = RecordingChatClient([])
+    generator = QuestionGenerator(client, "test-model")
+
+    assert await generator.generate(uuid.uuid4(), [chunk(LECTURE)], count=0) == []
+    assert client.prompts == []

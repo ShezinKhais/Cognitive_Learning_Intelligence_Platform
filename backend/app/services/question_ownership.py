@@ -25,6 +25,13 @@ from app.repositories.question_repository import QuestionRepository
 from app.schemas.identity import Role
 
 
+def may_act_on(principal: Principal, owner_id: uuid.UUID | None) -> bool:
+    """The one ownership rule, shared by the single and bulk paths so they
+    cannot drift apart: admins act on anything, a lecturer on material they
+    uploaded."""
+    return principal.role == Role.ADMIN or owner_id == principal.user_id
+
+
 async def get_owned_question(
     question_id: uuid.UUID,
     principal: Principal,
@@ -59,7 +66,7 @@ async def get_owned_question(
 
     question, owner_id = found
 
-    if principal.role != Role.ADMIN and owner_id != principal.user_id:
+    if not may_act_on(principal, owner_id):
         raise PermissionError_(
             "You can only review questions from material you uploaded.",
             {"question_id": str(question_id)},
@@ -101,7 +108,7 @@ async def filter_owned_questions(
             rejected.append(qid)
             continue
         question, owner_id = entry
-        if principal.role != Role.ADMIN and owner_id != principal.user_id:
+        if not may_act_on(principal, owner_id):
             rejected.append(qid)
             continue
         owned.append(question)

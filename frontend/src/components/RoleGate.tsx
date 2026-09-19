@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router'
 
 import { ApiError, getAccessToken, getCurrentUser, type CurrentUser, type Role } from '../api'
-import { hasRequiredConsent } from '../authRouting'
+import { accessFor } from '../authRouting'
 
 type State =
   | { status: 'loading' }
@@ -64,10 +64,11 @@ export default function RoleGate({ allow, children }: Props) {
   if (state.status === 'error') {
     return <main className="p-8 text-critical" role="alert">{state.message}</main>
   }
-  if (!allow.includes(state.user.role)) {
+  const access = accessFor(state.user, allow)
+  if (access === 'wrong-role') {
     return <Navigate to="/access-denied" replace />
   }
-  if (!hasRequiredConsent(state.user)) {
+  if (access === 'needs-consent') {
     return <Navigate to="/consent" replace state={{ from: location.pathname }} />
   }
   return <>{children(state.user)}</>

@@ -280,3 +280,20 @@ def test_a_stage_maps_onto_the_reported_material_status() -> None:
     assert status_at(MaterialStage.CHUNKING) is MaterialStatus.PROCESSING
     assert status_at(MaterialStage.DONE) is MaterialStatus.COMPLETED
     assert status_at(MaterialStage.FAILED) is MaterialStatus.FAILED
+
+
+async def test_the_processor_knows_which_materials_it_is_working_on() -> None:
+    """The stranded-material sweep must not fail a job this process is still
+    running, queued ones included."""
+    processor = BackgroundProcessor(max_concurrent=1)
+    release = asyncio.Event()
+    running, queued = FakeJob(release.wait), FakeJob()
+
+    first = processor.submit(running)
+    second = processor.submit(queued)
+    assert processor.active_material_ids == {running.material_id, queued.material_id}
+
+    release.set()
+    await asyncio.wait_for(asyncio.gather(first, second), EVENT_TIMEOUT_SECONDS)
+    await asyncio.sleep(0)
+    assert processor.active_material_ids == frozenset()

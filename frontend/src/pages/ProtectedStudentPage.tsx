@@ -4,7 +4,7 @@ import {
 } from 'react-router'
 
 import { useStudentApp } from '../features/student/StudentAppContext'
-import { hasRequiredConsent } from '../authRouting'
+import { accessFor } from '../authRouting'
 import StudentHomePage from './StudentHomePage'
 
 export default function ProtectedStudentPage() {
@@ -53,7 +53,11 @@ export default function ProtectedStudentPage() {
     )
   }
 
-  if (currentUser.role !== 'student') {
+  // The same rule RoleGate applies. The student workspace keeps its own gate
+  // because StudentAppProvider already loads the user for the whole page.
+  const access = accessFor(currentUser, ['student'])
+
+  if (access === 'wrong-role') {
     return (
       <Navigate
         to="/access-denied"
@@ -62,7 +66,7 @@ export default function ProtectedStudentPage() {
     )
   }
 
-  if (!hasRequiredConsent(currentUser)) {
+  if (access === 'needs-consent') {
     return (
       <Navigate
         to="/consent"

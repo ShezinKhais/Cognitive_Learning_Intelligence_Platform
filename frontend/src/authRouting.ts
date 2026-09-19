@@ -29,3 +29,13 @@ export function intendedPathForRole(
 export function hasRequiredConsent(user: CurrentUser): boolean {
   return user.consents.includes('terms')
 }
+
+export type AccessDecision = 'allowed' | 'wrong-role' | 'needs-consent'
+
+// The one access rule for a signed-in user, shared by every page guard so a
+// change to it cannot reach one role's pages and miss another's.
+export function accessFor(user: CurrentUser, allow: readonly Role[]): AccessDecision {
+  if (!allow.includes(user.role)) return 'wrong-role'
+  if (!hasRequiredConsent(user)) return 'needs-consent'
+  return 'allowed'
+}

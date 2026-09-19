@@ -87,3 +87,13 @@ test('a lecturer signed out on a review link is returned to it', () => {
     '/student',
   )
 })
+
+test('one access rule serves every guard', async () => {
+  const { accessFor } = await import('../src/authRouting.ts')
+  assert.equal(accessFor(user('student', ['terms']), ['student']), 'allowed')
+  assert.equal(accessFor(user('lecturer', ['terms']), ['student']), 'wrong-role')
+  assert.equal(accessFor(user('student', []), ['student']), 'needs-consent')
+  // Role is checked before consent: someone on the wrong page is sent away,
+  // not asked to accept terms for a page they cannot use.
+  assert.equal(accessFor(user('lecturer', []), ['admin']), 'wrong-role')
+})

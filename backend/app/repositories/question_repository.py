@@ -232,8 +232,12 @@ class QuestionRepository:
         options: list[str] | None = None,
         correct_option: int | None = None,
         difficulty: str | None = None,
+        flush: bool = True,
     ) -> Question:
         """Mutate a question in place per a review decision and flush.
+
+        flush=False leaves the write to the caller, so a bulk action flushes
+        once for the batch instead of twice per question.
 
         Only overwrites fields the caller actually supplied (edit is
         optional on approve/reject -- a lecturer can approve without
@@ -299,6 +303,7 @@ class QuestionRepository:
             question.difficulty = difficulty
 
         self.session.add(question)
-        await self.session.flush()
-        await self.session.refresh(question)
+        if flush:
+            await self.session.flush()
+            await self.session.refresh(question)
         return question

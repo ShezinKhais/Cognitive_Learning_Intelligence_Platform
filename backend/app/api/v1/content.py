@@ -274,6 +274,7 @@ async def bulk_review_questions(
                     question,
                     status=payload.status.value,
                     reviewer_id=principal.user_id,
+                    flush=False,
                 )
             )
         except (ConflictError, ValidationError):
@@ -283,6 +284,10 @@ async def bulk_review_questions(
             # all" is one convenient action, not an all-or-nothing
             # transaction that one stale or malformed row can block.
             skipped_ids.append(question.question_id)
+
+    # One write for the whole batch. Every check above runs before any field
+    # changes, so a skipped question was never modified.
+    await db.flush()
 
     return QuestionBulkReviewResult(
         updated=[_to_question_out(q) for q in updated],

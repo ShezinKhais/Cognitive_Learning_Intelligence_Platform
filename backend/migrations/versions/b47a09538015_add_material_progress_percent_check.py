@@ -23,6 +23,14 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Upgrade schema."""
+    # A database that already took an out-of-range value would refuse the
+    # constraint and fail the deploy. Nothing writes one today, but the
+    # history is a progress record, so clamping loses nothing a reader needs.
+    op.execute(
+        "UPDATE material_processing_status "
+        "SET percent = LEAST(GREATEST(percent, 0), 100) "
+        "WHERE percent < 0 OR percent > 100"
+    )
     op.create_check_constraint(
         "ck_material_processing_status_percent",
         "material_processing_status",

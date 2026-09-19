@@ -42,6 +42,7 @@ from app.realtime.hub import SessionHub
 from app.realtime.hub import hub as default_hub
 from app.schemas.events import MaterialProgressPayload, MaterialStage, ServerEventType
 from app.services.extraction import ContentChunk, process_material
+from app.services.generation import contains_embedded_instruction
 from app.services.jobs import (
     INTERNAL_ERROR,
     INTERRUPTED_ERROR,
@@ -66,6 +67,11 @@ log = logging.getLogger("clip.pipeline")
 NO_QUESTIONS_WARNING = (
     "No questions could be drafted from this material. Material with more "
     "explanatory text gives the generator more to work from."
+)
+HELD_BACK_WARNING = (
+    "{count} section(s) were left out of question generation because they contain "
+    "text addressed to an AI model rather than to students. Check the material if "
+    "this is unexpected."
 )
 UNSTORED_NOTE = "persistence is not wired up in this build and was skipped"
 
@@ -288,6 +294,13 @@ class MaterialJob:
         """The usable drafts, and the record of the model call that wrote them."""
         generator = self._pipeline.generator
         await self._report(MaterialStage.GENERATING, "Drafting questions.")
+        # The generator screens these out itself and must, since it cannot
+        # trust its caller. Counted here too so the lecturer is told: held back
+        # silently, a deck carrying an injected instruction read the same as
+        # one with little to ask about.
+        held_back = sum(1 for chunk in chunks if contains_embedded_instruction(chunk.chunk_text))
+        if held_back:
+            warnings.append(HELD_BACK_WARNING.format(count=held_back))
         try:
             drafts = await generator.generate(self.material_id, chunks)
         except Exception as exc:
@@ -318,9 +331,10 @@ class MaterialJob:
                     "material %s: dropped draft %d, which %s", self.material_id, index, problem
                 )
                 warnings.append(f"draft question {index} {problem} and was dropped")
-        if not usable:
+        if not usable and held_back < len(chunks):
             # Otherwise the material reads as finished with questions to
             # review, and the review screen is empty with nothing saying why.
+            # When every section was held back, that warning is the reason.
             warnings.append(NO_QUESTIONS_WARNING)
         return usable, ModelRun(
             operation="question_generation", model=generator.model, succeeded=True

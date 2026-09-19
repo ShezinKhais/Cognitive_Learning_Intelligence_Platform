@@ -57,11 +57,23 @@ export function getAccessToken(): string | null {
 }
 
 export function saveAccessToken(token: string): void {
+  forgetCurrentUser()
   window.localStorage.setItem(ACCESS_TOKEN_KEY, token)
 }
 
 export function clearAccessToken(): void {
+  forgetCurrentUser()
   window.localStorage.removeItem(ACCESS_TOKEN_KEY)
+}
+
+// Landing on / checks who the user is, then the page it redirects to checks
+// again. For a moment the first answer is reused, so that is one request
+// rather than two. It is dropped whenever the token or the consents change.
+const CURRENT_USER_REUSE_MS = 2000
+let currentUserCache: { token: string; at: number; user: Promise<CurrentUser> } | null = null
+
+function forgetCurrentUser(): void {
+  currentUserCache = null
 }
 
 export class ApiError extends Error {
@@ -168,13 +180,35 @@ export function login(
 }
 
 export function getCurrentUser(): Promise<CurrentUser> {
-  return request<CurrentUser>('/auth/me', {}, true)
+  const token = getAccessToken()
+  const now = Date.now()
+  if (
+    token &&
+    currentUserCache?.token === token &&
+    now - currentUserCache.at < CURRENT_USER_REUSE_MS
+  ) {
+    return currentUserCache.user
+  }
+
+  const user = request<CurrentUser>('/auth/me', {}, true)
+  if (token) {
+    const entry = { token, at: now, user }
+    currentUserCache = entry
+    // A failed check is never reused.
+    user.catch(() => {
+      if (currentUserCache === entry) forgetCurrentUser()
+    })
+  }
+  return user
 }
 
 export function recordConsent(
   consentType: ConsentType,
   granted: boolean,
 ): Promise<ConsentResponse> {
+  // The user's consents are changing, so an answer from before, or one taken
+  // while this request was in flight, would be stale.
+  forgetCurrentUser()
   return request<ConsentResponse>(
     '/auth/consent',
     {
@@ -185,7 +219,7 @@ export function recordConsent(
       }),
     },
     true,
-  )
+  ).finally(forgetCurrentUser)
 }
 
 export function apiUploadFile<T = TimetableImportResult>(
