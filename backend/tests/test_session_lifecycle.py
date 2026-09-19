@@ -352,6 +352,37 @@ async def test_a_student_not_enrolled_cannot_join_the_session(db_client):
         await _cleanup(session_factory, course_id, session_id)
 
 
+async def test_an_enrolled_student_cannot_join_an_ended_session(db_client):
+    """Enrolment and ownership are necessary but not sufficient: a session
+    that has already ended must refuse new joins to its live stream, even
+    for a student who was eligible to join it while it was active."""
+    client, session_factory = db_client
+    course_id, session_id, _question_id = await _seed_session_with_staged_mcq(session_factory)
+
+    async with session_factory() as db:
+        session_row = await db.get(SessionModel, session_id)
+        session_row.status = "ended"
+        await db.commit()
+
+    try:
+        student_token = _login(client, "student@clip.example.com", STUDENT_PASSWORD)
+        _grant_terms(client, student_token)
+
+        with pytest.raises(WebSocketDisconnect) as exc:  # noqa: PT012
+            with client.websocket_connect("/ws/session") as ws:
+                ws.send_json(
+                    {
+                        "type": "auth",
+                        "data": {"token": student_token, "session_id": str(session_id)},
+                    }
+                )
+                ws.receive_json()
+
+        assert exc.value.code == 4003
+    finally:
+        await _cleanup(session_factory, course_id, session_id)
+
+
 async def test_manual_delivery_closes_the_previous_open_question_early(db_client):
     """The lecturer triggering a second question early closes the first with
     LECTURER_CLOSED rather than leaving two questions open at once."""

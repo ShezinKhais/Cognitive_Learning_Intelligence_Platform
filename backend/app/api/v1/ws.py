@@ -52,6 +52,7 @@ from app.schemas.events import (
     parse_client_event,
 )
 from app.schemas.identity import Role
+from app.schemas.session import SessionStatus
 from app.services.engagement import compute_engagement, should_send_dynamic_prompt
 from app.services.scoring import classify_free_text, score_mcq
 from app.services.session_access import session_membership_allowed
@@ -63,6 +64,15 @@ router = APIRouter()
 CLOSE_UNAUTHENTICATED = 4001
 CLOSE_FORBIDDEN = 4003
 CLOSE_BAD_EVENT = 4400
+
+# Sessions a socket may join. session_membership_allowed only checks
+# enrolment/ownership, not lifecycle -- an ended or cancelled session's
+# course/instructor rules are still satisfied, so the status gate has to
+# live here, at the one call site that means "join the live stream" rather
+# than "may this caller see this session at all" (app.api.v1.sessions'
+# REST reads reuse session_membership_allowed for the latter and must keep
+# working after a session ends).
+JOINABLE_SESSION_STATUSES = {SessionStatus.PREPARED.value, SessionStatus.ACTIVE.value}
 CLOSE_AUTH_TIMEOUT = 4408
 
 # A socket that connects and then says nothing would otherwise hold a slot open
@@ -243,6 +253,16 @@ async def _session_access_allowed(
             "reason=session_not_found",
             user_id,
             session_id,
+        )
+        return False
+
+    if session_row.status not in JOINABLE_SESSION_STATUSES:
+        log.warning(
+            "security_event=ACCESS_DENIED transport=websocket user_id=%s session_id=%s "
+            "reason=session_not_joinable status=%s",
+            user_id,
+            session_id,
+            session_row.status,
         )
         return False
 
