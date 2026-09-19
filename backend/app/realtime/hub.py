@@ -17,7 +17,7 @@ import asyncio
 import contextlib
 import logging
 from collections import OrderedDict, deque
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 from weakref import WeakValueDictionary
@@ -25,14 +25,14 @@ from weakref import WeakValueDictionary
 from fastapi import WebSocket
 
 from app.schemas.events import ReadyPayload, ServerEvent, ServerEventType
+from app.schemas.identity import Role
 
 log = logging.getLogger("clip.realtime")
 
 # One stream per session and per user who has had progress, held so a
-# reconnecting client can be told whether it missed anything. forget_session
-# is the intended way to drop a session's, but nothing calls it until the
-# session lifecycle lands in Phase 3, so the map needs a ceiling of its own
-# rather than trusting a caller that does not exist.
+# reconnecting client can be told whether it missed anything. Ending a session
+# drops its stream through forget_session, but a user channel has no end and a
+# session whose process died never reaches one, so the map keeps a ceiling.
 MAX_TRACKED_STREAMS = 2048
 
 # Progress updates are small and only the latest part of the pipeline is useful
@@ -51,25 +51,36 @@ CLOSE_TRY_AGAIN_LATER = 1013
 CLOSE_TIMEOUT_SECONDS = 5.0
 
 
+# Events sent to one user outside the ordered stream, such as a receipt or
+# the welcome after READY, carry this seq. Clients only track gaps in events
+# with a non-zero seq.
+UNSEQUENCED = 0
+
+# What connect() sends straight after READY and any replay. Built at that
+# moment, under the channel's delivery lock, so it cannot describe a state
+# older than the stream it follows.
+Welcome = Callable[[], Awaitable[list[tuple[ServerEventType, dict]]]]
+
+
 class Connection:
-    def __init__(self, websocket: WebSocket, user_id: UUID, session_id: UUID | None) -> None:
+    def __init__(
+        self,
+        websocket: WebSocket,
+        user_id: UUID,
+        session_id: UUID | None,
+        role: Role | None = None,
+    ) -> None:
         self.websocket = websocket
         self.user_id = user_id
         self.session_id = session_id
+        # Only students count towards the respondents a question expects.
+        self.role = role
         self.connected_at = datetime.now(UTC)
 
     @property
     def channel(self) -> UUID:
         """The connection's single ordered event stream."""
         return self.session_id if self.session_id is not None else self.user_id
-
-    @property
-    def resumable(self) -> bool:
-        """Whether a reconnect may continue where it left off.
-
-        Only user channels, for now. Session-wide replay lands in Phase 3.
-        """
-        return self.session_id is None
 
     def describe(self) -> str:
         """Which stream this is, for log lines: "user X (user channel)"."""
@@ -89,13 +100,10 @@ class _Stream:
         self.members: set[Connection] = set()
         self.recent: deque[ServerEvent] = deque(maxlen=MAX_REPLAY_EVENTS_PER_CHANNEL)
 
-    def next_event(
-        self, event_type: ServerEventType, data: dict, *, replayable: bool
-    ) -> ServerEvent:
+    def next_event(self, event_type: ServerEventType, data: dict) -> ServerEvent:
         self.seq += 1
         event = ServerEvent(type=event_type, seq=self.seq, ts=datetime.now(UTC), data=data)
-        if replayable:
-            self.recent.append(event)
+        self.recent.append(event)
         return event
 
     def resume_point(self, last_seq: int | None, generation: UUID | None) -> int | None:
@@ -158,8 +166,9 @@ class SessionHub:
         connection: Connection,
         last_seq: int | None = None,
         generation: UUID | None = None,
+        welcome: Welcome | None = None,
     ) -> bool:
-        """Send READY, join, and replay what the client missed, as one step.
+        """Send READY, join, replay what the client missed, then the welcome.
 
         Delivery on the connection's channel is held for the whole of it, so
         no event can arrive before READY, slip between READY and the join, or
@@ -169,7 +178,7 @@ class SessionHub:
         """
         async with self._delivering(connection.channel):
             stream = self._stream(connection.channel)
-            resumed = stream.resume_point(last_seq, generation) if connection.resumable else None
+            resumed = stream.resume_point(last_seq, generation)
             ready = ServerEvent(
                 type=ServerEventType.READY,
                 seq=0,
@@ -178,7 +187,7 @@ class SessionHub:
                     user_id=connection.user_id,
                     session_id=connection.session_id,
                     resumed_from_seq=resumed,
-                    stream_id=stream.generation if connection.resumable else None,
+                    stream_id=stream.generation,
                 ).model_dump(mode="json"),
             )
             if not await self._send(connection, ready.model_dump(mode="json"), "ready"):
@@ -187,6 +196,12 @@ class SessionHub:
             if resumed is not None:
                 for event in stream.missed_since(resumed):
                     if not await self._send(connection, event.model_dump(mode="json"), "replay"):
+                        return True
+            if welcome is not None:
+                for event_type, data in await welcome():
+                    if not await self._send(
+                        connection, _unsequenced(event_type, data), event_type.value
+                    ):
                         break
         return True
 
@@ -230,8 +245,12 @@ class SessionHub:
         self, session_id: UUID, user_id: UUID, event_type: ServerEventType, data: dict
     ) -> bool:
         """Targeted delivery within a session, for private attention prompts and
-        per-student feedback. Nothing here is visible to other students, and it
-        is kept out of the session's replay for the same reason.
+        per-student feedback. Nothing here is visible to other students.
+
+        It is sent outside the session's sequence. Numbered in it, every other
+        student would see the seq skip an event they were never meant to have
+        and read it as a loss. For the same reason it is not replayed; what it
+        carried is either restated on reconnect or no longer current.
 
         A student can hold more than one connection at once: Teams open in the
         desktop app and in a browser tab, or a reconnect whose predecessor has
@@ -257,8 +276,10 @@ class SessionHub:
         """
         async with self._delivering(channel):
             stream = self._stream(channel)
-            event = stream.next_event(event_type, data, replayable=only is None)
-            payload = event.model_dump(mode="json")
+            if only is None:
+                payload = stream.next_event(event_type, data).model_dump(mode="json")
+            else:
+                payload = _unsequenced(event_type, data)
             async with self._lock:
                 targets = [c for c in stream.members if only is None or c.user_id == only]
 
@@ -348,15 +369,12 @@ class SessionHub:
         )
 
     def forget_session(self, session_id: UUID) -> None:
-        """Drop a finished session's stream.
-
-        Owner: General CS, Phase 3. Nothing calls this yet because the session
-        lifecycle arrives with the scheduler, which is why streams have a
-        ceiling instead of relying on it.
+        """Drop a finished session's stream. Called when the session ends.
 
         Call it only once a session has genuinely ended. Clearing the stream
         while a session is still running restarts seq at 1, which clients read
-        as a gap.
+        as a gap. Connections still in it stay open and receive nothing more,
+        since nothing more is published to a session that has ended.
         """
         self._streams.pop(session_id, None)
 
@@ -364,10 +382,23 @@ class SessionHub:
         stream = self._streams.get(session_id)
         return len(stream.members) if stream is not None else 0
 
+    def student_ids(self, session_id: UUID) -> set[UUID]:
+        """The students connected to a session, each counted once however many
+        tabs they have open."""
+        stream = self._streams.get(session_id)
+        if stream is None:
+            return set()
+        return {c.user_id for c in stream.members if c.role is Role.STUDENT}
+
     def tracked_stream_count(self) -> int:
         """How many streams are held. Exposed so the ceiling is observable
         rather than something only the logs know about."""
         return len(self._streams)
+
+
+def _unsequenced(event_type: ServerEventType, data: dict) -> dict:
+    event = ServerEvent(type=event_type, seq=UNSEQUENCED, ts=datetime.now(UTC), data=data)
+    return event.model_dump(mode="json")
 
 
 hub = SessionHub()

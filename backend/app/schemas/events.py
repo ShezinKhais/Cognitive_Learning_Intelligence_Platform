@@ -7,9 +7,10 @@ Ordering and replay
 -------------------
 Server events carry a monotonically increasing `seq` per session or user
 channel. A client that reconnects sends `last_seq` and the stream generation
-from READY so the server can replay missed material-progress events without
-confusing a restarted counter for the previous process. Session-wide replay
-lands in Phase 3.
+from READY so the server can replay what it missed without confusing a
+restarted counter for the previous process. Events meant for one user alone,
+such as an answer receipt or an attention prompt, carry seq 0 and are not
+replayed, so they never open a gap in anyone else's stream.
 
 Privacy
 -------

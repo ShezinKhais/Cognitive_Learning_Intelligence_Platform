@@ -17,6 +17,7 @@ from app.auth.dev_seed import ensure_dev_users
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, request_id_var
+from app.realtime.classroom import classroom
 from app.services.material_recovery import keep_sweeping
 from app.services.uploads import get_background_processor
 
@@ -62,6 +63,9 @@ async def lifespan(app: FastAPI):
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
+    # Question windows and cycles are timers on this process. Sessions stay
+    # active in the database and resume when the next process is touched.
+    await classroom.shutdown()
     # Material processing outlives the request that started it, so a shutdown
     # that does not wait for it kills a parse halfway and leaves the lecturer
     # watching a bar stuck at 20 per cent with no record of why.

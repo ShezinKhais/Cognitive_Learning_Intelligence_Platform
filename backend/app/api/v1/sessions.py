@@ -18,10 +18,11 @@ from app.api.deps import (
     DbSession,
     Paginated,
     require_consents,
+    require_roles,
 )
 from app.core.errors import not_implemented
 from app.schemas.common import Page
-from app.schemas.identity import ConsentType
+from app.schemas.identity import ConsentType, Role
 from app.schemas.session import (
     ClassComprehensionAlert,
     EngagementOut,
@@ -30,6 +31,10 @@ from app.schemas.session import (
     SessionOut,
     StudentSessionSummary,
 )
+from app.services import session_lifecycle
+
+# Running a session is staff work. Students reach a session over the socket.
+_staff = [Depends(require_roles(Role.LECTURER, Role.ADMIN))]
 
 router = APIRouter(
     prefix="/sessions",
@@ -40,13 +45,19 @@ router = APIRouter(
 )
 
 
-@router.post("", response_model=SessionOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=SessionOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=_staff,
+)
 async def create_session(
     payload: SessionCreateRequest,
     principal: CurrentUser,
     db: DbSession,
 ) -> SessionOut:
-    raise not_implemented("General CS", "Phase 3")
+    """Prepare a session for a course. It starts once questions are staged."""
+    return await session_lifecycle.create_session(db, principal, payload)
 
 
 @router.get("", response_model=Page[SessionOut])
@@ -67,28 +78,30 @@ async def get_session(
     raise not_implemented("BBIS", "Phase 3")
 
 
-@router.post("/{session_id}/start", response_model=SessionOut)
+@router.post("/{session_id}/start", response_model=SessionOut, dependencies=_staff)
 async def start_session(
     session_id: UUID,
     principal: CurrentUser,
     db: DbSession,
 ) -> SessionOut:
     """Blocked until the session has approved questions staged."""
-    raise not_implemented("General CS", "Phase 3")
+    return await session_lifecycle.start_session(db, principal, session_id)
 
 
-@router.post("/{session_id}/end", response_model=SessionOut)
+@router.post("/{session_id}/end", response_model=SessionOut, dependencies=_staff)
 async def end_session(
     session_id: UUID,
     principal: CurrentUser,
     db: DbSession,
 ) -> SessionOut:
-    raise not_implemented("General CS", "Phase 3")
+    """Ends an active session, or cancels one that has not started."""
+    return await session_lifecycle.end_session(db, principal, session_id)
 
 
 @router.post(
     "/{session_id}/questions/{question_id}:deliver",
     status_code=status.HTTP_202_ACCEPTED,
+    dependencies=_staff,
 )
 async def deliver_question(
     session_id: UUID,
@@ -97,7 +110,7 @@ async def deliver_question(
     db: DbSession,
 ) -> dict[str, str]:
     """Lecturer's manual trigger. The scheduler uses the same internal path."""
-    raise not_implemented("General CS", "Phase 3")
+    return await session_lifecycle.deliver_question(db, principal, session_id, question_id)
 
 
 @router.get("/{session_id}/responses", response_model=Page[ResponseOut])

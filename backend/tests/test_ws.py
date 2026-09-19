@@ -16,6 +16,7 @@ from app.schemas.events import (
     ServerEventType,
 )
 
+from .database_support import require_database
 from .dev_credentials import STUDENT_PASSWORD
 
 
@@ -107,10 +108,43 @@ def test_socket_accepts_a_valid_token(
     assert UUID(ready["data"]["stream_id"])
 
 
+def _session_join_close_code(client: TestClient, session_id: UUID) -> int:
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "student@clip.example.com", "password": STUDENT_PASSWORD},
+    )
+    token = login.json()["access_token"]
+    with pytest.raises(WebSocketDisconnect) as exc:  # noqa: PT012
+        with client.websocket_connect("/ws/session") as ws:
+            ws.send_json(
+                {
+                    "type": ClientEventType.AUTH.value,
+                    "data": {"token": token, "session_id": str(session_id)},
+                }
+            )
+            ws.receive_json()
+    return exc.value.code
+
+
+def test_a_session_that_cannot_be_checked_is_try_again_not_a_crash(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Membership is read from the database. When that fails the client is
+    told to reconnect, rather than the socket dying with a server error."""
+
+    async def unreachable(*args: object) -> None:
+        raise ConnectionRefusedError("database down")
+
+    monkeypatch.setattr("app.api.v1.ws.joinable_session", unreachable)
+
+    assert _session_join_close_code(client, uuid4()) == 1013
+
+
 def test_socket_rejects_unverified_session_membership(
     client: TestClient,
 ) -> None:
     """A valid token does not authorize an arbitrary session."""
+    require_database()
     login = client.post(
         "/api/v1/auth/login",
         json={

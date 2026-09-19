@@ -119,7 +119,8 @@ async def test_replay_rejects_a_cursor_from_an_old_server_stream() -> None:
 
 
 async def test_session_connection_has_only_the_session_sequence_stream() -> None:
-    """One socket, one numbered stream. Session replay lands in Phase 3."""
+    """One socket, one numbered stream: a session socket gets none of the
+    user's material progress, and its cursor is the session's."""
     hub = SessionHub()
     user_id, session_id = uuid4(), uuid4()
     await _progress(hub, user_id, 25)
@@ -136,9 +137,69 @@ async def test_session_connection_has_only_the_session_sequence_stream() -> None
     assert progress_delivered == 0
     assert session_delivered == 1
     assert [message["type"] for message in socket.sent] == ["ready", "question.delivered"]
-    assert socket.sent[0]["data"]["resumed_from_seq"] is None
-    assert socket.sent[0]["data"]["stream_id"] is None
+    assert socket.sent[0]["data"]["resumed_from_seq"] == 0
+    assert socket.sent[0]["data"]["stream_id"] == str(hub._stream(session_id).generation)
     assert socket.sent[1]["seq"] == 1
+
+
+async def test_a_session_reconnect_replays_what_it_missed() -> None:
+    hub = SessionHub()
+    student, session_id = uuid4(), uuid4()
+    first = _FakeSocket()
+    await hub.connect(Connection(first, student, session_id), last_seq=0)  # type: ignore[arg-type]
+    await hub.broadcast(session_id, ServerEventType.QUESTION_DELIVERED, {"n": 1})
+    stream_id = UUID(first.sent[0]["data"]["stream_id"])
+    await hub.leave(next(iter(hub._streams[session_id].members)))
+
+    await hub.broadcast(session_id, ServerEventType.QUESTION_CLOSED, {"n": 1})
+    await hub.broadcast(session_id, ServerEventType.QUESTION_DELIVERED, {"n": 2})
+
+    again = _FakeSocket()
+    connection = Connection(again, student, session_id)  # type: ignore[arg-type]
+    assert await hub.connect(connection, last_seq=1, generation=stream_id)
+
+    assert again.sent[0]["data"]["resumed_from_seq"] == 1
+    assert [(m["type"], m["seq"]) for m in again.sent[1:]] == [
+        ("question.closed", 2),
+        ("question.delivered", 3),
+    ]
+
+
+async def test_private_events_do_not_open_a_gap_for_anyone_else() -> None:
+    """A receipt for one student is outside the session's numbering, so the
+    rest of the class sees consecutive seqs."""
+    hub = SessionHub()
+    session_id, answering = uuid4(), uuid4()
+    bystander = _FakeSocket()
+    await hub.join(Connection(bystander, uuid4(), session_id))  # type: ignore[arg-type]
+    private = _FakeSocket()
+    await hub.join(Connection(private, answering, session_id))  # type: ignore[arg-type]
+
+    await hub.broadcast(session_id, ServerEventType.QUESTION_DELIVERED, {})
+    await hub.send_to_user(session_id, answering, ServerEventType.ANSWER_RECEIPT, {})
+    await hub.broadcast(session_id, ServerEventType.QUESTION_CLOSED, {})
+
+    assert [m["seq"] for m in bystander.sent] == [1, 2]
+    assert [m["seq"] for m in private.sent] == [1, 0, 2]
+
+
+async def test_the_welcome_follows_ready_and_replay() -> None:
+    hub = SessionHub()
+    session_id = uuid4()
+    await hub.broadcast(session_id, ServerEventType.QUESTION_DELIVERED, {})
+    socket = _FakeSocket()
+
+    async def welcome() -> list[tuple[ServerEventType, dict]]:
+        return [(ServerEventType.SESSION_STATE, {"status": "active"})]
+
+    connection = Connection(socket, uuid4(), session_id)  # type: ignore[arg-type]
+    assert await hub.connect(connection, last_seq=0, welcome=welcome)
+
+    assert [(m["type"], m["seq"]) for m in socket.sent] == [
+        ("ready", 0),
+        ("question.delivered", 1),
+        ("session.state", 0),
+    ]
 
 
 async def test_a_stalled_replay_send_releases_the_delivery_lock(

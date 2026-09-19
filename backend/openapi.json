@@ -1945,6 +1945,7 @@
         ]
       },
       "post": {
+        "description": "Prepare a session for a course. It starts once questions are staged.",
         "operationId": "create_session_api_v1_sessions_post",
         "requestBody": {
           "content": {
@@ -2076,6 +2077,7 @@
     },
     "/api/v1/sessions/{session_id}/end": {
       "post": {
+        "description": "Ends an active session, or cancels one that has not started.",
         "operationId": "end_session_api_v1_sessions__session_id__end_post",
         "parameters": [
           {
