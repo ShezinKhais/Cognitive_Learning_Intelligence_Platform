@@ -91,6 +91,35 @@ class SessionLifecycle:
         if close_task is not None:
             close_task.cancel()
 
+    async def end_session(self, db, session_repo: SessionRepository, session_row) -> object:
+        """Transition a session to ended and tear down its live state.
+
+        Shared by the lecturer's REST end route and the Teams meeting-ended
+        webhook (app.api.v1.teams) so a session ends the same way regardless
+        of what triggered it -- see PHASES.md's "automatic session creation
+        and archival" for Teams meetings.
+        """
+        from app.realtime.hub import hub
+
+        row = await session_repo.transition(session_row, status="ended")
+        await db.commit()
+
+        self.stop_cycle(session_row.session_id)
+
+        await hub.broadcast(
+            session_row.session_id,
+            ServerEventType.SESSION_STATE,
+            {
+                "session_id": str(session_row.session_id),
+                "status": row.status,
+                "participant_count": await session_repo.participant_count(session_row.session_id),
+                "active_question_id": None,
+                "questions_delivered": await session_repo.count_delivered(session_row.session_id),
+            },
+        )
+        hub.forget_session(session_row.session_id)
+        return row
+
     async def _run_cycle(
         self,
         session_id: uuid.UUID,

@@ -88,6 +88,14 @@ class Settings(BaseSettings):
     client_secret: str = ""
     tenant_id: str = ""
 
+    # Phase 4: shared secret the Teams meeting-event webhook (or the mock
+    # adapter standing in for it) signs requests with. Empty in development
+    # so the mock fallback works without provisioning a secret; a production
+    # deployment without one leaves the webhook unable to authenticate any
+    # caller, which is refused at startup below rather than silently trusting
+    # unsigned events once real Teams credentials are present.
+    teams_webhook_secret: str = ""
+
     # Session behaviour
     checkpoint_interval_seconds: int = 1200
     checkpoint_response_window_seconds: int = 30
@@ -151,6 +159,16 @@ class Settings(BaseSettings):
         database = database_password_problem(self.database_url)
         if database:
             problems.append(database)
+
+        if (
+            self.client_id
+            and self.client_secret
+            and self.tenant_id
+            and not self.teams_webhook_secret
+        ):
+            problems.append(
+                "TEAMS_WEBHOOK_SECRET is required once Teams credentials are configured"
+            )
 
         if problems:
             raise ValueError("Refusing to start in production: " + "; ".join(problems))

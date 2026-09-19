@@ -37,9 +37,11 @@ from app.schemas.session import (
     ResponseOut,
     SessionCreateRequest,
     SessionOut,
+    SessionReadinessOut,
     SessionStatus,
     StudentSessionSummary,
 )
+from app.services.content_readiness import check_session_readiness
 from app.services.session_access import is_session_owner, session_membership_allowed
 from app.services.session_lifecycle import lifecycle
 
@@ -158,6 +160,28 @@ async def get_session(
     return _to_session_out(row, course_code, count)
 
 
+@router.get(
+    "/{session_id}/readiness",
+    response_model=SessionReadinessOut,
+    dependencies=[Depends(require_roles(Role.LECTURER, Role.ADMIN))],
+)
+async def session_readiness(
+    session_id: UUID,
+    principal: CurrentUser,
+    db: DbSession,
+) -> SessionReadinessOut:
+    """Phase 4: whether Start is currently blocked, and why."""
+    session_repo = SessionRepository(db)
+    row = await is_session_owner(
+        session_repo, session_id, user_id=principal.user_id, role=principal.role
+    )
+    if row is None:
+        raise NotFoundError("Session was not found.", {"session_id": str(session_id)})
+
+    readiness = await check_session_readiness(db, course_id=row.course_id, session_id=session_id)
+    return SessionReadinessOut(session_id=session_id, **readiness.__dict__)
+
+
 @router.post(
     "/{session_id}/start",
     response_model=SessionOut,
@@ -178,6 +202,10 @@ async def start_session(
     )
     if row is None:
         raise NotFoundError("Session was not found.", {"session_id": str(session_id)})
+
+    readiness = await check_session_readiness(db, course_id=row.course_id, session_id=session_id)
+    if not readiness.ready:
+        raise ValidationError(readiness.reason, {"session_id": str(session_id)})
 
     if not await session_repo.has_staged_question(session_id):
         raise ValidationError(
@@ -225,26 +253,7 @@ async def end_session(
             {"current_status": row.status},
         )
 
-    row = await session_repo.transition(row, status="ended")
-    await db.commit()
-
-    lifecycle.stop_cycle(session_id)
-
-    from app.realtime.hub import hub
-    from app.schemas.events import ServerEventType
-
-    await hub.broadcast(
-        session_id,
-        ServerEventType.SESSION_STATE,
-        {
-            "session_id": str(session_id),
-            "status": row.status,
-            "participant_count": await session_repo.participant_count(session_id),
-            "active_question_id": None,
-            "questions_delivered": await session_repo.count_delivered(session_id),
-        },
-    )
-    hub.forget_session(session_id)
+    await lifecycle.end_session(db, session_repo, row)
 
     found = await session_repo.get_with_course_code(session_id)
     return _to_session_out(*found)

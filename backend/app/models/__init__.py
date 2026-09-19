@@ -15,10 +15,13 @@ from app.models.material_processing_status import MaterialProcessingStatus
 from app.models.missed_response import MissedResponse
 from app.models.question import Question
 from app.models.rag_chunk import RagChunk
+from app.models.roster_sync_event import RosterSyncEvent
 from app.models.session import Session
 from app.models.session_participant import SessionParticipant
 from app.models.student import Student
 from app.models.student_response import StudentResponse
+from app.models.teams_meeting import TeamsMeeting
+from app.models.teams_user_mapping import TeamsUserMapping
 from app.models.user import User
 
 __all__ = [
@@ -34,10 +37,13 @@ __all__ = [
     "MissedResponse",
     "Question",
     "RagChunk",
+    "RosterSyncEvent",
     "Session",
     "SessionParticipant",
     "Student",
     "StudentResponse",
+    "TeamsMeeting",
+    "TeamsUserMapping",
     "User",
     "AIModelRun",
     "ExtractionElement",

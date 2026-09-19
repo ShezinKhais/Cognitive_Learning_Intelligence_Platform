@@ -231,6 +231,21 @@ class QuestionRepository:
         )
         return list(result.scalars().all())
 
+    async def count_by_session_status(self, session_id: uuid.UUID) -> dict[str, int]:
+        """How many of a session's questions sit in each review status.
+
+        Owner: AI 1, Phase 4 -- the content-readiness gate needs "approved"
+        and "staged" counted separately: an approved-but-not-yet-staged
+        question is reviewed and usable, but only a staged one is actually
+        queued for delivery.
+        """
+        result = await self.session.execute(
+            select(Question.status, func.count())
+            .where(Question.session_id == session_id)
+            .group_by(Question.status)
+        )
+        return dict(result.all())
+
     async def count_by_material(self, material_id: uuid.UUID) -> int:
         result = await self.session.execute(
             select(func.count())

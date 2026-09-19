@@ -950,6 +950,34 @@
         "title": "Role",
         "type": "string"
       },
+      "RosterSyncSummary": {
+        "properties": {
+          "duplicates": {
+            "default": 0,
+            "title": "Duplicates",
+            "type": "integer"
+          },
+          "matched": {
+            "default": 0,
+            "title": "Matched",
+            "type": "integer"
+          },
+          "unmatched": {
+            "default": 0,
+            "title": "Unmatched",
+            "type": "integer"
+          },
+          "unmatched_names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unmatched Names",
+            "type": "array"
+          }
+        },
+        "title": "RosterSyncSummary",
+        "type": "object"
+      },
       "SessionCreateRequest": {
         "properties": {
           "course_code": {
@@ -1059,6 +1087,62 @@
         "title": "SessionOut",
         "type": "object"
       },
+      "SessionReadinessOut": {
+        "description": "Phase 4: whether a session may start yet, and why not.\n\nLets the staff console disable \"Start\" with an explanation instead of\nthe lecturer discovering the block only after clicking it.",
+        "properties": {
+          "approved_questions": {
+            "title": "Approved Questions",
+            "type": "integer"
+          },
+          "materials_completed": {
+            "title": "Materials Completed",
+            "type": "integer"
+          },
+          "materials_failed": {
+            "title": "Materials Failed",
+            "type": "integer"
+          },
+          "materials_processing": {
+            "title": "Materials Processing",
+            "type": "integer"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "staged_questions": {
+            "title": "Staged Questions",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "ready",
+          "materials_completed",
+          "materials_processing",
+          "materials_failed",
+          "approved_questions",
+          "staged_questions"
+        ],
+        "title": "SessionReadinessOut",
+        "type": "object"
+      },
       "SessionStatus": {
         "enum": [
           "prepared",
@@ -1109,6 +1193,160 @@
           "engagement"
         ],
         "title": "StudentSessionSummary",
+        "type": "object"
+      },
+      "TeamsEventType": {
+        "enum": [
+          "meeting.started",
+          "meeting.ended"
+        ],
+        "title": "TeamsEventType",
+        "type": "string"
+      },
+      "TeamsMeetingEventRequest": {
+        "properties": {
+          "course_code": {
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Course Code",
+            "type": "string"
+          },
+          "event": {
+            "$ref": "#/components/schemas/TeamsEventType"
+          },
+          "organizer_email": {
+            "anyOf": [
+              {
+                "format": "email",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organizer Email"
+          },
+          "organizer_teams_user_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Organizer Teams User Id",
+            "type": "string"
+          },
+          "participants": {
+            "items": {
+              "$ref": "#/components/schemas/TeamsParticipant"
+            },
+            "maxItems": 500,
+            "title": "Participants",
+            "type": "array"
+          },
+          "teams_meeting_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Teams Meeting Id",
+            "type": "string"
+          },
+          "tenant_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "title": {
+            "default": "Live Session",
+            "maxLength": 255,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event",
+          "teams_meeting_id",
+          "tenant_id",
+          "course_code",
+          "organizer_teams_user_id"
+        ],
+        "title": "TeamsMeetingEventRequest",
+        "type": "object"
+      },
+      "TeamsMeetingEventResult": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "roster": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RosterSyncSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "TeamsMeetingEventResult",
+        "type": "object"
+      },
+      "TeamsParticipant": {
+        "properties": {
+          "display_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "format": "email",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "teams_user_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Teams User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "teams_user_id",
+          "display_name"
+        ],
+        "title": "TeamsParticipant",
         "type": "object"
       },
       "TimetableImportResult": {
@@ -2157,6 +2395,50 @@
         ]
       }
     },
+    "/api/v1/sessions/{session_id}/readiness": {
+      "get": {
+        "description": "Phase 4: whether Start is currently blocked, and why.",
+        "operationId": "session_readiness_api_v1_sessions__session_id__readiness_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionReadinessOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Session Readiness",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
     "/api/v1/sessions/{session_id}/responses": {
       "get": {
         "operationId": "list_responses_api_v1_sessions__session_id__responses_get",
@@ -2317,6 +2599,47 @@
         "summary": "Student Summary",
         "tags": [
           "sessions"
+        ]
+      }
+    },
+    "/api/v1/teams/events": {
+      "post": {
+        "operationId": "teams_meeting_event_api_v1_teams_events_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamsMeetingEventRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamsMeetingEventResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Teams Meeting Event",
+        "tags": [
+          "teams"
         ]
       }
     }
