@@ -12,6 +12,7 @@ provide that classifier through a separate path.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
 from app.core.errors import ValidationError
 from app.models.question import Question
@@ -27,6 +28,29 @@ class MCQScoreResult:
     correct_answer: str
     source_slide: int | None
     source_excerpt: str | None
+
+
+@dataclass(frozen=True)
+class FeedbackResult:
+    """Student-facing feedback grounded in the approved source material."""
+
+    is_correct: bool
+    message: str
+    source_slide: int
+    source_excerpt: str
+
+
+class FreeTextClassifier(Protocol):
+    """Interface reserved for later free-text comprehension classification."""
+
+    async def classify(
+        self,
+        *,
+        question: Question,
+        answer: str,
+    ) -> tuple[str, float, str | None]:
+        """Return label, confidence, and optional reason."""
+        ...
 
 
 def score_mcq(question: Question, selected_option: int) -> MCQScoreResult:
@@ -69,7 +93,6 @@ def score_mcq(question: Question, selected_option: int) -> MCQScoreResult:
             "This question has no source excerpt for grounded feedback.",
             {"question_id": str(question.question_id)},
         )
-
     if isinstance(selected_option, bool) or not isinstance(selected_option, int):
         raise ValidationError(
             "Selected option must be an integer.",
@@ -92,4 +115,30 @@ def score_mcq(question: Question, selected_option: int) -> MCQScoreResult:
         correct_answer=question.options[question.correct_option],
         source_slide=question.source_slide,
         source_excerpt=question.source_excerpt,
+    )
+
+
+# End of validation checks for the question before scoring
+def build_mcq_feedback(result: MCQScoreResult) -> FeedbackResult:
+    """Build immediate source-grounded feedback from an MCQ score."""
+
+    if result.source_slide is None:
+        raise ValidationError("MCQ feedback requires a source slide or page.")
+
+    if not result.source_excerpt:
+        raise ValidationError("MCQ feedback requires a source excerpt.")
+
+    if result.is_correct:
+        message = f"Correct. See slide/page {result.source_slide} for the supporting material."
+    else:
+        message = (
+            f"Incorrect. The correct answer is '{result.correct_answer}'. "
+            f"See slide/page {result.source_slide} for the supporting material."
+        )
+
+    return FeedbackResult(
+        is_correct=result.is_correct,
+        message=message,
+        source_slide=result.source_slide,
+        source_excerpt=result.source_excerpt,
     )

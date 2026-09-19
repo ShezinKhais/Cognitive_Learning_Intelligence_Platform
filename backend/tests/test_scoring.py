@@ -4,7 +4,7 @@ import pytest
 
 from app.core.errors import ValidationError
 from app.models.question import Question
-from app.services.scoring import score_mcq
+from app.services.scoring import build_mcq_feedback, score_mcq
 
 
 def make_question(
@@ -110,3 +110,26 @@ def test_question_without_source_excerpt_is_rejected():
 
     with pytest.raises(ValidationError):
         score_mcq(question, 1)
+
+
+def test_correct_answer_builds_grounded_feedback():
+    question = make_question(correct_option=1)
+    score = score_mcq(question, 1)
+
+    feedback = build_mcq_feedback(score)
+
+    assert feedback.is_correct is True
+    assert "Correct" in feedback.message
+    assert feedback.source_slide == 4
+    assert feedback.source_excerpt == "Neural networks contain interconnected layers."
+
+
+def test_incorrect_answer_feedback_includes_correct_answer():
+    question = make_question(correct_option=1)
+    score = score_mcq(question, 0)
+
+    feedback = build_mcq_feedback(score)
+
+    assert feedback.is_correct is False
+    assert "Interconnected layers" in feedback.message
+    assert feedback.source_slide == 4
