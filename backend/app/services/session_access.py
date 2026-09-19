@@ -24,6 +24,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.session import Session as SessionModel
 from app.models.student import Student
 from app.schemas.identity import Role
+from app.schemas.session import SessionStatus
+
+# Sessions that may still be joined. A session that has ended or was
+# cancelled has no live stream left to join, regardless of who is asking --
+# enrolment and ownership answer "does this person belong to this session,"
+# not "is there still something here to join." Matches the equivalent
+# JOINABLE set in session_lifecycle.joinable_session.
+JOINABLE_STATUSES = {SessionStatus.PREPARED.value, SessionStatus.ACTIVE.value}
 
 
 async def session_membership_allowed(
@@ -35,11 +43,14 @@ async def session_membership_allowed(
 ) -> bool:
     """Whether `user_id` may join or act on this session's live event stream.
 
-    Admins bypass the check, same as every other ownership guard in this
-    codebase. A lecturer must be the session's instructor. A student must be
-    enrolled in the session's course -- enrolment, not attendance, since this
-    is what decides whether they may *join* at all.
+    A session that isn't prepared or active has no stream to join, and this
+    is checked before role -- an admin does not get to join a stream that no
+    longer exists. Otherwise: a lecturer must be the session's instructor. A
+    student must be enrolled in the session's course -- enrolment, not
+    attendance, since this is what decides whether they may *join* at all.
     """
+    if session_row.status not in JOINABLE_STATUSES:
+        return False
     if role == Role.ADMIN:
         return True
     if role == Role.LECTURER:

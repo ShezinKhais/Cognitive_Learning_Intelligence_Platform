@@ -172,6 +172,54 @@ async def test_an_admin_may_join_any_session():
         await engine.dispose()
 
 
+async def test_an_ended_session_cannot_be_joined_by_anyone():
+    """Enrolment/ownership is necessary but not sufficient -- once a session
+    has ended there is no stream left to join, even for its own instructor
+    or an admin."""
+    engine, session_factory = await _session_factory()
+    session_row, instructor_id, enrolled_user_id, course_id = await _seed(session_factory)
+    try:
+        async with session_factory() as db:
+            row = await db.get(SessionModel, session_row.session_id)
+            row.status = "ended"
+            await db.commit()
+
+        async with session_factory() as db:
+            row = await db.get(SessionModel, session_row.session_id)
+            assert await session_membership_allowed(
+                db, row, user_id=instructor_id, role=Role.LECTURER
+            ) is False
+            assert await session_membership_allowed(
+                db, row, user_id=enrolled_user_id, role=Role.STUDENT
+            ) is False
+            assert await session_membership_allowed(
+                db, row, user_id=uuid4(), role=Role.ADMIN
+            ) is False
+    finally:
+        await _cleanup(session_factory, session_row, instructor_id, enrolled_user_id, course_id)
+        await engine.dispose()
+
+
+async def test_a_cancelled_session_cannot_be_joined():
+    engine, session_factory = await _session_factory()
+    session_row, instructor_id, enrolled_user_id, course_id = await _seed(session_factory)
+    try:
+        async with session_factory() as db:
+            row = await db.get(SessionModel, session_row.session_id)
+            row.status = "cancelled"
+            await db.commit()
+
+        async with session_factory() as db:
+            row = await db.get(SessionModel, session_row.session_id)
+            allowed = await session_membership_allowed(
+                db, row, user_id=enrolled_user_id, role=Role.STUDENT
+            )
+        assert allowed is False
+    finally:
+        await _cleanup(session_factory, session_row, instructor_id, enrolled_user_id, course_id)
+        await engine.dispose()
+
+
 async def test_is_session_owner_returns_none_for_a_non_owning_lecturer():
     engine, session_factory = await _session_factory()
     session_row, instructor_id, enrolled_user_id, course_id = await _seed(session_factory)
