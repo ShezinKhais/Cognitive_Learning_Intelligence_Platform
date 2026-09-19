@@ -186,15 +186,19 @@ async def test_an_ended_session_cannot_be_joined_by_anyone():
 
         async with session_factory() as db:
             row = await db.get(SessionModel, session_row.session_id)
-            assert await session_membership_allowed(
-                db, row, user_id=instructor_id, role=Role.LECTURER
-            ) is False
-            assert await session_membership_allowed(
-                db, row, user_id=enrolled_user_id, role=Role.STUDENT
-            ) is False
-            assert await session_membership_allowed(
-                db, row, user_id=uuid4(), role=Role.ADMIN
-            ) is False
+            assert (
+                await session_membership_allowed(db, row, user_id=instructor_id, role=Role.LECTURER)
+                is False
+            )
+            assert (
+                await session_membership_allowed(
+                    db, row, user_id=enrolled_user_id, role=Role.STUDENT
+                )
+                is False
+            )
+            assert (
+                await session_membership_allowed(db, row, user_id=uuid4(), role=Role.ADMIN) is False
+            )
     finally:
         await _cleanup(session_factory, session_row, instructor_id, enrolled_user_id, course_id)
         await engine.dispose()
