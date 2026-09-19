@@ -28,12 +28,14 @@ EXPECTED_PATHS = {
     "/api/v1/materials/{material_id}/questions:bulk",
     "/api/v1/sessions",
     "/api/v1/sessions/{session_id}",
+    "/api/v1/sessions/{session_id}/readiness",
     "/api/v1/sessions/{session_id}/start",
     "/api/v1/sessions/{session_id}/end",
     "/api/v1/sessions/{session_id}/questions/{question_id}:deliver",
     "/api/v1/sessions/{session_id}/responses",
     "/api/v1/sessions/{session_id}/engagement",
     "/api/v1/sessions/{session_id}/alerts",
+    "/api/v1/teams/events",
     "/api/v1/sessions/{session_id}/summary/{student_id}",
 }
 

@@ -102,6 +102,23 @@ class StudentSessionSummary(BaseModel):
     comprehension_by_topic: dict[str, ComprehensionLabel] = Field(default_factory=dict)
 
 
+class SessionReadinessOut(BaseModel):
+    """Phase 4: whether a session may start yet, and why not.
+
+    Lets the staff console disable "Start" with an explanation instead of
+    the lecturer discovering the block only after clicking it.
+    """
+
+    session_id: UUID
+    ready: bool
+    reason: str | None = None
+    materials_completed: int
+    materials_processing: int
+    materials_failed: int
+    approved_questions: int
+    staged_questions: int
+
+
 class ClassComprehensionAlert(BaseModel):
     session_id: UUID
     question_id: UUID

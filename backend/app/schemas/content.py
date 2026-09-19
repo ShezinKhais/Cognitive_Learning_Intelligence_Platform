@@ -113,6 +113,12 @@ class QuestionReviewRequest(BaseModel):
     options: list[str] | None = None
     correct_option: int | None = None
     difficulty: Difficulty | None = None
+    # Phase 3: which live session this question is being staged for. A
+    # question generated at upload has no session yet (see app.models.
+    # question), so staging is the one review action that has to name one.
+    # Required by QuestionRepository.apply_review only when status is
+    # "staged" and the question does not already carry a session_id.
+    session_id: UUID | None = None
 
 
 # Far above any one material's question count. Unbounded, a single request
@@ -123,6 +129,9 @@ MAX_BULK_REVIEW_IDS = 500
 class QuestionBulkReviewRequest(BaseModel):
     question_ids: list[UUID] = Field(max_length=MAX_BULK_REVIEW_IDS)
     status: ReviewDecision
+    # Same meaning as QuestionReviewRequest.session_id, applied to every
+    # question in the batch -- "stage these N questions for this session".
+    session_id: UUID | None = None
 
     @field_validator("question_ids")
     @classmethod

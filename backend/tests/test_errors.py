@@ -49,21 +49,30 @@ def test_authentication_is_checked_before_anything_else(client: TestClient) -> N
 
 
 def test_unimplemented_route_names_its_owner(as_lecturer: TestClient) -> None:
-    """Past the auth gate, a stub tells you who is building it and when."""
-    response = as_lecturer.get("/api/v1/sessions")
+    """Past the auth gate, a stub tells you who is building it and when.
+
+    Sessions themselves landed in Phase 3; the per-student summary is still a
+    Phase 7 stub (see app.api.v1.sessions.student_summary), so it is the
+    route this pins now.
+    """
+    from uuid import uuid4
+
+    response = as_lecturer.get(f"/api/v1/sessions/{uuid4()}/summary/{uuid4()}")
     assert response.status_code == 501
 
     body = response.json()
     _assert_envelope(body)
     assert body["error"]["code"] == "NOT_IMPLEMENTED"
-    assert body["error"]["detail"]["owner"] == "BBIS"
-    assert body["error"]["detail"]["phase"] == "Phase 3"
+    assert body["error"]["detail"]["owner"] == "Cyber 1"
+    assert body["error"]["detail"]["phase"] == "Phase 7"
 
 
 def test_every_stub_reports_an_owner(as_lecturer: TestClient) -> None:
     """No route may 501 without saying who is responsible for it."""
+    from uuid import uuid4
+
     paths = {
-        ("get", "/api/v1/sessions"),
+        ("get", f"/api/v1/sessions/{uuid4()}/summary/{uuid4()}"),
     }
     for method, path in paths:
         response = as_lecturer.request(method.upper(), path)

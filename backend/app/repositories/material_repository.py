@@ -130,6 +130,20 @@ class MaterialRepository:
         await self.session.refresh(progress)
         return progress
 
+    async def count_by_course_status(self, course_id: uuid.UUID) -> dict[str, int]:
+        """How many of a course's materials sit in each processing status.
+
+        Owner: AI 1, Phase 4 -- backs the pre-session content-readiness gate,
+        which needs to tell "nothing uploaded yet" apart from "uploaded but
+        still processing" apart from "processed and ready".
+        """
+        result = await self.session.execute(
+            select(Material.status, func.count())
+            .where(Material.course_id == course_id)
+            .group_by(Material.status)
+        )
+        return dict(result.all())
+
     async def list_status_history(
         self,
         material_id: uuid.UUID,

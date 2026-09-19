@@ -109,6 +109,26 @@ class QuestionRepository:
     async def get_by_id(self, question_id: uuid.UUID) -> Question | None:
         return await self.session.get(Question, question_id)
 
+    async def mark_delivered(self, question: Question) -> Question:
+        """staged -> delivered, the one transition a lecturer review never
+        makes directly -- it happens when General CS's session lifecycle
+        actually pushes the question live, not when anyone re-reviews it.
+
+        Deliberately does not touch reviewed_by/reviewed_at: those record the
+        lecturer's approval, and delivery is a system transition, not a
+        second review.
+        """
+        if question.status != "staged":
+            raise ConflictError(
+                f"Cannot deliver a question from status '{question.status}'.",
+                {"current_status": question.status},
+            )
+        question.status = "delivered"
+        self.session.add(question)
+        await self.session.flush()
+        await self.session.refresh(question)
+        return question
+
     async def get_with_owner(
         self, question_id: uuid.UUID, *, material_id: uuid.UUID | None = None
     ) -> tuple[Question, uuid.UUID] | None:
@@ -214,6 +234,21 @@ class QuestionRepository:
         )
         return list(result.scalars().all())
 
+    async def count_by_session_status(self, session_id: uuid.UUID) -> dict[str, int]:
+        """How many of a session's questions sit in each review status.
+
+        Owner: AI 1, Phase 4 -- the content-readiness gate needs "approved"
+        and "staged" counted separately: an approved-but-not-yet-staged
+        question is reviewed and usable, but only a staged one is actually
+        queued for delivery.
+        """
+        result = await self.session.execute(
+            select(Question.status, func.count())
+            .where(Question.session_id == session_id)
+            .group_by(Question.status)
+        )
+        return dict(result.all())
+
     async def count_by_material(self, material_id: uuid.UUID) -> int:
         result = await self.session.execute(
             select(func.count())
@@ -232,6 +267,7 @@ class QuestionRepository:
         options: list[str] | None = None,
         correct_option: int | None = None,
         difficulty: str | None = None,
+        session_id: uuid.UUID | None = None,
         flush: bool = True,
     ) -> Question:
         """Mutate a question in place per a review decision and flush.
@@ -261,6 +297,14 @@ class QuestionRepository:
         though correct_option happened to be a technically valid index.
         A reject is never blocked by this -- a broken draft has to be
         rejectable without being fixed first.
+
+        Raises ValidationError if the result of this call would be "staged"
+        with no session_id -- generation happens at upload, before any
+        session exists (see app.models.question), so staging is the one
+        transition that must supply one, either now or on an earlier edit.
+        The caller (app.api.v1.content) is responsible for checking the
+        named session actually belongs to this lecturer before it reaches
+        here; this only enforces that one is present.
         """
         current = question.status
         allowed = _ALLOWED_TRANSITIONS.get(current, set())
@@ -268,6 +312,12 @@ class QuestionRepository:
             raise ConflictError(
                 f"Cannot move a question from '{current}' to '{status}'.",
                 {"current_status": current, "requested_status": status},
+            )
+
+        if status == "staged" and session_id is None and question.session_id is None:
+            raise ValidationError(
+                "A question must be assigned to a session before it can be staged.",
+                {"question_id": str(question.question_id)},
             )
 
         editing = prompt is not None or options is not None or correct_option is not None
@@ -301,6 +351,8 @@ class QuestionRepository:
             question.correct_option = correct_option
         if difficulty is not None:
             question.difficulty = difficulty
+        if session_id is not None:
+            question.session_id = session_id
 
         self.session.add(question)
         if flush:

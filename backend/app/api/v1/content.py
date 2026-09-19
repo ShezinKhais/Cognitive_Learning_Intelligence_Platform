@@ -18,6 +18,7 @@ from app.api.deps import CurrentUser, DbSession, Paginated, require_consents, re
 from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.repositories.material_repository import MaterialRepository
 from app.repositories.question_repository import QuestionRepository
+from app.repositories.session_repository import SessionRepository
 from app.schemas.common import Page
 from app.schemas.content import (
     MaterialOut,
@@ -52,6 +53,32 @@ router = APIRouter(
         Depends(require_consents(ConsentType.TERMS)),
     ],
 )
+
+
+async def _validated_target_session_id(
+    session_id: UUID | None,
+    principal: CurrentUser,
+    db: DbSession,
+) -> UUID | None:
+    """Confirm a staging target belongs to the caller before it reaches
+    QuestionRepository.apply_review.
+
+    None is passed straight through -- apply_review only requires a session
+    when the question is moving to "staged" and has none already, and it is
+    the one that enforces that, not this helper. A session that doesn't
+    exist, or one a lecturer doesn't instruct, is reported as not found
+    rather than forbidden, the same as every other ownership check in this
+    codebase (see app.services.question_ownership).
+    """
+    if session_id is None:
+        return None
+
+    session_row = await SessionRepository(db).get_by_id(session_id)
+    if session_row is None:
+        raise NotFoundError("Session was not found.", {"session_id": str(session_id)})
+    if not principal.is_(Role.ADMIN) and session_row.instructor_id != principal.user_id:
+        raise NotFoundError("Session was not found.", {"session_id": str(session_id)})
+    return session_id
 
 
 def _to_question_out(question) -> QuestionOut:  # noqa: ANN001 - app.models.Question
@@ -207,6 +234,7 @@ async def review_question(
     # the repository with a 409; see QuestionRepository.apply_review.
     repo = QuestionRepository(db)
     question = await get_owned_question(question_id, principal, repo, material_id=material_id)
+    session_id = await _validated_target_session_id(payload.session_id, principal, db)
 
     updated = await repo.apply_review(
         question,
@@ -216,6 +244,7 @@ async def review_question(
         options=payload.options,
         correct_option=payload.correct_option,
         difficulty=payload.difficulty.value if payload.difficulty else None,
+        session_id=session_id,
     )
 
     return _to_question_out(updated)
@@ -264,6 +293,7 @@ async def bulk_review_questions(
     owned, rejected = await filter_owned_questions(
         payload.question_ids, principal, repo, material_id=material_id
     )
+    session_id = await _validated_target_session_id(payload.session_id, principal, db)
 
     updated = []
     skipped_ids = list(rejected)
@@ -274,6 +304,7 @@ async def bulk_review_questions(
                     question,
                     status=payload.status.value,
                     reviewer_id=principal.user_id,
+                    session_id=session_id,
                     flush=False,
                 )
             )

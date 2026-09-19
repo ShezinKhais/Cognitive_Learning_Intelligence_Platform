@@ -565,17 +565,35 @@ async def test_rejected_question_cannot_be_reopened(db_client, app):
 
 
 async def test_approved_can_be_staged(db_client, app):
+    """Staging is the one review action that assigns a session (Phase 3):
+    generation happens at upload, before any session exists."""
     test_client, session_factory = db_client
     lecturer_id = uuid4()
     material_id, question_id = await _seed_question(
         session_factory, uploaded_by=lecturer_id, status="approved"
     )
+    async with session_factory() as seed:
+        now = datetime.now(UTC)
+        material = await seed.get(Material, material_id)
+        target_session = SessionModel(
+            instructor_id=lecturer_id,
+            course_id=material.course_id,
+            title="Live Session",
+            start_time=now,
+            end_time=now + timedelta(hours=1),
+            mode="online",
+            status="prepared",
+        )
+        seed.add(target_session)
+        await seed.commit()
+        target_session_id = target_session.session_id
+
     try:
         _as(app, lecturer_id, Role.LECTURER, "lecturer@uni.test")
 
         resp = test_client.patch(
             f"/api/v1/materials/{material_id}/questions/{question_id}",
-            json={"status": "staged"},
+            json={"status": "staged", "session_id": str(target_session_id)},
         )
 
         assert resp.status_code == 200
@@ -648,6 +666,7 @@ async def test_bulk_review_skips_a_question_with_an_invalid_transition(db_client
             json={
                 "question_ids": [str(deliverable_q), str(already_delivered_q)],
                 "status": "staged",
+                "session_id": str(other_session.session_id),
             },
         )
 
@@ -657,15 +676,22 @@ async def test_bulk_review_skips_a_question_with_an_invalid_transition(db_client
         assert str(deliverable_q) in returned_ids
         assert str(already_delivered_q) not in returned_ids
     finally:
-        # Clean up already_delivered_q's rows manually rather than via
-        # _cleanup: both questions' sessions share the same instructor_id,
-        # and _cleanup unconditionally deletes the User row it finds, so
-        # calling it twice for two sessions on one shared user races
-        # against whichever session row is still pointing at that user.
+        # Clean up manually rather than via _cleanup: bulk-staging now points
+        # deliverable_q at other_session too (that is the point of this
+        # test), so both questions have to go before that session can be
+        # deleted, and both questions' sessions share the same instructor_id,
+        # so the User row is only safe to delete once, at the end.
         async with session_factory() as cleanup:
+            deliverable_material = await cleanup.get(Material, material_id)
+            deliverable_course_id = deliverable_material.course_id if deliverable_material else None
+
             await cleanup.execute(
                 text("delete from question where question_id = :qid"),
                 {"qid": already_delivered_q},
+            )
+            await cleanup.execute(
+                text("delete from question where question_id = :qid"),
+                {"qid": deliverable_q},
             )
             await cleanup.execute(
                 text("delete from session where session_id = :sid"),
@@ -675,9 +701,19 @@ async def test_bulk_review_skips_a_question_with_an_invalid_transition(db_client
                 text("delete from source_material where id = :mid"),
                 {"mid": other_material.id},
             )
+            await cleanup.execute(
+                text("delete from source_material where id = :mid"),
+                {"mid": material_id},
+            )
             await cleanup.execute(text("delete from course where id = :cid"), {"cid": course.id})
+            if deliverable_course_id is not None:
+                await cleanup.execute(
+                    text("delete from course where id = :cid"), {"cid": deliverable_course_id}
+                )
+            await cleanup.execute(
+                text('delete from "user" where user_id = :uid'), {"uid": lecturer_id}
+            )
             await cleanup.commit()
-        await _cleanup(session_factory, deliverable_q)
         app.dependency_overrides.pop(get_principal, None)
 
 
