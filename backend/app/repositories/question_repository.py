@@ -7,8 +7,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ConflictError, ValidationError
+from app.models.material import Material
 from app.models.question import Question
-from app.models.session import Session as SessionModel
 
 # The contract's own docstring on QuestionStatus says delivery only ever
 # happens from STAGED, so nothing reaches a class without a lecturer
@@ -25,6 +25,8 @@ _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "draft": {"draft", "approved", "rejected"},
     "approved": {"approved", "rejected", "staged"},
     "rejected": {"rejected"},
+    # Reached only from session delivery; the review routes cannot request
+    # it (see ReviewDecision).
     "staged": {"staged", "delivered"},
     "delivered": set(),  # terminal: a delivered question is never rewritten
 }
@@ -130,12 +132,14 @@ class QuestionRepository:
     async def get_with_owner(
         self, question_id: uuid.UUID, *, material_id: uuid.UUID | None = None
     ) -> tuple[Question, uuid.UUID] | None:
-        """Question plus the instructor_id that owns its session, in one query.
+        """Question plus the user who uploaded its material, in one query.
 
         The review routes need both: the question to act on, and the owning
         lecturer's id to check against the caller. Doing this as a join
         avoids a second round trip per request and avoids the TOCTOU gap of
-        fetching the question, then separately fetching its session.
+        fetching the question, then separately fetching its material. The
+        owner is None for material with no recorded uploader, which no
+        lecturer owns.
 
         material_id, when given, scopes the lookup so a question only
         resolves when it actually belongs to that material -- otherwise a
@@ -147,8 +151,8 @@ class QuestionRepository:
             conditions.append(Question.source_material_id == material_id)
 
         result = await self.session.execute(
-            select(Question, SessionModel.instructor_id)
-            .join(SessionModel, Question.session_id == SessionModel.session_id)
+            select(Question, Material.uploaded_by_user_id)
+            .join(Material, Question.source_material_id == Material.id)
             .where(*conditions)
         )
         row = result.first()
@@ -158,7 +162,7 @@ class QuestionRepository:
 
     async def list_by_ids_with_owner(
         self, question_ids: list[uuid.UUID], *, material_id: uuid.UUID | None = None
-    ) -> list[tuple[Question, uuid.UUID]]:
+    ) -> list[tuple[Question, uuid.UUID | None]]:
         """Same shape as get_with_owner, for the bulk-review route.
 
         Returns only the questions that actually exist (and, when
@@ -172,8 +176,8 @@ class QuestionRepository:
             conditions.append(Question.source_material_id == material_id)
 
         result = await self.session.execute(
-            select(Question, SessionModel.instructor_id)
-            .join(SessionModel, Question.session_id == SessionModel.session_id)
+            select(Question, Material.uploaded_by_user_id)
+            .join(Material, Question.source_material_id == Material.id)
             .where(*conditions)
         )
         return [(row[0], row[1]) for row in result.all()]
@@ -189,31 +193,30 @@ class QuestionRepository:
     ) -> tuple[list[Question], int]:
         """Questions for a material, scoped to what the caller may see.
 
-        An admin sees every question for the material. A lecturer sees only
-        the ones whose session they are the instructor of -- a material can
-        in principle carry sessions taught by more than one lecturer, and
-        QuestionOut includes correct_option, which must never reach a caller
-        who isn't the question's own reviewer or an admin. Returns
+        An admin sees every question for the material. A lecturer sees them
+        only if they uploaded the material -- QuestionOut includes
+        correct_option, which must never reach a caller who isn't the
+        question's own reviewer or an admin. Returns
         (questions, total) so the caller can build a Page without a second
         round trip for the count.
         """
         conditions = [Question.source_material_id == material_id]
         if not is_admin:
-            conditions.append(SessionModel.instructor_id == principal_user_id)
+            conditions.append(Material.uploaded_by_user_id == principal_user_id)
 
         count_result = await self.session.execute(
             select(func.count())
             .select_from(Question)
-            .join(SessionModel, Question.session_id == SessionModel.session_id)
+            .join(Material, Question.source_material_id == Material.id)
             .where(*conditions)
         )
         total = count_result.scalar_one()
 
         result = await self.session.execute(
             select(Question)
-            .join(SessionModel, Question.session_id == SessionModel.session_id)
+            .join(Material, Question.source_material_id == Material.id)
             .where(*conditions)
-            .order_by(Question.created_at)
+            .order_by(Question.created_at, Question.question_id)
             .limit(limit)
             .offset(offset)
         )
@@ -225,7 +228,7 @@ class QuestionRepository:
         result = await self.session.execute(
             select(Question)
             .where(Question.source_material_id == material_id)
-            .order_by(Question.created_at)
+            .order_by(Question.created_at, Question.question_id)
             .limit(limit)
             .offset(offset)
         )
@@ -264,8 +267,13 @@ class QuestionRepository:
         options: list[str] | None = None,
         correct_option: int | None = None,
         difficulty: str | None = None,
+        session_id: uuid.UUID | None = None,
+        flush: bool = True,
     ) -> Question:
         """Mutate a question in place per a review decision and flush.
+
+        flush=False leaves the write to the caller, so a bulk action flushes
+        once for the batch instead of twice per question.
 
         Only overwrites fields the caller actually supplied (edit is
         optional on approve/reject -- a lecturer can approve without
@@ -289,6 +297,14 @@ class QuestionRepository:
         though correct_option happened to be a technically valid index.
         A reject is never blocked by this -- a broken draft has to be
         rejectable without being fixed first.
+
+        Raises ValidationError if the result of this call would be "staged"
+        with no session_id -- generation happens at upload, before any
+        session exists (see app.models.question), so staging is the one
+        transition that must supply one, either now or on an earlier edit.
+        The caller (app.api.v1.content) is responsible for checking the
+        named session actually belongs to this lecturer before it reaches
+        here; this only enforces that one is present.
         """
         current = question.status
         allowed = _ALLOWED_TRANSITIONS.get(current, set())
@@ -296,6 +312,12 @@ class QuestionRepository:
             raise ConflictError(
                 f"Cannot move a question from '{current}' to '{status}'.",
                 {"current_status": current, "requested_status": status},
+            )
+
+        if status == "staged" and session_id is None and question.session_id is None:
+            raise ValidationError(
+                "A question must be assigned to a session before it can be staged.",
+                {"question_id": str(question.question_id)},
             )
 
         editing = prompt is not None or options is not None or correct_option is not None
@@ -329,8 +351,11 @@ class QuestionRepository:
             question.correct_option = correct_option
         if difficulty is not None:
             question.difficulty = difficulty
+        if session_id is not None:
+            question.session_id = session_id
 
         self.session.add(question)
-        await self.session.flush()
-        await self.session.refresh(question)
+        if flush:
+            await self.session.flush()
+            await self.session.refresh(question)
         return question

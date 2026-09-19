@@ -1,3 +1,4 @@
+import SignOutButton from '../components/SignOutButton'
 import { useStudentApp } from '../features/student/StudentAppContext'
 import type { StudentSession } from '../features/student/types'
 
@@ -70,12 +71,16 @@ export default function StudentHomePage() {
             </p>
           </div>
 
-          <div className="rounded-xl border border-border bg-card px-4 py-3 text-sm">
-            <p className="font-medium">{currentUser.email}</p>
+          <div className="flex items-start gap-3">
+            <div className="rounded-xl border border-border bg-card px-4 py-3 text-sm">
+              <p className="font-medium">{currentUser.email}</p>
 
-            <p className="mt-1 text-muted-foreground">
-              Authenticated student
-            </p>
+              <p className="mt-1 text-muted-foreground">
+                Authenticated student
+              </p>
+            </div>
+
+            <SignOutButton />
           </div>
         </header>
 

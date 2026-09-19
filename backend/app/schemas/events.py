@@ -27,6 +27,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.schemas.content import MaterialStatus
 from app.schemas.session import EngagementStatus, SessionStatus
 
 # Client to server fields are the one part of this contract an unauthenticated
@@ -62,6 +63,15 @@ class MaterialStage(StrEnum):
     GENERATING = "generating"
     DONE = "done"
     FAILED = "failed"
+
+    @property
+    def material_status(self) -> MaterialStatus:
+        """What the material list reports for a material at this stage."""
+        if self is MaterialStage.DONE:
+            return MaterialStatus.COMPLETED
+        if self is MaterialStage.FAILED:
+            return MaterialStatus.FAILED
+        return MaterialStatus.PROCESSING
 
 
 class RoomStatus(StrEnum):

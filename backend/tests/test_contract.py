@@ -24,6 +24,7 @@ EXPECTED_PATHS = {
     "/api/v1/materials/{material_id}",
     "/api/v1/materials/{material_id}/questions",
     "/api/v1/materials/{material_id}/questions/{question_id}",
+    "/api/v1/materials/{material_id}/questions/{question_id}:regenerate",
     "/api/v1/materials/{material_id}/questions:bulk",
     "/api/v1/sessions",
     "/api/v1/sessions/{session_id}",

@@ -1,21 +1,19 @@
-"""Process-wide wiring for the upload path.
+"""Accepting a lecture upload, and the process-wide wiring behind it.
 
 Owner: General CS, Phase 2.
 
-Storage, the job registry, the background processor and the pipeline are one
-instance each for the life of the process. The registry has to be shared or a
-status read would look at a different dictionary than the one the worker wrote
-to, and the processor has to be shared or its concurrency ceiling is per
-request, which is no ceiling at all.
-
-They are assembled here rather than in the route so that the shutdown hook in
-app.main can reach the same processor the route submitted to.
+Storage, the background processor and the pipeline are one instance each for
+the life of the process. The processor has to be shared or its concurrency
+ceiling is per request, which is no ceiling at all, and the shutdown hook in
+app.main has to reach the same processor the route submitted to.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from functools import lru_cache
+from uuid import UUID, uuid4
 
 from fastapi import UploadFile
 from openai import AsyncOpenAI
@@ -24,9 +22,45 @@ from app.core.config import Settings, get_settings
 from app.services.embeddings import OllamaEmbedder, OllamaEmbeddingClient
 from app.services.extraction import SUPPORTED
 from app.services.generation import QuestionGenerator
-from app.services.jobs import BackgroundProcessor, JobRegistry
+from app.services.jobs import BackgroundProcessor
+from app.services.material_store import DatabaseMaterialStore
 from app.services.pipeline import MaterialPipeline
-from app.services.storage import CHUNK_BYTES, LocalDiskStorage
+from app.services.storage import CHUNK_BYTES, LocalDiskStorage, StoredFile
+from app.services.upload_security import validate_uploaded_file
+
+
+async def accept_upload(file: UploadFile, owner_id: UUID) -> StoredFile:
+    """Write an upload down, check it is what it says it is, and queue it.
+
+    Everything the lecturer waits for happens here, while there is still a
+    response to refuse the file with: storage enforces the extension, the size
+    ceiling and a non-empty body, and the security check reads the stored bytes,
+    so an executable renamed lecture.pdf is refused now rather than failing a
+    job nobody is watching. The material's row is then created under the id the
+    response returns. A file refused, or one whose row cannot be written, is
+    removed before the error goes back.
+    """
+    # Assembled before anything is written, so a wiring fault fails the
+    # request without leaving a checked file behind that no job will process.
+    storage = get_material_storage()
+    pipeline = get_material_pipeline()
+    processor = get_background_processor()
+
+    stored = await storage.save(uuid4(), file.filename or "", stream_upload(file))
+    try:
+        async with storage.materialise(stored) as path:
+            # The structure checks open and scan the file, so they run off the
+            # event loop like every other disk touch on this path.
+            await asyncio.to_thread(
+                validate_uploaded_file, str(path), stored.extension, file.content_type
+            )
+        job = await pipeline.admit(stored, owner_id)
+    except Exception:
+        await storage.delete(stored.material_id)
+        raise
+
+    processor.submit(job)
+    return stored
 
 
 async def stream_upload(file: UploadFile) -> AsyncIterator[bytes]:
@@ -58,27 +92,22 @@ def get_material_storage() -> LocalDiskStorage:
 
 
 @lru_cache
-def get_job_registry() -> JobRegistry:
-    return JobRegistry()
-
-
-@lru_cache
 def get_background_processor() -> BackgroundProcessor:
-    return BackgroundProcessor(
-        get_job_registry(),
-        max_concurrent=get_settings().max_concurrent_material_jobs,
-    )
+    return BackgroundProcessor(max_concurrent=get_settings().max_concurrent_material_jobs)
+
+
+def get_question_generator() -> QuestionGenerator:
+    """The generator the pipeline uses, for regenerating a single question."""
+    return get_material_pipeline().generator
 
 
 @lru_cache
 def get_material_pipeline() -> MaterialPipeline:
     """The pipeline with its collaborators as they stand.
 
-    The embedder and generator are AI 1's (#37). The store seam is still unset
-    until BBIS's #36 lands, so chunks, vectors and drafts are produced but not
-    persisted yet. When the store is wired in, note that it cannot hold the
-    request's database session: the request has returned long before the job
-    runs, so the store has to open a session of its own.
+    The embedder and generator are AI 1's, the store BBIS's. The store opens
+    a database session of its own for each write: the request has returned
+    long before the job runs, so it cannot borrow the request's.
     """
     settings = get_settings()
     client = AsyncOpenAI(
@@ -90,11 +119,11 @@ def get_material_pipeline() -> MaterialPipeline:
 
     return MaterialPipeline(
         storage=get_material_storage(),
-        registry=get_job_registry(),
         settings=settings,
         embedder=OllamaEmbedder(
             OllamaEmbeddingClient(client, settings.embedding_model),
             settings.embedding_model,
         ),
         generator=QuestionGenerator(client, settings.ollama_model),
+        store=DatabaseMaterialStore(),
     )

@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
 } from 'react'
@@ -11,17 +12,18 @@ import {
   FileText,
   Image as ImageIcon,
   LoaderCircle,
-  LogOut,
   RotateCcw,
   UploadCloud,
   Wifi,
   WifiOff,
 } from 'lucide-react'
+import { Link } from 'react-router'
 
 import {
   ApiError,
   clearAccessToken,
 } from '../api'
+import SignOutButton from '../components/SignOutButton'
 import {
   getMaterial,
   uploadMaterial,
@@ -181,6 +183,18 @@ export default function LecturerMaterialsPage() {
     },
   )
 
+  // Once live updates have stopped for good, the stored status is the only
+  // way left to learn how processing ended. Asking the lecturer to refresh
+  // instead lost the material they were watching, since it lives only here.
+  const watchedId = material?.id
+  const stillProcessing =
+    material !== null && material.status !== 'completed' && material.status !== 'failed'
+  useEffect(() => {
+    if (connectionStatus !== 'unavailable' || !stillProcessing || !watchedId) return
+    const timer = window.setInterval(() => void refreshMaterial(watchedId), STATUS_POLL_MS)
+    return () => window.clearInterval(timer)
+  }, [connectionStatus, stillProcessing, watchedId, refreshMaterial])
+
   async function handleFile(file: File) {
     const validationMessage = validateUpload(file)
     const nextLocalFile = {
@@ -261,17 +275,7 @@ export default function LecturerMaterialsPage() {
             {MATERIAL_PIPELINE_ENABLED && (
               <ConnectionBadge status={connectionStatus} />
             )}
-            <button
-              type="button"
-              onClick={() => {
-                clearAccessToken()
-                window.location.assign('/login')
-              }}
-              className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted"
-            >
-              <LogOut aria-hidden="true" size={16} />
-              <span className="hidden sm:inline">Sign out</span>
-            </button>
+            <SignOutButton />
           </div>
         </div>
       </header>
@@ -314,6 +318,8 @@ export default function LecturerMaterialsPage() {
               />
             )}
 
+            {material?.status === 'completed' && <ReviewPrompt material={material} />}
+
             {material && (
               <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
                 <ContentPreview
@@ -352,6 +358,16 @@ function PipelineUnavailable() {
   )
 }
 
+// How often the stored status is checked when live updates are unavailable.
+const STATUS_POLL_MS = 5000
+
+const CONNECTION_LABEL: Record<ProgressConnectionStatus, string> = {
+  connected: 'Live updates on',
+  connecting: 'Connecting...',
+  disconnected: 'Reconnecting...',
+  unavailable: 'Live updates unavailable',
+}
+
 function ConnectionBadge({ status }: { status: ProgressConnectionStatus }) {
   const connected = status === 'connected'
 
@@ -367,11 +383,7 @@ function ConnectionBadge({ status }: { status: ProgressConnectionStatus }) {
       {connected
         ? <Wifi aria-hidden="true" size={14} />
         : <WifiOff aria-hidden="true" size={14} />}
-      {connected
-        ? 'Live updates on'
-        : status === 'connecting'
-          ? 'Connecting...'
-          : 'Reconnecting...'}
+      {CONNECTION_LABEL[status]}
     </div>
   )
 }
@@ -474,6 +486,22 @@ function FileSummary({
   )
 }
 
+function ReviewPrompt({ material }: { material: Material }) {
+  return (
+    <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-success/20 bg-card p-4 shadow-[var(--shadow-card)]">
+      <p className="text-sm text-card-foreground">
+        Processing is finished. Any questions generated from this material are ready to review.
+      </p>
+      <Link
+        to={`/materials/${material.id}/review`}
+        className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+      >
+        Review questions
+      </Link>
+    </section>
+  )
+}
+
 function ProcessingStatus({
   uploading,
   progress,
@@ -538,7 +566,11 @@ function ProcessingStatus({
       <div className="mt-2 flex justify-between text-xs text-muted-foreground">
         <span>{failed ? 'Failed' : `${percent}% complete`}</span>
         {!completed && !failed && connectionStatus !== 'connected' && (
-          <span>Live updates reconnecting</span>
+          <span>
+            {connectionStatus === 'unavailable'
+              ? 'Live updates unavailable. Checking for the result every few seconds.'
+              : 'Live updates reconnecting'}
+          </span>
         )}
       </div>
 

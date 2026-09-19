@@ -26,19 +26,19 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app import main as main_module
-from app.api.v1 import content
 from app.auth.store import LECTURER_ID
 from app.core.config import Settings
 from app.main import lifespan
-from app.realtime.hub import SessionHub
 from app.schemas.content import MaterialStatus
 from app.schemas.events import MaterialStage
-from app.services.jobs import BackgroundProcessor, JobRegistry
+from app.services import uploads as uploads_module
+from app.services.jobs import BackgroundProcessor
 from app.services.pipeline import MaterialPipeline
 from app.services.storage import LocalDiskStorage
 from app.services.uploads import get_background_processor, material_extensions
 
 from .dev_credentials import LECTURER_PASSWORD, STUDENT_PASSWORD
+from .pipeline_support import Embedder, Generator, ProgressLog
 
 LECTURE_NOTES = ("Third normal form removes transitive dependencies. " * 40).encode()
 
@@ -47,10 +47,20 @@ LECTURE_NOTES = ("Third normal form removes transitive dependencies. " * 40).enc
 PROCESSING_TIMEOUT_SECONDS = 10.0
 
 
-def login(client: TestClient, email: str, password: str) -> dict[str, str]:
+def login(
+    client: TestClient, email: str, password: str, *, accept_terms: bool = True
+) -> dict[str, str]:
     response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200
-    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+    headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
+    if accept_terms:
+        consent = client.post(
+            "/api/v1/auth/consent",
+            headers=headers,
+            json={"consent_type": "terms", "granted": True},
+        )
+        assert consent.status_code == 201
+    return headers
 
 
 def upload(client: TestClient, headers: dict[str, str], name: str, data: bytes):
@@ -61,13 +71,13 @@ def upload(client: TestClient, headers: dict[str, str], name: str, data: bytes):
     )
 
 
-def await_terminal_state(registry: JobRegistry, material_id: str):
-    """Block until the background job reports an end state."""
+def await_terminal_state(progress: ProgressLog, material_id: str) -> dict:
+    """Block until the lecturer has been told the job ended, and return that frame."""
     deadline = time.monotonic() + PROCESSING_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
-        status = registry.get(UUID(material_id))
-        if status is not None and status.is_finished:
-            return status
+        frames = [f for f in progress.frames if f["material_id"] == material_id]
+        if frames and frames[-1]["stage"] in (MaterialStage.DONE, MaterialStage.FAILED):
+            return frames[-1]
         time.sleep(0.05)
     pytest.fail(f"material {material_id} never reached a terminal state")
 
@@ -85,32 +95,34 @@ def live_client(app: FastAPI, uploads):
 
 
 @pytest.fixture
-def uploads(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    """Point the route at a throwaway storage root and a fresh registry."""
+def uploads(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> ProgressLog:
+    """Point the upload path at a throwaway storage root and a fresh processor.
+
+    Returns the hub the pipeline reports to, which records what the lecturer
+    was told. The embedder and generator are the AI 1 fakes, since the model
+    server is not part of what these tests are about.
+    """
     # allowed_upload_extensions is left at the shipped default, spreadsheets
     # included, so the narrowing the route relies on is actually exercised.
     settings = Settings(_env_file=None, upload_storage_dir=str(tmp_path))
     storage = LocalDiskStorage(settings, allowed=material_extensions(settings))
-    registry = JobRegistry()
+    progress = ProgressLog()
     pipeline = MaterialPipeline(
         storage=storage,
-        registry=registry,
         settings=settings,
-        hub=SessionHub(),
+        embedder=Embedder(dim=settings.embedding_dim),
+        generator=Generator(),
+        hub=progress,
     )
+    processor = BackgroundProcessor(max_concurrent=2)
 
-    # The processor is replaced along with the registry: submit() records the
-    # queued state, so a processor built on the real singleton would write the
-    # status somewhere this test cannot see.
-    processor = BackgroundProcessor(registry, max_concurrent=2)
-
-    monkeypatch.setattr(content, "get_material_storage", lambda: storage)
-    monkeypatch.setattr(content, "get_material_pipeline", lambda: pipeline)
-    monkeypatch.setattr(content, "get_background_processor", lambda: processor)
-    # Shutdown drains through its own reference. Patched only in the route,
-    # the lifespan drained the real singleton and this processor never.
+    monkeypatch.setattr(uploads_module, "get_material_storage", lambda: storage)
+    monkeypatch.setattr(uploads_module, "get_material_pipeline", lambda: pipeline)
+    monkeypatch.setattr(uploads_module, "get_background_processor", lambda: processor)
+    # Shutdown drains through its own reference. Patched only in the upload
+    # path, the lifespan drained the real singleton and this processor never.
     monkeypatch.setattr(main_module, "get_background_processor", lambda: processor)
-    return registry
+    return progress
 
 
 def test_a_student_cannot_upload_lecture_material(live_client: TestClient, uploads) -> None:
@@ -120,6 +132,18 @@ def test_a_student_cannot_upload_lecture_material(live_client: TestClient, uploa
 
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
+def test_a_lecturer_who_has_not_accepted_the_terms_cannot_upload(
+    live_client: TestClient, uploads
+) -> None:
+    """The consent page is the frontend's courtesy; the gate is here."""
+    headers = login(live_client, "lecturer@clip.example.com", LECTURER_PASSWORD, accept_terms=False)
+
+    response = upload(live_client, headers, "notes.txt", LECTURE_NOTES)
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "CONSENT_REQUIRED"
 
 
 def test_an_upload_without_a_token_is_refused(live_client: TestClient, uploads) -> None:
@@ -149,37 +173,26 @@ def test_a_lecturer_upload_is_accepted_without_waiting_for_the_parse(
 
 
 def test_the_material_is_queued_before_the_response_is_returned(
-    live_client: TestClient, uploads, monkeypatch: pytest.MonkeyPatch
+    live_client: TestClient, uploads: ProgressLog, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A status read between the 202 and the worker must not report nothing."""
-    processor = content.get_background_processor()
-    pipeline = content.get_material_pipeline()
-    at_submit: list = []
-    owners: list[UUID] = []
-    real_submit, real_run = processor.submit, pipeline.run
+    """The 202 promises work that is already on its way, for whoever uploaded."""
+    processor = uploads_module.get_background_processor()
+    submitted: list = []
+    real_submit = processor.submit
 
-    def submit(material_id, work, on_cancel=None):
-        task = real_submit(material_id, work, on_cancel=on_cancel)
-        at_submit.append((uploads.get(material_id), on_cancel))
-        return task
-
-    async def run(stored, owner_id):
-        owners.append(owner_id)
-        return await real_run(stored, owner_id)
+    def submit(job):
+        submitted.append(job.material_id)
+        return real_submit(job)
 
     monkeypatch.setattr(processor, "submit", submit)
-    monkeypatch.setattr(pipeline, "run", run)
     headers = login(live_client, "lecturer@clip.example.com", LECTURER_PASSWORD)
 
     material_id = upload(live_client, headers, "notes.txt", LECTURE_NOTES).json()["id"]
-    await_terminal_state(uploads, material_id)
 
-    status, on_cancel = at_submit[0]
-    assert status.status is MaterialStatus.PENDING
-    # Without the hook, a shutdown mid-parse is never reported or recorded.
-    assert on_cancel is not None
+    assert submitted == [UUID(material_id)]
+    await_terminal_state(uploads, material_id)
     # Progress goes to the channel of whoever uploaded, not anyone else's.
-    assert owners == [LECTURER_ID]
+    assert uploads.recipients == {LECTURER_ID}
 
 
 def test_the_upload_is_processed_after_the_response(live_client: TestClient, uploads) -> None:
@@ -187,9 +200,7 @@ def test_the_upload_is_processed_after_the_response(live_client: TestClient, upl
 
     material_id = upload(live_client, headers, "notes.txt", LECTURE_NOTES).json()["id"]
 
-    status = await_terminal_state(uploads, material_id)
-    assert status.stage is MaterialStage.DONE
-    assert status.status is MaterialStatus.COMPLETED
+    assert await_terminal_state(uploads, material_id)["stage"] == MaterialStage.DONE
 
 
 def test_a_fake_pdf_is_rejected_before_background_processing(
@@ -248,11 +259,17 @@ async def test_shutdown_waits_for_a_job_that_is_still_running(
     monkeypatch.setattr(processor, "drain", drain)
     running = asyncio.Event()
 
-    async def slow() -> None:
-        running.set()
-        await asyncio.sleep(0.2)
+    class Slow:
+        material_id = uuid4()
 
-    processor.submit(uuid4(), slow)
+        async def run(self) -> None:
+            running.set()
+            await asyncio.sleep(0.2)
+
+        async def abandon(self) -> None:
+            raise AssertionError("a job that finishes in the grace period is not abandoned")
+
+    processor.submit(Slow())
     await running.wait()
     assert processor.in_flight == 1
 

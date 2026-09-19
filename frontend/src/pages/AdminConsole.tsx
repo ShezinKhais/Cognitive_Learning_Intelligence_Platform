@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { apiUploadFile, ApiError, clearAccessToken, type TimetableImportResult } from '../api'
+import SignOutButton from '../components/SignOutButton'
 
 type UploadKind = 'timetable' | 'roster'
 
@@ -37,16 +38,7 @@ export default function AdminConsole() {
               read as structured data, never guessed at from an image.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              clearAccessToken()
-              window.location.assign('/login')
-            }}
-            className="rounded-lg border border-border px-3 py-2 text-sm"
-          >
-            Sign out
-          </button>
+          <SignOutButton />
         </div>
 
         <div className="mt-8 space-y-6">

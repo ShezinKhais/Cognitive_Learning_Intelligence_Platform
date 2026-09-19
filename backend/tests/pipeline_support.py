@@ -14,8 +14,8 @@ from uuid import UUID, uuid4
 from app.core.config import Settings
 from app.realtime.hub import Connection, SessionHub
 from app.schemas.content import Difficulty, QuestionType
-from app.services.extraction import ContentChunk
-from app.services.jobs import JobRegistry, JobStatus
+from app.services.extraction import SUPPORTED, ContentChunk
+from app.services.jobs import JobStatus
 from app.services.material_seams import CompletedMaterial, DraftQuestion, EmbeddingBatch
 from app.services.pipeline import MaterialPipeline
 from app.services.storage import LocalDiskStorage, StoredFile
@@ -82,12 +82,14 @@ def mcq(prompt: str = "Which layer routes packets?") -> DraftQuestion:
 class Generator:
     """Seam owned by AI 1."""
 
+    model = "test-generate"
+
     def __init__(self, count: int = 3, drafts: Sequence[DraftQuestion] | None = None) -> None:
         self.drafts = list(drafts) if drafts is not None else [mcq() for _ in range(count)]
         self.called = False
 
     async def generate(
-        self, material_id: UUID, chunks: Sequence[ContentChunk]
+        self, material_id: UUID, chunks: Sequence[ContentChunk], count: int | None = None
     ) -> list[DraftQuestion]:
         self.called = True
         return self.drafts
@@ -97,8 +99,16 @@ class Store:
     """Seam owned by BBIS. Records what it was handed."""
 
     def __init__(self) -> None:
+        self.accepted: list[StoredFile] = []
+        self.progress: list[JobStatus] = []
         self.completed: list[CompletedMaterial] = []
         self.outcomes: list[JobStatus] = []
+
+    async def record_accepted(self, stored: StoredFile, owner_id: UUID) -> None:
+        self.accepted.append(stored)
+
+    async def record_progress(self, status: JobStatus) -> None:
+        self.progress.append(status)
 
     async def record_completed(self, material: CompletedMaterial) -> None:
         self.completed.append(material)
@@ -114,23 +124,45 @@ def settings_for(tmp_path: Path) -> Settings:
     )
 
 
+class ProgressLog(SessionHub):
+    """A hub that also remembers every progress frame it was asked to send.
+
+    What the lecturer is told is the observable outcome of a run, so tests
+    assert on it rather than on anything the pipeline keeps to itself.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.frames: list[dict] = []
+        self.recipients: set[UUID] = set()
+
+    async def send_to_user_channel(self, user_id: UUID, event_type, data: dict) -> int:
+        self.frames.append(data)
+        self.recipients.add(user_id)
+        return await super().send_to_user_channel(user_id, event_type, data)
+
+    def last(self, material_id: UUID) -> dict:
+        """The latest frame about one material."""
+        return [frame for frame in self.frames if frame["material_id"] == str(material_id)][-1]
+
+
 def build(
     tmp_path: Path,
     hub: SessionHub | None = None,
-    registry: JobRegistry | None = None,
     **seams,
-) -> tuple[MaterialPipeline, LocalDiskStorage, JobRegistry]:
+) -> tuple[MaterialPipeline, LocalDiskStorage, ProgressLog]:
     settings = settings_for(tmp_path)
-    storage = LocalDiskStorage(settings)
-    registry = registry if registry is not None else JobRegistry()
+    storage = LocalDiskStorage(settings, allowed=set(SUPPORTED))
+    progress = ProgressLog()
+    seams.setdefault("embedder", Embedder())
+    seams.setdefault("generator", Generator())
     pipeline = MaterialPipeline(
         storage=storage,
-        registry=registry,
         settings=settings,
-        hub=hub if hub is not None else SessionHub(),
+        hub=hub if hub is not None else progress,
         **seams,
     )
-    return pipeline, storage, registry
+    return pipeline, storage, progress
 
 
 def stages(socket: Socket) -> list[str]:

@@ -3,8 +3,8 @@
 Owner: General CS, Phase 2.
 
 The pipeline in app.services.pipeline orchestrates; the work it orchestrates
-belongs to others. Embedding and question generation are AI 1's (issue #37)
-and persistence is BBIS's (issue #36). Each side codes against the Protocols
+belongs to others. Embedding and question generation are AI 1's and
+persistence is BBIS's, all in Phase 2. Each side codes against the Protocols
 and value types here, so neither has to import the other's implementation.
 """
 
@@ -18,8 +18,12 @@ from uuid import UUID
 from app.schemas.content import Difficulty, QuestionType
 from app.services.extraction import ContentChunk, ProcessingResult
 from app.services.jobs import JobStatus
+from app.services.storage import StoredFile
 
 Embedding = Sequence[float]
+
+# The width of question.topic.
+MAX_TOPIC_LENGTH = 255
 
 
 @dataclass(frozen=True)
@@ -86,26 +90,45 @@ class DraftQuestion:
             return "is free text but carries multiple choice fields"
         if self.source_slide is not None and self.source_slide < 1:
             return "cites a slide before the first"
+        # A model can put anything in the topic, a paragraph or an object. The
+        # column holds 255 characters of text, and one oversized topic would
+        # fail the insert of every chunk and question written with it.
+        if self.topic is not None and (
+            not isinstance(self.topic, str) or len(self.topic) > MAX_TOPIC_LENGTH
+        ):
+            return f"has a topic that is not text of at most {MAX_TOPIC_LENGTH} characters"
         return None
+
+
+@dataclass(frozen=True)
+class ModelRun:
+    """One call a material's processing made to a model, for ai_model_run."""
+
+    operation: str  # "embedding" or "question_generation"
+    model: str
+    succeeded: bool
+    detail: str | None = None
 
 
 @dataclass(frozen=True)
 class CompletedMaterial:
     """Everything processing found for one material, written in one go.
 
-    `warnings` are for the lecturer. `embeddings` is None when no embedder is
-    wired up, in which case the chunks are stored without vectors.
+    `warnings` are for the lecturer. `embeddings` holds one vector per chunk
+    in `result.chunks`, in the same order. `model_runs` says which models
+    produced the vectors and the drafts, so both stay traceable.
     """
 
     status: JobStatus
     result: ProcessingResult
-    embeddings: EmbeddingBatch | None
+    embeddings: EmbeddingBatch
     questions: tuple[DraftQuestion, ...]
     warnings: tuple[str, ...]
+    model_runs: tuple[ModelRun, ...] = ()
 
 
 class ChunkEmbedder(Protocol):
-    """Owner: AI 1, issue #37."""
+    """Owner: AI 1, Phase 2."""
 
     async def embed(self, chunks: Sequence[ContentChunk]) -> EmbeddingBatch:
         """One vector per chunk, in the order the chunks were given."""
@@ -113,29 +136,40 @@ class ChunkEmbedder(Protocol):
 
 
 class QuestionGenerator(Protocol):
-    """Owner: AI 1, issue #37.
+    """Owner: AI 1, Phase 2.
 
     Returns the drafts rather than writing them, so a material's chunks and
-    questions reach the store together or not at all.
+    questions reach the store together or not at all. `model` names the model
+    that wrote them, for the material's ai_model_run record.
     """
 
+    model: str
+
     async def generate(
-        self, material_id: UUID, chunks: Sequence[ContentChunk]
+        self, material_id: UUID, chunks: Sequence[ContentChunk], count: int | None = None
     ) -> Sequence[DraftQuestion]: ...
 
 
 class MaterialStore(Protocol):
-    """Owner: BBIS, issue #36.
+    """Owner: BBIS, Phase 2.
 
     One call per outcome. Recording chunks, questions and the done status as
     separate calls left a material half-written whenever a later call failed:
     chunks stored and retrievable against a material the database said had
     failed, and duplicated by the re-upload that followed.
 
-    The source_material row these write against has to exist first, and
-    nothing creates it yet: the upload route knows the filename and size, and
-    inserting the row there is part of wiring #36 in.
+    The material's row is created by record_accepted while the upload request
+    is still open, with the id the lecturer is given back, so every later
+    write has a row to attach to and GET /materials/{id} finds it at once.
     """
+
+    async def record_accepted(self, stored: StoredFile, owner_id: UUID) -> None:
+        """Create the material's row, pending, owned by the uploader."""
+        ...
+
+    async def record_progress(self, status: JobStatus) -> None:
+        """Append a stage to the material's processing history."""
+        ...
 
     async def record_completed(self, material: CompletedMaterial) -> None:
         """Store the chunks, their vectors, the drafts (status draft) and the

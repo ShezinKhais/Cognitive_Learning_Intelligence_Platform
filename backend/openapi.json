@@ -620,11 +620,24 @@
               "format": "uuid",
               "type": "string"
             },
+            "maxItems": 500,
             "title": "Question Ids",
             "type": "array"
           },
+          "session_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
           "status": {
-            "$ref": "#/components/schemas/QuestionStatus"
+            "$ref": "#/components/schemas/ReviewDecision"
           }
         },
         "required": [
@@ -807,8 +820,20 @@
             ],
             "title": "Prompt"
           },
+          "session_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
           "status": {
-            "$ref": "#/components/schemas/QuestionStatus"
+            "$ref": "#/components/schemas/ReviewDecision"
           }
         },
         "required": [
@@ -940,6 +965,17 @@
         ],
         "title": "ResponseOut",
         "type": "object"
+      },
+      "ReviewDecision": {
+        "description": "The statuses a lecturer may set through the review routes.\n\nEvery QuestionStatus except DELIVERED. A question becomes delivered when\nthe session actually sends it to students; set by hand, it would freeze a\nquestion as \"already asked\" when no student ever saw it.",
+        "enum": [
+          "draft",
+          "approved",
+          "rejected",
+          "staged"
+        ],
+        "title": "ReviewDecision",
+        "type": "string"
       },
       "Role": {
         "enum": [
@@ -1854,7 +1890,7 @@
     },
     "/api/v1/materials/{material_id}/questions": {
       "get": {
-        "description": "The review queue for a material.\n\nOn the lecturer/admin review router, same as the mutation routes --\nQuestionOut carries correct_option, which must never reach a student or\na lecturer who doesn't teach the sessions this material's questions\nbelong to. A lecturer sees only their own; an admin sees everything.",
+        "description": "The review queue for a material.\n\nLecturer/admin only, same as the mutation routes --\nQuestionOut carries correct_option, which must never reach a student or\na lecturer who didn't upload this material. A lecturer sees only their\nown; an admin sees everything.",
         "operationId": "list_questions_api_v1_materials__material_id__questions_get",
         "parameters": [
           {
@@ -1978,6 +2014,60 @@
           }
         },
         "summary": "Review Question",
+        "tags": [
+          "content"
+        ]
+      }
+    },
+    "/api/v1/materials/{material_id}/questions/{question_id}:regenerate": {
+      "post": {
+        "description": "Replace a draft question with a newly generated one from the same page.\n\nThe draft is rejected rather than deleted and the replacement is returned\nas a new draft. Refused with 409 for a question that is not a draft, and\n503 when the generator is unavailable or returns nothing usable.",
+        "operationId": "regenerate_question_api_v1_materials__material_id__questions__question_id__regenerate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "material_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Material Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "question_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Question Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Regenerate Question",
         "tags": [
           "content"
         ]

@@ -5,11 +5,14 @@ import {
   ApiError,
   bulkReviewQuestions,
   listQuestions,
+  regenerateQuestion,
   reviewQuestion,
   type Difficulty,
   type Question,
   type QuestionStatus,
+  type ReviewDecision,
 } from '../api'
+import SignOutButton from '../components/SignOutButton'
 
 const PAGE_SIZE = 50
 
@@ -82,11 +85,16 @@ export default function QuestionReview() {
     setState({ ...state, loadingMore: true })
     try {
       const page = await listQuestions(materialId, PAGE_SIZE, state.offset)
+      // A regenerated draft is shown as soon as it exists but sorts last on
+      // the server, so a later page can bring it back a second time.
       setState((prev) =>
         prev.status === 'ready'
           ? {
               status: 'ready',
-              questions: [...prev.questions, ...page.items],
+              questions: [
+                ...prev.questions,
+                ...page.items.filter((item) => !prev.questions.some((q) => q.id === item.id)),
+              ],
               total: page.total,
               offset: prev.offset + page.items.length,
               loadingMore: false,
@@ -103,6 +111,28 @@ export default function QuestionReview() {
     () => (state.status === 'ready' ? state.questions.filter((q) => q.status === 'draft') : []),
     [state],
   )
+
+  // The replaced draft stays in the list, now rejected, with its
+  // replacement directly after it, so the lecturer sees what changed.
+  function replaceQuestion(replacedId: string, fresh: Question) {
+    setState((prev) =>
+      prev.status === 'ready'
+        ? {
+            ...prev,
+            total: prev.total + 1,
+            questions: prev.questions.flatMap((q) =>
+              q.id === replacedId ? [{ ...q, status: 'rejected' as const }, fresh] : [q],
+            ),
+          }
+        : prev,
+    )
+    setSelected((prev) => {
+      if (!prev.has(replacedId)) return prev
+      const next = new Set(prev)
+      next.delete(replacedId)
+      return next
+    })
+  }
 
   function updateQuestion(updated: Question) {
     setState((prev) =>
@@ -183,6 +213,9 @@ export default function QuestionReview() {
   return (
     <main className="min-h-screen p-8">
       <div className="mx-auto max-w-3xl">
+        <div className="mb-6 flex justify-end">
+          <SignOutButton />
+        </div>
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold text-foreground">Question review</h1>
@@ -246,6 +279,7 @@ export default function QuestionReview() {
                   selected={selected.has(question.id)}
                   onToggleSelected={() => toggleSelected(question.id)}
                   onUpdated={updateQuestion}
+                  onReplaced={replaceQuestion}
                 />
               ))}
             </div>
@@ -278,12 +312,14 @@ function QuestionCard({
   selected,
   onToggleSelected,
   onUpdated,
+  onReplaced,
 }: {
   materialId: string
   question: Question
   selected: boolean
   onToggleSelected: () => void
   onUpdated: (q: Question) => void
+  onReplaced: (replacedId: string, fresh: Question) => void
 }) {
   const isMcq = question.type === 'mcq'
 
@@ -325,8 +361,21 @@ function QuestionCard({
     setEditing(false)
   }
 
+  async function regenerate() {
+    setBusy(true)
+    setError(null)
+    try {
+      const fresh = await regenerateQuestion(materialId, question.id)
+      onReplaced(question.id, fresh)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not regenerate this question.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function act(
-    status: QuestionStatus,
+    status: ReviewDecision,
     extra?: { prompt?: string; options?: string[]; correct_option?: number; difficulty?: Difficulty },
   ) {
     setBusy(true)
@@ -513,11 +562,12 @@ function QuestionCard({
                 </button>
                 <button
                   type="button"
-                  disabled
-                  title="Regeneration is being built as a follow-up once the generation module lands in main (agreed with AI 1)"
-                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium opacity-40"
+                  disabled={busy}
+                  onClick={regenerate}
+                  title="Replace this draft with a new question from the same page"
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium disabled:opacity-50"
                 >
-                  Regenerate
+                  {busy ? 'Working...' : 'Regenerate'}
                 </button>
               </>
             )}

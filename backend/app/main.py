@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import re
 import uuid
@@ -11,9 +13,11 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router, ws_router
+from app.auth.dev_seed import ensure_dev_users
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, request_id_var
+from app.services.material_recovery import keep_sweeping
 from app.services.uploads import get_background_processor
 
 settings = get_settings()
@@ -45,7 +49,19 @@ async def lifespan(app: FastAPI):
         log.warning("Teams credentials set but the adapter is not implemented yet")
     else:
         log.info("Running without Teams integration")
+    # In the background, so a database that is slow or absent never holds up
+    # startup; it is only needed once a development account uploads.
+    seeding = asyncio.create_task(ensure_dev_users(get_settings()), name="dev-user-seed")
+    # Ends materials whose job stopped without recording how it ended.
+    processor = get_background_processor()
+    sweeping = asyncio.create_task(
+        keep_sweeping(lambda: processor.active_material_ids), name="stranded-material-sweep"
+    )
     yield
+    for task in (seeding, sweeping):
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
     # Material processing outlives the request that started it, so a shutdown
     # that does not wait for it kills a parse halfway and leaves the lecturer
     # watching a bar stuck at 20 per cent with no record of why.

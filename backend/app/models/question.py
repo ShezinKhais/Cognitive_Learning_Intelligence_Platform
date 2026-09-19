@@ -46,10 +46,13 @@ class Question(Base):
         nullable=False,
     )
 
-    session_id: Mapped[uuid.UUID] = mapped_column(
+    # Set when the question is staged for a class. Generation happens at
+    # upload, before any session exists, so a draft has none, and review
+    # access follows the material's uploader rather than a session.
+    session_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("session.session_id"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
 

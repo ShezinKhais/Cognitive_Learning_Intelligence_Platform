@@ -1,15 +1,17 @@
 """Per-resource ownership checks for the question-review routes.
 
 require_roles (app.api.deps) answers "is this caller a lecturer at all".
-That's necessary but not sufficient: the Phase 2 plan calls for protecting
-review operations "by lecturer and session ownership", meaning a lecturer
-must only be able to act on questions whose session they are the
-instructor of. An admin bypasses this, matching how /admin routes already
-work: admins operate across all lecturers' data by design.
+That's necessary but not sufficient: a lecturer must only be able to act
+on questions generated from material they uploaded. That is the same rule
+GET /materials applies, so a lecturer reviews exactly the questions of the
+materials they can see. It is not the instructor of a session: questions
+are generated at upload, before any session exists. An admin bypasses this,
+matching how /admin routes already work: admins operate across all
+lecturers' data by design.
 
 This lives in app.services rather than app.api.deps because it needs a DB
-lookup (whose session owns this question), unlike every existing guard in
-deps.py, which only inspects the token/principal already in hand.
+lookup (who uploaded this question's material), unlike every existing guard
+in deps.py, which only inspects the token/principal already in hand.
 """
 
 from __future__ import annotations
@@ -21,6 +23,13 @@ from app.core.errors import NotFoundError, PermissionError_
 from app.models.question import Question
 from app.repositories.question_repository import QuestionRepository
 from app.schemas.identity import Role
+
+
+def may_act_on(principal: Principal, owner_id: uuid.UUID | None) -> bool:
+    """The one ownership rule, shared by the single and bulk paths so they
+    cannot drift apart: admins act on anything, a lecturer on material they
+    uploaded."""
+    return principal.role == Role.ADMIN or owner_id == principal.user_id
 
 
 async def get_owned_question(
@@ -45,8 +54,8 @@ async def get_owned_question(
     yours" from "does not exist" for a resource that isn't theirs, which
     would otherwise leak which question ids are valid.
 
-    Raises PermissionError_ if the question exists but its session belongs
-    to a different lecturer. Admins skip this check entirely.
+    Raises PermissionError_ if the question exists but its material was
+    uploaded by someone else. Admins skip this check entirely.
     """
     found = await repo.get_with_owner(question_id, material_id=material_id)
     if found is None:
@@ -57,9 +66,9 @@ async def get_owned_question(
 
     question, owner_id = found
 
-    if principal.role != Role.ADMIN and owner_id != principal.user_id:
+    if not may_act_on(principal, owner_id):
         raise PermissionError_(
-            "You can only review questions from sessions you teach.",
+            "You can only review questions from material you uploaded.",
             {"question_id": str(question_id)},
         )
 
@@ -99,7 +108,7 @@ async def filter_owned_questions(
             rejected.append(qid)
             continue
         question, owner_id = entry
-        if principal.role != Role.ADMIN and owner_id != principal.user_id:
+        if not may_act_on(principal, owner_id):
             rejected.append(qid)
             continue
         owned.append(question)
