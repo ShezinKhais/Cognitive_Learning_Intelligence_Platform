@@ -93,7 +93,11 @@ def _fake_repository(monkeypatch: pytest.MonkeyPatch):
 
 
 def _room(
-    interval: float = 3600.0, window: float = 30.0, prompts: int = 3, prompt_ttl: float = 60.0
+    interval: float = 3600.0,
+    window: float = 30.0,
+    prompts: int = 3,
+    prompt_ttl: float = 60.0,
+    missed: int = 0,
 ) -> tuple[Classroom, SessionHub]:
     events = SessionHub()
     settings = SimpleNamespace(
@@ -101,6 +105,7 @@ def _room(
         checkpoint_response_window_seconds=window,
         dynamic_prompt_max_per_student=prompts,
         attention_prompt_ttl_seconds=prompt_ttl,
+        attention_prompt_after_missed_questions=missed,
     )
     room = Classroom(events=events, sessions=lambda: _Db, settings=lambda: settings)
     return room, events
@@ -911,4 +916,75 @@ async def test_a_blank_prompt_is_a_programming_error() -> None:
 
     with pytest.raises(ValueError, match="prompt message"):
         await room.prompt_student(row.session_id, student, "   ")
+    await room.shutdown()
+
+
+# -- the scheduler's own triggers ---------------------------------------------
+
+
+async def _let_pass(room: Classroom, row: SimpleNamespace) -> _Question:
+    question = await _deliver(room, row)
+    await asyncio.sleep(0.1)
+    return question
+
+
+async def test_a_student_who_lets_two_questions_pass_is_nudged() -> None:
+    room, events = _room(window=0.05, missed=2)
+    row = _row()
+    room.activate(row.session_id)
+    quiet, _ = await _join(events, row.session_id, Role.STUDENT)
+    lecturer, _ = await _join(events, row.session_id, Role.LECTURER)
+
+    await _let_pass(room, row)
+    assert quiet.of(ServerEventType.PROMPT_ATTENTION) == []
+    await _let_pass(room, row)
+
+    [prompt] = quiet.of(ServerEventType.PROMPT_ATTENTION)
+    assert (prompt["seq"], prompt["data"]["escalation"]) == (0, 1)
+    assert "missed the last 2 questions" in prompt["data"]["message"]
+    assert lecturer.of(ServerEventType.PROMPT_ATTENTION) == []
+    await room.shutdown()
+
+
+async def test_answering_resets_the_count_of_missed_questions() -> None:
+    room, events = _room(window=0.05, missed=2)
+    row = _row()
+    room.activate(row.session_id)
+    socket, student = await _join(events, row.session_id, Role.STUDENT)
+
+    await _let_pass(room, row)
+    question = await _deliver(room, row)
+    await room.submit(row.session_id, student, Role.STUDENT, _answer(question.question_id))
+    await asyncio.sleep(0.1)
+    await _let_pass(room, row)
+
+    assert socket.of(ServerEventType.PROMPT_ATTENTION) == []
+    await room.shutdown()
+
+
+async def test_missed_question_nudges_can_be_turned_off() -> None:
+    room, events = _room(window=0.05, missed=0)
+    row = _row()
+    room.activate(row.session_id)
+    socket, _ = await _join(events, row.session_id, Role.STUDENT)
+
+    for _ in range(3):
+        await _let_pass(room, row)
+
+    assert socket.of(ServerEventType.PROMPT_ATTENTION) == []
+    await room.shutdown()
+
+
+async def test_staff_are_told_when_the_cycle_has_nothing_to_send() -> None:
+    room, events = _room(interval=0.1)
+    row = _row()
+    lecturer, _ = await _join(events, row.session_id, Role.LECTURER)
+    student, _ = await _join(events, row.session_id, Role.STUDENT)
+
+    room.activate(row.session_id)
+    await asyncio.sleep(0.15)
+
+    [notice] = lecturer.of(ServerEventType.ERROR)[:1]
+    assert (notice["seq"], notice["data"]["code"]) == (0, "NO_STAGED_QUESTION")
+    assert student.of(ServerEventType.ERROR) == []
     await room.shutdown()

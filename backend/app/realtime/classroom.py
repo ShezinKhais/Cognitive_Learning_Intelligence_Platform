@@ -68,6 +68,9 @@ MAX_FINISHED_SESSIONS = 1024
 
 MAX_PROMPT_MESSAGE_LENGTH = 280
 
+# The error code staff receive when the cycle comes due with nothing staged.
+NO_STAGED_QUESTION = "NO_STAGED_QUESTION"
+
 
 @dataclass(frozen=True)
 class Submission:
@@ -155,6 +158,8 @@ class _Attention:
     # Prompts in a row the student has not answered with "I'm here". This is
     # the escalation the next prompt carries, less one.
     unanswered: int = 0
+    # Questions in a row the student was shown and did not answer.
+    missed: int = 0
     waiting: _Prompt | None = None
 
 
@@ -467,6 +472,7 @@ class Classroom:
         async with live.lock:
             if live.open is open_:
                 await self._close_locked(live, QuestionCloseReason.WINDOW_ELAPSED)
+                await self._nudge_absent_locked(live, open_)
 
     async def _close_locked(self, live: LiveSession, reason: QuestionCloseReason) -> None:
         open_ = live.open
@@ -517,10 +523,24 @@ class Classroom:
             row = await SessionRepository(db).get(session_id, for_update=True)
             if row is None or row.status != SessionStatus.ACTIVE.value:
                 return False
-            if await self.deliver(db, row) is None:
-                log.info("session %s is due a question and none is staged", session_id)
-            await db.commit()
+            delivered = await self.deliver(db, row)
+        if delivered is None:
+            log.info("session %s is due a question and none is staged", session_id)
+            await self._tell_staff(
+                session_id,
+                {
+                    "code": NO_STAGED_QUESTION,
+                    "detail": "A question was due and none is staged. Stage one to continue "
+                    "the cycle.",
+                },
+            )
         return True
+
+    async def _tell_staff(self, session_id: UUID, error: dict) -> None:
+        """A private error event to every staff connection in the session.
+        Students never see it, and it takes no seq."""
+        for user_id in self._hub.staff_ids(session_id):
+            await self._hub.send_to_user(session_id, user_id, ServerEventType.ERROR, error)
 
     # -- answers ------------------------------------------------------------
 
@@ -618,43 +638,65 @@ class Classroom:
         live = self._live.get(session_id)
         if live is None:
             return None
-        settings = self._settings()
-
         async with live.lock:
-            if live.paused or user_id not in self._hub.student_ids(session_id):
-                return None
-            if live.open is not None and user_id not in live.open.answered:
-                return None
-            attention = live.attention.setdefault(user_id, _Attention())
-            if attention.waiting is not None:
-                return None
-            if attention.sent >= settings.dynamic_prompt_max_per_student:
-                return None
+            return await self._prompt_locked(live, user_id, message)
 
-            now = datetime.now(UTC)
-            attention.sent += 1
-            attention.unanswered += 1
-            payload = AttentionPromptPayload(
-                prompt_id=uuid4(),
-                message=message,
-                expires_at=now + timedelta(seconds=settings.attention_prompt_ttl_seconds),
-                escalation=attention.unanswered,
-            )
-            prompt = attention.waiting = _Prompt(
-                prompt_id=payload.prompt_id,
-                escalation=payload.escalation,
-                sent_at=now,
-                expires_at=payload.expires_at,
-                payload=payload.model_dump(mode="json"),
-            )
-            prompt.expiry = asyncio.create_task(
-                self._expire_when_due(live, user_id, prompt),
-                name=f"attention-prompt-{prompt.prompt_id}",
-            )
-            await self._hub.send_to_user(
-                session_id, user_id, ServerEventType.PROMPT_ATTENTION, prompt.payload
-            )
+    async def _prompt_locked(
+        self, live: LiveSession, user_id: UUID, message: str
+    ) -> AttentionPromptPayload | None:
+        settings = self._settings()
+        if live.paused or user_id not in self._hub.student_ids(live.session_id):
+            return None
+        if live.open is not None and user_id not in live.open.answered:
+            return None
+        attention = live.attention.setdefault(user_id, _Attention())
+        if attention.waiting is not None:
+            return None
+        if attention.sent >= settings.dynamic_prompt_max_per_student:
+            return None
+
+        now = datetime.now(UTC)
+        attention.sent += 1
+        attention.unanswered += 1
+        attention.missed = 0
+        payload = AttentionPromptPayload(
+            prompt_id=uuid4(),
+            message=message,
+            expires_at=now + timedelta(seconds=settings.attention_prompt_ttl_seconds),
+            escalation=attention.unanswered,
+        )
+        prompt = attention.waiting = _Prompt(
+            prompt_id=payload.prompt_id,
+            escalation=payload.escalation,
+            sent_at=now,
+            expires_at=payload.expires_at,
+            payload=payload.model_dump(mode="json"),
+        )
+        prompt.expiry = asyncio.create_task(
+            self._expire_when_due(live, user_id, prompt),
+            name=f"attention-prompt-{prompt.prompt_id}",
+        )
+        await self._hub.send_to_user(
+            live.session_id, user_id, ServerEventType.PROMPT_ATTENTION, prompt.payload
+        )
         return payload
+
+    async def _nudge_absent_locked(self, live: LiveSession, closed: _OpenQuestion) -> None:
+        """Count the questions each student was shown and let pass, and nudge
+        one who has missed attention_prompt_after_missed_questions in a row.
+
+        This is the scheduler's own trigger, from what it already knows.
+        Engagement scoring can prompt for its own reasons through
+        prompt_student(); both obey the same limits.
+        """
+        threshold = self._settings().attention_prompt_after_missed_questions
+        for user_id in closed.answered:
+            live.attention.setdefault(user_id, _Attention()).missed = 0
+        for user_id in closed.present - closed.answered:
+            attention = live.attention.setdefault(user_id, _Attention())
+            attention.missed += 1
+            if threshold and attention.missed >= threshold:
+                await self._prompt_locked(live, user_id, _missed_message(attention.missed))
 
     async def acknowledge_prompt(
         self, session_id: UUID, user_id: UUID, ack: PromptAckPayload
@@ -729,6 +771,10 @@ def _outcome(
         result=result,
         responded_at=responded_at,
     )
+
+
+def _missed_message(missed: int) -> str:
+    return f"You have missed the last {missed} questions. Still with us?"
 
 
 def _cancel(task: asyncio.Task[None] | None) -> None:

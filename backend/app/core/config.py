@@ -97,6 +97,9 @@ class Settings(BaseSettings):
     dynamic_prompt_max_per_student: int = Field(default=3, ge=0)
     # How long a private attention prompt stays on a student's screen.
     attention_prompt_ttl_seconds: int = Field(default=60, ge=1)
+    # A student shown this many questions in a row without answering any is
+    # sent a private prompt. 0 leaves prompting to engagement scoring alone.
+    attention_prompt_after_missed_questions: int = Field(default=2, ge=0)
 
     # Uploads (Includes CSV and XLSX for admin timetable/roster imports)
     max_upload_bytes: int = 52_428_800
