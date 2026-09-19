@@ -13,9 +13,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Protocol
+from uuid import UUID
 
 from app.core.errors import ValidationError
 from app.models.question import Question
+from app.schemas.events import FeedbackResultPayload
 
 
 @dataclass(frozen=True)
@@ -141,4 +143,18 @@ def build_mcq_feedback(result: MCQScoreResult) -> FeedbackResult:
         message=message,
         source_slide=result.source_slide,
         source_excerpt=result.source_excerpt,
+    )
+
+
+def feedback_payload(
+    question_id: UUID,
+    feedback: FeedbackResult,
+) -> FeedbackResultPayload:
+    """Convert internal grounded feedback to the frozen live-event contract."""
+
+    return FeedbackResultPayload(
+        question_id=question_id,
+        correct=feedback.is_correct,
+        explanation=feedback.message,
+        source_slide=feedback.source_slide,
     )

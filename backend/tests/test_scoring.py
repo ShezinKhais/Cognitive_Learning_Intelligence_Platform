@@ -4,7 +4,11 @@ import pytest
 
 from app.core.errors import ValidationError
 from app.models.question import Question
-from app.services.scoring import build_mcq_feedback, score_mcq
+from app.services.scoring import (
+    build_mcq_feedback,
+    feedback_payload,
+    score_mcq,
+)
 
 
 def make_question(
@@ -133,3 +137,16 @@ def test_incorrect_answer_feedback_includes_correct_answer():
     assert feedback.is_correct is False
     assert "Interconnected layers" in feedback.message
     assert feedback.source_slide == 4
+
+
+def test_grounded_feedback_converts_to_live_event_payload():
+    question = make_question(correct_option=1)
+    score = score_mcq(question, 1)
+    feedback = build_mcq_feedback(score)
+
+    payload = feedback_payload(question.question_id, feedback)
+
+    assert payload.question_id == question.question_id
+    assert payload.correct is True
+    assert payload.explanation == "Correct. See slide/page 4 for the supporting material."
+    assert payload.source_slide == 4
