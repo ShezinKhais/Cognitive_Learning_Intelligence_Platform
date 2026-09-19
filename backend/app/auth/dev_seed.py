@@ -4,20 +4,28 @@ Sign-in in development checks the in-memory accounts in app.auth.store, but
 data a user creates points at the user table: source_material.uploaded_by_user_id
 is a foreign key to it. Without these rows the first upload by a development
 lecturer failed on that key. Never runs in production, where accounts are real.
+
+The development student is also enrolled on a development course, since a
+student can only join a live session for a course they are enrolled on.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.auth.store import dev_user_records
 from app.core.config import Settings
+from app.models.course import Course
+from app.models.student import Student
 from app.models.user import User
+from app.schemas.identity import Role
 
 log = logging.getLogger("clip.auth")
 
@@ -26,6 +34,11 @@ log = logging.getLogger("clip.auth")
 CONNECT_TIMEOUT_SECONDS = 3
 # Between attempts while the database is not there yet.
 RETRY_SECONDS = 5.0
+
+# The course the development student is enrolled on. A development lecturer's
+# sessions are created for it.
+DEV_COURSE_CODE = "CLIP101"
+DEV_COURSE_NAME = "C.L.I.P development course"
 
 
 async def ensure_dev_users(settings: Settings, retry_seconds: float = RETRY_SECONDS) -> None:
@@ -76,6 +89,31 @@ async def _insert_dev_users(settings: Settings) -> bool:
     try:
         async with engine.begin() as connection:
             await connection.execute(insert(User).values(rows).on_conflict_do_nothing())
+            await connection.execute(
+                insert(Course)
+                .values(code=DEV_COURSE_CODE, name=DEV_COURSE_NAME)
+                .on_conflict_do_nothing(index_elements=[Course.code])
+            )
+            course_id = (
+                await connection.execute(select(Course.id).where(Course.code == DEV_COURSE_CODE))
+            ).scalar_one()
+            students = [record.id for record in dev_user_records() if record.role is Role.STUDENT]
+            if students:
+                await connection.execute(
+                    insert(Student)
+                    .values(
+                        [
+                            {
+                                "user_id": user_id,
+                                "course_id": course_id,
+                                "consent_status": "granted",
+                                "enrolled_at": datetime.now(UTC).date(),
+                            }
+                            for user_id in students
+                        ]
+                    )
+                    .on_conflict_do_nothing(index_elements=[Student.user_id])
+                )
     except Exception as exc:
         log.debug("development account insert failed: %s", type(exc).__name__)
         return False

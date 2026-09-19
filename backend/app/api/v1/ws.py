@@ -4,11 +4,19 @@ Protocol
 --------
 The client opens the socket and must send an `auth` event first. Anything else
 before authentication closes the connection. On success the server replies
-`ready`, after which the connection is joined to its session room.
+`ready`, after which the connection is joined to its session room, or with no
+session_id to the user's own channel.
+
+Joining a session needs a seat in it: the lecturer who runs it, an admin, or
+a student enrolled on its course, while it is prepared or active. After
+`ready` and any replay, a session connection is sent `session.state`, the
+question that is open (unless this student has answered it) and any
+attention prompt still waiting on this student.
 
 Every ordered server message carries a `seq` that increases monotonically
 within its session or authenticated user channel. Clients track the highest
 seq and stream generation they have seen and send both when reconnecting.
+Events for one user alone, such as an answer receipt, carry seq 0.
 
 Closing codes
 -------------
@@ -35,14 +43,20 @@ from starlette.websockets import WebSocketState
 from app.api.deps import AppSettings, DbSession
 from app.auth.service import user_from_token
 from app.core.security import TokenValidationError
+from app.realtime.classroom import classroom
 from app.realtime.hub import CLOSE_TRY_AGAIN_LATER, Connection, hub
 from app.schemas.events import (
+    AnswerSubmitPayload,
     AuthPayload,
     ClientEventType,
+    PromptAckPayload,
     ServerEvent,
     ServerEventType,
     parse_client_event,
 )
+from app.schemas.identity import Role
+from app.schemas.session import SessionStatus
+from app.services.session_lifecycle import joinable_session
 
 log = logging.getLogger("clip.ws")
 
@@ -123,7 +137,7 @@ async def _authenticate(
     websocket: WebSocket,
     settings: AppSettings,
     db: AsyncSession,
-) -> tuple[UUID, UUID | None, int | None, UUID | None] | None:
+) -> tuple[UUID, Role, UUID | None, int | None, UUID | None] | None:
     """Read and validate the opening auth event.
 
     Development resolves JWT users from the local Cyber 1 identities.
@@ -203,35 +217,7 @@ async def _authenticate(
 
         return None
 
-    return user.id, payload.session_id, payload.last_seq, payload.stream_id
-
-
-def _session_access_allowed(
-    user_id: UUID,
-    session_id: UUID | None,
-) -> bool:
-    """Authorize access to a requested live session.
-
-    Phase 1 fails closed when a specific session is requested because
-    authentication proves identity but does not yet prove session membership.
-    """
-
-    if session_id is None:
-        return True
-
-    log.warning(
-        (
-            "security_event=ACCESS_DENIED "
-            "transport=websocket "
-            "user_id=%s "
-            "session_id=%s "
-            "reason=session_membership_unverified"
-        ),
-        user_id,
-        session_id,
-    )
-
-    return False
+    return user.id, user.role, payload.session_id, payload.last_seq, payload.stream_id
 
 
 @router.websocket("/ws/session")
@@ -251,27 +237,57 @@ async def session_socket(
     if identity is None:
         return
 
-    user_id, session_id, last_seq, stream_id = identity
+    user_id, role, session_id, last_seq, stream_id = identity
 
-    # A valid JWT alone does not authorize an arbitrary session.
-    if not _session_access_allowed(
-        user_id,
-        session_id,
-    ):
-        await websocket.close(
-            code=CLOSE_FORBIDDEN,
-            reason="not permitted to join this session",
-        )
-        return
+    welcome = None
+    if session_id is not None:
+        # A valid JWT alone does not authorize an arbitrary session.
+        try:
+            row = await joinable_session(db, user_id, role, session_id)
+            if row is not None:
+                await classroom.restore(db, row)
+        except Exception:
+            log.exception("could not check membership of session %s", session_id)
+            await websocket.close(
+                code=CLOSE_TRY_AGAIN_LATER,
+                reason="session unavailable, try again",
+            )
+            return
+        if row is None:
+            log.warning(
+                (
+                    "security_event=ACCESS_DENIED "
+                    "transport=websocket "
+                    "user_id=%s "
+                    "session_id=%s "
+                    "reason=not_a_session_member"
+                ),
+                user_id,
+                session_id,
+            )
+            await websocket.close(
+                code=CLOSE_FORBIDDEN,
+                reason="not permitted to join this session",
+            )
+            return
+        recorded = SessionStatus(row.status)
+
+        async def welcome() -> list[tuple[ServerEventType, dict]]:
+            return classroom.welcome(session_id, recorded, user_id, role)
+
+    # The socket lives for the whole class. Its database session must not
+    # hold a pooled connection that long, or forty students exhaust the pool.
+    await db.close()
 
     connection = Connection(
         websocket,
         user_id=user_id,
         session_id=session_id,
+        role=role,
     )
 
     try:
-        if not await hub.connect(connection, last_seq, stream_id):
+        if not await hub.connect(connection, last_seq, stream_id, welcome):
             return
 
         while True:
@@ -289,7 +305,7 @@ async def session_socket(
                 continue
 
             try:
-                event_type, _payload = parse_client_event(raw)
+                event_type, payload = parse_client_event(raw)
             except PydanticValidationError as exc:
                 await _send(
                     websocket,
@@ -309,13 +325,44 @@ async def session_socket(
                 )
                 continue
 
-            # These handlers are connected in Phase 3.
+            if isinstance(payload, AnswerSubmitPayload | PromptAckPayload):
+                if session_id is None:
+                    await _send(
+                        websocket,
+                        ServerEventType.ERROR,
+                        {
+                            "code": "NOT_IN_SESSION",
+                            "detail": f"join a session to send {event_type}",
+                        },
+                    )
+                elif isinstance(payload, PromptAckPayload):
+                    if not await classroom.acknowledge_prompt(session_id, user_id, payload):
+                        # Usually an acknowledgement that crossed the prompt's
+                        # expiry in flight. The client can drop the prompt.
+                        await _send(
+                            websocket,
+                            ServerEventType.ERROR,
+                            {"code": "PROMPT_NOT_OPEN", "detail": "that prompt is no longer open"},
+                        )
+                else:
+                    receipt = await classroom.submit(session_id, user_id, role, payload)
+                    # To every tab the student has open, so none of them offers
+                    # the question again.
+                    await hub.send_to_user(
+                        session_id,
+                        user_id,
+                        ServerEventType.ANSWER_RECEIPT,
+                        receipt.model_dump(mode="json"),
+                    )
+                continue
+
+            # Attention signals and breakout rooms belong to later workstreams.
             await _send(
                 websocket,
                 ServerEventType.ERROR,
                 {
                     "code": "NOT_IMPLEMENTED",
-                    "detail": (f"{event_type.value} lands in Phase 3"),
+                    "detail": f"{event_type.value} is not handled yet",
                 },
             )
 

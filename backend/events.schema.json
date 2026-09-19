@@ -810,8 +810,15 @@
           "title": "Active Question Id"
         },
         "participant_count": {
+          "description": "Students connected now, each counted once.",
           "title": "Participant Count",
           "type": "integer"
+        },
+        "paused": {
+          "default": false,
+          "description": "An active session the lecturer has paused. No question goes out until it resumes; one already open runs to the end of its window.",
+          "title": "Paused",
+          "type": "boolean"
         },
         "questions_delivered": {
           "default": 0,
