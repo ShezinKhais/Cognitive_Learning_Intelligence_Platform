@@ -1,0 +1,112 @@
+import uuid
+
+import pytest
+
+from app.core.errors import ValidationError
+from app.models.question import Question
+from app.services.scoring import score_mcq
+
+
+def make_question(
+    *,
+    question_type: str = "mcq",
+    options: list[str] | None = None,
+    correct_option: int | None = 1,
+    source_slide: int | None = 4,
+    source_excerpt: str | None = "Neural networks contain interconnected layers.",
+) -> Question:
+    return Question(
+        question_id=uuid.uuid4(),
+        source_material_id=uuid.uuid4(),
+        question_text="What do neural networks contain?",
+        question_type=question_type,
+        status="approved",
+        difficulty="medium",
+        options=options
+        if options is not None
+        else ["Nodes", "Interconnected layers", "Tables", "Servers"],
+        correct_option=correct_option,
+        source_slide=source_slide,
+        source_excerpt=source_excerpt,
+    )
+
+
+def test_correct_mcq_answer_is_scored_true():
+    question = make_question(correct_option=1)
+
+    result = score_mcq(question, 1)
+
+    assert result.is_correct is True
+    assert result.selected_option == 1
+    assert result.correct_option == 1
+    assert result.correct_answer == "Interconnected layers"
+    assert result.source_slide == 4
+    assert result.source_excerpt == "Neural networks contain interconnected layers."
+
+
+def test_incorrect_mcq_answer_is_scored_false():
+    question = make_question(correct_option=1)
+
+    result = score_mcq(question, 0)
+
+    assert result.is_correct is False
+    assert result.correct_option == 1
+    assert result.correct_answer == "Interconnected layers"
+
+
+@pytest.mark.parametrize("selected_option", [-1, 4, 99])
+def test_selected_option_outside_available_choices_is_rejected(selected_option: int):
+    question = make_question()
+
+    with pytest.raises(ValidationError):
+        score_mcq(question, selected_option)
+
+
+def test_non_mcq_question_is_rejected():
+    question = make_question(question_type="free_text")
+
+    with pytest.raises(ValidationError):
+        score_mcq(question, 0)
+
+
+def test_question_without_options_is_rejected():
+    question = make_question(options=[])
+
+    with pytest.raises(ValidationError):
+        score_mcq(question, 0)
+
+
+def test_question_without_correct_option_is_rejected():
+    question = make_question(correct_option=None)
+
+    with pytest.raises(ValidationError):
+        score_mcq(question, 0)
+
+
+def test_question_with_invalid_correct_option_is_rejected():
+    question = make_question(correct_option=8)
+
+    with pytest.raises(ValidationError):
+        score_mcq(question, 0)
+
+
+@pytest.mark.parametrize("selected_option", [True, False, "1", 1.0, None])
+def test_non_integer_selected_option_is_rejected(selected_option):
+    question = make_question()
+
+    with pytest.raises(ValidationError):
+        score_mcq(question, selected_option)
+
+
+def test_question_without_source_slide_is_rejected():
+    question = make_question(source_slide=None)
+
+    with pytest.raises(ValidationError):
+        score_mcq(question, 1)
+
+
+def test_question_without_source_excerpt_is_rejected():
+    question = make_question(source_excerpt=None)
+
+    with pytest.raises(ValidationError):
+        score_mcq(question, 1)
