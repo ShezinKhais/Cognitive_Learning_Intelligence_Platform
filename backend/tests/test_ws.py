@@ -16,7 +16,6 @@ from app.schemas.events import (
     ServerEventType,
 )
 
-from .database_support import require_database
 from .dev_credentials import STUDENT_PASSWORD
 
 
@@ -138,40 +137,6 @@ def test_a_session_that_cannot_be_checked_is_try_again_not_a_crash(
     monkeypatch.setattr("app.api.v1.ws.joinable_session", unreachable)
 
     assert _session_join_close_code(client, uuid4()) == 1013
-
-
-def test_socket_rejects_unverified_session_membership(
-    client: TestClient,
-) -> None:
-    """A valid token does not authorize an arbitrary session."""
-    require_database()
-    login = client.post(
-        "/api/v1/auth/login",
-        json={
-            "email": "student@clip.example.com",
-            "password": STUDENT_PASSWORD,
-        },
-    )
-
-    assert login.status_code == 200
-
-    token = login.json()["access_token"]
-    session_id = uuid4()
-
-    with pytest.raises(WebSocketDisconnect) as exc:  # noqa: PT012
-        with client.websocket_connect("/ws/session") as ws:
-            ws.send_json(
-                {
-                    "type": ClientEventType.AUTH.value,
-                    "data": {
-                        "token": token,
-                        "session_id": str(session_id),
-                    },
-                }
-            )
-            ws.receive_json()
-
-    assert exc.value.code == 4003
 
 
 def test_socket_rejects_a_malformed_auth_payload(

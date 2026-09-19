@@ -432,6 +432,13 @@ async def test_an_enrolled_student_joins_and_is_told_the_state(db, app) -> None:
     )
 
 
+async def test_a_valid_token_does_not_open_a_session_that_does_not_exist(db, app) -> None:
+    client, _, _ = db
+    token = _token(client, "student@clip.example.com", STUDENT_PASSWORD)
+
+    assert _refused_with(client, token, str(uuid4())) == 4003
+
+
 async def test_a_student_on_another_course_is_refused(db, app) -> None:
     client, factory, created = db
     course, other = await _course(factory, created), await _course(factory, created)
