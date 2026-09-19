@@ -107,6 +107,26 @@ class QuestionRepository:
     async def get_by_id(self, question_id: uuid.UUID) -> Question | None:
         return await self.session.get(Question, question_id)
 
+    async def mark_delivered(self, question: Question) -> Question:
+        """staged -> delivered, the one transition a lecturer review never
+        makes directly -- it happens when General CS's session lifecycle
+        actually pushes the question live, not when anyone re-reviews it.
+
+        Deliberately does not touch reviewed_by/reviewed_at: those record the
+        lecturer's approval, and delivery is a system transition, not a
+        second review.
+        """
+        if question.status != "staged":
+            raise ConflictError(
+                f"Cannot deliver a question from status '{question.status}'.",
+                {"current_status": question.status},
+            )
+        question.status = "delivered"
+        self.session.add(question)
+        await self.session.flush()
+        await self.session.refresh(question)
+        return question
+
     async def get_with_owner(
         self, question_id: uuid.UUID, *, material_id: uuid.UUID | None = None
     ) -> tuple[Question, uuid.UUID] | None:

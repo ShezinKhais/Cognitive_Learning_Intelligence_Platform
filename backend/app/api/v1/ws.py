@@ -23,7 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -36,13 +36,25 @@ from app.api.deps import AppSettings, DbSession
 from app.auth.service import user_from_token
 from app.core.security import TokenValidationError
 from app.realtime.hub import CLOSE_TRY_AGAIN_LATER, Connection, hub
+from app.repositories.engagement_repository import EngagementRepository
+from app.repositories.question_repository import QuestionRepository
+from app.repositories.response_repository import ResponseRepository
+from app.repositories.session_repository import SessionRepository
+from app.repositories.student_repository import StudentRepository
 from app.schemas.events import (
+    AnswerSubmitPayload,
+    AttentionSignalPayload,
     AuthPayload,
     ClientEventType,
+    PromptAckPayload,
     ServerEvent,
     ServerEventType,
     parse_client_event,
 )
+from app.schemas.identity import Role
+from app.services.engagement import compute_engagement, should_send_dynamic_prompt
+from app.services.scoring import classify_free_text, score_mcq
+from app.services.session_access import session_membership_allowed
 
 log = logging.getLogger("clip.ws")
 
@@ -123,7 +135,7 @@ async def _authenticate(
     websocket: WebSocket,
     settings: AppSettings,
     db: AsyncSession,
-) -> tuple[UUID, UUID | None, int | None, UUID | None] | None:
+) -> tuple[UUID, Role, UUID | None, int | None, UUID | None] | None:
     """Read and validate the opening auth event.
 
     Development resolves JWT users from the local Cyber 1 identities.
@@ -203,35 +215,46 @@ async def _authenticate(
 
         return None
 
-    return user.id, payload.session_id, payload.last_seq, payload.stream_id
+    return user.id, user.role, payload.session_id, payload.last_seq, payload.stream_id
 
 
-def _session_access_allowed(
+async def _session_access_allowed(
+    db: AsyncSession,
     user_id: UUID,
+    role: Role,
     session_id: UUID | None,
 ) -> bool:
     """Authorize access to a requested live session.
 
-    Phase 1 fails closed when a specific session is requested because
-    authentication proves identity but does not yet prove session membership.
+    A JWT alone proves identity, not that its holder belongs to this
+    particular session -- see app.services.session_access, which this
+    delegates to so the WebSocket and REST routes (app.api.v1.sessions) apply
+    exactly the same rule.
     """
 
     if session_id is None:
         return True
 
-    log.warning(
-        (
-            "security_event=ACCESS_DENIED "
-            "transport=websocket "
-            "user_id=%s "
-            "session_id=%s "
-            "reason=session_membership_unverified"
-        ),
-        user_id,
-        session_id,
-    )
+    session_repo = SessionRepository(db)
+    session_row = await session_repo.get_by_id(session_id)
+    if session_row is None:
+        log.warning(
+            "security_event=ACCESS_DENIED transport=websocket user_id=%s session_id=%s "
+            "reason=session_not_found",
+            user_id,
+            session_id,
+        )
+        return False
 
-    return False
+    allowed = await session_membership_allowed(db, session_row, user_id=user_id, role=role)
+    if not allowed:
+        log.warning(
+            "security_event=ACCESS_DENIED transport=websocket user_id=%s session_id=%s "
+            "reason=not_a_member",
+            user_id,
+            session_id,
+        )
+    return allowed
 
 
 @router.websocket("/ws/session")
@@ -251,11 +274,13 @@ async def session_socket(
     if identity is None:
         return
 
-    user_id, session_id, last_seq, stream_id = identity
+    user_id, role, session_id, last_seq, stream_id = identity
 
     # A valid JWT alone does not authorize an arbitrary session.
-    if not _session_access_allowed(
+    if not await _session_access_allowed(
+        db,
         user_id,
+        role,
         session_id,
     ):
         await websocket.close(
@@ -295,6 +320,12 @@ async def session_socket(
         if joined is None:
             return
 
+        if session_id is not None:
+            session_repo = SessionRepository(db)
+            await session_repo.record_join(session_id, user_id)
+            await db.commit()
+            await _send_session_state(websocket, session_repo, session_id)
+
         while True:
             raw = await _receive_event(websocket)
 
@@ -310,7 +341,7 @@ async def session_socket(
                 continue
 
             try:
-                event_type, _payload = parse_client_event(raw)
+                event_type, payload = parse_client_event(raw)
             except PydanticValidationError as exc:
                 await _send(
                     websocket,
@@ -330,15 +361,40 @@ async def session_socket(
                 )
                 continue
 
-            # These handlers are connected in Phase 3.
-            await _send(
-                websocket,
-                ServerEventType.ERROR,
-                {
-                    "code": "NOT_IMPLEMENTED",
-                    "detail": (f"{event_type.value} lands in Phase 3"),
-                },
-            )
+            if session_id is None:
+                await _send(
+                    websocket,
+                    ServerEventType.ERROR,
+                    {
+                        "code": "NOT_IN_SESSION",
+                        "detail": f"{event_type.value} requires an active session",
+                    },
+                )
+                continue
+
+            if event_type is ClientEventType.ANSWER_SUBMIT:
+                assert isinstance(payload, AnswerSubmitPayload)
+                await _handle_answer_submit(
+                    websocket, db, settings, session_id, user_id, role, payload
+                )
+            elif event_type is ClientEventType.PROMPT_ACK:
+                assert isinstance(payload, PromptAckPayload)
+                await _handle_prompt_ack(db, payload)
+            elif event_type is ClientEventType.SIGNAL_ATTENTION:
+                assert isinstance(payload, AttentionSignalPayload)
+                await _handle_signal_attention(
+                    websocket, db, settings, session_id, user_id, role, payload
+                )
+            else:
+                # ROOM_CONFIRM lands in Phase 6.
+                await _send(
+                    websocket,
+                    ServerEventType.ERROR,
+                    {
+                        "code": "NOT_IMPLEMENTED",
+                        "detail": (f"{event_type.value} lands in a later phase"),
+                    },
+                )
 
     except WebSocketDisconnect:
         pass
@@ -348,4 +404,245 @@ async def session_socket(
             user_id,
         )
     finally:
+        if session_id is not None:
+            try:
+                await SessionRepository(db).record_leave(session_id, user_id)
+                await db.commit()
+            except Exception:
+                log.exception("could not record session leave for user %s", user_id)
         await hub.leave(connection)
+
+
+async def _send_session_state(
+    websocket: WebSocket,
+    session_repo: SessionRepository,
+    session_id: UUID,
+) -> None:
+    row = await session_repo.get_by_id(session_id)
+    if row is None:
+        return
+    open_delivery = await session_repo.get_open_delivery(session_id)
+    await _send(
+        websocket,
+        ServerEventType.SESSION_STATE,
+        {
+            "session_id": str(session_id),
+            "status": row.status,
+            "participant_count": await session_repo.participant_count(session_id),
+            "active_question_id": (str(open_delivery.question_id) if open_delivery else None),
+            "questions_delivered": await session_repo.count_delivered(session_id),
+        },
+    )
+
+
+async def _handle_answer_submit(
+    websocket: WebSocket,
+    db: AsyncSession,
+    settings: AppSettings,
+    session_id: UUID,
+    user_id: UUID,
+    role: Role,
+    payload: AnswerSubmitPayload,
+) -> None:
+    if role != Role.STUDENT:
+        await _send(
+            websocket,
+            ServerEventType.ANSWER_RECEIPT,
+            {
+                "question_id": str(payload.question_id),
+                "accepted": False,
+                "received_at": datetime.now(UTC).isoformat(),
+                "reason": "only students submit answers",
+            },
+        )
+        return
+
+    student = await StudentRepository(db).get_by_user_id(user_id)
+    session_repo = SessionRepository(db)
+    delivery = await session_repo.get_open_delivery(session_id)
+
+    if student is None or delivery is None or delivery.question_id != payload.question_id:
+        await _send(
+            websocket,
+            ServerEventType.ANSWER_RECEIPT,
+            {
+                "question_id": str(payload.question_id),
+                "accepted": False,
+                "received_at": datetime.now(UTC).isoformat(),
+                "reason": "this question is not currently open",
+            },
+        )
+        return
+
+    response_repo = ResponseRepository(db)
+    if await response_repo.get_for_question(session_id, payload.question_id, student.student_id):
+        await _send(
+            websocket,
+            ServerEventType.ANSWER_RECEIPT,
+            {
+                "question_id": str(payload.question_id),
+                "accepted": False,
+                "received_at": datetime.now(UTC).isoformat(),
+                "reason": "already answered",
+            },
+        )
+        return
+
+    question = await QuestionRepository(db).get_by_id(payload.question_id)
+    if question is None:
+        return
+
+    answer_shape_matches = (payload.selected_option is not None) == (
+        question.question_type == "mcq"
+    )
+    if not answer_shape_matches:
+        await _send(
+            websocket,
+            ServerEventType.ANSWER_RECEIPT,
+            {
+                "question_id": str(payload.question_id),
+                "accepted": False,
+                "received_at": datetime.now(UTC).isoformat(),
+                "reason": "answer shape does not match the question type",
+            },
+        )
+        return
+
+    if payload.selected_option is not None:
+        scored = score_mcq(question, payload.selected_option)
+    else:
+        scored = classify_free_text(question, payload.free_text or "")
+
+    await response_repo.record(
+        session_id=session_id,
+        question_id=payload.question_id,
+        student_id=student.student_id,
+        selected_option=payload.selected_option,
+        free_text=payload.free_text,
+        elapsed_ms=payload.client_elapsed_ms,
+        is_correct=scored.correct,
+    )
+    await db.commit()
+
+    await _send(
+        websocket,
+        ServerEventType.ANSWER_RECEIPT,
+        {
+            "question_id": str(payload.question_id),
+            "accepted": True,
+            "received_at": datetime.now(UTC).isoformat(),
+            "reason": None,
+        },
+    )
+
+    await hub.send_to_user(
+        session_id,
+        user_id,
+        ServerEventType.FEEDBACK_RESULT,
+        {
+            "question_id": str(payload.question_id),
+            "correct": scored.correct,
+            "explanation": scored.explanation,
+            "source_slide": scored.source_slide,
+        },
+    )
+
+    await _update_engagement(db, settings, session_id, user_id, student.student_id, attention=None)
+
+
+async def _handle_prompt_ack(db: AsyncSession, payload: PromptAckPayload) -> None:
+    await EngagementRepository(db).acknowledge_prompt(
+        payload.prompt_id, dismissed=payload.dismissed
+    )
+    await db.commit()
+
+
+async def _handle_signal_attention(
+    websocket: WebSocket,  # noqa: ARG001 - kept for a consistent handler signature
+    db: AsyncSession,
+    settings: AppSettings,
+    session_id: UUID,
+    user_id: UUID,
+    role: Role,
+    payload: AttentionSignalPayload,
+) -> None:
+    if role != Role.STUDENT:
+        return  # engagement is only meaningful for students
+
+    student = await StudentRepository(db).get_by_user_id(user_id)
+    if student is None:
+        return
+
+    await _update_engagement(
+        db, settings, session_id, user_id, student.student_id, attention=payload
+    )
+
+
+async def _update_engagement(
+    db: AsyncSession,
+    settings: AppSettings,
+    session_id: UUID,
+    user_id: UUID,
+    student_id: UUID,
+    attention: AttentionSignalPayload | None,
+) -> None:
+    session_repo = SessionRepository(db)
+    response_repo = ResponseRepository(db)
+    engagement_repo = EngagementRepository(db)
+
+    delivered = await session_repo.count_delivered(session_id)
+    attempt_rate = (
+        (await response_repo.count_attempted(session_id, student_id)) / delivered
+        if delivered > 0
+        else None
+    )
+
+    computation = compute_engagement(attempt_rate, attention)
+
+    await engagement_repo.record(
+        session_id=session_id,
+        student_id=student_id,
+        attempt_rate=attempt_rate or 0.0,
+        attention_signal=computation.attention_signal_label,
+        engagement_score=computation.score,
+        status=computation.status.value,
+        confidence=computation.confidence,
+        signals_available=",".join(computation.signals_available),
+    )
+    await db.commit()
+
+    await hub.send_to_user(
+        session_id,
+        user_id,
+        ServerEventType.ENGAGEMENT_UPDATE,
+        {
+            "score": computation.score,
+            "status": computation.status.value,
+            "confidence": computation.confidence,
+        },
+    )
+
+    prompts_sent = await engagement_repo.count_prompts(session_id, student_id)
+    if should_send_dynamic_prompt(
+        computation,
+        prompts_already_sent=prompts_sent,
+        max_per_student=settings.dynamic_prompt_max_per_student,
+    ):
+        prompt = await engagement_repo.record_prompt(
+            session_id=session_id,
+            student_id=student_id,
+            prompt_text="Still with us? Tap to let your lecturer know you're following along.",
+            trigger_reason=computation.status.value,
+        )
+        await db.commit()
+        await hub.send_to_user(
+            session_id,
+            user_id,
+            ServerEventType.PROMPT_ATTENTION,
+            {
+                "prompt_id": str(prompt.prompt_id),
+                "message": prompt.prompt_text,
+                "expires_at": (datetime.now(UTC) + timedelta(minutes=2)).isoformat(),
+                "escalation": prompts_sent + 1,
+            },
+        )

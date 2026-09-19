@@ -257,10 +257,9 @@ def test_student_with_terms_passes_the_consent_gate(
         headers=_headers(token),
     )
 
-    # The Phase 3 handler is still a stub. Reaching NOT_IMPLEMENTED proves
+    # Reaching the handler at all (rather than CONSENT_REQUIRED) proves
     # Cyber 1's consent gate allowed the consented student through.
-    assert response.status_code == 501
-    assert response.json()["error"]["code"] == "NOT_IMPLEMENTED"
+    assert response.status_code == 200
 
 
 def test_admin_without_terms_is_blocked_from_admin_routes(
