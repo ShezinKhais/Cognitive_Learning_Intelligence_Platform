@@ -1022,8 +1022,15 @@
           },
           "participant_count": {
             "default": 0,
+            "description": "Students connected now, each counted once.",
             "title": "Participant Count",
             "type": "integer"
+          },
+          "paused": {
+            "default": false,
+            "description": "An active session the lecturer has paused. No question goes out until it resumes.",
+            "title": "Paused",
+            "type": "boolean"
           },
           "questions_delivered": {
             "default": 0,
@@ -2167,6 +2174,50 @@
         ]
       }
     },
+    "/api/v1/sessions/{session_id}/pause": {
+      "post": {
+        "description": "Holds the question cycle of an active session until it resumes. A question\nalready open runs to the end of its window.",
+        "operationId": "pause_session_api_v1_sessions__session_id__pause_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pause Session",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
     "/api/v1/sessions/{session_id}/questions/{question_id}:deliver": {
       "post": {
         "description": "Lecturer's manual trigger. The scheduler uses the same internal path.",
@@ -2286,6 +2337,50 @@
           }
         },
         "summary": "List Responses",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/resume": {
+      "post": {
+        "description": "Resumes a paused session. The next scheduled question comes after whatever\nwas left of the wait when it paused.",
+        "operationId": "resume_session_api_v1_sessions__session_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resume Session",
         "tags": [
           "sessions"
         ]

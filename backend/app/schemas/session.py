@@ -45,8 +45,15 @@ class SessionOut(BaseModel):
     starts_at: datetime | None = None
     ended_at: datetime | None = None
     teams_meeting_id: str | None = None
-    participant_count: int = 0
+    participant_count: int = Field(
+        default=0, description="Students connected now, each counted once."
+    )
     questions_delivered: int = 0
+    paused: bool = Field(
+        default=False,
+        description="An active session the lecturer has paused. No question goes out until "
+        "it resumes.",
+    )
 
 
 class SessionCreateRequest(BaseModel):

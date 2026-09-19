@@ -200,9 +200,14 @@ class SessionStatePayload(BaseModel):
 
     session_id: UUID
     status: SessionStatus
-    participant_count: int
+    participant_count: int = Field(description="Students connected now, each counted once.")
     active_question_id: UUID | None = None
     questions_delivered: int = 0
+    paused: bool = Field(
+        default=False,
+        description="An active session the lecturer has paused. No question goes out until "
+        "it resumes; one already open runs to the end of its window.",
+    )
 
 
 class QuestionDeliveredPayload(BaseModel):

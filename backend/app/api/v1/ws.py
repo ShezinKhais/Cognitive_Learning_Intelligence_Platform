@@ -9,8 +9,9 @@ session_id to the user's own channel.
 
 Joining a session needs a seat in it: the lecturer who runs it, an admin, or
 a student enrolled on its course, while it is prepared or active. After
-`ready` and any replay, a session connection is sent `session.state` and, to
-a student who has not answered it, the question that is open.
+`ready` and any replay, a session connection is sent `session.state`, the
+question that is open (unless this student has answered it) and any
+attention prompt still waiting on this student.
 
 Every ordered server message carries a `seq` that increases monotonically
 within its session or authenticated user channel. Clients track the highest
@@ -48,6 +49,7 @@ from app.schemas.events import (
     AnswerSubmitPayload,
     AuthPayload,
     ClientEventType,
+    PromptAckPayload,
     ServerEvent,
     ServerEventType,
     parse_client_event,
@@ -323,27 +325,38 @@ async def session_socket(
                 )
                 continue
 
-            if isinstance(payload, AnswerSubmitPayload):
+            if isinstance(payload, AnswerSubmitPayload | PromptAckPayload):
                 if session_id is None:
                     await _send(
                         websocket,
                         ServerEventType.ERROR,
-                        {"code": "NOT_IN_SESSION", "detail": "join a session to answer"},
+                        {
+                            "code": "NOT_IN_SESSION",
+                            "detail": f"join a session to send {event_type}",
+                        },
                     )
-                    continue
-                receipt = await classroom.submit(session_id, user_id, role, payload)
-                # To every tab the student has open, so none of them offers
-                # the question again.
-                await hub.send_to_user(
-                    session_id,
-                    user_id,
-                    ServerEventType.ANSWER_RECEIPT,
-                    receipt.model_dump(mode="json"),
-                )
+                elif isinstance(payload, PromptAckPayload):
+                    if not await classroom.acknowledge_prompt(session_id, user_id, payload):
+                        # Usually an acknowledgement that crossed the prompt's
+                        # expiry in flight. The client can drop the prompt.
+                        await _send(
+                            websocket,
+                            ServerEventType.ERROR,
+                            {"code": "PROMPT_NOT_OPEN", "detail": "that prompt is no longer open"},
+                        )
+                else:
+                    receipt = await classroom.submit(session_id, user_id, role, payload)
+                    # To every tab the student has open, so none of them offers
+                    # the question again.
+                    await hub.send_to_user(
+                        session_id,
+                        user_id,
+                        ServerEventType.ANSWER_RECEIPT,
+                        receipt.model_dump(mode="json"),
+                    )
                 continue
 
-            # Attention signals, prompt acknowledgements and breakout rooms
-            # belong to later workstreams.
+            # Attention signals and breakout rooms belong to later workstreams.
             await _send(
                 websocket,
                 ServerEventType.ERROR,

@@ -1,4 +1,4 @@
-"""Creating, starting and ending a live session, and who may join one.
+"""Creating, starting, pausing and ending a live session, and who may join one.
 
 Owner: General CS, Phase 3.
 
@@ -6,6 +6,10 @@ A session moves prepared -> active -> ended, or prepared -> cancelled when it
 is ended before it starts. Every other move is refused with a 409. ENDING is
 in the contract for a close that takes time; ending is immediate here, so no
 session is ever left in it.
+
+Pausing is not a status. A paused session is still active, so everyone stays
+connected and it can still be ended; it carries paused=true until the
+lecturer resumes it.
 
 Each change locks the session row, checks the current status, records the new
 one and commits before anyone is told, so two lecturers' tabs pressing start
@@ -29,7 +33,6 @@ from app.realtime.hub import hub
 from app.repositories.course_repository import CourseRepository
 from app.repositories.session_repository import SessionRepository
 from app.repositories.student_repository import StudentRepository
-from app.schemas.events import ServerEventType
 from app.schemas.identity import Role
 from app.schemas.session import SessionCreateRequest, SessionOut, SessionStatus
 
@@ -87,12 +90,30 @@ async def start_session(db: AsyncSession, principal: Principal, session_id: UUID
     await db.commit()
 
     classroom.activate(row.session_id)
-    await hub.broadcast(
-        row.session_id,
-        ServerEventType.SESSION_STATE,
-        classroom.state(row.session_id, SessionStatus.ACTIVE).model_dump(mode="json"),
-    )
+    await classroom.announce(row.session_id, SessionStatus.ACTIVE)
     log.info("session %s started by %s", session_id, principal.user_id)
+    return await session_out(db, row)
+
+
+async def pause_session(db: AsyncSession, principal: Principal, session_id: UUID) -> SessionOut:
+    """Hold the question cycle. Students stay connected."""
+    row = await _owned(SessionRepository(db), principal, session_id)
+    _require(row, SessionStatus.ACTIVE, "pause")
+    if row.paused_at is not None:
+        raise ConflictError("The session is already paused.", {"session_id": str(session_id)})
+    await classroom.pause(db, row)
+    log.info("session %s paused by %s", session_id, principal.user_id)
+    return await session_out(db, row)
+
+
+async def resume_session(db: AsyncSession, principal: Principal, session_id: UUID) -> SessionOut:
+    """Carry on from a pause."""
+    row = await _owned(SessionRepository(db), principal, session_id)
+    _require(row, SessionStatus.ACTIVE, "resume")
+    if row.paused_at is None:
+        raise ConflictError("The session is not paused.", {"session_id": str(session_id)})
+    await classroom.resume(db, row)
+    log.info("session %s resumed by %s", session_id, principal.user_id)
     return await session_out(db, row)
 
 
@@ -162,8 +183,9 @@ async def session_out(db: AsyncSession, row: Session) -> SessionOut:
         status=SessionStatus(row.status),
         starts_at=row.start_time,
         ended_at=row.ended_at,
-        participant_count=hub.participant_count(row.session_id),
+        participant_count=len(hub.student_ids(row.session_id)),
         questions_delivered=await repo.count_delivered(row.session_id),
+        paused=row.status == SessionStatus.ACTIVE.value and row.paused_at is not None,
     )
 
 

@@ -2,7 +2,9 @@
 
 start_time and end_time are the timetabled slot. A session created on the day
 has no scheduled end, so end_time is optional. ended_at is when the lecturer
-actually ended it, which is what SessionOut reports.
+actually ended it, which is what SessionOut reports. paused_at is set while
+the lecturer has paused a running session and cleared when it resumes, so a
+restart does not quietly resume the question cycle.
 """
 
 import uuid
@@ -56,6 +58,11 @@ class Session(Base):
     )
 
     ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    paused_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )

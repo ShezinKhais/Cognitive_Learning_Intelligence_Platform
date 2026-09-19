@@ -88,12 +88,15 @@ class Settings(BaseSettings):
     client_secret: str = ""
     tenant_id: str = ""
 
-    # Session behaviour
-    checkpoint_interval_seconds: int = 1200
-    checkpoint_response_window_seconds: int = 30
+    # Session behaviour. An interval of 0 turns the automatic question cycle
+    # off, so questions go out only when the lecturer sends one.
+    checkpoint_interval_seconds: int = Field(default=1200, ge=0)
+    checkpoint_response_window_seconds: int = Field(default=30, ge=1)
     comprehension_alert_threshold: float = 0.50
     comprehension_alert_min_respondents: int = 5
-    dynamic_prompt_max_per_student: int = 3
+    dynamic_prompt_max_per_student: int = Field(default=3, ge=0)
+    # How long a private attention prompt stays on a student's screen.
+    attention_prompt_ttl_seconds: int = Field(default=60, ge=1)
 
     # Uploads (Includes CSV and XLSX for admin timetable/roster imports)
     max_upload_bytes: int = 52_428_800
@@ -125,6 +128,22 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.clip_env.lower() in {"production", "prod"}
+
+    @model_validator(mode="after")
+    def _check_question_timing(self) -> "Settings":
+        """The cycle must leave each question time to close before the next.
+
+        With the interval at or below the window, every scheduled delivery
+        finds the last question still open and is skipped, so the class gets
+        one question and the cycle then does nothing.
+        """
+        interval = self.checkpoint_interval_seconds
+        if interval and interval <= self.checkpoint_response_window_seconds:
+            raise ValueError(
+                "CHECKPOINT_INTERVAL_SECONDS must be 0 (manual delivery only) or longer "
+                "than CHECKPOINT_RESPONSE_WINDOW_SECONDS"
+            )
+        return self
 
     @model_validator(mode="after")
     def _reject_unsafe_production_config(self) -> "Settings":

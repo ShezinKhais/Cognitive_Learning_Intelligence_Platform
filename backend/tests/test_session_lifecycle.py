@@ -518,3 +518,115 @@ async def test_a_question_goes_out_and_the_answer_comes_back(db, app) -> None:
     assert (closed["type"], closed["seq"]) == ("question.closed", question["seq"] + 1)
     assert (closed["data"]["respondents"], closed["data"]["eligible"]) == (1, 1)
     assert (ended["type"], ended["data"]["status"]) == ("session.state", "ended")
+
+
+# -- pausing ----------------------------------------------------------------
+
+
+async def test_a_running_session_pauses_and_resumes(db, app) -> None:
+    client, factory, created = db
+    course = await _course(factory, created)
+    question_id = await _question(db, course, LECTURER_ID)
+    _as(app, LECTURER_ID, Role.LECTURER)
+    session = _create(client, course)
+    base = f"/api/v1/sessions/{session['id']}"
+    client.post(f"{base}/start")
+
+    paused = client.post(f"{base}/pause")
+
+    assert paused.status_code == 200, paused.text
+    assert (paused.json()["status"], paused.json()["paused"]) == ("active", True)
+    assert client.post(f"{base}/pause").status_code == 409
+    assert client.post(f"{base}/questions/{question_id}:deliver").status_code == 409
+    async with factory() as check:
+        row = await check.get(SessionModel, UUID(session["id"]))
+        assert row is not None and row.paused_at is not None
+
+    resumed = client.post(f"{base}/resume")
+
+    assert resumed.status_code == 200, resumed.text
+    assert resumed.json()["paused"] is False
+    assert client.post(f"{base}/resume").status_code == 409
+    assert client.post(f"{base}/questions/{question_id}:deliver").status_code == 202
+
+
+async def test_only_a_running_session_can_be_paused(db, app) -> None:
+    client, factory, created = db
+    course = await _course(factory, created)
+    await _question(db, course, LECTURER_ID)
+    _as(app, LECTURER_ID, Role.LECTURER)
+    session = _create(client, course)
+    base = f"/api/v1/sessions/{session['id']}"
+
+    assert client.post(f"{base}/pause").status_code == 409
+    assert client.post(f"{base}/resume").status_code == 409
+    client.post(f"{base}/start")
+    client.post(f"{base}/pause")
+    ended = client.post(f"{base}/end")
+    assert (ended.status_code, ended.json()["status"], ended.json()["paused"]) == (
+        200,
+        "ended",
+        False,
+    )
+    assert client.post(f"{base}/resume").status_code == 409
+
+
+async def test_pausing_is_staff_work_on_their_own_session(db, app) -> None:
+    client, factory, created = db
+    course = await _course(factory, created)
+    await _question(db, course, LECTURER_ID)
+    _as(app, LECTURER_ID, Role.LECTURER)
+    session = _create(client, course)
+    base = f"/api/v1/sessions/{session['id']}"
+    client.post(f"{base}/start")
+
+    _as(app, STUDENT_ID, Role.STUDENT)
+    assert client.post(f"{base}/pause").status_code == 403
+    _as(app, await _lecturer(factory, created), Role.LECTURER)
+    assert client.post(f"{base}/pause").status_code == 404
+    _as(app, ADMIN_ID, Role.ADMIN)
+    assert client.post(f"{base}/pause").status_code == 200
+
+
+async def test_a_student_joining_a_paused_session_is_told_it_is_paused(db, app) -> None:
+    client, factory, created = db
+    course = await _course(factory, created)
+    await _enrol(factory, course)
+    await _question(db, course, LECTURER_ID)
+    _as(app, LECTURER_ID, Role.LECTURER)
+    session = _create(client, course)
+    client.post(f"/api/v1/sessions/{session['id']}/start")
+    client.post(f"/api/v1/sessions/{session['id']}/pause")
+    token = _token(client, "student@clip.example.com", STUDENT_PASSWORD)
+
+    with client.websocket_connect("/ws/session") as ws:
+        ws.send_json({"type": "auth", "data": {"token": token, "session_id": session["id"]}})
+        ws.receive_json()
+        state = ws.receive_json()
+
+    assert (state["data"]["status"], state["data"]["paused"]) == ("active", True)
+
+
+async def test_a_prompt_acknowledgement_needs_an_open_prompt(db, app) -> None:
+    client, factory, created = db
+    course = await _course(factory, created)
+    await _enrol(factory, course)
+    await _question(db, course, LECTURER_ID)
+    _as(app, LECTURER_ID, Role.LECTURER)
+    session = _create(client, course)
+    client.post(f"/api/v1/sessions/{session['id']}/start")
+    token = _token(client, "student@clip.example.com", STUDENT_PASSWORD)
+    ack = {"type": "prompt.ack", "data": {"prompt_id": str(uuid4())}}
+
+    with client.websocket_connect("/ws/session") as ws:
+        ws.send_json({"type": "auth", "data": {"token": token, "session_id": session["id"]}})
+        ws.receive_json()
+        ws.receive_json()
+        ws.send_json(ack)
+        error = ws.receive_json()
+        ws.send_json({"type": "ping", "data": {}})
+        pong = ws.receive_json()
+
+    assert (error["type"], error["data"]["code"]) == ("error", "PROMPT_NOT_OPEN")
+    assert pong["type"] == "pong"
+    client.post(f"/api/v1/sessions/{session['id']}/end")

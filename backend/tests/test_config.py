@@ -182,3 +182,20 @@ def test_request_id_does_not_leak_between_requests(
 
     assert first.headers["X-Request-ID"] == "one"
     assert second.headers["X-Request-ID"] != "one"
+
+
+@pytest.mark.parametrize(
+    ("interval", "window"),
+    [(30, 30), (10, 30), (-1, 30), (1200, 0)],
+)
+def test_a_question_cycle_that_cannot_work_is_refused(interval: int, window: int) -> None:
+    """At or under the window, every scheduled question finds the last one
+    still open and is skipped, so the class gets one question and no more."""
+    with pytest.raises(ValueError, match="(?i)checkpoint|greater than"):
+        Settings(checkpoint_interval_seconds=interval, checkpoint_response_window_seconds=window)
+
+
+def test_an_interval_of_zero_means_manual_delivery_only() -> None:
+    settings = Settings(checkpoint_interval_seconds=0, checkpoint_response_window_seconds=30)
+
+    assert settings.checkpoint_interval_seconds == 0

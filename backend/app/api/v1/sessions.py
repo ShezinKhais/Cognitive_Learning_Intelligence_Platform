@@ -1,6 +1,7 @@
 """Live session, response and analytics routes.
 
-Contract frozen in Phase 1. Handler bodies are owned by:
+Contract frozen in Phase 1; pause and resume were added in Phase 3. Handler
+bodies are owned by:
   General CS: session lifecycle, question delivery
   BBIS:       persistence and dashboard queries
   AI 1:       scoring and classification
@@ -86,6 +87,28 @@ async def start_session(
 ) -> SessionOut:
     """Blocked until the session has approved questions staged."""
     return await session_lifecycle.start_session(db, principal, session_id)
+
+
+@router.post("/{session_id}/pause", response_model=SessionOut, dependencies=_staff)
+async def pause_session(
+    session_id: UUID,
+    principal: CurrentUser,
+    db: DbSession,
+) -> SessionOut:
+    """Holds the question cycle of an active session until it resumes. A question
+    already open runs to the end of its window."""
+    return await session_lifecycle.pause_session(db, principal, session_id)
+
+
+@router.post("/{session_id}/resume", response_model=SessionOut, dependencies=_staff)
+async def resume_session(
+    session_id: UUID,
+    principal: CurrentUser,
+    db: DbSession,
+) -> SessionOut:
+    """Resumes a paused session. The next scheduled question comes after whatever
+    was left of the wait when it paused."""
+    return await session_lifecycle.resume_session(db, principal, session_id)
 
 
 @router.post("/{session_id}/end", response_model=SessionOut, dependencies=_staff)
