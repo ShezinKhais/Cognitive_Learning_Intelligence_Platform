@@ -8,6 +8,7 @@ import {
   clearAccessToken,
   getAccessToken,
 } from '../../api'
+import { actionForClose } from './closeCodes'
 import type {
   MaterialProgress,
   ProgressConnectionStatus,
@@ -184,10 +185,16 @@ export function useMaterialProgress(
       currentSocket.addEventListener('close', (event) => {
         if (stopped) return
 
-        if (event.code === 4001) {
+        const action = actionForClose(event.code)
+        if (action === 'sign-in') {
           stopped = true
           clearAccessToken()
           window.location.assign('/login')
+          return
+        }
+        if (action === 'stop') {
+          stopped = true
+          setStatus('unavailable')
           return
         }
 

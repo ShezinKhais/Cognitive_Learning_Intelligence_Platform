@@ -34,9 +34,19 @@ from app.core.errors import ValidationError
 
 log = logging.getLogger("clip.extraction")
 
-# from Settings.allowed_upload_extensions, kept here so the service can be
-# used and tested without loading app config
-SUPPORTED = ("pdf", "pptx", "docx", "txt")
+# The formats extraction can read, and the MIME type of each. A stored upload
+# is labelled by its validated extension through this table rather than by the
+# client's Content-Type header, and a specific claimed type that contradicts it
+# is refused by app.services.upload_security. Kept here, not read from
+# Settings.allowed_upload_extensions, so the service can be used and tested
+# without loading app config.
+CONTENT_TYPES: dict[str, str] = {
+    "pdf": "application/pdf",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "txt": "text/plain",
+}
+SUPPORTED = tuple(CONTENT_TYPES)
 
 
 # ---------------------------------------------------------------------------

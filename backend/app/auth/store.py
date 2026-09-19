@@ -267,6 +267,12 @@ def _build_dev_users() -> list[UserRecord]:
 
 _DEV_USERS = InMemoryUserRepository(_build_dev_users())
 
+
+def dev_user_records() -> list[UserRecord]:
+    """The development accounts, for code that has to mirror them elsewhere."""
+    return _build_dev_users()
+
+
 _DEV_CONSENTS = InMemoryConsentRepository()
 
 _LOGIN_SECURITY = LoginSecurityStore()

@@ -10,7 +10,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class MaterialStatus(StrEnum):
@@ -35,6 +35,20 @@ class QuestionStatus(StrEnum):
     REJECTED = "rejected"
     STAGED = "staged"
     DELIVERED = "delivered"
+
+
+class ReviewDecision(StrEnum):
+    """The statuses a lecturer may set through the review routes.
+
+    Every QuestionStatus except DELIVERED. A question becomes delivered when
+    the session actually sends it to students; set by hand, it would freeze a
+    question as "already asked" when no student ever saw it.
+    """
+
+    DRAFT = "draft"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    STAGED = "staged"
 
 
 class Difficulty(StrEnum):
@@ -94,16 +108,27 @@ class QuestionOut(BaseModel):
 class QuestionReviewRequest(BaseModel):
     """A lecturer approving, editing or rejecting a generated question."""
 
-    status: QuestionStatus
+    status: ReviewDecision
     prompt: str | None = None
     options: list[str] | None = None
     correct_option: int | None = None
     difficulty: Difficulty | None = None
 
 
+# Far above any one material's question count. Unbounded, a single request
+# could name enough ids to make the lookup query itself the problem.
+MAX_BULK_REVIEW_IDS = 500
+
+
 class QuestionBulkReviewRequest(BaseModel):
-    question_ids: list[UUID]
-    status: QuestionStatus
+    question_ids: list[UUID] = Field(max_length=MAX_BULK_REVIEW_IDS)
+    status: ReviewDecision
+
+    @field_validator("question_ids")
+    @classmethod
+    def _once_each(cls, ids: list[UUID]) -> list[UUID]:
+        # A repeated id was reviewed twice and listed twice in the result.
+        return list(dict.fromkeys(ids))
 
 
 class QuestionBulkReviewResult(BaseModel):

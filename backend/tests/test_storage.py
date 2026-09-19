@@ -55,7 +55,8 @@ async def feed(data: bytes, block: int = 256) -> AsyncIterator[bytes]:
 
 
 def storage(tmp_path: Path, max_bytes: int = 52_428_800) -> LocalDiskStorage:
-    return LocalDiskStorage(Settings(upload_storage_dir=str(tmp_path), max_upload_bytes=max_bytes))
+    settings = Settings(upload_storage_dir=str(tmp_path), max_upload_bytes=max_bytes)
+    return LocalDiskStorage(settings, allowed=settings.upload_extensions)
 
 
 async def test_a_real_file_survives_the_round_trip(tmp_path: Path) -> None:

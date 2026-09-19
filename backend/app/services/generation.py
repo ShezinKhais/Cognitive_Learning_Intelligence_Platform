@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID
@@ -59,10 +60,32 @@ QUESTION_STOP_WORDS = {
     "why",
     "with",
 }
+# Text aimed at the model rather than the reader. Matched after
+# normalise_for_screening, so case, compatibility characters, zero-width
+# characters and line breaks do not hide a phrase. The first pattern allows a
+# few words between its parts, so "ignore the previous instructions" and
+# "ignore all of the above directions" are caught as well as the exact form.
+# The targets are words a lecture rarely pairs with those verbs; "skip the
+# previous steps" is left alone.
+_OVERRIDE_VERB = r"(?:ignore|disregard|forget|override|bypass)"
+_QUALIFIER = r"(?:previous|prior|above|earlier|preceding|foregoing|all|any|your|these|those|system)"
+_TARGET = r"(?:instructions?|directions?|rules|prompts?|guidelines|commands?)"
 INSTRUCTION_PATTERNS = (
-    r"\bignore\s+(?:all\s+)?(?:previous|prior|above)\s+instructions?\b",
-    r"\bdisregard\s+(?:all\s+)?(?:previous|prior|above)\s+instructions?\b",
-    r"\boverride\s+(?:the\s+)?(?:system|developer|previous)\s+(?:prompt|instructions?)\b",
+    rf"\b{_OVERRIDE_VERB}\b(?:\W+\w+){{0,4}}?\W+{_QUALIFIER}\b(?:\W+\w+){{0,3}}?\W+{_TARGET}\b",
+    r"\bnew\s+instructions?\s*:",
+    r"\byou\s+are\s+now\s+(?:a|an|the)\s+(?:ai|assistant|chatbot|language\s+model)\b",
+    # Chat-template markers have no place in lecture material.
+    r"<\|?\s*(?:im_start|im_end|system|endoftext)\s*\|?>",
+    r"\[/?inst\]",
+)
+_INSTRUCTION = re.compile("|".join(INSTRUCTION_PATTERNS), flags=re.IGNORECASE)
+
+# A link the model wrote. A question that sends students somewhere the cited
+# material never mentions is either a hallucination or an injected payload.
+_LINK = re.compile(
+    r"\b(?:https?://|www\.)\S+"
+    r"|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|co|info|biz|xyz|ru|example|link|site)\b",
+    flags=re.IGNORECASE,
 )
 MAX_PROMPT_CHUNKS = 12
 
@@ -97,9 +120,31 @@ def question_coverage(question: str, material_text: str) -> float:
     return 100.0 * len(question_words & material_words) / len(question_words)
 
 
+def normalise_for_screening(text: str) -> str:
+    """The text as a reader sees it, for pattern matching.
+
+    NFKC folds compatibility forms (fullwidth letters, ligatures) onto plain
+    ones, format characters such as zero-width spaces are dropped, and runs of
+    whitespace become one space, so none of them can split a phrase apart.
+    """
+    folded = unicodedata.normalize("NFKC", text)
+    visible = "".join(ch for ch in folded if unicodedata.category(ch) != "Cf")
+    return re.sub(r"\s+", " ", visible)
+
+
 def contains_embedded_instruction(text: str) -> bool:
-    """Detect obvious instructions embedded inside supposedly source material."""
-    return any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in INSTRUCTION_PATTERNS)
+    """Whether text contains an instruction aimed at the model."""
+    return _INSTRUCTION.search(normalise_for_screening(text)) is not None
+
+
+def ungrounded_links(text: str, material_text: str) -> list[str]:
+    """Links in model output that the cited material does not itself contain."""
+    material = normalise_for_screening(material_text).lower()
+    return [
+        link
+        for link in _LINK.findall(normalise_for_screening(text))
+        if link.lower().rstrip(".,;:)") not in material
+    ]
 
 
 def rejection_reasons(draft: DraftQuestion, chunks: list[RetrievedChunk]) -> list[str]:
@@ -146,6 +191,18 @@ def rejection_reasons(draft: DraftQuestion, chunks: list[RetrievedChunk]) -> lis
     )
     if any(contains_embedded_instruction(c.chunk_text) for c in cited_chunks):
         reasons.append("cited material contains embedded instructions")
+
+    # What the model wrote is screened too: an instruction can reach the
+    # output through a chunk that was never flagged, or be invented outright.
+    written = " ".join([draft.prompt, *options, draft.topic or "", draft.source_excerpt or ""])
+    if contains_embedded_instruction(written):
+        reasons.append("the draft itself contains instructions")
+    links = ungrounded_links(
+        " ".join([draft.prompt, *options, draft.topic or ""]),
+        " ".join(c.chunk_text for c in cited_chunks),
+    )
+    if links:
+        reasons.append(f"links to {', '.join(links)}, which the cited material does not contain")
 
     if not draft.source_excerpt:
         reasons.append("no source excerpt, so grounding cannot be checked")
@@ -230,6 +287,15 @@ class GenerationOutcome:
 
     accepted: list[DraftQuestion]
     rejected: list[tuple[DraftQuestion, list[str]]]
+
+
+def screened(chunks: Sequence[RetrievedChunk]) -> list[RetrievedChunk]:
+    """The chunks safe to show the model.
+
+    The warning in PROMPT_TEMPLATE is a request the model may ignore. A chunk
+    that is never sent cannot steer it.
+    """
+    return [chunk for chunk in chunks if not contains_embedded_instruction(chunk.chunk_text)]
 
 
 def build_prompt(chunks: list[RetrievedChunk], count: int) -> str:
@@ -319,6 +385,9 @@ def parse_drafts(raw: str) -> list[DraftQuestion]:
         raw_prompt = item.get("prompt")
         prompt = raw_prompt if isinstance(raw_prompt, str) else ""
 
+        raw_topic = item.get("topic")
+        topic = (raw_topic.strip() or None) if isinstance(raw_topic, str) else None
+
         raw_excerpt = item.get("source_excerpt")
         source_excerpt = raw_excerpt if isinstance(raw_excerpt, str) else None
 
@@ -329,7 +398,7 @@ def parse_drafts(raw: str) -> list[DraftQuestion]:
                 prompt=prompt,
                 options=options,
                 correct_option=correct,
-                topic=item.get("topic"),
+                topic=topic,
                 source_slide=slide,
                 source_excerpt=source_excerpt,
             )
@@ -347,25 +416,51 @@ class QuestionGenerator:
 
     def __init__(self, client, model: str, count: int = 5) -> None:
         self._client = client
-        self._model = model
+        # Public: the pipeline records which model wrote a material's drafts.
+        self.model = model
         self._count = count
 
     async def generate(
-        self, material_id: UUID, chunks: Sequence[ContentChunk]
+        self, material_id: UUID, chunks: Sequence[ContentChunk], count: int | None = None
     ) -> Sequence[DraftQuestion]:
-        if not chunks:
+        """Drafts about `chunks`. `count` overrides how many are asked for, as a
+        lecturer replacing a single question needs only a few candidates."""
+        usable = screened(chunks)
+        if len(usable) < len(chunks):
+            logger.warning(
+                "material %s: %d chunk(s) contain embedded instructions and were not sent "
+                "to the model",
+                material_id,
+                len(chunks) - len(usable),
+            )
+        if not usable or count == 0:
             return []
 
-        outcome = await self._draft(chunks)
+        outcome = await self._draft(chunks, count, shown=usable)
         for _, reasons in outcome.rejected:
             logger.info("rejected draft question: %s", "; ".join(reasons))
         return outcome.accepted
 
-    async def _draft(self, chunks) -> GenerationOutcome:
-        """Kept separate so tests can see what was rejected and why."""
+    async def _draft(
+        self, chunks, count: int | None = None, shown: Sequence[ContentChunk] | None = None
+    ) -> GenerationOutcome:
+        """Kept separate so tests can see what was rejected and why.
+
+        The model is shown only the screened chunks, while drafts are checked
+        against all of them, so one citing a page that carried an injected
+        instruction is still rejected. `shown` is the screened set when the
+        caller already has it, so the chunks are not screened twice.
+        """
+        if shown is None:
+            shown = screened(chunks)
         response = await self._client.chat.completions.create(
-            model=self._model,
-            messages=[{"role": "user", "content": build_prompt(chunks, self._count)}],
+            model=self.model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": build_prompt(shown, self._count if count is None else count),
+                }
+            ],
         )
         try:
             drafts = parse_drafts(response.choices[0].message.content or "")

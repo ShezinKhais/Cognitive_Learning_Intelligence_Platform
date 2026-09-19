@@ -124,9 +124,12 @@ def test_lecturers_pass_the_material_role_guard(client: TestClient) -> None:
     response = client.post(
         "/api/v1/materials",
         headers=_headers(token),
-        files={"file": ("lecture.txt", b"Lecture content", "text/plain")},
+        files={"file": ("lecture.exe", b"MZ", "application/octet-stream")},
     )
 
-    # The Phase 2 handler now accepts the upload and schedules processing;
-    # reaching 202 proves the lecturer passed the role boundary.
-    assert response.status_code == 202
+    # A student is refused with 403 before the handler runs. The handler's own
+    # refusal of the file proves the lecturer got past the role boundary,
+    # without storing a material or starting a job against the real database
+    # and model server.
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"

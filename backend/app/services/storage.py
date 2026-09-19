@@ -132,15 +132,15 @@ class LocalDiskStorage:
     on the same afternoon do not collide and neither can overwrite the other.
     """
 
-    def __init__(self, settings: Settings, allowed: set[str] | None = None) -> None:
+    def __init__(self, settings: Settings, *, allowed: set[str]) -> None:
         self._root = Path(settings.upload_storage_dir).resolve()
         self._max_bytes = settings.max_upload_bytes
-        # allowed_upload_extensions is shared with the administrator timetable
-        # and roster importers, so it includes spreadsheet formats no lecture
-        # parser can read. A caller that can only process some of that list
-        # passes the narrower set rather than accepting a file, answering 202
-        # and failing a minute later in a job nobody is watching.
-        self._allowed = settings.upload_extensions if allowed is None else allowed
+        # Required rather than defaulted to allowed_upload_extensions. That
+        # list is shared with the administrator timetable and roster importers,
+        # so it includes spreadsheet formats no lecture parser can read, and a
+        # storage that accepted them answered 202 for a file that failed a
+        # minute later in a job nobody was watching.
+        self._allowed = allowed
 
     def _path_for(self, material_id: UUID, extension: str) -> Path:
         return self._root / f"{material_id}.{extension}"
