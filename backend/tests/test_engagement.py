@@ -44,6 +44,28 @@ def test_compute_engagement_renormalises_missing_signals():
     assert result.status == EngagementStatus.ENGAGED
 
 
+def test_compute_engagement_speaking_false_is_excluded_not_penalised():
+    """A quietly engaged student (not speaking, but attentive) must not be
+    dragged down to AT_RISK by treating speaking=False as a 0.3 penalty --
+    it's excluded from the average the same way a missing signal is."""
+    attention = AttentionSignalPayload(
+        gaze_on_screen_ratio=0.65, speaking=False, window_seconds=5.0
+    )
+    result = compute_engagement(0.65, attention)
+    assert result.signals_available == ["attempt_rate", "gaze"]
+    assert result.score == 0.65
+    assert result.status == EngagementStatus.ENGAGED
+
+
+def test_compute_engagement_speaking_true_contributes_full_credit():
+    attention = AttentionSignalPayload(
+        gaze_on_screen_ratio=0.65, speaking=True, window_seconds=5.0
+    )
+    result = compute_engagement(0.65, attention)
+    assert result.signals_available == ["attempt_rate", "gaze", "speaking"]
+    assert result.score == (0.65 + 0.65 + 1.0) / 3
+
+
 def test_compute_engagement_zero_signals_never_reports_disengaged():
     """No evidence at all must render as insufficient data, never as a
     confident disengagement call -- see EngagementOut's own docstring."""
@@ -87,3 +109,13 @@ def test_comprehension_alert_does_not_fire_above_threshold():
         respondents=10, correct_count=8, min_respondents=5, threshold=0.5
     )
     assert decision.should_alert is False
+
+
+def test_comprehension_alert_zero_respondents_does_not_divide_by_zero():
+    """Guards on respondents == 0 explicitly, independent of min_respondents
+    -- a min_respondents of 0 must not let the division through."""
+    decision = evaluate_comprehension_alert(
+        respondents=0, correct_count=0, min_respondents=0, threshold=0.5
+    )
+    assert decision.should_alert is False
+    assert decision.correct_ratio == 0.0

@@ -49,7 +49,6 @@ class EngagementComputation:
     status: EngagementStatus
     confidence: float
     signals_available: list[str]
-    attention_signal_label: str
 
 
 def compute_engagement(
@@ -70,12 +69,16 @@ def compute_engagement(
         if attention.face_present is not None:
             components.append(1.0 if attention.face_present else 0.0)
             signals.append("face_presence")
-        if attention.speaking is not None:
-            components.append(1.0 if attention.speaking else 0.3)
+        # speaking=False is not a negative signal -- most attentive students
+        # aren't talking out loud while reading or answering an MCQ. Unlike
+        # face_present=False (a real absence signal, scored 0.0), a silent
+        # student is excluded from the average the same way a missing/None
+        # signal is, rather than averaged in as a penalty.
+        if attention.speaking:
+            components.append(1.0)
             signals.append("speaking")
 
     confidence = len(signals) / len(_SIGNAL_NAMES)
-    attention_label = "present" if attention is not None else "unknown"
 
     if not components or confidence < MIN_CONFIDENCE_FOR_STATUS:
         return EngagementComputation(
@@ -83,7 +86,6 @@ def compute_engagement(
             status=EngagementStatus.INSUFFICIENT_DATA,
             confidence=confidence,
             signals_available=signals,
-            attention_signal_label=attention_label,
         )
 
     score = sum(components) / len(components)
@@ -100,7 +102,6 @@ def compute_engagement(
         status=status,
         confidence=confidence,
         signals_available=signals,
-        attention_signal_label=attention_label,
     )
 
 
@@ -142,7 +143,7 @@ def evaluate_comprehension_alert(
     respondents (default 5) is the smallest sample this module treats as
     meaningful, regardless of how low the ratio looks.
     """
-    if respondents < min_respondents:
+    if respondents < min_respondents or respondents == 0:
         return ComprehensionAlertDecision(should_alert=False, correct_ratio=0.0)
 
     correct_ratio = correct_count / respondents
