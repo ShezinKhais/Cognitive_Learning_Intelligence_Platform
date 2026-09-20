@@ -56,3 +56,41 @@ def process_mcq_submission(
     feedback = build_mcq_feedback(score)
 
     return feedback_payload(question.question_id, feedback)
+
+
+def process_submission(
+    *,
+    session_id: UUID,
+    question: Question,
+    selected_option: int | None = None,
+    free_text: str | None = None,
+) -> FeedbackResultPayload:
+    """Route one accepted live-session answer to the correct AI 1 processor.
+
+    MCQ responses are supported in Phase 3. Free-text responses are reserved
+    for the later classifier implementation.
+    """
+
+    if selected_option is not None and free_text is not None:
+        raise ValidationError(
+            "A response cannot contain both an MCQ option and free text."
+        )
+
+    if selected_option is None and free_text is None:
+        raise ValidationError(
+            "A response must contain an answer."
+        )
+
+    if selected_option is not None:
+        return process_mcq_submission(
+            session_id=session_id,
+            question=question,
+            selected_option=selected_option,
+        )
+
+    raise ValidationError(
+        "Free-text response classification is not implemented yet.",
+        {
+            "question_id": str(question.question_id),
+        },
+    )

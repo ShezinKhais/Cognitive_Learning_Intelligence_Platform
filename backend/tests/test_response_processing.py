@@ -5,7 +5,10 @@ import pytest
 from app.core.errors import ValidationError
 from app.models.question import Question
 from app.schemas.content import QuestionStatus
-from app.services.response_processing import process_mcq_submission
+from app.services.response_processing import (
+    process_mcq_submission,
+    process_submission,
+)
 
 
 def make_delivered_question(
@@ -98,4 +101,57 @@ def test_process_mcq_submission_rejects_question_not_yet_delivered():
             session_id=session_id,
             question=question,
             selected_option=1,
+        )
+
+def test_process_submission_routes_mcq_to_mcq_processor():
+    session_id = uuid.uuid4()
+    question = make_delivered_question(
+        session_id=session_id,
+        correct_option=1,
+    )
+
+    payload = process_submission(
+        session_id=session_id,
+        question=question,
+        selected_option=1,
+    )
+
+    assert payload.question_id == question.question_id
+    assert payload.correct is True
+    assert payload.source_slide == 4
+
+
+def test_process_submission_rejects_missing_answer():
+    session_id = uuid.uuid4()
+    question = make_delivered_question(session_id=session_id)
+
+    with pytest.raises(ValidationError):
+        process_submission(
+            session_id=session_id,
+            question=question,
+        )
+
+
+def test_process_submission_rejects_both_answer_types():
+    session_id = uuid.uuid4()
+    question = make_delivered_question(session_id=session_id)
+
+    with pytest.raises(ValidationError):
+        process_submission(
+            session_id=session_id,
+            question=question,
+            selected_option=1,
+            free_text="Interconnected layers",
+        )
+
+
+def test_process_submission_reserves_free_text_for_classifier():
+    session_id = uuid.uuid4()
+    question = make_delivered_question(session_id=session_id)
+
+    with pytest.raises(ValidationError):
+        process_submission(
+            session_id=session_id,
+            question=question,
+            free_text="Interconnected layers",
         )
