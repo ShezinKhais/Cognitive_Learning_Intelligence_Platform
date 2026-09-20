@@ -52,6 +52,24 @@ export interface ClosedQuestion {
   eligible: number
 }
 
+export type LiveAlertKind =
+  | 'topic_difficulty'
+  | 'student_disengagement'
+  | 'breakout_inactive'
+
+export interface LiveAlert {
+  alert_id: string
+  kind: LiveAlertKind
+  message: string
+  reason: string
+  confidence: number
+}
+
+export interface LiveSessionNotice {
+  code: string
+  detail: string | null
+}
+
 interface ServerEvent {
   type: string
   seq?: number
@@ -68,6 +86,8 @@ interface UseLiveSessionResult {
   sessionState: LiveSessionState | null
   activeQuestion: LiveQuestion | null
   closedQuestion: ClosedQuestion | null
+  alerts: LiveAlert[]
+  sessionNotice: LiveSessionNotice | null
 }
 
 function liveSocketUrl(): string {
@@ -167,6 +187,63 @@ function isClosedQuestion(
   )
 }
 
+function isLiveAlertKind(
+  value: unknown,
+): value is LiveAlertKind {
+  return (
+    value === 'topic_difficulty' ||
+    value === 'student_disengagement' ||
+    value === 'breakout_inactive'
+  )
+}
+
+function isLiveAlert(
+  value: unknown,
+): value is LiveAlert {
+  if (
+    !value ||
+    typeof value !== 'object'
+  ) {
+    return false
+  }
+
+  const alert =
+    value as Record<string, unknown>
+
+  return (
+    typeof alert.alert_id === 'string' &&
+    isLiveAlertKind(alert.kind) &&
+    typeof alert.message === 'string' &&
+    typeof alert.reason === 'string' &&
+    typeof alert.confidence === 'number' &&
+    alert.confidence >= 0 &&
+    alert.confidence <= 1
+  )
+}
+
+function isLiveSessionNotice(
+  value: unknown,
+): value is LiveSessionNotice {
+  if (
+    !value ||
+    typeof value !== 'object'
+  ) {
+    return false
+  }
+
+  const notice =
+    value as Record<string, unknown>
+
+  return (
+    typeof notice.code === 'string' &&
+    (
+      notice.detail === null ||
+      notice.detail === undefined ||
+      typeof notice.detail === 'string'
+    )
+  )
+}
+
 function isReadyPayload(
   value: unknown,
 ): value is ReadyPayload {
@@ -223,14 +300,29 @@ export function useLiveSession(
     null,
   )
 
+  const [
+    alerts,
+    setAlerts,
+  ] = useState<LiveAlert[]>([])
+
+  const [
+    sessionNotice,
+    setSessionNotice,
+  ] = useState<LiveSessionNotice | null>(
+    null,
+  )
+
   useEffect(() => {
+    setSessionState(null)
+    setActiveQuestion(null)
+    setClosedQuestion(null)
+    setAlerts([])
+    setSessionNotice(null)
+
     if (!sessionId) {
       setConnectionStatus(
         'unavailable',
       )
-      setSessionState(null)
-      setActiveQuestion(null)
-      setClosedQuestion(null)
       return
     }
 
@@ -243,9 +335,6 @@ export function useLiveSession(
       setConnectionStatus(
         'disconnected',
       )
-      setSessionState(null)
-      setActiveQuestion(null)
-      setClosedQuestion(null)
       return
     }
 
@@ -386,7 +475,16 @@ export function useLiveSession(
             setActiveQuestion(
               message.data,
             )
+
             setClosedQuestion(null)
+
+            setSessionNotice(
+              (current) =>
+                current?.code ===
+                'NO_STAGED_QUESTION'
+                  ? null
+                  : current,
+            )
 
             return
           }
@@ -414,6 +512,56 @@ export function useLiveSession(
             )
 
             return
+          }
+
+          if (
+            message.type ===
+              'alert.raised' &&
+            isLiveAlert(
+              message.data,
+            )
+          ) {
+            const alert =
+              message.data
+
+            setAlerts(
+              (current) => {
+                if (
+                  current.some(
+                    (existing) =>
+                      existing.alert_id ===
+                      alert.alert_id,
+                  )
+                ) {
+                  return current
+                }
+
+                return [
+                  alert,
+                  ...current,
+                ].slice(0, 20)
+              },
+            )
+
+            return
+          }
+
+          if (
+            message.type ===
+              'error' &&
+            isLiveSessionNotice(
+              message.data,
+            )
+          ) {
+            const notice =
+              message.data
+
+            setSessionNotice({
+              code: notice.code,
+              detail:
+                notice.detail ??
+                null,
+            })
           }
         },
       )
@@ -508,5 +656,7 @@ export function useLiveSession(
     sessionState,
     activeQuestion,
     closedQuestion,
+    alerts,
+    sessionNotice,
   }
 }

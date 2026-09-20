@@ -9,6 +9,7 @@ import {
 
 import { ApiError } from '../api'
 import SignOutButton from '../components/SignOutButton'
+import LiveAlertsPanel from '../features/live/LiveAlertsPanel'
 import ManualQuestionTrigger from '../features/live/ManualQuestionTrigger'
 import {
   endSession,
@@ -121,13 +122,14 @@ export default function LecturerLiveSessionPage() {
       sessionId: string
     }>()
 
-  const {
-    connectionStatus,
-    sessionState,
-    activeQuestion,
-    closedQuestion,
-  } = useLiveSession(sessionId)
-
+ const {
+  connectionStatus,
+  sessionState,
+  activeQuestion,
+  closedQuestion,
+  alerts,
+  sessionNotice,
+} = useLiveSession(sessionId)
   const [
     actionInProgress,
     setActionInProgress,
@@ -635,15 +637,10 @@ export default function LecturerLiveSessionPage() {
             )}
           </section>
 
-          <section className="rounded-xl border border-border bg-card p-6">
-            <h2 className="text-lg font-semibold">
-              Alerts
-            </h2>
-
-            <p className="mt-2 text-sm text-muted-foreground">
-              No live alerts.
-            </p>
-          </section>
+          <LiveAlertsPanel
+  alerts={alerts}
+  sessionNotice={sessionNotice}
+/>
         </div>
       </div>
     </main>
