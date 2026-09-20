@@ -46,6 +46,11 @@ class _Question:
     correct_option: int | None = 1
     source_slide: int | None = 4
     question_id: UUID = field(default_factory=uuid4)
+    question_type: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.question_type is None:
+            self.question_type = "mcq" if self.options else "free_text"
 
 
 class _Db:
@@ -987,4 +992,29 @@ async def test_staff_are_told_when_the_cycle_has_nothing_to_send() -> None:
     [notice] = lecturer.of(ServerEventType.ERROR)[:1]
     assert (notice["seq"], notice["data"]["code"]) == (0, "NO_STAGED_QUESTION")
     assert student.of(ServerEventType.ERROR) == []
+    await room.shutdown()
+
+
+async def test_how_a_question_is_answered_comes_from_its_type() -> None:
+    """A multiple choice question whose choices went missing was delivered as
+    a free-text one: the student saw buttons and was told to answer in their
+    own words. The stored type decides, and disagreeing options are dropped."""
+    room, events = _room()
+    row = _row()
+    socket, student = await _join(events, row.session_id, Role.STUDENT)
+    _Repository.staged.append(_Question(question_type="free_text", options=["Mars", "Venus"]))
+
+    delivered = await room.deliver(_Db(), row)  # type: ignore[arg-type]
+
+    assert delivered is not None and delivered.options is None
+    [event] = socket.of(ServerEventType.QUESTION_DELIVERED)
+    assert event["data"]["options"] is None
+    chosen = await room.submit(
+        row.session_id, student, Role.STUDENT, _answer(delivered.question_id, option=0)
+    )
+    written = await room.submit(
+        row.session_id, student, Role.STUDENT, _answer(delivered.question_id, None, "Jupiter")
+    )
+    assert not chosen.accepted and chosen.reason == "Answer this question in your own words."
+    assert written.accepted
     await room.shutdown()

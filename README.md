@@ -40,8 +40,8 @@ rather than a component, so every phase ends with something that runs end to end
 |---|---|---|
 | 0 | Repository, CI, database and feasibility spikes | Done |
 | 1 | Data and API spine: authentication, RBAC, consent, the frozen contract | Done |
-| 2 | Content and question pipeline: upload, extraction, chunking, embeddings, question generation | In progress |
-| 3 | Live session core: WebSocket hub, prompt scheduler, session lifecycle | Planned |
+| 2 | Content and question pipeline: upload, extraction, chunking, embeddings, question generation | Done |
+| 3 | Live session core: WebSocket hub, prompt scheduler, session lifecycle | In progress |
 | 4 | Microsoft Teams integration | Planned |
 | 5 | AI intelligence layer: free-text classification and the Socratic chatbot | Planned |
 | 6 | Attention signals and breakout groups | Planned |
@@ -49,10 +49,11 @@ rather than a component, so every phase ends with something that runs end to end
 | 8 | Hardening, load testing and delivery | Planned |
 
 What runs today: logging in, roles and consent, the administrator timetable and roster
-import, and the student interface. Phase 2 is landing in pieces, starting with upload,
-background processing and live progress, followed by question generation, retrieval and
-material persistence. Everything past that returns 501 and names the workstream that owns
-it, so the shape of the system is visible before it is built.
+import, the student interface, and the whole content pipeline, from upload through
+extraction, chunking, embeddings and question generation to review. Phase 3 is landing in
+pieces, starting with the session lifecycle and the live question cycle. Everything past
+that returns 501 and names the workstream that owns it, so the shape of the system is
+visible before it is built.
 
 Current status per issue is on the [milestones](../../milestones), which are the source of
 truth rather than this table.

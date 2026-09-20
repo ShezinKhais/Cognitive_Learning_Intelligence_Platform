@@ -17,7 +17,7 @@ from app.models.course import Course
 from app.models.material import Material
 from app.models.question import Question
 from app.models.session import Session
-from app.schemas.content import QuestionStatus
+from app.schemas.content import QuestionStatus, QuestionType
 
 
 class SessionRepository:
@@ -84,6 +84,13 @@ class SessionRepository:
             .join(Material, Material.id == Question.source_material_id)
             .where(
                 Question.status == QuestionStatus.STAGED.value,
+                # A multiple choice question with no choices cannot be
+                # answered, so it is not deliverable. Sending it would put a
+                # question on every screen that no answer could satisfy.
+                or_(
+                    Question.question_type != QuestionType.MCQ.value,
+                    func.cardinality(Question.options) > 0,
+                ),
                 or_(
                     Question.session_id == live.session_id,
                     (Question.session_id.is_(None))

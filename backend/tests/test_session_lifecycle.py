@@ -121,7 +121,13 @@ async def _lecturer(factory, created) -> UUID:
 
 
 async def _question(
-    db, course: Course, uploaded_by: UUID, status: str = "staged", course_id: bool = True
+    db,
+    course: Course,
+    uploaded_by: UUID,
+    status: str = "staged",
+    course_id: bool = True,
+    question_type: str = "mcq",
+    options: list[str] | None = None,
 ) -> UUID:
     _, factory, created = db
     async with factory() as seed:
@@ -138,9 +144,9 @@ async def _question(
         question = Question(
             source_material_id=material.id,
             question_text="Which planet is largest?",
-            question_type="mcq",
+            question_type=question_type,
             status=status,
-            options=["Mars", "Jupiter", "Venus"],
+            options=["Mars", "Jupiter", "Venus"] if options is None else options,
             correct_option=1,
             source_slide=3,
         )
@@ -630,3 +636,56 @@ async def test_a_prompt_acknowledgement_needs_an_open_prompt(db, app) -> None:
     assert (error["type"], error["data"]["code"]) == ("error", "PROMPT_NOT_OPEN")
     assert pong["type"] == "pong"
     client.post(f"/api/v1/sessions/{session['id']}/end")
+
+
+async def test_a_multiple_choice_question_with_no_choices_is_not_delivered(db, app) -> None:
+    """Nobody could answer it, so the class is never shown it and it does not
+    count towards the staged question a session needs to start."""
+    client, factory, created = db
+    course = await _course(factory, created)
+    broken = await _question(db, course, LECTURER_ID, options=[])
+    _as(app, LECTURER_ID, Role.LECTURER)
+    session = _create(client, course)
+    base = f"/api/v1/sessions/{session['id']}"
+
+    refused = client.post(f"{base}/start")
+
+    assert refused.status_code == 409, refused.text
+    await _question(db, course, LECTURER_ID)
+    assert client.post(f"{base}/start").status_code == 200
+    assert client.post(f"{base}/questions/{broken}:deliver").status_code == 404
+    client.post(f"{base}/end")
+
+
+async def test_a_free_text_question_is_delivered_without_options(db, app) -> None:
+    client, factory, created = db
+    course = await _course(factory, created)
+    await _enrol(factory, course)
+    question_id = await _question(db, course, LECTURER_ID, question_type="free_text", options=None)
+    _as(app, LECTURER_ID, Role.LECTURER)
+    session = _create(client, course)
+    base = f"/api/v1/sessions/{session['id']}"
+    client.post(f"{base}/start")
+    token = _token(client, "student@clip.example.com", STUDENT_PASSWORD)
+
+    with client.websocket_connect("/ws/session") as ws:
+        ws.send_json({"type": "auth", "data": {"token": token, "session_id": session["id"]}})
+        ws.receive_json()
+        ws.receive_json()
+        assert client.post(f"{base}/questions/{question_id}:deliver").status_code == 202
+        delivered = ws.receive_json()
+        ws.send_json(
+            {
+                "type": "answer.submit",
+                "data": {
+                    "question_id": str(question_id),
+                    "free_text": "Jupiter is the largest",
+                    "client_elapsed_ms": 3000,
+                },
+            }
+        )
+        receipt = ws.receive_json()
+
+    assert delivered["data"]["options"] is None
+    assert receipt["data"]["accepted"] is True, receipt["data"]
+    client.post(f"{base}/end")

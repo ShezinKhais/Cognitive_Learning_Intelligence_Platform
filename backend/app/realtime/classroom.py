@@ -41,6 +41,7 @@ from app.core.errors import ConflictError
 from app.models.session import Session
 from app.realtime.hub import SessionHub, hub
 from app.repositories.session_repository import SessionRepository
+from app.schemas.content import QuestionType
 from app.schemas.events import (
     AnswerReceiptPayload,
     AnswerSubmitPayload,
@@ -54,6 +55,8 @@ from app.schemas.events import (
 )
 from app.schemas.identity import Role
 from app.schemas.session import SessionStatus
+
+_MCQ = QuestionType.MCQ.value
 
 log = logging.getLogger("clip.classroom")
 
@@ -434,10 +437,17 @@ class Classroom:
                 return None
             now = datetime.now(UTC)
             window = self._window
+            # question_type decides how it is answered, not whether options
+            # happen to be set. Reading it from the options alone turned a
+            # multiple choice question whose choices were missing into a
+            # free-text one, and the student was told to answer in their own
+            # words while their screen offered buttons. The repository will
+            # not hand out such a question, and this agrees with it.
+            choices = question.options if question.question_type == _MCQ else None
             payload = QuestionDeliveredPayload(
                 question_id=question.question_id,
                 prompt=question.question_text,
-                options=question.options,
+                options=choices,
                 closes_at=now + window,
                 window_seconds=int(window.total_seconds()),
                 source_slide=question.source_slide,
@@ -448,7 +458,7 @@ class Classroom:
 
             live.open = _OpenQuestion(
                 question_id=question.question_id,
-                option_count=len(question.options) if question.options else None,
+                option_count=len(choices) if choices else None,
                 closes_at=payload.closes_at,
                 delivered=payload.model_dump(mode="json"),
                 present=self._hub.student_ids(row.session_id),
