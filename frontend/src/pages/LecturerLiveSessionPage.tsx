@@ -9,6 +9,7 @@ import {
 
 import { ApiError } from '../api'
 import SignOutButton from '../components/SignOutButton'
+import ManualQuestionTrigger from '../features/live/ManualQuestionTrigger'
 import {
   endSession,
   pauseSession,
@@ -261,6 +262,14 @@ export default function LecturerLiveSessionPage() {
         'active'
     ) &&
     !isBusy
+
+  const canTriggerQuestion =
+    connectionStatus ===
+      'connected' &&
+    sessionState?.status ===
+      'active' &&
+    !sessionState.paused &&
+    activeQuestion === null
 
   return (
     <main className="min-h-screen bg-background">
@@ -588,13 +597,12 @@ export default function LecturerLiveSessionPage() {
               </p>
             )}
 
-            <button
-              type="button"
-              disabled
-              className="mt-5 rounded-md border border-border px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Trigger Question
-            </button>
+            <ManualQuestionTrigger
+              sessionId={sessionId}
+              enabled={
+                canTriggerQuestion
+              }
+            />
           </section>
 
           <section className="rounded-xl border border-border bg-card p-6">
