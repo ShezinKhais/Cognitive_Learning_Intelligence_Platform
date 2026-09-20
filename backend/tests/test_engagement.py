@@ -58,9 +58,7 @@ def test_compute_engagement_speaking_false_is_excluded_not_penalised():
 
 
 def test_compute_engagement_speaking_true_contributes_full_credit():
-    attention = AttentionSignalPayload(
-        gaze_on_screen_ratio=0.65, speaking=True, window_seconds=5.0
-    )
+    attention = AttentionSignalPayload(gaze_on_screen_ratio=0.65, speaking=True, window_seconds=5.0)
     result = compute_engagement(0.65, attention)
     assert result.signals_available == ["attempt_rate", "gaze", "speaking"]
     assert result.score == (0.65 + 0.65 + 1.0) / 3
