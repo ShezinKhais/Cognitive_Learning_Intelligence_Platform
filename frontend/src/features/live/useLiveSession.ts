@@ -31,6 +31,27 @@ export interface LiveSessionState {
   paused: boolean
 }
 
+export interface LiveQuestion {
+  question_id: string
+  prompt: string
+  options: string[] | null
+  closes_at: string
+  window_seconds: number
+  source_slide: number | null
+}
+
+export type QuestionCloseReason =
+  | 'window_elapsed'
+  | 'lecturer_closed'
+  | 'session_ended'
+
+export interface ClosedQuestion {
+  question_id: string
+  reason: QuestionCloseReason
+  respondents: number
+  eligible: number
+}
+
 interface ServerEvent {
   type: string
   seq?: number
@@ -45,6 +66,8 @@ interface ReadyPayload {
 interface UseLiveSessionResult {
   connectionStatus: LiveConnectionStatus
   sessionState: LiveSessionState | null
+  activeQuestion: LiveQuestion | null
+  closedQuestion: ClosedQuestion | null
 }
 
 function liveSocketUrl(): string {
@@ -84,6 +107,63 @@ function isLiveSessionState(
     ) &&
     typeof state.questions_delivered === 'number' &&
     typeof state.paused === 'boolean'
+  )
+}
+
+function isLiveQuestion(
+  value: unknown,
+): value is LiveQuestion {
+  if (
+    !value ||
+    typeof value !== 'object'
+  ) {
+    return false
+  }
+
+  const question =
+    value as Record<string, unknown>
+
+  const optionsValid =
+    question.options === null ||
+    (
+      Array.isArray(question.options) &&
+      question.options.every(
+        (option) =>
+          typeof option === 'string',
+      )
+    )
+
+  return (
+    typeof question.question_id === 'string' &&
+    typeof question.prompt === 'string' &&
+    optionsValid &&
+    typeof question.closes_at === 'string' &&
+    typeof question.window_seconds === 'number' &&
+    (
+      question.source_slide === null ||
+      typeof question.source_slide === 'number'
+    )
+  )
+}
+
+function isClosedQuestion(
+  value: unknown,
+): value is ClosedQuestion {
+  if (
+    !value ||
+    typeof value !== 'object'
+  ) {
+    return false
+  }
+
+  const closed =
+    value as Record<string, unknown>
+
+  return (
+    typeof closed.question_id === 'string' &&
+    typeof closed.reason === 'string' &&
+    typeof closed.respondents === 'number' &&
+    typeof closed.eligible === 'number'
   )
 }
 
@@ -129,12 +209,28 @@ export function useLiveSession(
     null,
   )
 
+  const [
+    activeQuestion,
+    setActiveQuestion,
+  ] = useState<LiveQuestion | null>(
+    null,
+  )
+
+  const [
+    closedQuestion,
+    setClosedQuestion,
+  ] = useState<ClosedQuestion | null>(
+    null,
+  )
+
   useEffect(() => {
     if (!sessionId) {
       setConnectionStatus(
         'unavailable',
       )
       setSessionState(null)
+      setActiveQuestion(null)
+      setClosedQuestion(null)
       return
     }
 
@@ -148,6 +244,8 @@ export function useLiveSession(
         'disconnected',
       )
       setSessionState(null)
+      setActiveQuestion(null)
+      setClosedQuestion(null)
       return
     }
 
@@ -265,6 +363,57 @@ export function useLiveSession(
             setSessionState(
               message.data,
             )
+
+            if (
+              message.data.status ===
+                'ended' ||
+              message.data.status ===
+                'cancelled'
+            ) {
+              setActiveQuestion(null)
+            }
+
+            return
+          }
+
+          if (
+            message.type ===
+              'question.delivered' &&
+            isLiveQuestion(
+              message.data,
+            )
+          ) {
+            setActiveQuestion(
+              message.data,
+            )
+            setClosedQuestion(null)
+
+            return
+          }
+
+          if (
+            message.type ===
+              'question.closed' &&
+            isClosedQuestion(
+              message.data,
+            )
+          ) {
+            const closed =
+              message.data
+
+            setClosedQuestion(
+              closed,
+            )
+
+            setActiveQuestion(
+              (current) =>
+                current?.question_id ===
+                closed.question_id
+                  ? null
+                  : current,
+            )
+
+            return
           }
         },
       )
@@ -357,5 +506,7 @@ export function useLiveSession(
   return {
     connectionStatus,
     sessionState,
+    activeQuestion,
+    closedQuestion,
   }
 }

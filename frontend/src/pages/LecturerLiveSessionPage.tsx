@@ -1,5 +1,11 @@
-import { useState } from 'react'
-import { Link, useParams } from 'react-router'
+import {
+  useEffect,
+  useState,
+} from 'react'
+import {
+  Link,
+  useParams,
+} from 'react-router'
 
 import { ApiError } from '../api'
 import SignOutButton from '../components/SignOutButton'
@@ -10,9 +16,14 @@ import {
   startSession,
   type SessionLifecycleAction,
 } from '../features/live/sessionActions'
-import { useLiveSession } from '../features/live/useLiveSession'
+import {
+  useLiveSession,
+  type LiveQuestion,
+} from '../features/live/useLiveSession'
 
-function connectionLabel(status: string): string {
+function connectionLabel(
+  status: string,
+): string {
   if (status === 'connected') {
     return 'Connected'
   }
@@ -62,13 +73,58 @@ function questionCycleLabel(
   return 'Stopped'
 }
 
+function secondsUntilClose(
+  question: LiveQuestion | null,
+): number {
+  if (!question) {
+    return 0
+  }
+
+  const closesAt =
+    Date.parse(question.closes_at)
+
+  if (Number.isNaN(closesAt)) {
+    return 0
+  }
+
+  return Math.max(
+    0,
+    Math.ceil(
+      (closesAt - Date.now()) /
+        1000,
+    ),
+  )
+}
+
+function closeReasonLabel(
+  reason: string,
+): string {
+  if (reason === 'window_elapsed') {
+    return 'Response window ended'
+  }
+
+  if (reason === 'lecturer_closed') {
+    return 'Closed by lecturer'
+  }
+
+  if (reason === 'session_ended') {
+    return 'Session ended'
+  }
+
+  return 'Question closed'
+}
+
 export default function LecturerLiveSessionPage() {
   const { sessionId } =
-    useParams<{ sessionId: string }>()
+    useParams<{
+      sessionId: string
+    }>()
 
   const {
     connectionStatus,
     sessionState,
+    activeQuestion,
+    closedQuestion,
   } = useLiveSession(sessionId)
 
   const [
@@ -82,7 +138,43 @@ export default function LecturerLiveSessionPage() {
   const [
     actionError,
     setActionError,
-  ] = useState<string | null>(null)
+  ] =
+    useState<string | null>(
+      null,
+    )
+
+  const [
+    secondsRemaining,
+    setSecondsRemaining,
+  ] = useState(0)
+
+  useEffect(() => {
+    setSecondsRemaining(
+      secondsUntilClose(
+        activeQuestion,
+      ),
+    )
+
+    if (!activeQuestion) {
+      return
+    }
+
+    const timer =
+      window.setInterval(
+        () => {
+          setSecondsRemaining(
+            secondsUntilClose(
+              activeQuestion,
+            ),
+          )
+        },
+        250,
+      )
+
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [activeQuestion])
 
   async function handleSessionAction(
     action: SessionLifecycleAction,
@@ -96,17 +188,33 @@ export default function LecturerLiveSessionPage() {
 
     try {
       if (action === 'start') {
-        await startSession(sessionId)
-      } else if (action === 'pause') {
-        await pauseSession(sessionId)
-      } else if (action === 'resume') {
-        await resumeSession(sessionId)
+        await startSession(
+          sessionId,
+        )
+      } else if (
+        action === 'pause'
+      ) {
+        await pauseSession(
+          sessionId,
+        )
+      } else if (
+        action === 'resume'
+      ) {
+        await resumeSession(
+          sessionId,
+        )
       } else {
-        await endSession(sessionId)
+        await endSession(
+          sessionId,
+        )
       }
     } catch (error) {
-      if (error instanceof ApiError) {
-        setActionError(error.message)
+      if (
+        error instanceof ApiError
+      ) {
+        setActionError(
+          error.message,
+        )
       } else {
         setActionError(
           'The session action could not be completed.',
@@ -121,27 +229,36 @@ export default function LecturerLiveSessionPage() {
     actionInProgress !== null
 
   const canStart =
-    connectionStatus === 'connected' &&
-    sessionState?.status === 'prepared' &&
+    connectionStatus ===
+      'connected' &&
+    sessionState?.status ===
+      'prepared' &&
     !isBusy
 
   const canPause =
-    connectionStatus === 'connected' &&
-    sessionState?.status === 'active' &&
+    connectionStatus ===
+      'connected' &&
+    sessionState?.status ===
+      'active' &&
     !sessionState.paused &&
     !isBusy
 
   const canResume =
-    connectionStatus === 'connected' &&
-    sessionState?.status === 'active' &&
+    connectionStatus ===
+      'connected' &&
+    sessionState?.status ===
+      'active' &&
     sessionState.paused &&
     !isBusy
 
   const canEnd =
-    connectionStatus === 'connected' &&
+    connectionStatus ===
+      'connected' &&
     (
-      sessionState?.status === 'prepared' ||
-      sessionState?.status === 'active'
+      sessionState?.status ===
+        'prepared' ||
+      sessionState?.status ===
+        'active'
     ) &&
     !isBusy
 
@@ -186,7 +303,8 @@ export default function LecturerLiveSessionPage() {
 
               <p className="mt-2 text-sm text-muted-foreground">
                 Session ID:{' '}
-                {sessionId ?? 'Unavailable'}
+                {sessionId ??
+                  'Unavailable'}
               </p>
             </div>
 
@@ -243,7 +361,9 @@ export default function LecturerLiveSessionPage() {
                 'prepared' && (
                 <button
                   type="button"
-                  disabled={!canStart}
+                  disabled={
+                    !canStart
+                  }
                   onClick={() =>
                     void handleSessionAction(
                       'start',
@@ -263,7 +383,9 @@ export default function LecturerLiveSessionPage() {
                 !sessionState.paused && (
                   <button
                     type="button"
-                    disabled={!canPause}
+                    disabled={
+                      !canPause
+                    }
                     onClick={() =>
                       void handleSessionAction(
                         'pause',
@@ -283,7 +405,9 @@ export default function LecturerLiveSessionPage() {
                 sessionState.paused && (
                   <button
                     type="button"
-                    disabled={!canResume}
+                    disabled={
+                      !canResume
+                    }
                     onClick={() =>
                       void handleSessionAction(
                         'resume',
@@ -304,7 +428,9 @@ export default function LecturerLiveSessionPage() {
                   'active') && (
                 <button
                   type="button"
-                  disabled={!canEnd}
+                  disabled={
+                    !canEnd
+                  }
                   onClick={() =>
                     void handleSessionAction(
                       'end',
@@ -324,8 +450,8 @@ export default function LecturerLiveSessionPage() {
                 sessionState?.status ===
                   'cancelled') && (
                 <p className="text-sm text-muted-foreground">
-                  This session is no longer
-                  active.
+                  This session is no
+                  longer active.
                 </p>
               )}
             </div>
@@ -346,34 +472,121 @@ export default function LecturerLiveSessionPage() {
             </p>
           </section>
 
-          <section className="rounded-xl border border-border bg-card p-6">
-            <h2 className="text-lg font-semibold">
-              Current Question
-            </h2>
+          <section className="rounded-xl border border-border bg-card p-6 lg:col-span-2">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold">
+                  Current Question
+                </h2>
 
-            {sessionState?.active_question_id ? (
-              <>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Active question
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Questions delivered:{' '}
+                  {sessionState?.questions_delivered ??
+                    0}
+                </p>
+              </div>
+
+              {activeQuestion && (
+                <div
+                  aria-live="polite"
+                  className="rounded-md border border-border px-4 py-2 text-center"
+                >
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Response window
+                  </p>
+
+                  <p className="mt-1 text-2xl font-semibold">
+                    {secondsRemaining}s
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {activeQuestion ? (
+              <div className="mt-6">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Live question
                 </p>
 
-                <p className="mt-2 break-all text-sm font-medium">
+                <p className="mt-2 text-lg font-medium">
                   {
-                    sessionState.active_question_id
+                    activeQuestion.prompt
                   }
                 </p>
-              </>
+
+                {activeQuestion.options &&
+                  activeQuestion.options
+                    .length > 0 && (
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                      {activeQuestion.options.map(
+                        (
+                          option,
+                          index,
+                        ) => (
+                          <div
+                            key={`${index}-${option}`}
+                            className="rounded-md border border-border p-4"
+                          >
+                            <span className="mr-2 font-semibold">
+                              {String.fromCharCode(
+                                65 +
+                                  index,
+                              )}
+                              .
+                            </span>
+
+                            {option}
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  )}
+
+                <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
+                  <span>
+                    Window:{' '}
+                    {
+                      activeQuestion.window_seconds
+                    }
+                    s
+                  </span>
+
+                  {activeQuestion.source_slide !==
+                    null && (
+                    <span>
+                      Source slide:{' '}
+                      {
+                        activeQuestion.source_slide
+                      }
+                    </span>
+                  )}
+                </div>
+              </div>
+            ) : closedQuestion ? (
+              <div className="mt-6 rounded-md border border-border p-5">
+                <p className="font-medium">
+                  {closeReasonLabel(
+                    closedQuestion.reason,
+                  )}
+                </p>
+
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Responses received:{' '}
+                  {
+                    closedQuestion.respondents
+                  }{' '}
+                  of{' '}
+                  {
+                    closedQuestion.eligible
+                  }{' '}
+                  eligible students.
+                </p>
+              </div>
             ) : (
-              <p className="mt-2 text-sm text-muted-foreground">
+              <p className="mt-6 text-sm text-muted-foreground">
                 No active question.
               </p>
             )}
-
-            <p className="mt-4 text-sm text-muted-foreground">
-              Questions delivered:{' '}
-              {sessionState?.questions_delivered ??
-                0}
-            </p>
 
             <button
               type="button"
@@ -390,12 +603,31 @@ export default function LecturerLiveSessionPage() {
             </h2>
 
             <p className="mt-2 text-sm text-muted-foreground">
-              Results will appear when response
-              data becomes available.
+              Detailed response results
+              will appear when response
+              persistence is available.
             </p>
+
+            {closedQuestion && (
+              <div className="mt-5">
+                <p className="text-3xl font-semibold">
+                  {
+                    closedQuestion.respondents
+                  }
+                  /
+                  {
+                    closedQuestion.eligible
+                  }
+                </p>
+
+                <p className="mt-1 text-sm text-muted-foreground">
+                  students responded
+                </p>
+              </div>
+            )}
           </section>
 
-          <section className="rounded-xl border border-border bg-card p-6 lg:col-span-2">
+          <section className="rounded-xl border border-border bg-card p-6">
             <h2 className="text-lg font-semibold">
               Alerts
             </h2>
