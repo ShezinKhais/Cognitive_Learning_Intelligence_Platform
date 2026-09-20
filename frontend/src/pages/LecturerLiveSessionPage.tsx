@@ -1,6 +1,15 @@
+import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 
+import { ApiError } from '../api'
 import SignOutButton from '../components/SignOutButton'
+import {
+  endSession,
+  pauseSession,
+  resumeSession,
+  startSession,
+  type SessionLifecycleAction,
+} from '../features/live/sessionActions'
 import { useLiveSession } from '../features/live/useLiveSession'
 
 function connectionLabel(status: string): string {
@@ -32,6 +41,27 @@ function sessionLabel(
   )
 }
 
+function questionCycleLabel(
+  status: string | undefined,
+  paused: boolean | undefined,
+): string {
+  if (!status) {
+    return 'Waiting...'
+  }
+
+  if (status === 'prepared') {
+    return 'Not started'
+  }
+
+  if (status === 'active') {
+    return paused
+      ? 'Paused'
+      : 'Running'
+  }
+
+  return 'Stopped'
+}
+
 export default function LecturerLiveSessionPage() {
   const { sessionId } =
     useParams<{ sessionId: string }>()
@@ -40,6 +70,80 @@ export default function LecturerLiveSessionPage() {
     connectionStatus,
     sessionState,
   } = useLiveSession(sessionId)
+
+  const [
+    actionInProgress,
+    setActionInProgress,
+  ] =
+    useState<SessionLifecycleAction | null>(
+      null,
+    )
+
+  const [
+    actionError,
+    setActionError,
+  ] = useState<string | null>(null)
+
+  async function handleSessionAction(
+    action: SessionLifecycleAction,
+  ) {
+    if (!sessionId) {
+      return
+    }
+
+    setActionError(null)
+    setActionInProgress(action)
+
+    try {
+      if (action === 'start') {
+        await startSession(sessionId)
+      } else if (action === 'pause') {
+        await pauseSession(sessionId)
+      } else if (action === 'resume') {
+        await resumeSession(sessionId)
+      } else {
+        await endSession(sessionId)
+      }
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setActionError(error.message)
+      } else {
+        setActionError(
+          'The session action could not be completed.',
+        )
+      }
+    } finally {
+      setActionInProgress(null)
+    }
+  }
+
+  const isBusy =
+    actionInProgress !== null
+
+  const canStart =
+    connectionStatus === 'connected' &&
+    sessionState?.status === 'prepared' &&
+    !isBusy
+
+  const canPause =
+    connectionStatus === 'connected' &&
+    sessionState?.status === 'active' &&
+    !sessionState.paused &&
+    !isBusy
+
+  const canResume =
+    connectionStatus === 'connected' &&
+    sessionState?.status === 'active' &&
+    sessionState.paused &&
+    !isBusy
+
+  const canEnd =
+    connectionStatus === 'connected' &&
+    (
+      sessionState?.status === 'prepared' ||
+      sessionState?.status === 'active'
+    ) &&
+    !isBusy
 
   return (
     <main className="min-h-screen bg-background">
@@ -118,42 +222,112 @@ export default function LecturerLiveSessionPage() {
               </p>
 
               <p className="mt-1 font-medium">
-                {!sessionState
-  ? 'Waiting...'
-  : sessionState.status === 'prepared'
-    ? 'Not started'
-    : sessionState.status === 'active'
-      ? sessionState.paused
-        ? 'Paused'
-        : 'Running'
-      : 'Stopped'}
+                {questionCycleLabel(
+                  sessionState?.status,
+                  sessionState?.paused,
+                )}
               </p>
             </div>
 
+            {actionError && (
+              <div
+                role="alert"
+                className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+              >
+                {actionError}
+              </div>
+            )}
+
             <div className="mt-5 flex flex-wrap gap-3">
-              <button
-                type="button"
-                disabled
-                className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Start Session
-              </button>
+              {sessionState?.status ===
+                'prepared' && (
+                <button
+                  type="button"
+                  disabled={!canStart}
+                  onClick={() =>
+                    void handleSessionAction(
+                      'start',
+                    )
+                  }
+                  className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {actionInProgress ===
+                  'start'
+                    ? 'Starting...'
+                    : 'Start Session'}
+                </button>
+              )}
 
-              <button
-                type="button"
-                disabled
-                className="rounded-md border border-border px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Pause Session
-              </button>
+              {sessionState?.status ===
+                'active' &&
+                !sessionState.paused && (
+                  <button
+                    type="button"
+                    disabled={!canPause}
+                    onClick={() =>
+                      void handleSessionAction(
+                        'pause',
+                      )
+                    }
+                    className="rounded-md border border-border px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {actionInProgress ===
+                    'pause'
+                      ? 'Pausing...'
+                      : 'Pause Session'}
+                  </button>
+                )}
 
-              <button
-                type="button"
-                disabled
-                className="rounded-md border border-border px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                End Session
-              </button>
+              {sessionState?.status ===
+                'active' &&
+                sessionState.paused && (
+                  <button
+                    type="button"
+                    disabled={!canResume}
+                    onClick={() =>
+                      void handleSessionAction(
+                        'resume',
+                      )
+                    }
+                    className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {actionInProgress ===
+                    'resume'
+                      ? 'Resuming...'
+                      : 'Resume Session'}
+                  </button>
+                )}
+
+              {(sessionState?.status ===
+                'prepared' ||
+                sessionState?.status ===
+                  'active') && (
+                <button
+                  type="button"
+                  disabled={!canEnd}
+                  onClick={() =>
+                    void handleSessionAction(
+                      'end',
+                    )
+                  }
+                  className="rounded-md border border-border px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {actionInProgress ===
+                  'end'
+                    ? 'Ending...'
+                    : 'End Session'}
+                </button>
+              )}
+
+              {(sessionState?.status ===
+                'ended' ||
+                sessionState?.status ===
+                  'cancelled') && (
+                <p className="text-sm text-muted-foreground">
+                  This session is no longer
+                  active.
+                </p>
+              )}
             </div>
           </section>
 
