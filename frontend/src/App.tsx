@@ -20,7 +20,12 @@ import SystemStatusPage from './pages/SystemStatusPage'
 
 const home = (
   <RoleGate allow={['student', 'lecturer', 'admin']}>
-    {(user) => <Navigate to={defaultPathForRole(user.role)} replace />}
+    {(user) => (
+      <Navigate
+        to={defaultPathForRole(user.role)}
+        replace
+      />
+    )}
   </RoleGate>
 )
 
@@ -56,14 +61,35 @@ export default function App() {
         }
       />
 
-      <Route element={<RoleGate allow={['admin']}>{() => <Outlet />}</RoleGate>}>
+      <Route
+        path="/student/session/:sessionId"
+        element={
+          <StudentAppProvider>
+            <ProtectedStudentPage />
+          </StudentAppProvider>
+        }
+      />
+
+      <Route
+        element={
+          <RoleGate allow={['admin']}>
+            {() => <Outlet />}
+          </RoleGate>
+        }
+      >
         <Route
           path="/admin"
           element={<AdminConsole />}
         />
       </Route>
 
-      <Route element={<RoleGate allow={['lecturer', 'admin']}>{() => <Outlet />}</RoleGate>}>
+      <Route
+        element={
+          <RoleGate allow={['lecturer', 'admin']}>
+            {() => <Outlet />}
+          </RoleGate>
+        }
+      >
         <Route
           path="/lecturer"
           element={
