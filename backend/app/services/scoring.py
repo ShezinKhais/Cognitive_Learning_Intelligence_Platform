@@ -17,6 +17,7 @@ from uuid import UUID
 
 from app.core.errors import ValidationError
 from app.models.question import Question
+from app.schemas.content import QuestionType
 from app.schemas.events import FeedbackResultPayload
 
 
@@ -58,7 +59,7 @@ class FreeTextClassifier(Protocol):
 def score_mcq(question: Question, selected_option: int) -> MCQScoreResult:
     """Score one answer against an approved multiple-choice question."""
 
-    if question.question_type != "mcq":
+    if question.question_type != QuestionType.MCQ:
         raise ValidationError(
             "This scorer only accepts multiple-choice questions.",
             {"question_type": question.question_type},
@@ -120,15 +121,12 @@ def score_mcq(question: Question, selected_option: int) -> MCQScoreResult:
     )
 
 
-# End of validation checks for the question before scoring
 def build_mcq_feedback(result: MCQScoreResult) -> FeedbackResult:
-    """Build immediate source-grounded feedback from an MCQ score."""
+    """Build immediate source-grounded feedback from an MCQ score.
 
-    if result.source_slide is None:
-        raise ValidationError("MCQ feedback requires a source slide or page.")
-
-    if not result.source_excerpt:
-        raise ValidationError("MCQ feedback requires a source excerpt.")
+    Assumes result came from score_mcq, which already guarantees source_slide
+    and source_excerpt are populated.
+    """
 
     if result.is_correct:
         message = f"Correct. See slide/page {result.source_slide} for the supporting material."
