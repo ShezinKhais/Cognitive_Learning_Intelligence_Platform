@@ -58,6 +58,15 @@ export default function App() {
         }
       />
 
+      <Route
+        path="/student/session/:sessionId"
+        element={
+          <StudentAppProvider>
+            <ProtectedStudentPage />
+          </StudentAppProvider>
+        }
+      />
+
       {/* The guard is a layout route, so the role check runs before
           AdminConsole mounts and no admin-only markup renders for a
           student who types the URL. */}

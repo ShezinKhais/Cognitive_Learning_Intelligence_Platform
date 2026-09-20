@@ -1,15 +1,15 @@
 import SignOutButton from '../components/SignOutButton'
 import { useStudentApp } from '../features/student/StudentAppContext'
+import { LIVE_SESSIONS_ENABLED } from '../features/student/studentApi'
 import type { StudentSession } from '../features/student/types'
+import { Link } from 'react-router'
 
 export default function StudentHomePage() {
   const {
     authStatus,
     currentUser,
     sessions,
-    selectedSessionId,
     error,
-    selectSession,
   } = useStudentApp()
 
   if (authStatus === 'checking') {
@@ -84,15 +84,17 @@ export default function StudentHomePage() {
           </div>
         </header>
 
-        <div
-          role="status"
-          className="mt-8 rounded-xl border border-info/20 bg-card p-4 text-sm"
-        >
-          <span className="font-semibold text-info">
-            Mock data:
-          </span>{' '}
-          The Phase 3 session endpoints are not implemented yet.
-        </div>
+        {!LIVE_SESSIONS_ENABLED && (
+          <div
+            role="status"
+            className="mt-8 rounded-xl border border-info/20 bg-card p-4 text-sm"
+          >
+            <span className="font-semibold text-info">
+              Integration preview:
+            </span>{' '}
+            Session discovery uses contract-shaped sample data until the Phase 3 backend is enabled.
+          </div>
+        )}
 
         <section
           className="mt-8"
@@ -121,12 +123,6 @@ export default function StudentHomePage() {
                 <li key={session.id}>
                   <SessionCard
                     session={session}
-                    selected={
-                      selectedSessionId === session.id
-                    }
-                    onSelect={() =>
-                      selectSession(session.id)
-                    }
                   />
                 </li>
               ))}
@@ -140,13 +136,11 @@ export default function StudentHomePage() {
 
 function SessionCard({
   session,
-  selected,
-  onSelect,
 }: {
   session: StudentSession
-  selected: boolean
-  onSelect: () => void
 }) {
+  const joinable = session.status === 'prepared' || session.status === 'active'
+
   return (
     <article className="rounded-xl border border-border bg-card p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -167,14 +161,18 @@ function SessionCard({
         {formatStart(session.starts_at)}
       </p>
 
-      <button
-        type="button"
-        aria-pressed={selected}
-        onClick={onSelect}
-        className="mt-5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-      >
-        {selected ? 'Session selected' : 'Select session'}
-      </button>
+      {joinable ? (
+        <Link
+          to={`/student/session/${session.id}`}
+          className="mt-5 inline-flex rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+        >
+          {session.status === 'active' ? 'Join live session' : 'Open waiting room'}
+        </Link>
+      ) : (
+        <span className="mt-5 inline-flex rounded-lg bg-muted px-4 py-2 text-sm font-medium text-muted-foreground">
+          Session {session.status}
+        </span>
+      )}
     </article>
   )
 }
