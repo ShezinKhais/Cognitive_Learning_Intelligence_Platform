@@ -72,14 +72,10 @@ def process_submission(
     """
 
     if selected_option is not None and free_text is not None:
-        raise ValidationError(
-            "A response cannot contain both an MCQ option and free text."
-        )
+        raise ValidationError("A response cannot contain both an MCQ option and free text.")
 
     if selected_option is None and free_text is None:
-        raise ValidationError(
-            "A response must contain an answer."
-        )
+        raise ValidationError("A response must contain an answer.")
 
     if selected_option is not None:
         return process_mcq_submission(

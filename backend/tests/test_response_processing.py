@@ -54,9 +54,7 @@ def test_process_mcq_submission_returns_correct_feedback():
 
     assert payload.question_id == question.question_id
     assert payload.correct is True
-    assert payload.explanation == (
-        "Correct. See slide/page 4 for the supporting material."
-    )
+    assert payload.explanation == ("Correct. See slide/page 4 for the supporting material.")
     assert payload.source_slide == 4
 
 
@@ -102,6 +100,7 @@ def test_process_mcq_submission_rejects_question_not_yet_delivered():
             question=question,
             selected_option=1,
         )
+
 
 def test_process_submission_routes_mcq_to_mcq_processor():
     session_id = uuid.uuid4()
