@@ -343,6 +343,85 @@ class LiveEventRepository:
 
         return list(result.scalars().all()), total
 
+    async def list_participants(
+        self,
+        *,
+        session_id: uuid.UUID,
+    ) -> list[SessionParticipant]:
+        result = await self.session.execute(
+            select(SessionParticipant)
+            .where(SessionParticipant.session_id == session_id)
+            .order_by(
+                SessionParticipant.joined_at,
+                SessionParticipant.participant_id,
+            )
+        )
+        return list(result.scalars().all())
+
+    async def list_deliveries(
+        self,
+        *,
+        session_id: uuid.UUID,
+    ) -> list[DeliveredQuestion]:
+        result = await self.session.execute(
+            select(DeliveredQuestion)
+            .where(DeliveredQuestion.session_id == session_id)
+            .order_by(
+                DeliveredQuestion.delivered_at,
+                DeliveredQuestion.delivery_id,
+            )
+        )
+        return list(result.scalars().all())
+
+    async def list_missed_responses(
+        self,
+        *,
+        session_id: uuid.UUID,
+    ) -> list[MissedResponse]:
+        result = await self.session.execute(
+            select(MissedResponse)
+            .join(
+                DeliveredQuestion,
+                DeliveredQuestion.delivery_id == MissedResponse.delivery_id,
+            )
+            .where(DeliveredQuestion.session_id == session_id)
+            .order_by(
+                MissedResponse.recorded_at,
+                MissedResponse.missed_response_id,
+            )
+        )
+        return list(result.scalars().all())
+
+    async def list_prompt_outcomes(
+        self,
+        *,
+        session_id: uuid.UUID,
+    ) -> list[DynamicPrompt]:
+        result = await self.session.execute(
+            select(DynamicPrompt)
+            .where(DynamicPrompt.session_id == session_id)
+            .order_by(
+                DynamicPrompt.sent_at,
+                DynamicPrompt.prompt_id,
+            )
+        )
+        return list(result.scalars().all())
+
+    async def list_activities(
+        self,
+        *,
+        session_id: uuid.UUID,
+    ) -> list[SessionActivity]:
+        result = await self.session.execute(
+            select(SessionActivity)
+            .where(SessionActivity.session_id == session_id)
+            .order_by(
+                SessionActivity.occurred_at,
+                SessionActivity.activity_id,
+            )
+        )
+        return list(result.scalars().all())
+
     async def dashboard_counts(
         self,
         session_id: uuid.UUID,

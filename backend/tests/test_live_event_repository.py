@@ -201,9 +201,30 @@ async def test_live_events_are_stored_and_retrievable_by_session(
         limit=20,
         offset=0,
     )
+    participants = await repository.list_participants(
+        session_id=session.session_id,
+    )
+    deliveries = await repository.list_deliveries(
+        session_id=session.session_id,
+    )
+    missed_responses = await repository.list_missed_responses(
+        session_id=session.session_id,
+    )
+    prompt_outcomes = await repository.list_prompt_outcomes(
+        session_id=session.session_id,
+    )
+    activities = await repository.list_activities(
+        session_id=session.session_id,
+    )
     counts = await repository.dashboard_counts(session.session_id)
 
     assert total == 1
+    assert [item.participant_id for item in participants] == [first_join.participant_id]
+    assert [item.delivery_id for item in deliveries] == [delivery.delivery_id]
+    assert len(missed_responses) == 1
+    assert missed_responses[0].student_id == second_student.student_id
+    assert [item.prompt_id for item in prompt_outcomes] == [prompt.prompt_id]
+    assert [item.activity_id for item in activities] == [activity.activity_id]
     assert [item.response_id for item in responses] == [response.response_id]
     assert counts.participants == 1
     assert counts.delivered_questions == 1
