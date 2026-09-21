@@ -21,8 +21,16 @@ def app() -> FastAPI:
 
 
 @pytest.fixture(scope="session")
-def client(app: FastAPI) -> TestClient:
-    return TestClient(app)
+def client(app: FastAPI):
+    """Keep one AnyIO portal and event loop for the shared async DB engine.
+
+    Using TestClient outside its context manager creates a fresh portal for
+    each request.  The cached SQLAlchemy engine can then return an asyncpg
+    connection that belongs to a portal which has already closed, making the
+    readiness check intermittently report 503 in CI.
+    """
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 @pytest.fixture(autouse=True)
