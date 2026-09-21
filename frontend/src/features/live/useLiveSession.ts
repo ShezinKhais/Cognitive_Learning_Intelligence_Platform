@@ -88,6 +88,7 @@ interface UseLiveSessionResult {
   closedQuestion: ClosedQuestion | null
   alerts: LiveAlert[]
   sessionNotice: LiveSessionNotice | null
+  acknowledgeAlert: (alertId: string) => void
 }
 
 function liveSocketUrl(): string {
@@ -478,14 +479,6 @@ export function useLiveSession(
 
             setClosedQuestion(null)
 
-            setSessionNotice(
-              (current) =>
-                current?.code ===
-                'NO_STAGED_QUESTION'
-                  ? null
-                  : current,
-            )
-
             return
           }
 
@@ -651,6 +644,19 @@ export function useLiveSession(
     }
   }, [sessionId])
 
+  function acknowledgeAlert(
+    alertId: string,
+  ) {
+    setAlerts(
+      (current) =>
+        current.filter(
+          (alert) =>
+            alert.alert_id !==
+            alertId,
+        ),
+    )
+  }
+
   return {
     connectionStatus,
     sessionState,
@@ -658,5 +664,6 @@ export function useLiveSession(
     closedQuestion,
     alerts,
     sessionNotice,
+    acknowledgeAlert,
   }
 }

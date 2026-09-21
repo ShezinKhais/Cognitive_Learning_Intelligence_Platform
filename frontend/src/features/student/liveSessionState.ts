@@ -83,7 +83,9 @@ export function liveSessionReducer(
       return {
         ...state,
         sessionStatus: action.payload.status,
-        participantCount: action.payload.participant_count,
+        participantCount: sessionEnded
+          ? 0
+          : action.payload.participant_count,
         questionsDelivered: action.payload.questions_delivered,
         checkpoint:
           sessionEnded && checkpoint?.phase === 'answering'

@@ -127,6 +127,37 @@ test('a private attention prompt clears only when its matching id is acknowledge
   assert.equal(state.attentionPrompt, null)
 })
 
+test('an ended session clears the live participant count', () => {
+  let state = initialLiveSessionState('active')
+
+  state = liveSessionReducer(state, {
+    type: 'session-state',
+    payload: {
+      session_id: 'session-1',
+      status: 'active',
+      participant_count: 1,
+      active_question_id: null,
+      questions_delivered: 1,
+    },
+  })
+
+  assert.equal(state.participantCount, 1)
+
+  state = liveSessionReducer(state, {
+    type: 'session-state',
+    payload: {
+      session_id: 'session-1',
+      status: 'ended',
+      participant_count: 1,
+      active_question_id: null,
+      questions_delivered: 1,
+    },
+  })
+
+  assert.equal(state.sessionStatus, 'ended')
+  assert.equal(state.participantCount, 0)
+})
+
 test('the countdown is derived from the server close time and clamps at zero', () => {
   assert.equal(
     remainingResponseSeconds('2026-09-20T10:00:30.000Z', Date.parse('2026-09-20T10:00:00.000Z')),

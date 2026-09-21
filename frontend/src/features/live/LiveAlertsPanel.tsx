@@ -7,6 +7,7 @@ import type {
 interface LiveAlertsPanelProps {
   alerts: LiveAlert[]
   sessionNotice: LiveSessionNotice | null
+  onAcknowledge: (alertId: string) => void
 }
 
 function alertKindLabel(
@@ -24,21 +25,15 @@ function alertKindLabel(
 }
 
 function noticeTitle(
-  notice: LiveSessionNotice,
+  _notice: LiveSessionNotice,
 ): string {
-  if (
-    notice.code ===
-    'NO_STAGED_QUESTION'
-  ) {
-    return 'Question cycle needs attention'
-  }
-
   return 'Live session notice'
 }
 
 export default function LiveAlertsPanel({
   alerts,
   sessionNotice,
+  onAcknowledge,
 }: LiveAlertsPanelProps) {
   const hasAnything =
     sessionNotice !== null ||
@@ -125,6 +120,20 @@ export default function LiveAlertsPanel({
                 <p className="mt-3 text-sm text-muted-foreground">
                   {alert.reason}
                 </p>
+
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onAcknowledge(
+                        alert.alert_id,
+                      )
+                    }
+                    className="rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted"
+                  >
+                    Acknowledge
+                  </button>
+                </div>
               </article>
             ),
           )}

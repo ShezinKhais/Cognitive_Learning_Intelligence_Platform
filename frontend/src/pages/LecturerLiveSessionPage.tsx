@@ -129,6 +129,7 @@ export default function LecturerLiveSessionPage() {
   closedQuestion,
   alerts,
   sessionNotice,
+  acknowledgeAlert,
 } = useLiveSession(sessionId)
   const [
     actionInProgress,
@@ -474,12 +475,22 @@ export default function LecturerLiveSessionPage() {
             </h2>
 
             <p className="mt-2 text-sm text-muted-foreground">
-              Currently connected students
+              {sessionState?.status === 'prepared'
+                ? 'Connected and waiting for the session to start'
+                : sessionState?.status === 'active'
+                  ? 'Currently connected students'
+                  : sessionState?.status === 'ended'
+                    ? 'Session ended'
+                    : sessionState?.status === 'cancelled'
+                      ? 'Session cancelled'
+                      : 'Waiting for session state'}
             </p>
 
             <p className="mt-5 text-3xl font-semibold">
-              {sessionState?.participant_count ??
-                '—'}
+              {sessionState?.status === 'ended' ||
+              sessionState?.status === 'cancelled'
+                ? 0
+                : (sessionState?.participant_count ?? '—')}
             </p>
           </section>
 
@@ -487,7 +498,7 @@ export default function LecturerLiveSessionPage() {
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h2 className="text-lg font-semibold">
-                  Current Question
+                  Checkpoint Monitor
                 </h2>
 
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -514,64 +525,66 @@ export default function LecturerLiveSessionPage() {
             </div>
 
             {activeQuestion ? (
-              <div className="mt-6">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Live question
-                </p>
+              <div className="mt-6 rounded-xl border border-border bg-muted/30 p-5">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-info">
+                      Checkpoint in progress
+                    </p>
 
-                <p className="mt-2 text-lg font-medium">
-                  {
-                    activeQuestion.prompt
-                  }
-                </p>
+                    <p className="mt-2 text-lg font-semibold">
+                      Question{' '}
+                      {sessionState?.questions_delivered ?? 1}
+                    </p>
 
-                {activeQuestion.options &&
-                  activeQuestion.options
-                    .length > 0 && (
-                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                      {activeQuestion.options.map(
-                        (
-                          option,
-                          index,
-                        ) => (
-                          <div
-                            key={`${index}-${option}`}
-                            className="rounded-md border border-border p-4"
-                          >
-                            <span className="mr-2 font-semibold">
-                              {String.fromCharCode(
-                                65 +
-                                  index,
-                              )}
-                              .
-                            </span>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      This checkpoint is currently open for connected students.
+                    </p>
+                  </div>
 
-                            {option}
-                          </div>
-                        ),
-                      )}
-                    </div>
-                  )}
-
-                <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
-                  <span>
-                    Window:{' '}
-                    {
-                      activeQuestion.window_seconds
-                    }
-                    s
-                  </span>
-
-                  {activeQuestion.source_slide !==
-                    null && (
-                    <span>
-                      Source slide:{' '}
-                      {
-                        activeQuestion.source_slide
-                      }
+                  {activeQuestion.source_slide !== null && (
+                    <span className="rounded-full bg-background px-3 py-1 text-xs font-medium text-muted-foreground">
+                      Source slide {activeQuestion.source_slide}
                     </span>
                   )}
                 </div>
+
+                <details className="mt-5 rounded-lg border border-border bg-background">
+                  <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
+                    View question
+                  </summary>
+
+                  <div className="border-t border-border px-4 py-4">
+                    <p className="font-medium">
+                      {activeQuestion.prompt}
+                    </p>
+
+                    {activeQuestion.options &&
+                      activeQuestion.options.length > 0 && (
+                        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                          {activeQuestion.options.map(
+                            (option, index) => (
+                              <div
+                                key={`${index}-${option}`}
+                                className="rounded-md border border-border p-3 text-sm"
+                              >
+                                <span className="mr-2 font-semibold">
+                                  {String.fromCharCode(65 + index)}.
+                                </span>
+
+                                {option}
+                              </div>
+                            ),
+                          )}
+                        </div>
+                      )}
+
+                    <p className="mt-4 text-xs text-muted-foreground">
+                      Response window:{' '}
+                      {activeQuestion.window_seconds}s
+                    </p>
+                  </div>
+                </details>
               </div>
             ) : closedQuestion ? (
               <div className="mt-6 rounded-md border border-border p-5">
@@ -638,9 +651,12 @@ export default function LecturerLiveSessionPage() {
           </section>
 
           <LiveAlertsPanel
-  alerts={alerts}
-  sessionNotice={sessionNotice}
-/>
+            alerts={alerts}
+            sessionNotice={sessionNotice}
+            onAcknowledge={
+              acknowledgeAlert
+            }
+          />
         </div>
       </div>
     </main>

@@ -240,6 +240,7 @@ async def session_socket(
     user_id, role, session_id, last_seq, stream_id = identity
 
     welcome = None
+    recorded: SessionStatus | None = None
     if session_id is not None:
         # A valid JWT alone does not authorize an arbitrary session.
         try:
@@ -286,9 +287,32 @@ async def session_socket(
         role=role,
     )
 
+    student_session_id = (
+        session_id
+        if session_id is not None and role is Role.STUDENT
+        else None
+    )
+
+    students_before_connect = (
+        len(hub.student_ids(student_session_id))
+        if student_session_id is not None
+        else None
+    )
+
     try:
         if not await hub.connect(connection, last_seq, stream_id, welcome):
             return
+
+        if (
+            student_session_id is not None
+            and recorded is not None
+            and students_before_connect is not None
+            and len(hub.student_ids(student_session_id)) != students_before_connect
+        ):
+            await classroom.announce_presence(
+                student_session_id,
+                recorded,
+            )
 
         while True:
             raw = await _receive_event(websocket)
@@ -374,4 +398,21 @@ async def session_socket(
             user_id,
         )
     finally:
+        students_before_leave = (
+            len(hub.student_ids(student_session_id))
+            if student_session_id is not None
+            else None
+        )
+
         await hub.leave(connection)
+
+        if (
+            student_session_id is not None
+            and recorded is not None
+            and students_before_leave is not None
+            and len(hub.student_ids(student_session_id)) != students_before_leave
+        ):
+            await classroom.announce_presence(
+                student_session_id,
+                recorded,
+            )

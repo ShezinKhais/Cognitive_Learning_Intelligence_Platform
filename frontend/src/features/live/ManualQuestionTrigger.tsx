@@ -142,7 +142,7 @@ export default function ManualQuestionTrigger({
         }
         className="mt-5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
       >
-        Trigger Question
+        Send checkpoint now
       </button>
     )
   }
@@ -152,12 +152,12 @@ export default function ManualQuestionTrigger({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="font-semibold">
-            Manual Question Trigger
+            Send checkpoint now
           </h3>
 
           <p className="mt-1 text-sm text-muted-foreground">
-            Select a staged question to
-            send to the class now.
+            Automatic checkpoints normally run in the background.
+            Use this only when you want to send an approved question immediately.
           </p>
         </div>
 
@@ -280,7 +280,7 @@ export default function ManualQuestionTrigger({
           >
             {delivering
               ? 'Delivering...'
-              : 'Send Question'}
+              : 'Send checkpoint now'}
           </button>
         </>
       )}

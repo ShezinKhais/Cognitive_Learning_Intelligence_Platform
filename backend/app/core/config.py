@@ -88,9 +88,11 @@ class Settings(BaseSettings):
     client_secret: str = ""
     tenant_id: str = ""
 
-    # Session behaviour. An interval of 0 turns the automatic question cycle
-    # off, so questions go out only when the lecturer sends one.
-    checkpoint_interval_seconds: int = Field(default=1200, ge=0)
+    # Session behaviour. The automatic checkpoint scheduler chooses a fresh
+    # class-wide delay between these bounds after each checkpoint. Setting
+    # both values to 0 disables automatic delivery.
+    checkpoint_min_interval_seconds: int = Field(default=900, ge=0)
+    checkpoint_max_interval_seconds: int = Field(default=1200, ge=0)
     checkpoint_response_window_seconds: int = Field(default=30, ge=1)
     comprehension_alert_threshold: float = 0.50
     comprehension_alert_min_respondents: int = 5
@@ -134,18 +136,30 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _check_question_timing(self) -> "Settings":
-        """The cycle must leave each question time to close before the next.
+        """Validate the randomized gap between completed checkpoints.
 
-        With the interval at or below the window, every scheduled delivery
-        finds the last question still open and is skipped, so the class gets
-        one question and the cycle then does nothing.
+        Both interval bounds at zero disable automatic delivery. Otherwise
+        both bounds must be enabled and the minimum cannot exceed the maximum.
+
+        The interval does not need to exceed the response window because the
+        scheduler starts this gap only after the current checkpoint closes.
         """
-        interval = self.checkpoint_interval_seconds
-        if interval and interval <= self.checkpoint_response_window_seconds:
+        minimum = self.checkpoint_min_interval_seconds
+        maximum = self.checkpoint_max_interval_seconds
+
+        if (minimum == 0) != (maximum == 0):
             raise ValueError(
-                "CHECKPOINT_INTERVAL_SECONDS must be 0 (manual delivery only) or longer "
-                "than CHECKPOINT_RESPONSE_WINDOW_SECONDS"
+                "CHECKPOINT_MIN_INTERVAL_SECONDS and "
+                "CHECKPOINT_MAX_INTERVAL_SECONDS must both be 0 "
+                "or both be enabled"
             )
+
+        if minimum > maximum:
+            raise ValueError(
+                "CHECKPOINT_MIN_INTERVAL_SECONDS cannot be greater than "
+                "CHECKPOINT_MAX_INTERVAL_SECONDS"
+            )
+
         return self
 
     @model_validator(mode="after")

@@ -88,7 +88,10 @@ function LiveSessionPanel({ session }: { session: StudentSession }) {
               </h1>
             </div>
 
-            <ConnectionBadge status={state.connection} />
+            {state.sessionStatus !== 'ended' &&
+              state.sessionStatus !== 'cancelled' && (
+                <ConnectionBadge status={state.connection} />
+              )}
           </div>
 
           <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 border-t border-border pt-4 text-sm text-muted-foreground">
@@ -129,7 +132,13 @@ function LiveSessionPanel({ session }: { session: StudentSession }) {
         )}
 
         <section className="mt-5" aria-live="polite">
-          {state.checkpoint ? (
+          {state.checkpoint &&
+          !state.checkpoint.closed &&
+          (
+            state.checkpoint.phase === 'answering' ||
+            state.checkpoint.phase === 'rejected' ||
+            state.checkpoint.phase === 'submitting'
+          ) ? (
             <CheckpointCard
               checkpoint={state.checkpoint}
               secondsRemaining={secondsRemaining}

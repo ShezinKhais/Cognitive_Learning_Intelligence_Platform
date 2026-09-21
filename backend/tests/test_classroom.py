@@ -101,7 +101,8 @@ def _room(
 ) -> tuple[Classroom, SessionHub]:
     events = SessionHub()
     settings = SimpleNamespace(
-        checkpoint_interval_seconds=interval,
+        checkpoint_min_interval_seconds=interval,
+        checkpoint_max_interval_seconds=interval,
         checkpoint_response_window_seconds=window,
         dynamic_prompt_max_per_student=prompts,
         attention_prompt_ttl_seconds=prompt_ttl,
@@ -109,6 +110,23 @@ def _room(
     )
     room = Classroom(events=events, sessions=lambda: _Db, settings=lambda: settings)
     return room, events
+
+
+def test_the_scheduler_can_choose_a_delay_inside_the_configured_range(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    room, _ = _room()
+    settings = room._settings()
+    settings.checkpoint_min_interval_seconds = 900
+    settings.checkpoint_max_interval_seconds = 1200
+
+    monkeypatch.setattr(
+        classroom_module.random,
+        "uniform",
+        lambda minimum, maximum: 1037.0,
+    )
+
+    assert room._next_interval() == timedelta(seconds=1037)
 
 
 def _row(session_id: UUID | None = None) -> SimpleNamespace:
@@ -421,6 +439,19 @@ async def test_the_cycle_delivers_the_next_question_on_its_own() -> None:
 
     assert len(socket.of(ServerEventType.QUESTION_DELIVERED)) == 2
     assert len(socket.of(ServerEventType.QUESTION_CLOSED)) == 2
+    await room.shutdown()
+
+
+async def test_the_next_wait_begins_after_the_response_window() -> None:
+    room, _ = _room(interval=10, window=2)
+    row = _row()
+    live = room.activate(row.session_id)
+
+    await _deliver(room, row)
+
+    assert live.open is not None
+    gap = (live.next_due - live.open.closes_at).total_seconds()
+    assert 9.9 <= gap <= 10.1
     await room.shutdown()
 
 
@@ -738,6 +769,36 @@ async def test_a_question_open_at_the_pause_runs_to_the_end_of_its_window() -> N
     await room.shutdown()
 
 
+async def test_pause_during_a_question_preserves_the_post_close_wait() -> None:
+    room, _ = _room(interval=10, window=0.05)
+    row = _row()
+    live = room.activate(row.session_id)
+
+    await _deliver(room, row)
+
+    assert live.open is not None
+
+    await room.pause(_Db(), row)  # type: ignore[arg-type]
+
+    # The question itself still finishes while the session is paused.
+    await asyncio.sleep(0.1)
+
+    assert live.open is None
+    assert live.paused
+    assert live.remaining is not None
+
+    await room.resume(_Db(), row)  # type: ignore[arg-type]
+
+    # Resume starts the preserved post-question wait from now rather
+    # than counting the paused time against it.
+    left = (live.next_due - datetime.now(UTC)).total_seconds()
+
+    assert 9 < left <= 10
+    assert live.remaining is None
+
+    await room.shutdown()
+
+
 async def test_a_session_paused_before_a_restart_stays_paused() -> None:
     room, _ = _room(interval=0.05)
     row = _row()
@@ -975,7 +1036,7 @@ async def test_missed_question_nudges_can_be_turned_off() -> None:
     await room.shutdown()
 
 
-async def test_staff_are_told_when_the_cycle_has_nothing_to_send() -> None:
+async def test_an_empty_question_queue_does_not_alert_the_class() -> None:
     room, events = _room(interval=0.1)
     row = _row()
     lecturer, _ = await _join(events, row.session_id, Role.LECTURER)
@@ -984,7 +1045,6 @@ async def test_staff_are_told_when_the_cycle_has_nothing_to_send() -> None:
     room.activate(row.session_id)
     await asyncio.sleep(0.15)
 
-    [notice] = lecturer.of(ServerEventType.ERROR)[:1]
-    assert (notice["seq"], notice["data"]["code"]) == (0, "NO_STAGED_QUESTION")
+    assert lecturer.of(ServerEventType.ERROR) == []
     assert student.of(ServerEventType.ERROR) == []
     await room.shutdown()

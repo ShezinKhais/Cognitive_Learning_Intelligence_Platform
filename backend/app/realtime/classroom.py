@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import random
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -67,10 +68,6 @@ RECORD_TIMEOUT_SECONDS = 5.0
 MAX_FINISHED_SESSIONS = 1024
 
 MAX_PROMPT_MESSAGE_LENGTH = 280
-
-# The error code staff receive when the cycle comes due with nothing staged.
-NO_STAGED_QUESTION = "NO_STAGED_QUESTION"
-
 
 @dataclass(frozen=True)
 class Submission:
@@ -201,8 +198,18 @@ class Classroom:
         self.prompt_recorder: PromptRecorder | None = None
 
     @property
-    def _interval(self) -> timedelta:
-        return timedelta(seconds=self._settings().checkpoint_interval_seconds)
+    def _automatic_cycle_enabled(self) -> bool:
+        return self._settings().checkpoint_max_interval_seconds > 0
+
+    def _next_interval(self) -> timedelta:
+        settings = self._settings()
+
+        seconds = random.uniform(
+            settings.checkpoint_min_interval_seconds,
+            settings.checkpoint_max_interval_seconds,
+        )
+
+        return timedelta(seconds=seconds)
 
     @property
     def _window(self) -> timedelta:
@@ -218,7 +225,7 @@ class Classroom:
         live = self._live.get(session_id)
         if live is None:
             live = self._live[session_id] = LiveSession(
-                session_id, delivered, self._interval, paused
+                session_id, delivered, self._next_interval(), paused
             )
             if not paused:
                 self._start_cycle(live)
@@ -259,7 +266,16 @@ class Classroom:
             row.paused_at = datetime.now(UTC)
             await db.commit()
             live.paused = True
-            live.remaining = max(live.next_due - datetime.now(UTC), timedelta(0))
+            if live.open is not None:
+                live.remaining = max(
+                    live.next_due - live.open.closes_at,
+                    timedelta(0),
+                )
+            else:
+                live.remaining = max(
+                    live.next_due - datetime.now(UTC),
+                    timedelta(0),
+                )
             _cancel(live.cycle)
             live.cycle = None
             await self._announce(live.session_id, SessionStatus.ACTIVE)
@@ -275,9 +291,18 @@ class Classroom:
             await db.commit()
             if live.paused:
                 live.paused = False
-                live.next_due = datetime.now(UTC) + (
-                    live.remaining if live.remaining is not None else self._interval
+                now = datetime.now(UTC)
+                remaining = (
+                    live.remaining
+                    if live.remaining is not None
+                    else self._next_interval()
                 )
+                anchor = (
+                    max(live.open.closes_at, now)
+                    if live.open is not None
+                    else now
+                )
+                live.next_due = anchor + remaining
                 live.remaining = None
                 self._start_cycle(live)
             await self._announce(live.session_id, SessionStatus.ACTIVE)
@@ -324,10 +349,11 @@ class Classroom:
                     await task
 
     def _start_cycle(self, live: LiveSession) -> None:
-        # An interval of 0 means the lecturer sends every question.
-        if self._interval > timedelta(0):
+        # Both interval bounds at 0 means questions are lecturer-triggered only.
+        if self._automatic_cycle_enabled:
             live.cycle = asyncio.create_task(
-                self._run_cycle(live), name=f"question-cycle-{live.session_id}"
+                self._run_cycle(live),
+                name=f"question-cycle-{live.session_id}",
             )
 
     # -- what a client sees -------------------------------------------------
@@ -348,6 +374,29 @@ class Classroom:
     async def announce(self, session_id: UUID, status: SessionStatus) -> None:
         """Tell the session its current state, as after a start."""
         await self._announce(session_id, status)
+
+    async def announce_presence(
+        self,
+        session_id: UUID,
+        recorded: SessionStatus,
+    ) -> None:
+        """Tell connected staff when the unique student count changes."""
+        if session_id in self._live:
+            status = SessionStatus.ACTIVE
+        elif session_id in self._finished:
+            return
+        else:
+            status = recorded
+
+        payload = self.state(session_id, status).model_dump(mode="json")
+
+        for staff_id in self._hub.staff_ids(session_id):
+            await self._hub.send_to_user(
+                session_id,
+                staff_id,
+                ServerEventType.SESSION_STATE,
+                payload,
+            )
 
     async def _announce(self, session_id: UUID, status: SessionStatus, delivered: int = 0) -> None:
         await self._hub.broadcast(
@@ -454,9 +503,10 @@ class Classroom:
                 present=self._hub.student_ids(row.session_id),
             )
             live.delivered += 1
-            # A manual question restarts the wait, so the cycle never sends
-            # another one moments after the lecturer did.
-            live.next_due = now + self._interval
+            # The next automatic wait begins only after this checkpoint's
+            # response window closes. Students therefore always receive the
+            # complete randomized gap between checkpoints.
+            live.next_due = payload.closes_at + self._next_interval()
             await self._hub.broadcast(
                 row.session_id, ServerEventType.QUESTION_DELIVERED, live.open.delivered
             )
@@ -464,6 +514,15 @@ class Classroom:
                 self._close_when_due(live, live.open),
                 name=f"response-window-{question.question_id}",
             )
+
+            if (
+                live.cycle is not None
+                and live.cycle is not asyncio.current_task()
+            ):
+                _cancel(live.cycle)
+                live.cycle = None
+                self._start_cycle(live)
+
         return payload
 
     async def _close_when_due(self, live: LiveSession, open_: _OpenQuestion) -> None:
@@ -492,26 +551,61 @@ class Classroom:
         )
 
     async def _run_cycle(self, live: LiveSession) -> None:
-        """Deliver the next staged question every checkpoint interval."""
+        """Run automatic checkpoint delivery for one active session.
+
+        The first checkpoint waits for the session's initial randomized
+        interval. After a checkpoint is delivered, deliver() anchors the next
+        deadline to that checkpoint's closes_at time, so the full randomized
+        interval occurs between response windows rather than between sends.
+        """
         while True:
             wait = (live.next_due - datetime.now(UTC)).total_seconds()
+
             if wait > 0:
-                # Woken early or late by a manual delivery moving next_due,
-                # the loop simply measures again.
                 await asyncio.sleep(wait)
                 continue
-            live.next_due = datetime.now(UTC) + self._interval
+
             try:
                 if not await self._deliver_on_schedule(live.session_id):
-                    # Ended by a call that found nothing running here, such as
-                    # an end racing a start. Nothing else will remove it.
                     if self._live.get(live.session_id) is live:
                         del self._live[live.session_id]
                     return
+
+                # When there was no staged question, no response window exists
+                # to establish the next deadline. Quietly try again after a
+                # fresh randomized interval.
+                if live.open is None:
+                    live.next_due = (
+                        datetime.now(UTC)
+                        + self._next_interval()
+                    )
+
             except ConflictError:
-                pass  # Paused, or the last question is still open.
+                # pause() cancels the cycle. This return also covers the small
+                # race where the cycle reached delivery at the same moment the
+                # lecturer paused.
+                if live.paused:
+                    return
+
+                # An already-open question has its own post-close deadline.
+                # For any other conflict, avoid retrying in a tight loop.
+                if live.open is None:
+                    live.next_due = (
+                        datetime.now(UTC)
+                        + self._next_interval()
+                    )
+
             except Exception:
-                log.exception("scheduled delivery failed for session %s", live.session_id)
+                # A temporary database failure must not create a busy retry
+                # loop. Wait for another randomized cycle instead.
+                live.next_due = (
+                    datetime.now(UTC)
+                    + self._next_interval()
+                )
+                log.exception(
+                    "scheduled delivery failed for session %s",
+                    live.session_id,
+                )
 
     async def _deliver_on_schedule(self, session_id: UUID) -> bool:
         """One scheduled delivery. False once the session is no longer active.
@@ -525,22 +619,13 @@ class Classroom:
                 return False
             delivered = await self.deliver(db, row)
         if delivered is None:
-            log.info("session %s is due a question and none is staged", session_id)
-            await self._tell_staff(
+            log.info(
+                "session %s is due a question and none is staged; "
+                "waiting for the next cycle",
                 session_id,
-                {
-                    "code": NO_STAGED_QUESTION,
-                    "detail": "A question was due and none is staged. Stage one to continue "
-                    "the cycle.",
-                },
             )
-        return True
 
-    async def _tell_staff(self, session_id: UUID, error: dict) -> None:
-        """A private error event to every staff connection in the session.
-        Students never see it, and it takes no seq."""
-        for user_id in self._hub.staff_ids(session_id):
-            await self._hub.send_to_user(session_id, user_id, ServerEventType.ERROR, error)
+        return True
 
     # -- answers ------------------------------------------------------------
 
