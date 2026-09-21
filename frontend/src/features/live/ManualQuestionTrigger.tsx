@@ -84,6 +84,7 @@ export default function ManualQuestionTrigger({
 
   async function triggerSelectedQuestion() {
     if (
+      !enabled ||
       !sessionId ||
       !selectedQuestionId
     ) {
@@ -270,6 +271,7 @@ export default function ManualQuestionTrigger({
           <button
             type="button"
             disabled={
+              !enabled ||
               delivering ||
               !selectedQuestionId
             }

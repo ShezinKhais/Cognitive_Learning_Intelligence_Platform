@@ -287,16 +287,10 @@ async def session_socket(
         role=role,
     )
 
-    student_session_id = (
-        session_id
-        if session_id is not None and role is Role.STUDENT
-        else None
-    )
+    student_session_id = session_id if session_id is not None and role is Role.STUDENT else None
 
     students_before_connect = (
-        len(hub.student_ids(student_session_id))
-        if student_session_id is not None
-        else None
+        len(hub.student_ids(student_session_id)) if student_session_id is not None else None
     )
 
     try:
@@ -399,9 +393,7 @@ async def session_socket(
         )
     finally:
         students_before_leave = (
-            len(hub.student_ids(student_session_id))
-            if student_session_id is not None
-            else None
+            len(hub.student_ids(student_session_id)) if student_session_id is not None else None
         )
 
         await hub.leave(connection)

@@ -69,6 +69,7 @@ MAX_FINISHED_SESSIONS = 1024
 
 MAX_PROMPT_MESSAGE_LENGTH = 280
 
+
 @dataclass(frozen=True)
 class Submission:
     """One accepted answer, as handed to the recorder."""
@@ -292,16 +293,8 @@ class Classroom:
             if live.paused:
                 live.paused = False
                 now = datetime.now(UTC)
-                remaining = (
-                    live.remaining
-                    if live.remaining is not None
-                    else self._next_interval()
-                )
-                anchor = (
-                    max(live.open.closes_at, now)
-                    if live.open is not None
-                    else now
-                )
+                remaining = live.remaining if live.remaining is not None else self._next_interval()
+                anchor = max(live.open.closes_at, now) if live.open is not None else now
                 live.next_due = anchor + remaining
                 live.remaining = None
                 self._start_cycle(live)
@@ -515,10 +508,7 @@ class Classroom:
                 name=f"response-window-{question.question_id}",
             )
 
-            if (
-                live.cycle is not None
-                and live.cycle is not asyncio.current_task()
-            ):
+            if live.cycle is not None and live.cycle is not asyncio.current_task():
                 _cancel(live.cycle)
                 live.cycle = None
                 self._start_cycle(live)
@@ -575,10 +565,7 @@ class Classroom:
                 # to establish the next deadline. Quietly try again after a
                 # fresh randomized interval.
                 if live.open is None:
-                    live.next_due = (
-                        datetime.now(UTC)
-                        + self._next_interval()
-                    )
+                    live.next_due = datetime.now(UTC) + self._next_interval()
 
             except ConflictError:
                 # pause() cancels the cycle. This return also covers the small
@@ -590,18 +577,12 @@ class Classroom:
                 # An already-open question has its own post-close deadline.
                 # For any other conflict, avoid retrying in a tight loop.
                 if live.open is None:
-                    live.next_due = (
-                        datetime.now(UTC)
-                        + self._next_interval()
-                    )
+                    live.next_due = datetime.now(UTC) + self._next_interval()
 
             except Exception:
                 # A temporary database failure must not create a busy retry
                 # loop. Wait for another randomized cycle instead.
-                live.next_due = (
-                    datetime.now(UTC)
-                    + self._next_interval()
-                )
+                live.next_due = datetime.now(UTC) + self._next_interval()
                 log.exception(
                     "scheduled delivery failed for session %s",
                     live.session_id,
@@ -620,8 +601,7 @@ class Classroom:
             delivered = await self.deliver(db, row)
         if delivered is None:
             log.info(
-                "session %s is due a question and none is staged; "
-                "waiting for the next cycle",
+                "session %s is due a question and none is staged; waiting for the next cycle",
                 session_id,
             )
 

@@ -233,31 +233,23 @@ export default function LecturerLiveSessionPage() {
     actionInProgress !== null
 
   const canStart =
-    connectionStatus ===
-      'connected' &&
     sessionState?.status ===
       'prepared' &&
     !isBusy
 
   const canPause =
-    connectionStatus ===
-      'connected' &&
     sessionState?.status ===
       'active' &&
     !sessionState.paused &&
     !isBusy
 
   const canResume =
-    connectionStatus ===
-      'connected' &&
     sessionState?.status ===
       'active' &&
     sessionState.paused &&
     !isBusy
 
   const canEnd =
-    connectionStatus ===
-      'connected' &&
     (
       sessionState?.status ===
         'prepared' ||
