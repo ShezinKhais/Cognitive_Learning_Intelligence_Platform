@@ -1,4 +1,4 @@
-import {
+﻿import {
   ApiError,
   apiUrl,
   clearAccessToken,
@@ -30,6 +30,12 @@ export interface SessionActionResponse {
   paused: boolean
 }
 
+export interface CreateSessionPayload {
+  course_code: string
+  title: string
+  starts_at?: string | null
+}
+
 async function errorFromResponse(
   response: Response,
 ): Promise<ApiError> {
@@ -58,10 +64,10 @@ async function errorFromResponse(
   )
 }
 
-export async function runSessionAction(
-  sessionId: string,
-  action: SessionLifecycleAction,
-): Promise<SessionActionResponse> {
+async function authenticatedRequest<T>(
+  path: string,
+  options: RequestInit,
+): Promise<T> {
   const token = getAccessToken()
 
   if (!token) {
@@ -72,17 +78,29 @@ export async function runSessionAction(
     )
   }
 
+  const headers =
+    new Headers(options.headers)
+
+  headers.set(
+    'Authorization',
+    `Bearer ${token}`,
+  )
+
+  if (
+    options.body &&
+    !headers.has('Content-Type')
+  ) {
+    headers.set(
+      'Content-Type',
+      'application/json',
+    )
+  }
+
   const response = await fetch(
-    apiUrl(
-      `/sessions/${encodeURIComponent(
-        sessionId,
-      )}/${action}`,
-    ),
+    apiUrl(path),
     {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      ...options,
+      headers,
     },
   )
 
@@ -97,7 +115,33 @@ export async function runSessionAction(
     throw error
   }
 
-  return response.json() as Promise<SessionActionResponse>
+  return response.json() as Promise<T>
+}
+
+export function createSession(
+  payload: CreateSessionPayload,
+): Promise<SessionActionResponse> {
+  return authenticatedRequest<SessionActionResponse>(
+    '/sessions',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    },
+  )
+}
+
+export function runSessionAction(
+  sessionId: string,
+  action: SessionLifecycleAction,
+): Promise<SessionActionResponse> {
+  return authenticatedRequest<SessionActionResponse>(
+    `/sessions/${encodeURIComponent(
+      sessionId,
+    )}/${action}`,
+    {
+      method: 'POST',
+    },
+  )
 }
 
 export function startSession(

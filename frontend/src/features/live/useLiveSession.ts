@@ -370,16 +370,20 @@ export function useLiveSession(
           const data: {
             token: string
             session_id: string
-            last_seq: number
+            last_seq?: number
             stream_id?: string
           } = {
             token: accessToken,
             session_id:
               activeSessionId,
-            last_seq: lastSeq,
           }
 
-          if (streamId) {
+          if (
+            lastSeq > 0 &&
+            streamId
+          ) {
+            data.last_seq =
+              lastSeq
             data.stream_id =
               streamId
           }
