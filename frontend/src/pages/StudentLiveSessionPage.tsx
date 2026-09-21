@@ -61,7 +61,7 @@ function LiveSessionPanel({ session }: { session: StudentSession }) {
     submitAnswer,
     acknowledgePrompt,
     clearError,
-  } = useLiveSession(session.id, session.status)
+  } = useLiveSession(session.id, session.status, session.paused ?? false)
   const now = useCurrentTime(Boolean(state.checkpoint || state.attentionPrompt))
   const secondsRemaining = state.checkpoint
     ? remainingResponseSeconds(state.checkpoint.question.closes_at, now)
@@ -97,7 +97,10 @@ function LiveSessionPanel({ session }: { session: StudentSession }) {
               {state.participantCount} connected
             </span>
             <span>
-              Session: <strong className="font-medium text-foreground">{state.sessionStatus}</strong>
+              Session:{' '}
+              <strong className="font-medium text-foreground">
+                {state.paused ? 'paused' : state.sessionStatus}
+              </strong>
             </span>
             <span>
               Checkpoints delivered: <strong className="font-medium text-foreground">{state.questionsDelivered}</strong>
@@ -139,7 +142,10 @@ function LiveSessionPanel({ session }: { session: StudentSession }) {
               onSubmit={submitAnswer}
             />
           ) : (
-            <WaitingCard sessionStatus={state.sessionStatus} />
+            <WaitingCard
+              sessionStatus={state.sessionStatus}
+              paused={state.paused}
+            />
           )}
         </section>
       </div>
@@ -206,7 +212,8 @@ function CheckpointCard({
     secondsRemaining > 0 &&
     !checkpoint.closed &&
     (checkpoint.phase === 'answering' || checkpoint.phase === 'rejected')
-  const answerPresent = question.options
+  const hasOptions = Boolean(question.options?.length)
+  const answerPresent = hasOptions
     ? checkpoint.selectedOption !== null
     : checkpoint.freeText.trim().length > 0
   const progress = Math.max(
@@ -257,10 +264,10 @@ function CheckpointCard({
       <div className="p-5 sm:p-7">
         <h2 className="text-xl font-semibold leading-snug">{question.prompt}</h2>
 
-        {question.options ? (
+        {hasOptions ? (
           <fieldset className="mt-6 grid gap-3" disabled={!editable}>
             <legend className="sr-only">Choose one answer</legend>
-            {question.options.map((option, index) => {
+            {question.options!.map((option, index) => {
               const selected = checkpoint.selectedOption === index
               return (
                 <label
@@ -382,7 +389,13 @@ function CheckpointOutcome({ checkpoint }: { checkpoint: CheckpointState }) {
   )
 }
 
-function WaitingCard({ sessionStatus }: { sessionStatus: StudentSession['status'] }) {
+function WaitingCard({
+  sessionStatus,
+  paused,
+}: {
+  sessionStatus: StudentSession['status']
+  paused: boolean
+}) {
   const ended = sessionStatus === 'ended' || sessionStatus === 'cancelled'
   return (
     <div className="rounded-xl border border-border bg-card p-8 text-center shadow-[var(--shadow-card)]">
@@ -394,12 +407,18 @@ function WaitingCard({ sessionStatus }: { sessionStatus: StudentSession['status'
         )}
       </div>
       <h2 className="mt-4 text-xl font-semibold">
-        {ended ? 'This session has ended' : 'Waiting for the next checkpoint'}
+        {ended
+          ? 'This session has ended'
+          : paused
+            ? 'Session paused'
+            : 'Waiting for the next checkpoint'}
       </h2>
       <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted-foreground">
         {ended
           ? 'Your responses have been saved. A review view will be available in the reporting phase.'
-          : 'Stay on this page. The lecturer’s next question will appear automatically.'}
+          : paused
+            ? 'The lecturer has paused the session. Checkpoints will resume automatically when the session continues.'
+            : 'Stay on this page. The lecturer’s next question will appear automatically.'}
       </p>
     </div>
   )
@@ -407,10 +426,15 @@ function WaitingCard({ sessionStatus }: { sessionStatus: StudentSession['status'
 
 function ConnectionBadge({ status }: { status: LiveConnectionStatus }) {
   const connected = status === 'connected'
+  const ended = status === 'ended'
   return (
     <span
       className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${
-        connected ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'
+        connected
+          ? 'bg-success/10 text-success'
+          : ended
+            ? 'bg-muted text-muted-foreground'
+            : 'bg-warning/10 text-warning'
       }`}
     >
       {connected ? <Wifi aria-hidden="true" size={15} /> : <WifiOff aria-hidden="true" size={15} />}
@@ -420,9 +444,9 @@ function ConnectionBadge({ status }: { status: LiveConnectionStatus }) {
 }
 
 function ConnectionNotice({ status }: { status: LiveConnectionStatus }) {
-  if (status === 'connected') return null
+  if (status === 'connected' || status === 'ended') return null
 
-  const copy: Record<Exclude<LiveConnectionStatus, 'connected'>, string> = {
+  const copy: Record<Exclude<LiveConnectionStatus, 'connected' | 'ended'>, string> = {
     connecting: 'Connecting to the live session…',
     recovering: 'Connected again. Restoring the latest session state…',
     reconnecting: 'Connection interrupted. Your page will reconnect automatically.',
@@ -458,6 +482,7 @@ function connectionLabel(status: LiveConnectionStatus): string {
     reconnecting: 'Reconnecting',
     offline: 'Offline',
     forbidden: 'Access denied',
+    ended: 'Ended',
     disconnected: 'Disconnected',
   }[status]
 }

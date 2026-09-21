@@ -7,6 +7,7 @@ import {
   remainingResponseSeconds,
 } from '../src/features/student/liveSessionState.ts'
 import {
+  buildAuthPayload,
   parseLiveQuestion,
   parseServerEvent,
   parseSessionState,
@@ -32,6 +33,7 @@ test('a student can receive, answer and get feedback for a checkpoint', () => {
       participant_count: 24,
       active_question_id: null,
       questions_delivered: 0,
+      paused: false,
     },
   })
   state = liveSessionReducer(state, {
@@ -103,6 +105,61 @@ test('a sent answer is not marked missed while its receipt is recovering', () =>
   assert.equal(state.checkpoint?.closed?.reason, 'window_elapsed')
 })
 
+test('a replayed checkpoint preserves the student response and rejection state', () => {
+  let state = initialLiveSessionState('active')
+  state = liveSessionReducer(state, { type: 'question-delivered', payload: question })
+  state = liveSessionReducer(state, { type: 'select-option', option: 1 })
+  state = liveSessionReducer(state, {
+    type: 'answer-receipt',
+    payload: {
+      question_id: question.question_id,
+      accepted: false,
+      received_at: '2026-09-20T10:00:12.000Z',
+      reason: 'retry',
+    },
+  })
+
+  state = liveSessionReducer(state, {
+    type: 'question-delivered',
+    payload: {
+      ...question,
+      prompt: 'A replay must not replace this content.',
+      closes_at: '2026-09-20T10:01:00.000Z',
+    },
+  })
+
+  assert.equal(state.checkpoint?.selectedOption, 1)
+  assert.equal(state.checkpoint?.phase, 'rejected')
+  assert.equal(state.checkpoint?.receipt?.reason, 'retry')
+  assert.equal(state.checkpoint?.question.prompt, question.prompt)
+  assert.equal(state.checkpoint?.question.closes_at, '2026-09-20T10:01:00.000Z')
+})
+
+test('a different checkpoint resets the previous answer state', () => {
+  let state = initialLiveSessionState('active')
+  state = liveSessionReducer(state, { type: 'question-delivered', payload: question })
+  state = liveSessionReducer(state, { type: 'select-option', option: 1 })
+  state = liveSessionReducer(state, {
+    type: 'question-delivered',
+    payload: { ...question, question_id: 'question-2' },
+  })
+
+  assert.equal(state.checkpoint?.question.question_id, 'question-2')
+  assert.equal(state.checkpoint?.selectedOption, null)
+  assert.equal(state.checkpoint?.phase, 'answering')
+})
+
+test('a terminal reconnect marks the session ended without a forbidden state', () => {
+  let state = initialLiveSessionState('active', true)
+  state = liveSessionReducer(state, { type: 'question-delivered', payload: question })
+  state = liveSessionReducer(state, { type: 'session-ended' })
+
+  assert.equal(state.connection, 'ended')
+  assert.equal(state.sessionStatus, 'ended')
+  assert.equal(state.paused, false)
+  assert.equal(state.checkpoint?.phase, 'missed')
+})
+
 test('a private attention prompt clears only when its matching id is acknowledged', () => {
   let state = initialLiveSessionState('active')
   state = liveSessionReducer(state, {
@@ -164,5 +221,51 @@ test('protocol guards accept the frozen event shapes and reject malformed payloa
       questions_delivered: 0,
     }),
     null,
+  )
+
+  assert.deepEqual(
+    parseSessionState({
+      session_id: 'session-1',
+      status: 'active',
+      participant_count: 1,
+      active_question_id: null,
+      questions_delivered: 2,
+      paused: true,
+    }),
+    {
+      session_id: 'session-1',
+      status: 'active',
+      participant_count: 1,
+      active_question_id: null,
+      questions_delivered: 2,
+      paused: true,
+    },
+  )
+  assert.equal(
+    parseSessionState({
+      session_id: 'session-1',
+      status: 'active',
+      participant_count: 1,
+      active_question_id: null,
+      questions_delivered: 2,
+      paused: 'yes',
+    }),
+    null,
+  )
+})
+
+test('fresh authentication omits replay fields until a real cursor exists', () => {
+  assert.deepEqual(
+    buildAuthPayload('token', 'session-1', { lastSeq: null, streamId: null }),
+    { token: 'token', session_id: 'session-1' },
+  )
+  assert.deepEqual(
+    buildAuthPayload('token', 'session-1', { lastSeq: 12, streamId: 'stream-1' }),
+    {
+      token: 'token',
+      session_id: 'session-1',
+      last_seq: 12,
+      stream_id: 'stream-1',
+    },
   )
 })

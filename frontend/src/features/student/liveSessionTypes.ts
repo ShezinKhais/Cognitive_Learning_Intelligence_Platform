@@ -7,6 +7,7 @@ export type LiveConnectionStatus =
   | 'reconnecting'
   | 'offline'
   | 'forbidden'
+  | 'ended'
   | 'disconnected'
 
 export type QuestionCloseReason =
@@ -20,6 +21,7 @@ export interface SessionStateEvent {
   participant_count: number
   active_question_id: string | null
   questions_delivered: number
+  paused: boolean
 }
 
 export interface LiveQuestion {

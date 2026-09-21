@@ -14,6 +14,7 @@ import type {
 export interface LiveSessionState {
   connection: LiveConnectionStatus
   sessionStatus: SessionStatus
+  paused: boolean
   participantCount: number
   questionsDelivered: number
   checkpoint: CheckpointState | null
@@ -23,6 +24,7 @@ export interface LiveSessionState {
 
 export type LiveSessionAction =
   | { type: 'connection'; status: LiveConnectionStatus }
+  | { type: 'session-ended' }
   | { type: 'session-state'; payload: SessionStateEvent }
   | { type: 'question-delivered'; payload: LiveQuestion }
   | { type: 'select-option'; option: number }
@@ -39,10 +41,12 @@ export type LiveSessionAction =
 
 export function initialLiveSessionState(
   status: SessionStatus,
+  paused = false,
 ): LiveSessionState {
   return {
     connection: 'connecting',
     sessionStatus: status,
+    paused,
     participantCount: 0,
     questionsDelivered: 0,
     checkpoint: null,
@@ -74,6 +78,18 @@ export function liveSessionReducer(
         connection: action.status,
       }
 
+    case 'session-ended':
+      return {
+        ...state,
+        connection: 'ended',
+        sessionStatus: 'ended',
+        paused: false,
+        checkpoint:
+          state.checkpoint?.phase === 'answering'
+            ? { ...state.checkpoint, phase: 'missed' }
+            : state.checkpoint,
+      }
+
     case 'session-state': {
       const sessionEnded =
         action.payload.status === 'ended' ||
@@ -83,6 +99,7 @@ export function liveSessionReducer(
       return {
         ...state,
         sessionStatus: action.payload.status,
+        paused: action.payload.paused,
         participantCount: action.payload.participant_count,
         questionsDelivered: action.payload.questions_delivered,
         checkpoint:
@@ -93,6 +110,19 @@ export function liveSessionReducer(
     }
 
     case 'question-delivered':
+      if (state.checkpoint?.question.question_id === action.payload.question_id) {
+        return {
+          ...state,
+          checkpoint: {
+            ...state.checkpoint,
+            question: {
+              ...state.checkpoint.question,
+              closes_at: action.payload.closes_at,
+            },
+          },
+        }
+      }
+
       return {
         ...state,
         checkpoint: {

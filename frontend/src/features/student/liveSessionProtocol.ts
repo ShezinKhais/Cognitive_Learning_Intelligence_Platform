@@ -12,6 +12,29 @@ import type {
 
 type JsonRecord = Record<string, unknown>
 
+export interface ResumeCursor {
+  lastSeq: number | null
+  streamId: string | null
+}
+
+export function buildAuthPayload(
+  token: string,
+  sessionId: string,
+  cursor: ResumeCursor,
+): JsonRecord {
+  const payload: JsonRecord = {
+    token,
+    session_id: sessionId,
+  }
+
+  if (cursor.lastSeq !== null) {
+    payload.last_seq = cursor.lastSeq
+    if (cursor.streamId) payload.stream_id = cursor.streamId
+  }
+
+  return payload
+}
+
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -56,8 +79,16 @@ export function parseSessionState(value: unknown): SessionStateEvent | null {
   }
   if (!isNumber(value.participant_count) || !isNumber(value.questions_delivered)) return null
   if (!isStringOrNull(value.active_question_id)) return null
+  if (value.paused !== undefined && typeof value.paused !== 'boolean') return null
 
-  return value as unknown as SessionStateEvent
+  return {
+    session_id: value.session_id,
+    status: value.status as SessionStateEvent['status'],
+    participant_count: value.participant_count,
+    active_question_id: value.active_question_id,
+    questions_delivered: value.questions_delivered,
+    paused: value.paused ?? false,
+  }
 }
 
 export function parseLiveQuestion(value: unknown): LiveQuestion | null {

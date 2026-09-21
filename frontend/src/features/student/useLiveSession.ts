@@ -14,6 +14,7 @@ import {
   liveSessionReducer,
 } from './liveSessionState'
 import {
+  buildAuthPayload,
   parseAnswerReceipt,
   parseAttentionPrompt,
   parseFeedbackResult,
@@ -24,12 +25,9 @@ import {
   parseServerEvent,
   parseSessionState,
 } from './liveSessionProtocol'
+import type { ResumeCursor } from './liveSessionProtocol'
+import { actionForClose } from '../materials/closeCodes'
 import type { SessionStatus } from './types'
-
-interface Cursor {
-  lastSeq: number
-  streamId: string | null
-}
 
 interface AnswerSubmission {
   selected_option?: number
@@ -48,26 +46,28 @@ function cursorKey(sessionId: string): string {
   return `clip_live_session_cursor:${sessionId}`
 }
 
-function readCursor(sessionId: string): Cursor {
+function readCursor(sessionId: string): ResumeCursor {
   try {
     const value = window.sessionStorage.getItem(cursorKey(sessionId))
-    if (!value) return { lastSeq: 0, streamId: null }
+    if (!value) return { lastSeq: null, streamId: null }
 
-    const parsed = JSON.parse(value) as Partial<Cursor>
+    const parsed = JSON.parse(value) as Partial<ResumeCursor>
+    const streamId = typeof parsed.streamId === 'string' ? parsed.streamId : null
+    const lastSeq =
+      typeof parsed.lastSeq === 'number' && parsed.lastSeq > 0
+        ? parsed.lastSeq
+        : null
+
     return {
-      lastSeq:
-        typeof parsed.lastSeq === 'number' && parsed.lastSeq >= 0
-          ? parsed.lastSeq
-          : 0,
-      streamId:
-        typeof parsed.streamId === 'string' ? parsed.streamId : null,
+      lastSeq: streamId ? lastSeq : null,
+      streamId: lastSeq ? streamId : null,
     }
   } catch {
-    return { lastSeq: 0, streamId: null }
+    return { lastSeq: null, streamId: null }
   }
 }
 
-function storeCursor(sessionId: string, cursor: Cursor): void {
+function storeCursor(sessionId: string, cursor: ResumeCursor): void {
   try {
     window.sessionStorage.setItem(cursorKey(sessionId), JSON.stringify(cursor))
   } catch {
@@ -79,11 +79,11 @@ function storeCursor(sessionId: string, cursor: Cursor): void {
 export function useLiveSession(
   sessionId: string,
   initialStatus: SessionStatus,
+  initialPaused = false,
 ) {
   const [state, dispatch] = useReducer(
     liveSessionReducer,
-    initialStatus,
-    initialLiveSessionState,
+    initialLiveSessionState(initialStatus, initialPaused),
   )
   const socketRef = useRef<WebSocket | null>(null)
   const readyRef = useRef(false)
@@ -94,6 +94,7 @@ export function useLiveSession(
       dispatch({ type: 'connection', status: 'disconnected' })
       return
     }
+    const authToken = token
 
     let socket: WebSocket | null = null
     let reconnectTimer: number | undefined
@@ -136,13 +137,7 @@ export function useLiveSession(
       socketRef.current = currentSocket
 
       currentSocket.addEventListener('open', () => {
-        const data: Record<string, unknown> = {
-          token,
-          session_id: sessionId,
-          last_seq: cursor.lastSeq,
-        }
-        if (cursor.streamId) data.stream_id = cursor.streamId
-
+        const data = buildAuthPayload(authToken, sessionId, cursor)
         currentSocket.send(JSON.stringify({ type: 'auth', data }))
       })
 
@@ -168,8 +163,11 @@ export function useLiveSession(
           readyRef.current = true
           retryCount = 0
 
-          if (ready.resumed_from_seq === null && cursor.lastSeq > 0) {
-            cursor = { lastSeq: 0, streamId: ready.stream_id }
+          if (
+            ready.resumed_from_seq === null &&
+            cursor.lastSeq !== null
+          ) {
+            cursor = { lastSeq: null, streamId: null }
             storeCursor(sessionId, cursor)
             dispatch({ type: 'connection', status: 'recovering' })
           } else {
@@ -181,9 +179,10 @@ export function useLiveSession(
         }
 
         if (event.seq > 0) {
-          if (event.seq <= cursor.lastSeq) return
+          const previousSeq = cursor.lastSeq ?? 0
+          if (event.seq <= previousSeq) return
 
-          if (cursor.lastSeq > 0 && event.seq > cursor.lastSeq + 1) {
+          if (cursor.lastSeq !== null && event.seq > cursor.lastSeq + 1) {
             dispatch({ type: 'connection', status: 'recovering' })
             currentSocket.close(4000, 'event gap detected')
             return
@@ -229,6 +228,7 @@ export function useLiveSession(
           }
           case 'error': {
             const payload = parseLiveError(event.data)
+            if (payload?.code === 'PROMPT_NOT_OPEN') break
             if (payload) dispatch({ type: 'error', payload })
             break
           }
@@ -241,20 +241,26 @@ export function useLiveSession(
         readyRef.current = false
         if (stopped) return
 
-        if (closeEvent.code === 4001) {
+        const closeAction = actionForClose(closeEvent.code)
+
+        if (closeAction === 'sign-in') {
           stopped = true
           clearAccessToken()
           window.location.assign('/login')
           return
         }
 
-        if (closeEvent.code === 4003) {
+        if (closeAction === 'stop' && closeEvent.code === 4003) {
           stopped = true
-          dispatch({ type: 'connection', status: 'forbidden' })
+          if (connectedOnce) {
+            dispatch({ type: 'session-ended' })
+          } else {
+            dispatch({ type: 'connection', status: 'forbidden' })
+          }
           return
         }
 
-        if (closeEvent.code === 4400) {
+        if (closeAction === 'stop') {
           stopped = true
           dispatch({
             type: 'error',
@@ -285,7 +291,12 @@ export function useLiveSession(
     }
 
     function handleOnline(): void {
-      if (!stopped && !socket) connect()
+      if (stopped || socket) return
+      if (reconnectTimer !== undefined) {
+        window.clearTimeout(reconnectTimer)
+        reconnectTimer = undefined
+      }
+      connect()
     }
 
     window.addEventListener('offline', handleOffline)
@@ -373,7 +384,7 @@ export function useLiveSession(
     }
 
     const answer: AnswerSubmission = {}
-    if (checkpoint.question.options) {
+    if (checkpoint.question.options?.length) {
       if (checkpoint.selectedOption === null) return false
       answer.selected_option = checkpoint.selectedOption
     } else {
