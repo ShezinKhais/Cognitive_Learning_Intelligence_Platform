@@ -67,8 +67,8 @@ def process_submission(
 ) -> FeedbackResultPayload:
     """Route one accepted live-session answer to the correct AI 1 processor.
 
-    MCQ responses are supported in Phase 3. Free-text responses are reserved
-    for the later classifier implementation.
+    MCQ responses are scored in Phase 3. Free-text responses are recorded
+    unscored (correct=None) until Phase 5's classifier is available.
     """
 
     if selected_option is not None and free_text is not None:
@@ -84,9 +84,4 @@ def process_submission(
             selected_option=selected_option,
         )
 
-    raise ValidationError(
-        "Free-text response classification is not implemented yet.",
-        {
-            "question_id": str(question.question_id),
-        },
-    )
+    return FeedbackResultPayload(question_id=question.question_id, correct=None)

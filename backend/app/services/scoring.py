@@ -38,8 +38,8 @@ class FeedbackResult:
 
     is_correct: bool
     message: str
-    source_slide: int
-    source_excerpt: str
+    source_slide: int | None
+    source_excerpt: str | None
 
 
 class FreeTextClassifier(Protocol):
@@ -85,16 +85,7 @@ def score_mcq(question: Question, selected_option: int) -> MCQScoreResult:
                 "options_count": len(question.options),
             },
         )
-    if question.source_slide is None or question.source_slide < 1:
-        raise ValidationError(
-            "This question has no valid source slide or page.",
-            {"question_id": str(question.question_id)},
-        )
-    if not question.source_excerpt or not question.source_excerpt.strip():
-        raise ValidationError(
-            "This question has no source excerpt for grounded feedback.",
-            {"question_id": str(question.question_id)},
-        )
+
     if isinstance(selected_option, bool) or not isinstance(selected_option, int):
         raise ValidationError(
             "Selected option must be an integer.",
@@ -122,21 +113,38 @@ def score_mcq(question: Question, selected_option: int) -> MCQScoreResult:
 
 # End of validation checks for the question before scoring
 def build_mcq_feedback(result: MCQScoreResult) -> FeedbackResult:
-    """Build immediate source-grounded feedback from an MCQ score."""
+    """Build immediate source-grounded feedback from an MCQ score.
 
-    if result.source_slide is None:
-        raise ValidationError("MCQ feedback requires a source slide or page.")
+    Withholds the correct answer: this goes out while the response window
+    may still be open, and the first wrong answer would otherwise leak the
+    answer to the rest of the class. Use build_mcq_reveal once the question
+    has closed.
+    """
 
-    if not result.source_excerpt:
-        raise ValidationError("MCQ feedback requires a source excerpt.")
-
-    if result.is_correct:
-        message = f"Correct. See slide/page {result.source_slide} for the supporting material."
+    status = "Correct" if result.is_correct else "Incorrect"
+    if result.source_slide is not None:
+        message = f"{status}. See slide/page {result.source_slide} for the supporting material."
     else:
+        message = f"{status}."
+
+    return FeedbackResult(
+        is_correct=result.is_correct,
+        message=message,
+        source_slide=result.source_slide,
+        source_excerpt=result.source_excerpt,
+    )
+
+
+def build_mcq_reveal(result: MCQScoreResult) -> FeedbackResult:
+    """Build the answer-reveal feedback sent after the question has closed."""
+
+    if result.source_slide is not None:
         message = (
-            f"Incorrect. The correct answer is '{result.correct_answer}'. "
+            f"The correct answer is '{result.correct_answer}'. "
             f"See slide/page {result.source_slide} for the supporting material."
         )
+    else:
+        message = f"The correct answer is '{result.correct_answer}'."
 
     return FeedbackResult(
         is_correct=result.is_correct,

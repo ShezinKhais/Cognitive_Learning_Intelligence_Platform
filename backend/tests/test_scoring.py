@@ -6,6 +6,7 @@ from app.core.errors import ValidationError
 from app.models.question import Question
 from app.services.scoring import (
     build_mcq_feedback,
+    build_mcq_reveal,
     feedback_payload,
     score_mcq,
 )
@@ -102,18 +103,32 @@ def test_non_integer_selected_option_is_rejected(selected_option):
         score_mcq(question, selected_option)
 
 
-def test_question_without_source_slide_is_rejected():
-    question = make_question(source_slide=None)
+def test_question_without_source_slide_still_scores():
+    question = make_question(correct_option=1, source_slide=None)
 
-    with pytest.raises(ValidationError):
-        score_mcq(question, 1)
+    result = score_mcq(question, 1)
+
+    assert result.is_correct is True
+    assert result.source_slide is None
 
 
-def test_question_without_source_excerpt_is_rejected():
-    question = make_question(source_excerpt=None)
+def test_question_without_source_excerpt_still_scores():
+    question = make_question(correct_option=1, source_excerpt=None)
 
-    with pytest.raises(ValidationError):
-        score_mcq(question, 1)
+    result = score_mcq(question, 1)
+
+    assert result.is_correct is True
+    assert result.source_excerpt is None
+
+
+def test_feedback_omits_slide_reference_when_source_slide_missing():
+    question = make_question(correct_option=1, source_slide=None)
+    score = score_mcq(question, 1)
+
+    feedback = build_mcq_feedback(score)
+
+    assert feedback.is_correct is True
+    assert "slide" not in feedback.message.lower()
 
 
 def test_correct_answer_builds_grounded_feedback():
@@ -128,11 +143,22 @@ def test_correct_answer_builds_grounded_feedback():
     assert feedback.source_excerpt == "Neural networks contain interconnected layers."
 
 
-def test_incorrect_answer_feedback_includes_correct_answer():
+def test_incorrect_immediate_feedback_withholds_correct_answer():
     question = make_question(correct_option=1)
     score = score_mcq(question, 0)
 
     feedback = build_mcq_feedback(score)
+
+    assert feedback.is_correct is False
+    assert "Interconnected layers" not in feedback.message
+    assert feedback.source_slide == 4
+
+
+def test_incorrect_reveal_feedback_includes_correct_answer():
+    question = make_question(correct_option=1)
+    score = score_mcq(question, 0)
+
+    feedback = build_mcq_reveal(score)
 
     assert feedback.is_correct is False
     assert "Interconnected layers" in feedback.message

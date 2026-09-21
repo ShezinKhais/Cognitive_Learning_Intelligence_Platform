@@ -72,7 +72,7 @@ def test_process_mcq_submission_returns_incorrect_feedback():
     )
 
     assert payload.correct is False
-    assert "Interconnected layers" in payload.explanation
+    assert "Interconnected layers" not in payload.explanation
     assert payload.source_slide == 4
 
 
@@ -144,13 +144,15 @@ def test_process_submission_rejects_both_answer_types():
         )
 
 
-def test_process_submission_reserves_free_text_for_classifier():
+def test_process_submission_records_free_text_unscored():
     session_id = uuid.uuid4()
     question = make_delivered_question(session_id=session_id)
 
-    with pytest.raises(ValidationError):
-        process_submission(
-            session_id=session_id,
-            question=question,
-            free_text="Interconnected layers",
-        )
+    payload = process_submission(
+        session_id=session_id,
+        question=question,
+        free_text="Interconnected layers",
+    )
+
+    assert payload.question_id == question.question_id
+    assert payload.correct is None
