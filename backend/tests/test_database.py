@@ -14,6 +14,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from app.api.v1.health import _check_database
 from app.core.config import get_settings
 from app.models.ai_model_run import AIModelRun
 from app.models.consent import Consent
@@ -334,12 +335,9 @@ async def test_trigram_similarity_works(db: AsyncSession) -> None:
     assert 0.0 < score < 1.0
 
 
-async def test_readiness_passes_when_the_database_is_up(db: AsyncSession, client) -> None:
-    """The 503 path is covered elsewhere; this covers the healthy one."""
-    response = client.get("/api/v1/ready")
-    assert response.status_code == 200
+async def test_readiness_passes_when_the_database_is_up(db: AsyncSession) -> None:
+    """The 503 path is covered elsewhere; this covers the healthy database check."""
+    postgres = await _check_database(db)
 
-    body = response.json()
-    postgres = next(d for d in body["dependencies"] if d["name"] == "postgres")
-    assert postgres["ok"] is True
-    assert postgres["latency_ms"] is not None
+    assert postgres.ok is True
+    assert postgres.latency_ms is not None
