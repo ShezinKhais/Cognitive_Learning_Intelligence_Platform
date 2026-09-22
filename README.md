@@ -40,8 +40,8 @@ rather than a component, so every phase ends with something that runs end to end
 |---|---|---|
 | 0 | Repository, CI, database and feasibility spikes | Done |
 | 1 | Data and API spine: authentication, RBAC, consent, the frozen contract | Done |
-| 2 | Content and question pipeline: upload, extraction, chunking, embeddings, question generation | In progress |
-| 3 | Live session core: WebSocket hub, prompt scheduler, session lifecycle | Planned |
+| 2 | Content and question pipeline: upload, extraction, chunking, embeddings, question generation | Done |
+| 3 | Live session core: WebSocket hub, prompt scheduler, session lifecycle | In progress |
 | 4 | Microsoft Teams integration | Planned |
 | 5 | AI intelligence layer: free-text classification and the Socratic chatbot | Planned |
 | 6 | Attention signals and breakout groups | Planned |
@@ -49,10 +49,11 @@ rather than a component, so every phase ends with something that runs end to end
 | 8 | Hardening, load testing and delivery | Planned |
 
 What runs today: logging in, roles and consent, the administrator timetable and roster
-import, and the student interface. Phase 2 is landing in pieces, starting with upload,
-background processing and live progress, followed by question generation, retrieval and
-material persistence. Everything past that returns 501 and names the workstream that owns
-it, so the shape of the system is visible before it is built.
+import, the student interface, and the whole content pipeline, from upload through
+extraction, chunking, embeddings and question generation to review. Phase 3 is landing in
+pieces, starting with the session lifecycle and the live question cycle. Everything past
+that returns 501 and names the workstream that owns it, so the shape of the system is
+visible before it is built.
 
 Current status per issue is on the [milestones](../../milestones), which are the source of
 truth rather than this table.
@@ -92,6 +93,11 @@ curl http://localhost:8000/api/v1/ready
 
 That reports whether Postgres and Ollama are actually reachable, and names what is wrong
 when they are not. Interactive API docs are at `/docs` in development.
+
+Run the backend as a single process. A live session's question timer and open question
+are held in the process that runs it, so a second worker would run a second timer for
+the same class. With `WEB_CONCURRENCY` above 1 the backend warns in development and
+refuses to start in production.
 
 Development sign-in accounts for each role are listed in
 [CYBER1_SETUP.md](CYBER1_SETUP.md), which is a Phase 1 snapshot and covers the parts of
