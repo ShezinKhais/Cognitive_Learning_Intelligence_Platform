@@ -66,19 +66,9 @@ async def session_membership_allowed(
     return False
 
 
-async def is_session_owner(
-    db: AsyncSession,
-    session_id: uuid.UUID,
-    *,
-    user_id: uuid.UUID,
-    role: Role,
-) -> SessionModel | None:
-    """Fetch a session the caller is allowed to manage (start/end/deliver), or
-    None if it does not exist or they don't own it. Admins own everything.
-    """
-    row = await db.get(SessionModel, session_id)
-    if row is None:
-        return None
-    if role == Role.ADMIN or row.instructor_id == user_id:
-        return row
-    return None
+# Deliberately no `is_session_owner` here. Lifecycle transitions (start,
+# pause, end, deliver) need the session row locked (`SELECT ... FOR UPDATE`)
+# to be race-free against a concurrent transition; a plain `db.get` lookup
+# cannot provide that, so an ownership check for those actions belongs to
+# whichever module already holds the row locked for the transition, not to
+# this policy module.

@@ -25,17 +25,27 @@ def test_compute_engagement_attempt_rate_alone_is_just_enough_confidence():
     result = compute_engagement(0.8, None)
     assert result.status == EngagementStatus.ENGAGED
     assert result.signals_available == ["attempt_rate"]
-    assert result.confidence == 0.25
+    assert result.confidence == 1 / 3
 
 
-def test_compute_engagement_low_attempt_rate_is_disengaged():
+def test_compute_engagement_low_attempt_rate_alone_is_at_risk_not_disengaged():
+    """A single signal (attempt_rate alone) is not enough evidence for the
+    module's strongest judgement call -- see module docstring. A second,
+    corroborating signal is required before DISENGAGED is returned."""
     result = compute_engagement(0.1, None)
+    assert result.status == EngagementStatus.AT_RISK
+
+
+def test_compute_engagement_low_attempt_rate_with_corroborating_signal_is_disengaged():
+    attention = AttentionSignalPayload(gaze_on_screen_ratio=0.1, window_seconds=5.0)
+    result = compute_engagement(0.1, attention)
+    assert result.signals_available == ["attempt_rate", "gaze"]
     assert result.status == EngagementStatus.DISENGAGED
 
 
 def test_compute_engagement_renormalises_missing_signals():
-    """Only gaze reported (no face/speaking) still yields a full-confidence
-    read once attempt_rate is added -- the missing components are dropped
+    """Only gaze reported (no face presence) still yields a full-confidence
+    read once attempt_rate is added -- the missing component is dropped
     from the average rather than counted as zero."""
     attention = AttentionSignalPayload(gaze_on_screen_ratio=0.9, window_seconds=5.0)
     result = compute_engagement(0.9, attention)
@@ -57,11 +67,13 @@ def test_compute_engagement_speaking_false_is_excluded_not_penalised():
     assert result.status == EngagementStatus.ENGAGED
 
 
-def test_compute_engagement_speaking_true_contributes_full_credit():
+def test_compute_engagement_speaking_true_does_not_affect_score():
+    """Voice activity is not evidence of engagement, so speaking is recorded
+    on the payload but never scored, in either direction."""
     attention = AttentionSignalPayload(gaze_on_screen_ratio=0.65, speaking=True, window_seconds=5.0)
     result = compute_engagement(0.65, attention)
-    assert result.signals_available == ["attempt_rate", "gaze", "speaking"]
-    assert result.score == (0.65 + 0.65 + 1.0) / 3
+    assert result.signals_available == ["attempt_rate", "gaze"]
+    assert result.score == 0.65
 
 
 def test_compute_engagement_zero_signals_never_reports_disengaged():
@@ -74,17 +86,19 @@ def test_compute_engagement_zero_signals_never_reports_disengaged():
 
 def test_should_send_dynamic_prompt_never_fires_on_insufficient_data():
     result = compute_engagement(None, None)
-    assert not should_send_dynamic_prompt(result, prompts_already_sent=0, max_per_student=3)
+    assert not should_send_dynamic_prompt(result)
 
 
 def test_should_send_dynamic_prompt_fires_when_at_risk():
     result = compute_engagement(0.2, None)
-    assert should_send_dynamic_prompt(result, prompts_already_sent=0, max_per_student=3)
+    assert should_send_dynamic_prompt(result)
 
 
-def test_should_send_dynamic_prompt_respects_the_per_student_cap():
-    result = compute_engagement(0.2, None)
-    assert not should_send_dynamic_prompt(result, prompts_already_sent=3, max_per_student=3)
+def test_should_send_dynamic_prompt_fires_when_disengaged():
+    attention = AttentionSignalPayload(gaze_on_screen_ratio=0.1, window_seconds=5.0)
+    result = compute_engagement(0.1, attention)
+    assert result.status == EngagementStatus.DISENGAGED
+    assert should_send_dynamic_prompt(result)
 
 
 def test_comprehension_alert_guards_on_minimum_respondents():
@@ -92,6 +106,7 @@ def test_comprehension_alert_guards_on_minimum_respondents():
         respondents=2, correct_count=0, min_respondents=5, threshold=0.5
     )
     assert decision.should_alert is False
+    assert decision.correct_ratio is None
 
 
 def test_comprehension_alert_fires_below_threshold_with_enough_respondents():
@@ -116,4 +131,4 @@ def test_comprehension_alert_zero_respondents_does_not_divide_by_zero():
         respondents=0, correct_count=0, min_respondents=0, threshold=0.5
     )
     assert decision.should_alert is False
-    assert decision.correct_ratio == 0.0
+    assert decision.correct_ratio is None

@@ -21,7 +21,7 @@ from app.models.session import Session as SessionModel
 from app.models.student import Student
 from app.models.user import User
 from app.schemas.identity import Role
-from app.services.session_access import is_session_owner, session_membership_allowed
+from app.services.session_access import session_membership_allowed
 
 from .database_support import require_database
 
@@ -214,34 +214,3 @@ async def test_a_cancelled_session_cannot_be_joined():
                 db, row, user_id=enrolled_user_id, role=Role.STUDENT
             )
         assert allowed is False
-
-
-async def test_is_session_owner_returns_none_for_a_non_owning_lecturer():
-    async with _seeded_session() as (session_factory, session_row, _, _, _):
-        async with session_factory() as db:
-            result = await is_session_owner(
-                db, session_row.session_id, user_id=uuid4(), role=Role.LECTURER
-            )
-        assert result is None
-
-
-async def test_is_session_owner_returns_the_row_for_the_owning_lecturer():
-    async with _seeded_session() as (session_factory, session_row, instructor_id, _, _):
-        async with session_factory() as db:
-            result = await is_session_owner(
-                db, session_row.session_id, user_id=instructor_id, role=Role.LECTURER
-            )
-        assert result is not None
-        assert result.session_id == session_row.session_id
-
-
-async def test_is_session_owner_returns_none_for_a_missing_session():
-    require_database()
-    engine = create_async_engine(get_settings().database_url, poolclass=NullPool)
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-    try:
-        async with session_factory() as db:
-            result = await is_session_owner(db, uuid4(), user_id=uuid4(), role=Role.LECTURER)
-        assert result is None
-    finally:
-        await engine.dispose()
