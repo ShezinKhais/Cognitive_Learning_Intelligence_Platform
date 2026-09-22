@@ -106,11 +106,39 @@ async def test_live_events_are_stored_and_retrievable_by_session(
         options=["Incorrect", "Correct"],
         correct_option=1,
     )
-    db.add(question)
+    stale_question = Question(
+        source_material_id=material.id,
+        session_id=session.session_id,
+        question_text="Which delivery was abandoned?",
+        question_type="mcq",
+        status="delivered",
+        difficulty="medium",
+        options=["Active", "Abandoned"],
+        correct_option=1,
+    )
+    db.add_all([question, stale_question])
     await db.flush()
 
     repository = LiveEventRepository(db)
     now = datetime.now(UTC)
+
+    stale_delivery = await repository.record_question_delivery(
+        session_id=session.session_id,
+        question_id=stale_question.question_id,
+        delivered_at=now - timedelta(seconds=31),
+        closes_at=now - timedelta(seconds=1),
+        window_seconds=30,
+    )
+    stale_response = await repository.record_response(
+        session_id=session.session_id,
+        question_id=stale_question.question_id,
+        user_id=first_user.user_id,
+        selected_option=1,
+        free_text=None,
+        is_correct=True,
+        elapsed_ms=1200,
+        submitted_at=now - timedelta(seconds=10),
+    )
 
     with pytest.raises(ValidationError, match="not registered as a student"):
         await repository.record_response(
@@ -243,17 +271,32 @@ async def test_live_events_are_stored_and_retrievable_by_session(
     )
     counts = await repository.dashboard_counts(session.session_id)
 
-    assert total == 1
+    assert total == 2
     assert [item.participant_id for item in participants] == [first_join.participant_id]
-    assert [item.delivery_id for item in deliveries] == [delivery.delivery_id]
+    assert [item.delivery_id for item in deliveries] == [
+        stale_delivery.delivery_id,
+        delivery.delivery_id,
+    ]
+    stale_dashboard_delivery = deliveries[0]
+    assert stale_dashboard_delivery.closed_at == stale_delivery.closes_at
+    assert stale_dashboard_delivery.close_reason == "process_restart"
+    assert stale_dashboard_delivery.eligible_count is None
+    assert stale_dashboard_delivery.respondent_count == 1
+
+    # Reading dashboard data must not mutate the persisted delivery.
+    assert stale_delivery.closed_at is None
+    assert stale_delivery.close_reason is None
     assert len(missed_responses) == 1
     assert missed_responses[0].student_id == second_student.student_id
     assert [item.prompt_id for item in prompt_outcomes] == [prompt.prompt_id]
     assert [item.activity_id for item in activities] == [activity.activity_id]
-    assert [item.response_id for item in responses] == [response.response_id]
+    assert [item.response_id for item in responses] == [
+        stale_response.response_id,
+        response.response_id,
+    ]
     assert counts.participants == 1
-    assert counts.delivered_questions == 1
-    assert counts.responses == 1
+    assert counts.delivered_questions == 2
+    assert counts.responses == 2
     assert counts.missed_responses == 1
     assert counts.prompt_outcomes == 1
     assert counts.activities == 1

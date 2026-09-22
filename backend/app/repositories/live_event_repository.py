@@ -30,6 +30,20 @@ class SessionDashboardCounts:
     activities: int
 
 
+@dataclass(frozen=True)
+class SessionDelivery:
+    delivery_id: uuid.UUID
+    session_id: uuid.UUID
+    question_id: uuid.UUID
+    delivered_at: datetime
+    closes_at: datetime
+    closed_at: datetime | None
+    close_reason: str | None
+    window_seconds: int
+    eligible_count: int | None
+    respondent_count: int
+
+
 class LiveEventRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -381,33 +395,52 @@ class LiveEventRepository:
         self,
         *,
         session_id: uuid.UUID,
-    ) -> list[DeliveredQuestion]:
-        snapshot_at = datetime.now(UTC)
-        await self.session.execute(
-            update(DeliveredQuestion)
+    ) -> list[SessionDelivery]:
+        response_count = (
+            select(func.count(StudentResponse.response_id))
             .where(
-                DeliveredQuestion.session_id == session_id,
-                DeliveredQuestion.closed_at.is_(None),
-                DeliveredQuestion.closes_at <= snapshot_at,
+                StudentResponse.session_id == DeliveredQuestion.session_id,
+                StudentResponse.question_id == DeliveredQuestion.question_id,
             )
-            .values(
-                closed_at=DeliveredQuestion.closes_at,
-                close_reason="process_restart",
-                eligible_count=0,
-                respondent_count=0,
-            )
-            .execution_options(synchronize_session="fetch")
+            .correlate(DeliveredQuestion)
+            .scalar_subquery()
         )
 
         result = await self.session.execute(
-            select(DeliveredQuestion)
+            select(
+                DeliveredQuestion,
+                response_count.label("persisted_response_count"),
+            )
             .where(DeliveredQuestion.session_id == session_id)
             .order_by(
                 DeliveredQuestion.delivered_at,
                 DeliveredQuestion.delivery_id,
             )
         )
-        return list(result.scalars().all())
+
+        snapshot_at = datetime.now(UTC)
+        deliveries = []
+
+        for delivery, persisted_response_count in result.all():
+            abandoned = delivery.closed_at is None and delivery.closes_at <= snapshot_at
+            deliveries.append(
+                SessionDelivery(
+                    delivery_id=delivery.delivery_id,
+                    session_id=delivery.session_id,
+                    question_id=delivery.question_id,
+                    delivered_at=delivery.delivered_at,
+                    closes_at=delivery.closes_at,
+                    closed_at=(delivery.closes_at if abandoned else delivery.closed_at),
+                    close_reason=("process_restart" if abandoned else delivery.close_reason),
+                    window_seconds=delivery.window_seconds,
+                    eligible_count=(None if abandoned else delivery.eligible_count),
+                    respondent_count=(
+                        persisted_response_count if abandoned else delivery.respondent_count
+                    ),
+                )
+            )
+
+        return deliveries
 
     async def list_missed_responses(
         self,
