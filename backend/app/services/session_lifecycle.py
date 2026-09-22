@@ -32,9 +32,9 @@ from app.realtime.classroom import classroom
 from app.realtime.hub import hub
 from app.repositories.course_repository import CourseRepository
 from app.repositories.session_repository import SessionRepository
-from app.repositories.student_repository import StudentRepository
 from app.schemas.identity import Role
 from app.schemas.session import SessionCreateRequest, SessionOut, SessionStatus
+from app.services.session_access import session_membership_allowed
 
 log = logging.getLogger("clip.sessions")
 
@@ -42,9 +42,6 @@ log = logging.getLogger("clip.sessions")
 MODE_IN_PERSON = "in_person"
 
 MAX_TITLE_LENGTH = 200
-
-# Sessions a student or the lecturer may still connect to.
-JOINABLE = {SessionStatus.PREPARED.value, SessionStatus.ACTIVE.value}
 
 
 async def create_session(
@@ -162,14 +159,10 @@ async def joinable_session(
     caller may not see are refused alike.
     """
     row = await SessionRepository(db).get(session_id)
-    if row is None or row.status not in JOINABLE:
+    if row is None:
         return None
-    if role is Role.ADMIN or (role is Role.LECTURER and row.instructor_id == user_id):
+    if await session_membership_allowed(db, row, user_id=user_id, role=role):
         return row
-    if role is Role.STUDENT:
-        student = await StudentRepository(db).get_by_user_id(user_id)
-        if student is not None and student.course_id == row.course_id:
-            return row
     return None
 
 

@@ -2037,6 +2037,7 @@
     },
     "/api/v1/sessions/{session_id}/alerts": {
       "get": {
+        "description": "Class comprehension alerts raised so far in a running session.",
         "operationId": "session_alerts_api_v1_sessions__session_id__alerts_get",
         "parameters": [
           {
@@ -2128,7 +2129,7 @@
     },
     "/api/v1/sessions/{session_id}/engagement": {
       "get": {
-        "description": "Engagement only. Comprehension is served separately and the two are never\ncombined into one figure.",
+        "description": "Engagement only. Comprehension is served separately and the two are never\ncombined into one figure. Scores live with the running session, so a\nsession this process is not running reports none.",
         "operationId": "session_engagement_api_v1_sessions__session_id__engagement_get",
         "parameters": [
           {

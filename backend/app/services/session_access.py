@@ -29,11 +29,8 @@ from app.schemas.session import SessionStatus
 # Sessions that may still be joined. A session that has ended or was
 # cancelled has no live stream left to join, regardless of who is asking --
 # enrolment and ownership answer "does this person belong to this session,"
-# not "is there still something here to join." The branch that adds
-# session_lifecycle (not yet on this branch) will need an equivalent
-# JOINABLE set of its own for start/pause/end transitions -- whoever merges
-# the two should double-check those sets stay in sync, since nothing here
-# enforces that.
+# not "is there still something here to join." This is the only copy:
+# session_lifecycle.joinable_session delegates here.
 JOINABLE_STATUSES = {SessionStatus.PREPARED.value, SessionStatus.ACTIVE.value}
 
 
@@ -69,9 +66,11 @@ async def session_membership_allowed(
     return False
 
 
-# Deliberately no `is_session_owner` here. Lifecycle transitions (start,
-# pause, end, deliver) need the session row locked (`SELECT ... FOR UPDATE`)
-# to be race-free against a concurrent transition; a plain `db.get` lookup
-# cannot provide that, so an ownership check for those actions belongs to
-# whichever module already holds the row locked for the transition, not to
-# this policy module.
+def may_view_session_analytics(
+    session_row: SessionModel, *, user_id: uuid.UUID, role: Role
+) -> bool:
+    """Whether the caller may read a session's engagement and alerts: the
+    lecturer who runs it, or an admin. Read-only, so unlike a lifecycle
+    transition it needs no row lock; start/pause/end ownership stays with
+    session_lifecycle, which holds the row locked."""
+    return role == Role.ADMIN or (role == Role.LECTURER and session_row.instructor_id == user_id)

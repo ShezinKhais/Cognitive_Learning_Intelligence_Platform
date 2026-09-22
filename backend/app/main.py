@@ -18,6 +18,7 @@ from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, request_id_var
 from app.realtime.classroom import classroom
+from app.repositories.comprehension_repository import DatabaseComprehensionSource
 from app.services.material_recovery import keep_sweeping
 from app.services.uploads import get_background_processor
 
@@ -52,6 +53,7 @@ async def lifespan(app: FastAPI):
         log.info("Running without Teams integration")
     # Recorders are registered by importing their modules before this runs.
     # What is still missing is reported now, not discovered after a class.
+    classroom.comprehension_source = DatabaseComprehensionSource()
     classroom.check_wiring()
     # In the background, so a database that is slow or absent never holds up
     # startup; it is only needed once a development account uploads.

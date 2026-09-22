@@ -10,13 +10,11 @@ and let it skip rather than fail when the database is absent.
 import uuid
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
-from app.core.database import get_db
 from app.models.ai_model_run import AIModelRun
 from app.models.consent import Consent
 from app.models.course import Course
@@ -336,35 +334,9 @@ async def test_trigram_similarity_works(db: AsyncSession) -> None:
     assert 0.0 < score < 1.0
 
 
-async def test_readiness_passes_when_the_database_is_up(app) -> None:
-    """The 503 path is covered elsewhere; this covers the healthy one.
-
-    Uses its own engine and TestClient context rather than the suite's
-    shared, session-scoped `client` fixture. That fixture is never entered
-    as a context manager, so each request it makes runs on a fresh,
-    short-lived event loop, while `/ready` resolves `get_db` through the
-    real app's module-level, process-cached engine -- a connection this
-    call's dying loop checks back in can be handed to the next caller,
-    which then hits "Event loop is closed" instead of a clean 200/503. A
-    dedicated NullPool engine bound to one TestClient context sidesteps
-    that, the same way the `db` fixture above does.
-    """
-    require_database()
-    engine = create_async_engine(get_settings().database_url, poolclass=NullPool)
-    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-    async def _override_get_db():
-        async with session_factory() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = _override_get_db
-    try:
-        with TestClient(app) as test_client:
-            response = test_client.get("/api/v1/ready")
-    finally:
-        app.dependency_overrides.pop(get_db, None)
-        await engine.dispose()
-
+async def test_readiness_passes_when_the_database_is_up(db: AsyncSession, client) -> None:
+    """The 503 path is covered elsewhere; this covers the healthy one."""
+    response = client.get("/api/v1/ready")
     assert response.status_code == 200
 
     body = response.json()

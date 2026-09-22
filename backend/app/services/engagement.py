@@ -1,61 +1,65 @@
 """Camera-free engagement scoring v1, dynamic prompt gating and class
 comprehension alerts.
 
-Owner: Cyber 1, Phase 3.
+Owner: Cyber 1, Phase 3. The live classroom (app.realtime.classroom) feeds
+these functions what it already observes and acts on what they return.
 
-"Camera-free" means no signal here requires a camera: v1 scores whatever a
-student's device reports (a checkpoint attempt rate that always exists once a
-question has gone out, plus an optional, client-computed `signal.attention`
-event) without depending on any of it. Phase 6 adds the actual local gaze/VAD
-indicators this schema already has room for; this module does not change when
-that lands; it just receives more populated payloads.
+Camera-free: the score is built from participation the server sees for
+itself -- questions attempted out of those the student was actually shown,
+how quickly answers arrived within the response window, and how the student
+answered attention prompts. Gaze and face presence are optional extras from a
+client `signal.attention` event; nothing depends on them.
 
-Renormalisation: a missing signal is dropped from the average rather than
-counted as zero, so a student who never sent an attention signal is not
-scored as if they were visibly absent. `EngagementOut.confidence` reports how
-much of the score is backed by evidence, and a low-confidence result is
-rendered as "insufficient data", never as "disengaged" -- see
-`app.schemas.session.EngagementOut`'s own docstring. For the same reason,
-`DISENGAGED` itself is never returned from a single signal -- attempt_rate
-alone, the first thing available once a question has gone out, is not enough
-evidence to make the module's strongest judgement call; that reading is
-reported as `AT_RISK` until a second signal corroborates it.
+Renormalisation: a signal with no evidence yet is dropped from the average
+rather than counted as zero, and `confidence` reports how many signals backed
+the score. A student who has been shown fewer than MIN_QUESTIONS_SHOWN
+questions has no attempt rate at all, so a late joiner is "insufficient data",
+not "at risk". DISENGAGED needs at least two signals, and no prompt is ever
+sent on the attempt rate alone.
 
-`speaking` is recorded on the payload but does not contribute to the score
-in either direction: voice activity is not evidence of engagement with the
-lecture (a student chatting to a neighbour scores as high as one answering a
-question aloud), and there is no validated read on it yet.
+`speaking` is not scored in either direction: voice activity is not evidence
+of engagement with the lecture.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
 
 from app.schemas.events import AttentionSignalPayload
-from app.schemas.session import EngagementStatus
+from app.schemas.session import ComprehensionLabel, EngagementStatus
 
-# Every signal this version can score, in the order signals_available reports
-# them when present. Confidence is how many of these actually contributed,
-# out of the total -- a fixed denominator so confidence is comparable across
-# students who happened to send different signals. `speaking` is not in this
-# list: it's recorded on the payload but never scored (see module docstring).
-_SIGNAL_NAMES = ("attempt_rate", "gaze", "face_presence")
+# Every signal this version can score. Confidence is how many contributed,
+# out of this fixed total, so it is comparable between students.
+_SIGNAL_NAMES = ("attempt_rate", "response_timing", "prompt_response", "gaze", "face_presence")
 
 ENGAGED_THRESHOLD = 0.6
 AT_RISK_THRESHOLD = 0.3
 
-# Below this, the score is backed by too little evidence to call a status at
-# all: zero signals available. Any single signal (attempt_rate, gaze or face
-# presence) already clears it, which is deliberate -- attempt_rate is
-# available from the first delivered question onward, and a student must not
-# be called "insufficient data" for the entire session just because their
-# device never sent an attention event.
-MIN_CONFIDENCE_FOR_STATUS = 1 / len(_SIGNAL_NAMES)
+# One question is not a rate. Below this many questions shown to the student,
+# attempt_rate is not a signal yet.
+MIN_QUESTIONS_SHOWN = 2
 
-# A single signal clears MIN_CONFIDENCE_FOR_STATUS but is not enough evidence
-# to call the module's strongest judgement, DISENGAGED -- see module
-# docstring. Two or more signals agreeing is required.
-MIN_CONFIDENCE_FOR_DISENGAGED = 2 / len(_SIGNAL_NAMES)
+MIN_SIGNALS_FOR_STATUS = 1
+MIN_SIGNALS_FOR_DISENGAGED = 2
+MIN_SIGNALS_FOR_PROMPT = 2
+
+# How each resolved attention prompt counts towards prompt_response.
+PROMPT_ACKNOWLEDGED = 1.0
+PROMPT_DISMISSED = 0.5
+PROMPT_EXPIRED = 0.0
+
+
+@dataclass(frozen=True)
+class EngagementInputs:
+    questions_shown: int = 0
+    questions_answered: int = 0
+    # Per answered question: the fraction of the response window that had
+    # passed when the server received the answer, 0.0 to 1.0.
+    response_times: Sequence[float] = field(default_factory=tuple)
+    # Per resolved prompt: PROMPT_ACKNOWLEDGED, PROMPT_DISMISSED or PROMPT_EXPIRED.
+    prompt_responses: Sequence[float] = field(default_factory=tuple)
+    attention: AttentionSignalPayload | None = None
 
 
 @dataclass(frozen=True)
@@ -66,17 +70,29 @@ class EngagementComputation:
     signals_available: list[str]
 
 
-def compute_engagement(
-    attempt_rate: float | None,
-    attention: AttentionSignalPayload | None,
-) -> EngagementComputation:
+def _clamp(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
+def compute_engagement(inputs: EngagementInputs) -> EngagementComputation:
     components: list[float] = []
     signals: list[str] = []
 
-    if attempt_rate is not None:
-        components.append(max(0.0, min(1.0, attempt_rate)))
+    if inputs.questions_shown >= MIN_QUESTIONS_SHOWN:
+        components.append(_clamp(inputs.questions_answered / inputs.questions_shown))
         signals.append("attempt_rate")
 
+    if inputs.response_times:
+        # Answering at all scores at least 0.5; answering early scores up to 1.
+        used = sum(_clamp(t) for t in inputs.response_times) / len(inputs.response_times)
+        components.append(1.0 - 0.5 * used)
+        signals.append("response_timing")
+
+    if inputs.prompt_responses:
+        components.append(_clamp(sum(inputs.prompt_responses) / len(inputs.prompt_responses)))
+        signals.append("prompt_response")
+
+    attention = inputs.attention
     if attention is not None:
         if attention.gaze_on_screen_ratio is not None:
             components.append(attention.gaze_on_screen_ratio)
@@ -87,7 +103,7 @@ def compute_engagement(
 
     confidence = len(signals) / len(_SIGNAL_NAMES)
 
-    if not components or confidence < MIN_CONFIDENCE_FOR_STATUS:
+    if len(signals) < MIN_SIGNALS_FOR_STATUS:
         return EngagementComputation(
             score=None,
             status=EngagementStatus.INSUFFICIENT_DATA,
@@ -99,7 +115,7 @@ def compute_engagement(
 
     if score >= ENGAGED_THRESHOLD:
         status = EngagementStatus.ENGAGED
-    elif score >= AT_RISK_THRESHOLD or confidence < MIN_CONFIDENCE_FOR_DISENGAGED:
+    elif score >= AT_RISK_THRESHOLD or len(signals) < MIN_SIGNALS_FOR_DISENGAGED:
         status = EngagementStatus.AT_RISK
     else:
         status = EngagementStatus.DISENGAGED
@@ -115,45 +131,54 @@ def compute_engagement(
 def should_send_dynamic_prompt(computation: EngagementComputation) -> bool:
     """Whether the engagement state warrants a private refocus nudge.
 
-    Never fires on insufficient data -- a status this module itself refuses
-    to call disengaged must not trigger the same nudge disengagement does.
-    This only decides whether engagement warrants a nudge; whether one is
-    currently allowed to go out (per-student cap, pause state, an open
-    question, connection status) is the live classroom's call, not this
-    module's -- it owns that state and would otherwise drift out of sync
-    with a second copy of the same limits kept here.
+    Needs a low status backed by at least two signals: a low attempt rate on
+    its own is exactly what a student who has just joined, or is thinking
+    through a hard question, looks like. Whether a prompt may go out right
+    now (cap, pause, open question, connection) is the classroom's call.
     """
-    return computation.status in (EngagementStatus.AT_RISK, EngagementStatus.DISENGAGED)
+    return (
+        computation.status in (EngagementStatus.AT_RISK, EngagementStatus.DISENGAGED)
+        and len(computation.signals_available) >= MIN_SIGNALS_FOR_PROMPT
+    )
 
 
 @dataclass(frozen=True)
 class ComprehensionAlertDecision:
     should_alert: bool
+    respondents: int
+    # Share of valid respondents classified mastered, or None below the
+    # minimum -- "not enough answers yet" is not "the class got it wrong".
     correct_ratio: float | None
+    struggling_ratio: float | None
 
 
 def evaluate_comprehension_alert(
+    labels: Iterable[str],
     *,
-    respondents: int,
-    correct_count: int,
     min_respondents: int,
     threshold: float,
 ) -> ComprehensionAlertDecision:
     """Class-wide "this question tripped the class up" check.
 
-    The minimum-respondent guard exists because a 1-in-2 correct ratio from
-    two early answers is noise, not a signal -- comprehension_alert_min_
-    respondents (default 5) is the smallest sample this module treats as
-    meaningful, regardless of how low the ratio looks. `correct_ratio` is
-    `None` in that case, not `0.0` -- "not enough answers yet" is a different
-    fact from "the class got it wrong," and a dashboard or log reading the
-    field must not confuse the two.
+    `labels` is one comprehension classification per respondent. Anything
+    that is not a known ComprehensionLabel (a free-text answer still being
+    classified, say) is not a valid respondent. The alert is raised once at
+    least min_respondents valid respondents exist and at least `threshold`
+    of them are classified partial or struggling.
     """
-    if respondents < min_respondents or respondents == 0:
-        return ComprehensionAlertDecision(should_alert=False, correct_ratio=None)
+    known = {label.value for label in ComprehensionLabel}
+    valid = [label for label in labels if label in known]
+    respondents = len(valid)
+    if respondents == 0 or respondents < min_respondents:
+        return ComprehensionAlertDecision(
+            should_alert=False, respondents=respondents, correct_ratio=None, struggling_ratio=None
+        )
 
-    correct_ratio = correct_count / respondents
+    mastered = sum(1 for label in valid if label == ComprehensionLabel.MASTERED.value)
+    struggling_ratio = (respondents - mastered) / respondents
     return ComprehensionAlertDecision(
-        should_alert=correct_ratio < threshold,
-        correct_ratio=correct_ratio,
+        should_alert=struggling_ratio >= threshold,
+        respondents=respondents,
+        correct_ratio=mastered / respondents,
+        struggling_ratio=struggling_ratio,
     )
