@@ -4,6 +4,8 @@ import {
   type Page,
 } from '../../api'
 
+const QUESTION_PAGE_SIZE = 200
+
 export interface StagedQuestion {
   id: string
   materialId: string
@@ -28,16 +30,31 @@ export interface DeliverQuestionResponse {
 export async function loadStagedQuestions(
   sessionId: string,
 ): Promise<StagedQuestion[]> {
-  const page =
-    await apiAuthenticatedGet<
-      Page<DeliverableQuestionResponse>
-    >(
-      `/sessions/${encodeURIComponent(
-        sessionId,
-      )}/questions?limit=200&offset=0`,
-    )
+  const questions: DeliverableQuestionResponse[] = []
+  let offset = 0
+  let total = 0
 
-  return page.items.map(
+  do {
+    const page =
+      await apiAuthenticatedGet<
+        Page<DeliverableQuestionResponse>
+      >(
+        `/sessions/${encodeURIComponent(
+          sessionId,
+        )}/questions?limit=${QUESTION_PAGE_SIZE}&offset=${offset}`,
+      )
+
+    questions.push(...page.items)
+    total = page.total
+
+    if (page.items.length === 0) {
+      break
+    }
+
+    offset += page.items.length
+  } while (questions.length < total)
+
+  return questions.map(
     (question) => ({
       id: question.id,
       materialId:
