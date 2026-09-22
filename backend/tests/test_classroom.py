@@ -18,9 +18,14 @@ import pytest
 
 from app.core.errors import ConflictError
 from app.realtime import classroom as classroom_module
-from app.realtime.classroom import Classroom, Submission
+from app.realtime.classroom import Classroom, ClosedQuestion, Submission
 from app.realtime.hub import Connection, SessionHub
-from app.schemas.events import AnswerSubmitPayload, PromptAckPayload, ServerEventType
+from app.schemas.events import (
+    AnswerSubmitPayload,
+    FeedbackResultPayload,
+    PromptAckPayload,
+    ServerEventType,
+)
 from app.schemas.identity import Role
 from app.schemas.session import SessionStatus
 
@@ -46,6 +51,11 @@ class _Question:
     correct_option: int | None = 1
     source_slide: int | None = 4
     question_id: UUID = field(default_factory=uuid4)
+    question_type: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.question_type is None:
+            self.question_type = "mcq" if self.options else "free_text"
 
 
 class _Db:
@@ -98,35 +108,29 @@ def _room(
     prompts: int = 3,
     prompt_ttl: float = 60.0,
     missed: int = 0,
+    interval_max: float | None = None,
+    rng: object | None = None,
+    production: bool = False,
 ) -> tuple[Classroom, SessionHub]:
+    """interval alone fixes the wait between questions, so timing tests are
+    exact; interval_max makes it the random range the cycle draws from."""
     events = SessionHub()
     settings = SimpleNamespace(
-        checkpoint_min_interval_seconds=interval,
-        checkpoint_max_interval_seconds=interval,
+        checkpoint_interval_min_seconds=interval,
+        checkpoint_interval_max_seconds=interval if interval_max is None else interval_max,
         checkpoint_response_window_seconds=window,
         dynamic_prompt_max_per_student=prompts,
         attention_prompt_ttl_seconds=prompt_ttl,
         attention_prompt_after_missed_questions=missed,
+        is_production=production,
     )
-    room = Classroom(events=events, sessions=lambda: _Db, settings=lambda: settings)
+    room = Classroom(
+        events=events,
+        sessions=lambda: _Db,
+        settings=lambda: settings,
+        rng=rng,  # type: ignore[arg-type]
+    )
     return room, events
-
-
-def test_the_scheduler_can_choose_a_delay_inside_the_configured_range(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    room, _ = _room()
-    settings = room._settings()
-    settings.checkpoint_min_interval_seconds = 900
-    settings.checkpoint_max_interval_seconds = 1200
-
-    monkeypatch.setattr(
-        classroom_module.random,
-        "uniform",
-        lambda minimum, maximum: 1037.0,
-    )
-
-    assert room._next_interval() == timedelta(seconds=1037)
 
 
 def _row(session_id: UUID | None = None) -> SimpleNamespace:
@@ -395,6 +399,132 @@ async def test_an_answer_that_could_not_be_saved_can_be_sent_again() -> None:
     await room.shutdown()
 
 
+async def test_feedback_follows_the_receipt_and_reaches_only_that_student() -> None:
+    """A recorder that sent feedback itself could show "Correct" for an
+    answer the classroom then refused. What it returns goes out after the
+    receipt instead, to the student who answered and nobody else."""
+    room, events = _room()
+    row = _row()
+    answering, student = await _join(events, row.session_id, Role.STUDENT)
+    other, _ = await _join(events, row.session_id, Role.STUDENT)
+    lecturer, _ = await _join(events, row.session_id, Role.LECTURER)
+    question = await _deliver(room, row)
+
+    class Recorder:
+        async def record(self, submission: Submission) -> FeedbackResultPayload:
+            assert answering.of(ServerEventType.ANSWER_RECEIPT) == []
+            return FeedbackResultPayload(question_id=submission.question_id, correct=True)
+
+    room.recorder = Recorder()
+    await room.submit(row.session_id, student, Role.STUDENT, _answer(question.question_id))
+
+    receipt, feedback = answering.sent[-2:]
+    assert (receipt["type"], receipt["data"]["accepted"]) == ("answer.receipt", True)
+    assert (feedback["type"], feedback["data"]["correct"]) == ("feedback.result", True)
+    for socket in (other, lecturer):
+        assert socket.of(ServerEventType.FEEDBACK_RESULT) == []
+        assert socket.of(ServerEventType.ANSWER_RECEIPT) == []
+    await room.shutdown()
+
+
+async def test_a_refused_answer_gets_a_receipt_and_no_feedback() -> None:
+    room, events = _room()
+    row = _row()
+    socket, student = await _join(events, row.session_id, Role.STUDENT)
+    question = await _deliver(room, row)
+
+    class Recorder:
+        async def record(self, submission: Submission) -> FeedbackResultPayload:
+            raise RuntimeError("database gone")
+
+    room.recorder = Recorder()
+    await room.submit(row.session_id, student, Role.STUDENT, _answer(question.question_id))
+
+    [receipt] = socket.of(ServerEventType.ANSWER_RECEIPT)
+    assert receipt["data"]["accepted"] is False
+    assert socket.of(ServerEventType.FEEDBACK_RESULT) == []
+    await room.shutdown()
+
+
+class _Closes:
+    def __init__(self) -> None:
+        self.closed: list[ClosedQuestion] = []
+        self.release = asyncio.Event()
+        self.release.set()
+
+    async def record_close(self, closed: ClosedQuestion) -> None:
+        await self.release.wait()
+        self.closed.append(closed)
+
+
+async def test_the_close_recorder_is_told_who_was_shown_and_who_answered() -> None:
+    room, events = _room(window=0.1)
+    row = _row()
+    socket, answered = await _join(events, row.session_id, Role.STUDENT)
+    _, silent = await _join(events, row.session_id, Role.STUDENT)
+    closes = room.close_recorder = _Closes()
+    question = await _deliver(room, row)
+    await room.submit(row.session_id, answered, Role.STUDENT, _answer(question.question_id))
+
+    await asyncio.sleep(0.25)
+
+    [closed] = closes.closed
+    assert (closed.question_id, closed.reason) == (question.question_id, "window_elapsed")
+    assert closed.eligible == {answered, silent}
+    assert closed.answered == {answered}
+    assert socket.of(ServerEventType.QUESTION_CLOSED)
+    await room.shutdown()
+
+
+async def test_the_close_recorder_hears_about_a_question_the_end_closed() -> None:
+    room, _ = _room()
+    row = _row()
+    closes = room.close_recorder = _Closes()
+    question = await _deliver(room, row)
+
+    await room.end(row.session_id, SessionStatus.ENDED, delivered=1)
+
+    [closed] = closes.closed
+    assert (closed.question_id, closed.reason) == (question.question_id, "session_ended")
+
+
+async def test_a_slow_close_recorder_does_not_hold_up_the_session() -> None:
+    """It runs once the session's lock is released, so the next question can
+    go out while the last close is still being stored."""
+    room, _ = _room(window=0.05)
+    row = _row()
+    closes = room.close_recorder = _Closes()
+    closes.release.clear()
+    await _deliver(room, row)
+    await asyncio.sleep(0.15)
+
+    await asyncio.wait_for(_deliver(room, row), 1)
+
+    assert closes.closed == []
+    closes.release.set()
+    await room.shutdown()
+
+
+async def test_a_failing_close_recorder_is_logged_and_ignored(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    room, _ = _room(window=0.05)
+    row = _row()
+
+    class Broken:
+        async def record_close(self, closed: ClosedQuestion) -> None:
+            raise RuntimeError("database gone")
+
+    room.close_recorder = Broken()
+    await _deliver(room, row)
+    with caplog.at_level("ERROR", logger="clip.classroom"):
+        await asyncio.sleep(0.15)
+
+    assert "could not record a question close" in caplog.text
+    await _deliver(room, row)
+    await room.shutdown()
+
+
 async def test_ending_closes_the_open_question_then_announces_the_end() -> None:
     room, events = _room()
     row = _row()
@@ -442,20 +572,9 @@ async def test_the_cycle_delivers_the_next_question_on_its_own() -> None:
     await room.shutdown()
 
 
-async def test_the_next_wait_begins_after_the_response_window() -> None:
-    room, _ = _room(interval=10, window=2)
-    row = _row()
-    live = room.activate(row.session_id)
-
-    await _deliver(room, row)
-
-    assert live.open is not None
-    gap = (live.next_due - live.open.closes_at).total_seconds()
-    assert 9.9 <= gap <= 10.1
-    await room.shutdown()
-
-
-async def test_a_manual_question_postpones_the_cycle() -> None:
+async def test_a_manual_question_discards_what_was_due() -> None:
+    """The cycle was due 0.1s after the lecturer's question. Instead the next
+    wait starts when that question closes, 0.05s after it went out."""
     room, events = _room(interval=0.3, window=0.05)
     row = _row()
     socket, _ = await _join(events, row.session_id, Role.STUDENT)
@@ -464,10 +583,102 @@ async def test_a_manual_question_postpones_the_cycle() -> None:
     await _deliver(room, row)
     _Repository.staged.append(_Question())
 
-    # Without the postponement the cycle would fire 0.1s from now.
     await asyncio.sleep(0.2)
-
     assert len(socket.of(ServerEventType.QUESTION_DELIVERED)) == 1
+    await asyncio.sleep(0.25)
+    assert len(socket.of(ServerEventType.QUESTION_DELIVERED)) == 2
+    await room.shutdown()
+
+
+async def test_the_next_wait_starts_when_the_question_closes() -> None:
+    """Delivered at 0.2s and closed at 0.35s, the next is due at 0.55s. Counted
+    from the delivery it would have gone out at 0.4s, taking the response
+    window out of the teaching time."""
+    room, events = _room(interval=0.2, window=0.15)
+    row = _row()
+    socket, _ = await _join(events, row.session_id, Role.STUDENT)
+    _Repository.staged.extend([_Question(), _Question()])
+
+    room.activate(row.session_id)
+    await asyncio.sleep(0.47)
+    assert len(socket.of(ServerEventType.QUESTION_DELIVERED)) == 1
+    await asyncio.sleep(0.18)
+    assert len(socket.of(ServerEventType.QUESTION_DELIVERED)) == 2
+    await room.shutdown()
+
+
+class _Draws:
+    """Stands in for random.Random: records each range and returns a chosen
+    point in it, so the test knows every wait the cycle drew."""
+
+    def __init__(self, *fractions: float) -> None:
+        self.fractions = list(fractions)
+        self.ranges: list[tuple[float, float]] = []
+
+    def uniform(self, low: float, high: float) -> float:
+        self.ranges.append((low, high))
+        return low + (high - low) * self.fractions.pop(0)
+
+
+async def test_each_wait_is_drawn_fresh_from_the_configured_range() -> None:
+    draws = _Draws(0.0, 1.0, 0.5)
+    room, _ = _room(interval=900, interval_max=1200, window=0.05, rng=draws)
+    row = _row()
+
+    live = room.activate(row.session_id)
+    first = (live.next_due - datetime.now(UTC)).total_seconds()  # type: ignore[operator]
+    await _deliver(room, row)
+    await asyncio.sleep(0.1)
+    second = (live.next_due - datetime.now(UTC)).total_seconds()  # type: ignore[operator]
+    await _deliver(room, row)
+    await asyncio.sleep(0.1)
+    third = (live.next_due - datetime.now(UTC)).total_seconds()  # type: ignore[operator]
+
+    assert draws.ranges == [(900, 1200)] * 3
+    assert 899 < first <= 900
+    assert 1199 < second <= 1200
+    assert 1049 < third <= 1050
+    await room.shutdown()
+
+
+async def test_nothing_is_due_while_a_question_is_open() -> None:
+    room, _ = _room(window=30)
+    row = _row()
+    live = room.activate(row.session_id)
+    assert live.next_due is not None
+
+    await _deliver(room, row)
+
+    assert live.next_due is None
+    await room.shutdown()
+
+
+async def test_pausing_mid_question_draws_the_wait_at_its_close_and_uses_it_on_resume() -> None:
+    room, _ = _room(interval=10, window=0.05)
+    row = _row()
+    live = room.activate(row.session_id)
+    await _deliver(room, row)
+
+    await room.pause(_Db(), row)  # type: ignore[arg-type]
+    await asyncio.sleep(0.1)  # the question closes while paused
+    assert live.next_due is None and live.remaining == timedelta(seconds=10)
+    await room.resume(_Db(), row)  # type: ignore[arg-type]
+
+    left = (live.next_due - datetime.now(UTC)).total_seconds()  # type: ignore[operator]
+    assert 9 < left <= 10
+    await room.shutdown()
+
+
+async def test_resuming_while_a_question_is_still_open_waits_for_its_close() -> None:
+    room, _ = _room(interval=10, window=30)
+    row = _row()
+    live = room.activate(row.session_id)
+    await _deliver(room, row)
+
+    await room.pause(_Db(), row)  # type: ignore[arg-type]
+    await room.resume(_Db(), row)  # type: ignore[arg-type]
+
+    assert live.next_due is None
     await room.shutdown()
 
 
@@ -769,36 +980,6 @@ async def test_a_question_open_at_the_pause_runs_to_the_end_of_its_window() -> N
     await room.shutdown()
 
 
-async def test_pause_during_a_question_preserves_the_post_close_wait() -> None:
-    room, _ = _room(interval=10, window=0.05)
-    row = _row()
-    live = room.activate(row.session_id)
-
-    await _deliver(room, row)
-
-    assert live.open is not None
-
-    await room.pause(_Db(), row)  # type: ignore[arg-type]
-
-    # The question itself still finishes while the session is paused.
-    await asyncio.sleep(0.1)
-
-    assert live.open is None
-    assert live.paused
-    assert live.remaining is not None
-
-    await room.resume(_Db(), row)  # type: ignore[arg-type]
-
-    # Resume starts the preserved post-question wait from now rather
-    # than counting the paused time against it.
-    left = (live.next_due - datetime.now(UTC)).total_seconds()
-
-    assert 9 < left <= 10
-    assert live.remaining is None
-
-    await room.shutdown()
-
-
 async def test_a_session_paused_before_a_restart_stays_paused() -> None:
     room, _ = _room(interval=0.05)
     row = _row()
@@ -1036,15 +1217,108 @@ async def test_missed_question_nudges_can_be_turned_off() -> None:
     await room.shutdown()
 
 
-async def test_an_empty_question_queue_does_not_alert_the_class() -> None:
-    room, events = _room(interval=0.1)
+async def test_an_empty_queue_is_logged_not_shown_and_tried_again(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    room, events = _room(interval=0.1, window=0.05)
     row = _row()
     lecturer, _ = await _join(events, row.session_id, Role.LECTURER)
     student, _ = await _join(events, row.session_id, Role.STUDENT)
 
-    room.activate(row.session_id)
-    await asyncio.sleep(0.15)
+    with caplog.at_level("INFO", logger="clip.classroom"):
+        room.activate(row.session_id)
+        await asyncio.sleep(0.15)
+    assert "No static question available" in caplog.text
+    assert lecturer.sent == student.sent == []
 
-    assert lecturer.of(ServerEventType.ERROR) == []
-    assert student.of(ServerEventType.ERROR) == []
+    _Repository.staged.append(_Question())
+    await asyncio.sleep(0.12)
+    assert len(student.of(ServerEventType.QUESTION_DELIVERED)) == 1
+    await room.shutdown()
+
+
+# -- startup wiring -------------------------------------------------------------
+
+
+class _Recorder:
+    async def record(self, submission: Submission) -> None:
+        return None
+
+    async def record_prompt(self, outcome) -> None:  # noqa: ANN001
+        return None
+
+    async def record_close(self, closed) -> None:  # noqa: ANN001
+        return None
+
+
+def test_development_is_told_what_live_sessions_will_not_store(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("WEB_CONCURRENCY", raising=False)
+    room, _ = _room()
+
+    with caplog.at_level("WARNING", logger="clip.classroom"):
+        room.check_wiring()
+
+    assert "answers are not stored" in caplog.text
+    assert "prompt outcomes are not stored" in caplog.text
+    assert "question closes are not stored" in caplog.text
+
+
+def test_production_will_not_start_without_somewhere_to_store_answers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("WEB_CONCURRENCY", raising=False)
+    room, _ = _room(production=True)
+
+    with pytest.raises(RuntimeError, match="answers are not stored"):
+        room.check_wiring()
+
+    room.recorder = room.prompt_recorder = room.close_recorder = _Recorder()  # type: ignore[assignment]
+    room.check_wiring()
+
+
+@pytest.mark.parametrize("workers", ["2", "4", "auto"])
+def test_live_sessions_refuse_more_than_one_worker(
+    monkeypatch: pytest.MonkeyPatch, workers: str
+) -> None:
+    """Each worker would restore the same session and run its own cycle."""
+    monkeypatch.setenv("WEB_CONCURRENCY", workers)
+    room, _ = _room(production=True)
+    room.recorder = room.prompt_recorder = room.close_recorder = _Recorder()  # type: ignore[assignment]
+
+    with pytest.raises(RuntimeError, match="single worker"):
+        room.check_wiring()
+
+
+def test_one_worker_is_fine(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WEB_CONCURRENCY", "1")
+    room, _ = _room(production=True)
+    room.recorder = room.prompt_recorder = room.close_recorder = _Recorder()  # type: ignore[assignment]
+
+    room.check_wiring()
+
+
+async def test_how_a_question_is_answered_comes_from_its_type() -> None:
+    """A multiple choice question whose choices went missing was delivered as
+    a free-text one: the student saw buttons and was told to answer in their
+    own words. The stored type decides, and disagreeing options are dropped."""
+    room, events = _room()
+    row = _row()
+    socket, student = await _join(events, row.session_id, Role.STUDENT)
+    _Repository.staged.append(_Question(question_type="free_text", options=["Mars", "Venus"]))
+
+    delivered = await room.deliver(_Db(), row)  # type: ignore[arg-type]
+
+    assert delivered is not None and delivered.options is None
+    [event] = socket.of(ServerEventType.QUESTION_DELIVERED)
+    assert event["data"]["options"] is None
+    chosen = await room.submit(
+        row.session_id, student, Role.STUDENT, _answer(delivered.question_id, option=0)
+    )
+    written = await room.submit(
+        row.session_id, student, Role.STUDENT, _answer(delivered.question_id, None, "Jupiter")
+    )
+    assert not chosen.accepted and chosen.reason == "Answer this question in your own words."
+    assert written.accepted
     await room.shutdown()

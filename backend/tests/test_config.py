@@ -185,41 +185,41 @@ def test_request_id_does_not_leak_between_requests(
 
 
 @pytest.mark.parametrize(
-    ("minimum", "maximum"),
-    [
-        (0, 900),
-        (900, 0),
-        (1200, 900),
-    ],
+    ("low", "high"),
+    [(900, 0), (0, 1200), (1300, 1200), (-1, 1200)],
 )
-def test_invalid_checkpoint_interval_ranges_are_refused(
-    minimum: int,
-    maximum: int,
+def test_a_question_interval_range_that_cannot_be_drawn_from_is_refused(
+    low: int, high: int
 ) -> None:
-    with pytest.raises(ValueError, match="CHECKPOINT"):
-        Settings(
-            checkpoint_min_interval_seconds=minimum,
-            checkpoint_max_interval_seconds=maximum,
-            checkpoint_response_window_seconds=30,
-        )
+    with pytest.raises(ValueError, match="(?i)checkpoint_interval|greater than"):
+        Settings(checkpoint_interval_min_seconds=low, checkpoint_interval_max_seconds=high)
 
 
-def test_zero_interval_bounds_mean_manual_delivery_only() -> None:
-    settings = Settings(
-        checkpoint_min_interval_seconds=0,
-        checkpoint_max_interval_seconds=0,
-        checkpoint_response_window_seconds=30,
+def test_the_default_wait_between_questions_is_15_to_20_minutes() -> None:
+    settings = Settings()
+
+    assert (settings.checkpoint_interval_min_seconds, settings.checkpoint_interval_max_seconds) == (
+        900,
+        1200,
     )
 
-    assert settings.checkpoint_min_interval_seconds == 0
-    assert settings.checkpoint_max_interval_seconds == 0
+
+def test_an_interval_of_zero_means_manual_delivery_only() -> None:
+    settings = Settings(checkpoint_interval_min_seconds=0, checkpoint_interval_max_seconds=0)
+
+    assert settings.checkpoint_interval_max_seconds == 0
 
 
-def test_checkpoint_gap_is_independent_of_response_window() -> None:
-    settings = Settings(
-        checkpoint_min_interval_seconds=10,
-        checkpoint_max_interval_seconds=20,
-        checkpoint_response_window_seconds=30,
-    )
+def test_a_fixed_wait_is_a_range_of_one_value() -> None:
+    settings = Settings(checkpoint_interval_min_seconds=600, checkpoint_interval_max_seconds=600)
 
-    assert settings.checkpoint_response_window_seconds == 30
+    assert settings.checkpoint_interval_min_seconds == 600
+
+
+def test_the_old_fixed_interval_setting_is_reported_not_silently_ignored(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level("WARNING", logger="clip.config"):
+        Settings(checkpoint_interval_seconds=1200)
+
+    assert "CHECKPOINT_INTERVAL_SECONDS is no longer read" in caplog.text

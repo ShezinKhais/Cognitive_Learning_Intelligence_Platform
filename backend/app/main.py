@@ -50,6 +50,9 @@ async def lifespan(app: FastAPI):
         log.warning("Teams credentials set but the adapter is not implemented yet")
     else:
         log.info("Running without Teams integration")
+    # Recorders are registered by importing their modules before this runs.
+    # What is still missing is reported now, not discovered after a class.
+    classroom.check_wiring()
     # In the background, so a database that is slow or absent never holds up
     # startup; it is only needed once a development account uploads.
     seeding = asyncio.create_task(ensure_dev_users(get_settings()), name="dev-user-seed")
