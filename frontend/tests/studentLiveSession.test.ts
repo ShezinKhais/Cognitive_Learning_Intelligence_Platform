@@ -67,9 +67,10 @@ test('a student can receive, answer and get feedback for a checkpoint', () => {
     },
   })
 
-  assert.equal(state.checkpoint?.phase, 'submitted')
-  assert.equal(state.checkpoint?.feedback?.correct, true)
-  assert.equal(state.checkpoint?.feedback?.source_slide, 4)
+  assert.equal(state.checkpoint, null)
+  assert.equal(state.completedCheckpoint?.phase, 'submitted')
+  assert.equal(state.completedCheckpoint?.feedback?.correct, true)
+  assert.equal(state.completedCheckpoint?.feedback?.source_slide, 4)
 })
 
 test('an unanswered checkpoint becomes missed when its window elapses', () => {
@@ -80,10 +81,11 @@ test('an unanswered checkpoint becomes missed when its window elapses', () => {
     questionId: 'question-1',
   })
 
-  assert.equal(state.checkpoint?.phase, 'missed')
+  assert.equal(state.checkpoint, null)
+  assert.equal(state.completedCheckpoint?.phase, 'missed')
 
   state = liveSessionReducer(state, { type: 'select-option', option: 0 })
-  assert.equal(state.checkpoint?.selectedOption, null)
+  assert.equal(state.checkpoint, null)
 })
 
 test('a sent answer is not marked missed while its receipt is recovering', () => {
@@ -157,7 +159,29 @@ test('a terminal reconnect marks the session ended without a forbidden state', (
   assert.equal(state.connection, 'ended')
   assert.equal(state.sessionStatus, 'ended')
   assert.equal(state.paused, false)
-  assert.equal(state.checkpoint?.phase, 'missed')
+  assert.equal(state.participantCount, 0)
+  assert.equal(state.checkpoint, null)
+  assert.equal(state.completedCheckpoint?.phase, 'missed')
+})
+
+test('a completed checkpoint stays closed when its delivery is replayed', () => {
+  let state = initialLiveSessionState('active')
+  state = liveSessionReducer(state, { type: 'question-delivered', payload: question })
+  state = liveSessionReducer(state, {
+    type: 'response-window-elapsed',
+    questionId: question.question_id,
+  })
+  state = liveSessionReducer(state, {
+    type: 'question-delivered',
+    payload: { ...question, closes_at: '2026-09-20T10:01:00.000Z' },
+  })
+
+  assert.equal(state.checkpoint, null)
+  assert.equal(state.completedCheckpoint?.phase, 'missed')
+  assert.equal(
+    state.completedCheckpoint?.question.closes_at,
+    '2026-09-20T10:01:00.000Z',
+  )
 })
 
 test('a private attention prompt clears only when its matching id is acknowledged', () => {

@@ -141,6 +141,8 @@ function LiveSessionPanel({ session }: { session: StudentSession }) {
               onSetFreeText={setFreeText}
               onSubmit={submitAnswer}
             />
+          ) : state.completedCheckpoint ? (
+            <CompletedCheckpointCard checkpoint={state.completedCheckpoint} />
           ) : (
             <WaitingCard
               sessionStatus={state.sessionStatus}
@@ -188,6 +190,17 @@ function LiveSessionPanel({ session }: { session: StudentSession }) {
         </aside>
       )}
     </main>
+  )
+}
+
+function CompletedCheckpointCard({ checkpoint }: { checkpoint: CheckpointState }) {
+  return (
+    <article className="rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)] sm:p-7">
+      <CheckpointOutcome checkpoint={checkpoint} />
+      <p className="mt-4 text-sm text-muted-foreground">
+        Stay on this page. The lecturer’s next question will appear automatically.
+      </p>
+    </article>
   )
 }
 

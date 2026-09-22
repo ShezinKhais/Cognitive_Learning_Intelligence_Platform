@@ -18,6 +18,7 @@ export interface LiveSessionState {
   participantCount: number
   questionsDelivered: number
   checkpoint: CheckpointState | null
+  completedCheckpoint: CheckpointState | null
   attentionPrompt: AttentionPrompt | null
   error: LiveErrorEvent | null
 }
@@ -50,6 +51,7 @@ export function initialLiveSessionState(
     participantCount: 0,
     questionsDelivered: 0,
     checkpoint: null,
+    completedCheckpoint: null,
     attentionPrompt: null,
     error: null,
   }
@@ -78,17 +80,21 @@ export function liveSessionReducer(
         connection: action.status,
       }
 
-    case 'session-ended':
+    case 'session-ended': {
+      const checkpoint = state.checkpoint
       return {
         ...state,
         connection: 'ended',
         sessionStatus: 'ended',
         paused: false,
-        checkpoint:
-          state.checkpoint?.phase === 'answering'
-            ? { ...state.checkpoint, phase: 'missed' }
-            : state.checkpoint,
+        participantCount: 0,
+        checkpoint: checkpoint?.phase === 'answering' ? null : checkpoint,
+        completedCheckpoint:
+          checkpoint?.phase === 'answering'
+            ? { ...checkpoint, phase: 'missed' }
+            : state.completedCheckpoint,
       }
+    }
 
     case 'session-state': {
       const sessionEnded =
@@ -100,16 +106,32 @@ export function liveSessionReducer(
         ...state,
         sessionStatus: action.payload.status,
         paused: action.payload.paused,
-        participantCount: action.payload.participant_count,
+        participantCount: sessionEnded ? 0 : action.payload.participant_count,
         questionsDelivered: action.payload.questions_delivered,
         checkpoint:
           sessionEnded && checkpoint?.phase === 'answering'
-            ? { ...checkpoint, phase: 'missed' }
+            ? null
             : checkpoint,
+        completedCheckpoint:
+          sessionEnded && checkpoint?.phase === 'answering'
+            ? { ...checkpoint, phase: 'missed' }
+            : state.completedCheckpoint,
       }
     }
 
     case 'question-delivered':
+      if (state.completedCheckpoint?.question.question_id === action.payload.question_id) {
+        return {
+          ...state,
+          completedCheckpoint: {
+            ...state.completedCheckpoint,
+            question: {
+              ...state.completedCheckpoint.question,
+              closes_at: action.payload.closes_at,
+            },
+          },
+        }
+      }
       if (state.checkpoint?.question.question_id === action.payload.question_id) {
         return {
           ...state,
@@ -134,6 +156,7 @@ export function liveSessionReducer(
           feedback: null,
           closed: null,
         },
+        completedCheckpoint: null,
         error: null,
       }
 
@@ -168,51 +191,75 @@ export function liveSessionReducer(
         receipt: null,
       }))
 
-    case 'answer-receipt':
-      return updateCheckpoint(state, (checkpoint) =>
-        checkpoint.question.question_id === action.payload.question_id
-          ? {
-              ...checkpoint,
-              phase: action.payload.accepted ? 'submitted' : 'rejected',
-              receipt: action.payload,
-            }
-          : checkpoint,
-      )
+    case 'answer-receipt': {
+      const checkpoint = state.checkpoint
+      if (!checkpoint || checkpoint.question.question_id !== action.payload.question_id) {
+        return state
+      }
+      const updated: CheckpointState = {
+        ...checkpoint,
+        phase: action.payload.accepted ? 'submitted' : 'rejected',
+        receipt: action.payload,
+      }
+      return action.payload.accepted
+        ? { ...state, checkpoint: null, completedCheckpoint: updated }
+        : { ...state, checkpoint: updated }
+    }
 
-    case 'feedback-result':
-      return updateCheckpoint(state, (checkpoint) =>
-        checkpoint.question.question_id === action.payload.question_id
-          ? {
-              ...checkpoint,
-              phase: 'submitted',
-              feedback: action.payload,
-            }
-          : checkpoint,
-      )
-
-    case 'question-closed':
-      return updateCheckpoint(state, (checkpoint) => {
-        if (checkpoint.question.question_id !== action.payload.question_id) {
-          return checkpoint
-        }
-
+    case 'feedback-result': {
+      const checkpoint = state.checkpoint
+      if (checkpoint?.question.question_id === action.payload.question_id) {
         return {
-          ...checkpoint,
-          phase:
-            checkpoint.phase === 'answering' || checkpoint.phase === 'rejected'
-              ? 'missed'
-              : checkpoint.phase,
-          closed: action.payload,
+          ...state,
+          checkpoint: null,
+          completedCheckpoint: {
+            ...checkpoint,
+            phase: 'submitted',
+            feedback: action.payload,
+          },
         }
-      })
+      }
+      const completed = state.completedCheckpoint
+      return completed?.question.question_id === action.payload.question_id
+        ? {
+            ...state,
+            completedCheckpoint: { ...completed, feedback: action.payload },
+          }
+        : state
+    }
 
-    case 'response-window-elapsed':
-      return updateCheckpoint(state, (checkpoint) =>
-        checkpoint.question.question_id === action.questionId &&
-        (checkpoint.phase === 'answering' || checkpoint.phase === 'rejected')
-          ? { ...checkpoint, phase: 'missed' }
-          : checkpoint,
-      )
+    case 'question-closed': {
+      const checkpoint = state.checkpoint
+      if (!checkpoint || checkpoint.question.question_id !== action.payload.question_id) {
+        return state
+      }
+      if (checkpoint.phase !== 'answering' && checkpoint.phase !== 'rejected') {
+        return { ...state, checkpoint: { ...checkpoint, closed: action.payload } }
+      }
+      return {
+        ...state,
+        checkpoint: null,
+        completedCheckpoint: {
+          ...checkpoint,
+          phase: 'missed',
+          closed: action.payload,
+        },
+      }
+    }
+
+    case 'response-window-elapsed': {
+      const checkpoint = state.checkpoint
+      if (
+        !checkpoint ||
+        checkpoint.question.question_id !== action.questionId ||
+        (checkpoint.phase !== 'answering' && checkpoint.phase !== 'rejected')
+      ) return state
+      return {
+        ...state,
+        checkpoint: null,
+        completedCheckpoint: { ...checkpoint, phase: 'missed' },
+      }
+    }
 
     case 'attention-prompt':
       return {

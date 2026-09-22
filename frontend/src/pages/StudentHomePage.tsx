@@ -90,9 +90,9 @@ export default function StudentHomePage() {
             className="mt-8 rounded-xl border border-info/20 bg-card p-4 text-sm"
           >
             <span className="font-semibold text-info">
-              Integration preview:
+              Live sessions unavailable:
             </span>{' '}
-            Session discovery uses contract-shaped sample data until the Phase 3 backend is enabled.
+            Session discovery will appear here after the Phase 3 backend integration is enabled.
           </div>
         )}
 
