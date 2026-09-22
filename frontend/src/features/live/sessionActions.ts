@@ -1,9 +1,4 @@
-﻿import {
-  ApiError,
-  apiUrl,
-  clearAccessToken,
-  getAccessToken,
-} from '../../api'
+﻿import { apiAuthenticatedRequest } from '../../api'
 
 export type SessionLifecycleAction =
   | 'start'
@@ -36,92 +31,10 @@ export interface CreateSessionPayload {
   starts_at?: string | null
 }
 
-async function errorFromResponse(
-  response: Response,
-): Promise<ApiError> {
-  let code = 'HTTP_ERROR'
-  let message = `HTTP ${response.status}`
-
-  try {
-    const body = await response.json()
-
-    code =
-      body?.error?.code ??
-      code
-
-    message =
-      body?.error?.message ??
-      message
-  } catch {
-    // Keep the HTTP fallback when the response
-    // does not contain the API error envelope.
-  }
-
-  return new ApiError(
-    response.status,
-    code,
-    message,
-  )
-}
-
-async function authenticatedRequest<T>(
-  path: string,
-  options: RequestInit,
-): Promise<T> {
-  const token = getAccessToken()
-
-  if (!token) {
-    throw new ApiError(
-      401,
-      'UNAUTHENTICATED',
-      'Login is required.',
-    )
-  }
-
-  const headers =
-    new Headers(options.headers)
-
-  headers.set(
-    'Authorization',
-    `Bearer ${token}`,
-  )
-
-  if (
-    options.body &&
-    !headers.has('Content-Type')
-  ) {
-    headers.set(
-      'Content-Type',
-      'application/json',
-    )
-  }
-
-  const response = await fetch(
-    apiUrl(path),
-    {
-      ...options,
-      headers,
-    },
-  )
-
-  if (!response.ok) {
-    const error =
-      await errorFromResponse(response)
-
-    if (response.status === 401) {
-      clearAccessToken()
-    }
-
-    throw error
-  }
-
-  return response.json() as Promise<T>
-}
-
 export function createSession(
   payload: CreateSessionPayload,
 ): Promise<SessionActionResponse> {
-  return authenticatedRequest<SessionActionResponse>(
+  return apiAuthenticatedRequest<SessionActionResponse>(
     '/sessions',
     {
       method: 'POST',
@@ -134,7 +47,7 @@ export function runSessionAction(
   sessionId: string,
   action: SessionLifecycleAction,
 ): Promise<SessionActionResponse> {
-  return authenticatedRequest<SessionActionResponse>(
+  return apiAuthenticatedRequest<SessionActionResponse>(
     `/sessions/${encodeURIComponent(
       sessionId,
     )}/${action}`,

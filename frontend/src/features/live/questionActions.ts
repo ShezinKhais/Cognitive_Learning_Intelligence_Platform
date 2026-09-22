@@ -1,9 +1,6 @@
 import {
-  ApiError,
   apiAuthenticatedGet,
-  apiUrl,
-  clearAccessToken,
-  getAccessToken,
+  apiAuthenticatedRequest,
   listQuestions,
   type Page,
 } from '../../api'
@@ -26,36 +23,6 @@ export interface StagedQuestion {
 export interface DeliverQuestionResponse {
   status: 'delivered'
   question_id: string
-}
-
-async function errorFromResponse(
-  response: Response,
-): Promise<ApiError> {
-  let code = 'HTTP_ERROR'
-  let message = `HTTP ${response.status}`
-
-  try {
-    const body =
-      await response.json()
-
-    code =
-      body?.error?.code ??
-      code
-
-    message =
-      body?.error?.message ??
-      message
-  } catch {
-    // Keep the HTTP fallback if the
-    // response is not the API error
-    // envelope.
-  }
-
-  return new ApiError(
-    response.status,
-    code,
-    message,
-  )
 }
 
 export async function loadStagedQuestions():
@@ -111,53 +78,18 @@ Promise<StagedQuestion[]> {
   )
 }
 
-export async function deliverQuestion(
+export function deliverQuestion(
   sessionId: string,
   questionId: string,
 ): Promise<DeliverQuestionResponse> {
-  const token =
-    getAccessToken()
-
-  if (!token) {
-    throw new ApiError(
-      401,
-      'UNAUTHENTICATED',
-      'Login is required.',
-    )
-  }
-
-  const response =
-    await fetch(
-      apiUrl(
-        `/sessions/${encodeURIComponent(
-          sessionId,
-        )}/questions/${encodeURIComponent(
-          questionId,
-        )}:deliver`,
-      ),
-      {
-        method: 'POST',
-        headers: {
-          Authorization:
-            `Bearer ${token}`,
-        },
-      },
-    )
-
-  if (!response.ok) {
-    const error =
-      await errorFromResponse(
-        response,
-      )
-
-    if (
-      response.status === 401
-    ) {
-      clearAccessToken()
-    }
-
-    throw error
-  }
-
-  return response.json() as Promise<DeliverQuestionResponse>
+  return apiAuthenticatedRequest<DeliverQuestionResponse>(
+    `/sessions/${encodeURIComponent(
+      sessionId,
+    )}/questions/${encodeURIComponent(
+      questionId,
+    )}:deliver`,
+    {
+      method: 'POST',
+    },
+  )
 }
