@@ -29,8 +29,11 @@ from app.schemas.session import SessionStatus
 # Sessions that may still be joined. A session that has ended or was
 # cancelled has no live stream left to join, regardless of who is asking --
 # enrolment and ownership answer "does this person belong to this session,"
-# not "is there still something here to join." Matches the equivalent
-# JOINABLE set in session_lifecycle.joinable_session.
+# not "is there still something here to join." The branch that adds
+# session_lifecycle (not yet on this branch) will need an equivalent
+# JOINABLE set of its own for start/pause/end transitions -- whoever merges
+# the two should double-check those sets stay in sync, since nothing here
+# enforces that.
 JOINABLE_STATUSES = {SessionStatus.PREPARED.value, SessionStatus.ACTIVE.value}
 
 
