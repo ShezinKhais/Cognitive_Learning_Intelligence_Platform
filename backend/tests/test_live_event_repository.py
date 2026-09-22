@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
+from app.core.errors import ValidationError
 from app.models.course import Course
 from app.models.material import Material
 from app.models.question import Question
@@ -110,6 +111,30 @@ async def test_live_events_are_stored_and_retrievable_by_session(
 
     repository = LiveEventRepository(db)
     now = datetime.now(UTC)
+
+    with pytest.raises(ValidationError, match="not registered as a student"):
+        await repository.record_response(
+            session_id=session.session_id,
+            question_id=question.question_id,
+            user_id=lecturer.user_id,
+            selected_option=1,
+            free_text=None,
+            is_correct=True,
+            elapsed_ms=100,
+            submitted_at=now,
+        )
+
+    with pytest.raises(ValidationError, match="not registered as a student"):
+        await repository.record_prompt_outcome(
+            prompt_id=uuid.uuid4(),
+            session_id=session.session_id,
+            user_id=lecturer.user_id,
+            escalation=1,
+            sent_at=now,
+            expires_at=now + timedelta(seconds=20),
+            result="acknowledged",
+            responded_at=now,
+        )
 
     first_join = await repository.record_participant_join(
         session_id=session.session_id,
@@ -232,6 +257,23 @@ async def test_live_events_are_stored_and_retrievable_by_session(
     assert counts.missed_responses == 1
     assert counts.prompt_outcomes == 1
     assert counts.activities == 1
+    retried = await repository.close_question_delivery(
+        session_id=session.session_id,
+        question_id=question.question_id,
+        eligible_user_ids={first_user.user_id, second_user.user_id},
+        answered_user_ids={first_user.user_id, second_user.user_id},
+        reason="window_elapsed",
+        closed_at=now + timedelta(seconds=31),
+    )
+    synchronized_misses = await repository.list_missed_responses(
+        session_id=session.session_id,
+    )
+    synchronized_counts = await repository.dashboard_counts(session.session_id)
+
+    assert retried is not None
+    assert retried.respondent_count == 2
+    assert synchronized_misses == []
+    assert synchronized_counts.missed_responses == 0
 
     left = await repository.record_participant_leave(
         session_id=session.session_id,

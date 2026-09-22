@@ -6,10 +6,11 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import ValidationError
 from app.models.delivered_question import DeliveredQuestion
 from app.models.dynamic_prompt import DynamicPrompt
 from app.models.missed_response import MissedResponse
@@ -84,6 +85,12 @@ class LiveEventRepository:
         user_id: uuid.UUID,
         left_at: datetime | None = None,
     ) -> SessionParticipant | None:
+        """Mark a participant absent after their final session socket closes.
+
+        connection_count records cumulative joins and reconnects; it is not the
+        number of currently open tabs or sockets. Callers must therefore invoke
+        this only after the user's last socket for this session disconnects.
+        """
         student_id = await self.student_id_for_user(user_id)
 
         if student_id is None:
@@ -154,11 +161,14 @@ class LiveEventRepository:
         is_correct: bool | None,
         elapsed_ms: int | None,
         submitted_at: datetime | None = None,
-    ) -> StudentResponse | None:
+    ) -> StudentResponse:
         student_id = await self.student_id_for_user(user_id)
 
         if student_id is None:
-            return None
+            raise ValidationError(
+                "User is not registered as a student.",
+                {"user_id": str(user_id)},
+            )
 
         received_at = submitted_at or datetime.now(UTC)
         statement = (
@@ -204,11 +214,14 @@ class LiveEventRepository:
         expires_at: datetime,
         result: str,
         responded_at: datetime | None,
-    ) -> DynamicPrompt | None:
+    ) -> DynamicPrompt:
         student_id = await self.student_id_for_user(user_id)
 
         if student_id is None:
-            return None
+            raise ValidationError(
+                "User is not registered as a student.",
+                {"user_id": str(user_id)},
+            )
 
         statement = (
             insert(DynamicPrompt)
@@ -287,6 +300,12 @@ class LiveEventRepository:
         delivery.eligible_count = len(eligible)
         delivery.respondent_count = len(answered_user_ids)
 
+        # A retry may carry a newer answered-user set. Rebuild missed rows so
+        # they stay synchronized with the delivery counts.
+        await self.session.execute(
+            delete(MissedResponse).where(MissedResponse.delivery_id == delivery.delivery_id)
+        )
+
         if missed_user_ids:
             student_rows = await self.session.execute(
                 select(Student.user_id, Student.student_id).where(
@@ -363,6 +382,23 @@ class LiveEventRepository:
         *,
         session_id: uuid.UUID,
     ) -> list[DeliveredQuestion]:
+        snapshot_at = datetime.now(UTC)
+        await self.session.execute(
+            update(DeliveredQuestion)
+            .where(
+                DeliveredQuestion.session_id == session_id,
+                DeliveredQuestion.closed_at.is_(None),
+                DeliveredQuestion.closes_at <= snapshot_at,
+            )
+            .values(
+                closed_at=DeliveredQuestion.closes_at,
+                close_reason="process_restart",
+                eligible_count=0,
+                respondent_count=0,
+            )
+            .execution_options(synchronize_session="fetch")
+        )
+
         result = await self.session.execute(
             select(DeliveredQuestion)
             .where(DeliveredQuestion.session_id == session_id)
