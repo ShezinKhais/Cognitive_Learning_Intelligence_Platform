@@ -553,12 +553,13 @@ export function useLiveSession(
             const notice =
               message.data
 
-            setSessionNotice({
-              code: notice.code,
-              detail:
-                notice.detail ??
-                null,
-            })
+            console.warn(
+              'Live session WebSocket error:',
+              notice.code,
+              notice.detail ?? '',
+            )
+
+            return
           }
         },
       )
