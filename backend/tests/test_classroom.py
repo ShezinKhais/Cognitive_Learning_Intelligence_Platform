@@ -103,16 +103,28 @@ def _room(
     prompts: int = 3,
     prompt_ttl: float = 60.0,
     missed: int = 0,
+    interval_max: float | None = None,
+    rng: object | None = None,
+    production: bool = False,
 ) -> tuple[Classroom, SessionHub]:
+    """interval alone fixes the wait between questions, so timing tests are
+    exact; interval_max makes it the random range the cycle draws from."""
     events = SessionHub()
     settings = SimpleNamespace(
-        checkpoint_interval_seconds=interval,
+        checkpoint_interval_min_seconds=interval,
+        checkpoint_interval_max_seconds=interval if interval_max is None else interval_max,
         checkpoint_response_window_seconds=window,
         dynamic_prompt_max_per_student=prompts,
         attention_prompt_ttl_seconds=prompt_ttl,
         attention_prompt_after_missed_questions=missed,
+        is_production=production,
     )
-    room = Classroom(events=events, sessions=lambda: _Db, settings=lambda: settings)
+    room = Classroom(
+        events=events,
+        sessions=lambda: _Db,
+        settings=lambda: settings,
+        rng=rng,  # type: ignore[arg-type]
+    )
     return room, events
 
 
@@ -429,7 +441,9 @@ async def test_the_cycle_delivers_the_next_question_on_its_own() -> None:
     await room.shutdown()
 
 
-async def test_a_manual_question_postpones_the_cycle() -> None:
+async def test_a_manual_question_discards_what_was_due() -> None:
+    """The cycle was due 0.1s after the lecturer's question. Instead the next
+    wait starts when that question closes, 0.05s after it went out."""
     room, events = _room(interval=0.3, window=0.05)
     row = _row()
     socket, _ = await _join(events, row.session_id, Role.STUDENT)
@@ -438,10 +452,102 @@ async def test_a_manual_question_postpones_the_cycle() -> None:
     await _deliver(room, row)
     _Repository.staged.append(_Question())
 
-    # Without the postponement the cycle would fire 0.1s from now.
     await asyncio.sleep(0.2)
-
     assert len(socket.of(ServerEventType.QUESTION_DELIVERED)) == 1
+    await asyncio.sleep(0.25)
+    assert len(socket.of(ServerEventType.QUESTION_DELIVERED)) == 2
+    await room.shutdown()
+
+
+async def test_the_next_wait_starts_when_the_question_closes() -> None:
+    """Delivered at 0.2s and closed at 0.35s, the next is due at 0.55s. Counted
+    from the delivery it would have gone out at 0.4s, taking the response
+    window out of the teaching time."""
+    room, events = _room(interval=0.2, window=0.15)
+    row = _row()
+    socket, _ = await _join(events, row.session_id, Role.STUDENT)
+    _Repository.staged.extend([_Question(), _Question()])
+
+    room.activate(row.session_id)
+    await asyncio.sleep(0.47)
+    assert len(socket.of(ServerEventType.QUESTION_DELIVERED)) == 1
+    await asyncio.sleep(0.18)
+    assert len(socket.of(ServerEventType.QUESTION_DELIVERED)) == 2
+    await room.shutdown()
+
+
+class _Draws:
+    """Stands in for random.Random: records each range and returns a chosen
+    point in it, so the test knows every wait the cycle drew."""
+
+    def __init__(self, *fractions: float) -> None:
+        self.fractions = list(fractions)
+        self.ranges: list[tuple[float, float]] = []
+
+    def uniform(self, low: float, high: float) -> float:
+        self.ranges.append((low, high))
+        return low + (high - low) * self.fractions.pop(0)
+
+
+async def test_each_wait_is_drawn_fresh_from_the_configured_range() -> None:
+    draws = _Draws(0.0, 1.0, 0.5)
+    room, _ = _room(interval=900, interval_max=1200, window=0.05, rng=draws)
+    row = _row()
+
+    live = room.activate(row.session_id)
+    first = (live.next_due - datetime.now(UTC)).total_seconds()  # type: ignore[operator]
+    await _deliver(room, row)
+    await asyncio.sleep(0.1)
+    second = (live.next_due - datetime.now(UTC)).total_seconds()  # type: ignore[operator]
+    await _deliver(room, row)
+    await asyncio.sleep(0.1)
+    third = (live.next_due - datetime.now(UTC)).total_seconds()  # type: ignore[operator]
+
+    assert draws.ranges == [(900, 1200)] * 3
+    assert 899 < first <= 900
+    assert 1199 < second <= 1200
+    assert 1049 < third <= 1050
+    await room.shutdown()
+
+
+async def test_nothing_is_due_while_a_question_is_open() -> None:
+    room, _ = _room(window=30)
+    row = _row()
+    live = room.activate(row.session_id)
+    assert live.next_due is not None
+
+    await _deliver(room, row)
+
+    assert live.next_due is None
+    await room.shutdown()
+
+
+async def test_pausing_mid_question_draws_the_wait_at_its_close_and_uses_it_on_resume() -> None:
+    room, _ = _room(interval=10, window=0.05)
+    row = _row()
+    live = room.activate(row.session_id)
+    await _deliver(room, row)
+
+    await room.pause(_Db(), row)  # type: ignore[arg-type]
+    await asyncio.sleep(0.1)  # the question closes while paused
+    assert live.next_due is None and live.remaining == timedelta(seconds=10)
+    await room.resume(_Db(), row)  # type: ignore[arg-type]
+
+    left = (live.next_due - datetime.now(UTC)).total_seconds()  # type: ignore[operator]
+    assert 9 < left <= 10
+    await room.shutdown()
+
+
+async def test_resuming_while_a_question_is_still_open_waits_for_its_close() -> None:
+    room, _ = _room(interval=10, window=30)
+    row = _row()
+    live = room.activate(row.session_id)
+    await _deliver(room, row)
+
+    await room.pause(_Db(), row)  # type: ignore[arg-type]
+    await room.resume(_Db(), row)  # type: ignore[arg-type]
+
+    assert live.next_due is None
     await room.shutdown()
 
 
@@ -980,19 +1086,82 @@ async def test_missed_question_nudges_can_be_turned_off() -> None:
     await room.shutdown()
 
 
-async def test_staff_are_told_when_the_cycle_has_nothing_to_send() -> None:
-    room, events = _room(interval=0.1)
+async def test_an_empty_queue_is_logged_not_shown_and_tried_again(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    room, events = _room(interval=0.1, window=0.05)
     row = _row()
     lecturer, _ = await _join(events, row.session_id, Role.LECTURER)
     student, _ = await _join(events, row.session_id, Role.STUDENT)
 
-    room.activate(row.session_id)
-    await asyncio.sleep(0.15)
+    with caplog.at_level("INFO", logger="clip.classroom"):
+        room.activate(row.session_id)
+        await asyncio.sleep(0.15)
+    assert "No static question available" in caplog.text
+    assert lecturer.sent == student.sent == []
 
-    [notice] = lecturer.of(ServerEventType.ERROR)[:1]
-    assert (notice["seq"], notice["data"]["code"]) == (0, "NO_STAGED_QUESTION")
-    assert student.of(ServerEventType.ERROR) == []
+    _Repository.staged.append(_Question())
+    await asyncio.sleep(0.12)
+    assert len(student.of(ServerEventType.QUESTION_DELIVERED)) == 1
     await room.shutdown()
+
+
+# -- startup wiring -------------------------------------------------------------
+
+
+class _Recorder:
+    async def record(self, submission: Submission) -> None:
+        return None
+
+    async def record_prompt(self, outcome) -> None:  # noqa: ANN001
+        return None
+
+
+def test_development_is_told_what_live_sessions_will_not_store(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("WEB_CONCURRENCY", raising=False)
+    room, _ = _room()
+
+    with caplog.at_level("WARNING", logger="clip.classroom"):
+        room.check_wiring()
+
+    assert "answers are not stored" in caplog.text
+    assert "prompt outcomes are not stored" in caplog.text
+
+
+def test_production_will_not_start_without_somewhere_to_store_answers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("WEB_CONCURRENCY", raising=False)
+    room, _ = _room(production=True)
+
+    with pytest.raises(RuntimeError, match="answers are not stored"):
+        room.check_wiring()
+
+    room.recorder = room.prompt_recorder = _Recorder()  # type: ignore[assignment]
+    room.check_wiring()
+
+
+@pytest.mark.parametrize("workers", ["2", "4", "auto"])
+def test_live_sessions_refuse_more_than_one_worker(
+    monkeypatch: pytest.MonkeyPatch, workers: str
+) -> None:
+    """Each worker would restore the same session and run its own cycle."""
+    monkeypatch.setenv("WEB_CONCURRENCY", workers)
+    room, _ = _room(production=True)
+    room.recorder = room.prompt_recorder = _Recorder()  # type: ignore[assignment]
+
+    with pytest.raises(RuntimeError, match="single worker"):
+        room.check_wiring()
+
+
+def test_one_worker_is_fine(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WEB_CONCURRENCY", "1")
+    room, _ = _room(production=True)
+    room.recorder = room.prompt_recorder = _Recorder()  # type: ignore[assignment]
+
+    room.check_wiring()
 
 
 async def test_how_a_question_is_answered_comes_from_its_type() -> None:

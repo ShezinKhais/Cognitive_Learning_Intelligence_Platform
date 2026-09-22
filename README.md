@@ -94,6 +94,11 @@ curl http://localhost:8000/api/v1/ready
 That reports whether Postgres and Ollama are actually reachable, and names what is wrong
 when they are not. Interactive API docs are at `/docs` in development.
 
+Run the backend as a single process. A live session's question timer and open question
+are held in the process that runs it, so a second worker would run a second timer for
+the same class. With `WEB_CONCURRENCY` above 1 the backend warns in development and
+refuses to start in production.
+
 Development sign-in accounts for each role are listed in
 [CYBER1_SETUP.md](CYBER1_SETUP.md), which is a Phase 1 snapshot and covers the parts of
 the app that existed then.

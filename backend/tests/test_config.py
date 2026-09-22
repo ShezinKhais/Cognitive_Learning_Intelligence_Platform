@@ -185,17 +185,41 @@ def test_request_id_does_not_leak_between_requests(
 
 
 @pytest.mark.parametrize(
-    ("interval", "window"),
-    [(30, 30), (10, 30), (-1, 30), (1200, 0)],
+    ("low", "high"),
+    [(900, 0), (0, 1200), (1300, 1200), (-1, 1200)],
 )
-def test_a_question_cycle_that_cannot_work_is_refused(interval: int, window: int) -> None:
-    """At or under the window, every scheduled question finds the last one
-    still open and is skipped, so the class gets one question and no more."""
-    with pytest.raises(ValueError, match="(?i)checkpoint|greater than"):
-        Settings(checkpoint_interval_seconds=interval, checkpoint_response_window_seconds=window)
+def test_a_question_interval_range_that_cannot_be_drawn_from_is_refused(
+    low: int, high: int
+) -> None:
+    with pytest.raises(ValueError, match="(?i)checkpoint_interval|greater than"):
+        Settings(checkpoint_interval_min_seconds=low, checkpoint_interval_max_seconds=high)
+
+
+def test_the_default_wait_between_questions_is_15_to_20_minutes() -> None:
+    settings = Settings()
+
+    assert (settings.checkpoint_interval_min_seconds, settings.checkpoint_interval_max_seconds) == (
+        900,
+        1200,
+    )
 
 
 def test_an_interval_of_zero_means_manual_delivery_only() -> None:
-    settings = Settings(checkpoint_interval_seconds=0, checkpoint_response_window_seconds=30)
+    settings = Settings(checkpoint_interval_min_seconds=0, checkpoint_interval_max_seconds=0)
 
-    assert settings.checkpoint_interval_seconds == 0
+    assert settings.checkpoint_interval_max_seconds == 0
+
+
+def test_a_fixed_wait_is_a_range_of_one_value() -> None:
+    settings = Settings(checkpoint_interval_min_seconds=600, checkpoint_interval_max_seconds=600)
+
+    assert settings.checkpoint_interval_min_seconds == 600
+
+
+def test_the_old_fixed_interval_setting_is_reported_not_silently_ignored(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level("WARNING", logger="clip.config"):
+        Settings(checkpoint_interval_seconds=1200)
+
+    assert "CHECKPOINT_INTERVAL_SECONDS is no longer read" in caplog.text

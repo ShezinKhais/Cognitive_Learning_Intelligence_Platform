@@ -1,5 +1,6 @@
 """Application settings, loaded from environment (.env in development)."""
 
+import logging
 from functools import lru_cache
 from urllib.parse import unquote, urlparse, urlsplit
 
@@ -88,9 +89,15 @@ class Settings(BaseSettings):
     client_secret: str = ""
     tenant_id: str = ""
 
-    # Session behaviour. An interval of 0 turns the automatic question cycle
-    # off, so questions go out only when the lecturer sends one.
-    checkpoint_interval_seconds: int = Field(default=1200, ge=0)
+    # Session behaviour. Once a question closes, the next is due after a fresh
+    # random wait between these two, so the class cannot predict it. Both 0
+    # turns the automatic question cycle off, so questions go out only when
+    # the lecturer sends one.
+    checkpoint_interval_min_seconds: int = Field(default=900, ge=0)
+    checkpoint_interval_max_seconds: int = Field(default=1200, ge=0)
+    # The fixed interval these replaced. Still read so an .env that sets it
+    # is told it no longer does anything, rather than ignored in silence.
+    checkpoint_interval_seconds: int | None = None
     checkpoint_response_window_seconds: int = Field(default=30, ge=1)
     comprehension_alert_threshold: float = 0.50
     comprehension_alert_min_respondents: int = 5
@@ -134,17 +141,22 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _check_question_timing(self) -> "Settings":
-        """The cycle must leave each question time to close before the next.
-
-        With the interval at or below the window, every scheduled delivery
-        finds the last question still open and is skipped, so the class gets
-        one question and the cycle then does nothing.
-        """
-        interval = self.checkpoint_interval_seconds
-        if interval and interval <= self.checkpoint_response_window_seconds:
+        """The random wait between questions must be a range that can be drawn
+        from: both 0 for manual delivery only, or both above 0 with the minimum
+        no greater than the maximum."""
+        if self.checkpoint_interval_seconds is not None:
+            logging.getLogger("clip.config").warning(
+                "CHECKPOINT_INTERVAL_SECONDS is no longer read. The wait between "
+                "questions is now random: set CHECKPOINT_INTERVAL_MIN_SECONDS and "
+                "CHECKPOINT_INTERVAL_MAX_SECONDS (default 900 to 1200)."
+            )
+        low = self.checkpoint_interval_min_seconds
+        high = self.checkpoint_interval_max_seconds
+        if (low == 0) != (high == 0) or low > high:
             raise ValueError(
-                "CHECKPOINT_INTERVAL_SECONDS must be 0 (manual delivery only) or longer "
-                "than CHECKPOINT_RESPONSE_WINDOW_SECONDS"
+                "CHECKPOINT_INTERVAL_MIN_SECONDS and CHECKPOINT_INTERVAL_MAX_SECONDS must "
+                "both be 0 (manual delivery only), or both above 0 with the minimum no "
+                "greater than the maximum"
             )
         return self
 
