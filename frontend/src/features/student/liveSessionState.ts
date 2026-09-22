@@ -74,6 +74,20 @@ function updateCheckpoint(
   }
 }
 
+function questionStillOpen(
+  state: LiveSessionState,
+  checkpoint: CheckpointState,
+): boolean {
+  const closesAt = Date.parse(checkpoint.question.closes_at)
+
+  return (
+    state.sessionStatus === 'active' &&
+    checkpoint.closed === null &&
+    Number.isFinite(closesAt) &&
+    closesAt > Date.now()
+  )
+}
+
 export function liveSessionReducer(
   state: LiveSessionState,
   action: LiveSessionAction,
@@ -87,17 +101,31 @@ export function liveSessionReducer(
 
       const checkpoint = state.checkpoint
 
+      let nextCheckpoint = checkpoint
+
+      if (
+        connectionLost &&
+        checkpoint?.phase === 'submitting'
+      ) {
+        nextCheckpoint = {
+          ...checkpoint,
+          phase: 'unconfirmed',
+        }
+      } else if (
+        action.status === 'connected' &&
+        checkpoint?.phase === 'unconfirmed' &&
+        questionStillOpen(state, checkpoint)
+      ) {
+        nextCheckpoint = {
+          ...checkpoint,
+          phase: 'answering',
+        }
+      }
+
       return {
         ...state,
         connection: action.status,
-        checkpoint:
-          connectionLost &&
-          checkpoint?.phase === 'submitting'
-            ? {
-                ...checkpoint,
-                phase: 'unconfirmed',
-              }
-            : checkpoint,
+        checkpoint: nextCheckpoint,
       }
     }
 
@@ -243,11 +271,17 @@ export function liveSessionReducer(
         return state
       }
 
+      // If the connection has recovered and the question
+      // is still open, allow the student to try again.
+      const canRetry =
+        state.connection === 'connected' &&
+        questionStillOpen(state, checkpoint)
+
       return {
         ...state,
         checkpoint: {
           ...checkpoint,
-          phase: 'unconfirmed',
+          phase: canRetry ? 'answering' : 'unconfirmed',
         },
       }
     }
@@ -257,20 +291,28 @@ export function liveSessionReducer(
 
       if (
         !checkpoint ||
-        checkpoint.question.question_id !== action.payload.question_id
+        checkpoint.question.question_id !==
+          action.payload.question_id
       ) {
         return state
       }
 
+      // A second submission may be rejected because the
+      // server already saved the first submission.
+      const alreadyAnswered =
+        action.payload.reason ===
+        'You have already answered this question.'
+
       const updated: CheckpointState = {
         ...checkpoint,
-        phase: action.payload.accepted
-          ? 'submitted'
-          : 'rejected',
+        phase:
+          action.payload.accepted || alreadyAnswered
+            ? 'submitted'
+            : 'rejected',
         receipt: action.payload,
       }
 
-      return action.payload.accepted
+      return action.payload.accepted || alreadyAnswered
         ? {
             ...state,
             checkpoint: null,
