@@ -466,6 +466,29 @@ class Classroom:
         """Tell the session its current state, as after a start."""
         await self._announce(session_id, status)
 
+    async def announce_presence(
+        self,
+        session_id: UUID,
+        recorded: SessionStatus,
+    ) -> None:
+        """Tell connected staff when the unique student count changes."""
+        if session_id in self._live:
+            status = SessionStatus.ACTIVE
+        elif session_id in self._finished:
+            return
+        else:
+            status = recorded
+
+        payload = self.state(session_id, status).model_dump(mode="json")
+
+        for staff_id in self._hub.staff_ids(session_id):
+            await self._hub.send_to_user(
+                session_id,
+                staff_id,
+                ServerEventType.SESSION_STATE,
+                payload,
+            )
+
     async def _announce(self, session_id: UUID, status: SessionStatus, delivered: int = 0) -> None:
         await self._hub.broadcast(
             session_id,
