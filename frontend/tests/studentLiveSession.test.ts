@@ -415,10 +415,6 @@ test('fresh authentication omits replay fields until a real cursor exists', () =
   )
 })
 
-// NEW TEST 1:
-// If confirmation is missing, the answer must stop
-// displaying the "submitting" status.
-
 test('a missing receipt changes the answer to unconfirmed', () => {
   let state = initialLiveSessionState('active')
 
@@ -447,10 +443,6 @@ test('a missing receipt changes the answer to unconfirmed', () => {
   assert.equal(state.checkpoint?.selectedOption, 1)
 })
 
-// NEW TEST 2:
-// If internet disconnects while an answer is submitting,
-// the answer must become unconfirmed.
-
 test('disconnecting while submitting preserves the answer', () => {
   let state = initialLiveSessionState('active')
 
@@ -477,9 +469,6 @@ test('disconnecting while submitting preserves the answer', () => {
   assert.equal(state.checkpoint?.phase, 'unconfirmed')
   assert.equal(state.checkpoint?.selectedOption, 1)
 })
-
-// NEW TEST 3:
-// A confirmation that arrives later must still be accepted.
 
 test('a late receipt confirms an unconfirmed answer', () => {
   let state = initialLiveSessionState('active')
@@ -518,10 +507,6 @@ test('a late receipt confirms an unconfirmed answer', () => {
   assert.equal(state.completedCheckpoint?.selectedOption, 1)
 })
 
-// NEW TEST 4:
-// A receipt for another question must not change
-// the current student's answer.
-
 test('a receipt for another question does not change the current answer', () => {
   let state = initialLiveSessionState('active')
 
@@ -557,4 +542,171 @@ test('a receipt for another question does not change the current answer', () => 
   assert.equal(state.checkpoint?.phase, 'unconfirmed')
   assert.equal(state.checkpoint?.selectedOption, 1)
   assert.equal(state.completedCheckpoint, null)
+})
+
+// NEW RECONNECTION TESTS
+
+test('reconnecting unlocks an unconfirmed answer while the question is open', () => {
+  let state = initialLiveSessionState('active')
+
+  const openQuestion = {
+    ...question,
+    closes_at: new Date(Date.now() + 60_000).toISOString(),
+  }
+
+  state = liveSessionReducer(state, {
+    type: 'question-delivered',
+    payload: openQuestion,
+  })
+
+  state = liveSessionReducer(state, {
+    type: 'select-option',
+    option: 1,
+  })
+
+  state = liveSessionReducer(state, {
+    type: 'answer-sent',
+  })
+
+  state = liveSessionReducer(state, {
+    type: 'connection',
+    status: 'offline',
+  })
+
+  assert.equal(state.checkpoint?.phase, 'unconfirmed')
+
+  state = liveSessionReducer(state, {
+    type: 'connection',
+    status: 'connected',
+  })
+
+  assert.equal(state.checkpoint?.phase, 'answering')
+  assert.equal(state.checkpoint?.selectedOption, 1)
+  assert.equal(state.checkpoint?.freeText, '')
+})
+
+test('reconnecting does not unlock an expired question', () => {
+  let state = initialLiveSessionState('active')
+
+  const expiredQuestion = {
+    ...question,
+    closes_at: new Date(Date.now() - 60_000).toISOString(),
+  }
+
+  state = liveSessionReducer(state, {
+    type: 'question-delivered',
+    payload: expiredQuestion,
+  })
+
+  state = liveSessionReducer(state, {
+    type: 'select-option',
+    option: 1,
+  })
+
+  state = liveSessionReducer(state, {
+    type: 'answer-sent',
+  })
+
+  state = liveSessionReducer(state, {
+    type: 'connection',
+    status: 'offline',
+  })
+
+  state = liveSessionReducer(state, {
+    type: 'connection',
+    status: 'connected',
+  })
+
+  assert.equal(state.checkpoint?.phase, 'unconfirmed')
+  assert.equal(state.checkpoint?.selectedOption, 1)
+})
+
+test('an already answered receipt completes a retried answer', () => {
+  let state = initialLiveSessionState('active')
+
+  const openQuestion = {
+    ...question,
+    closes_at: new Date(Date.now() + 60_000).toISOString(),
+  }
+
+  state = liveSessionReducer(state, {
+    type: 'question-delivered',
+    payload: openQuestion,
+  })
+
+  state = liveSessionReducer(state, {
+    type: 'select-option',
+    option: 1,
+  })
+
+  state = liveSessionReducer(state, {
+    type: 'answer-sent',
+  })
+
+  state = liveSessionReducer(state, {
+    type: 'connection',
+    status: 'offline',
+  })
+
+  state = liveSessionReducer(state, {
+    type: 'connection',
+    status: 'connected',
+  })
+
+  assert.equal(state.checkpoint?.phase, 'answering')
+
+  state = liveSessionReducer(state, {
+    type: 'answer-sent',
+  })
+
+  state = liveSessionReducer(state, {
+    type: 'answer-receipt',
+    payload: {
+      question_id: question.question_id,
+      accepted: false,
+      received_at: new Date().toISOString(),
+      reason: 'You have already answered this question.',
+    },
+  })
+
+  assert.equal(state.checkpoint, null)
+  assert.equal(state.completedCheckpoint?.phase, 'submitted')
+  assert.equal(state.completedCheckpoint?.selectedOption, 1)
+  assert.equal(state.completedCheckpoint?.receipt?.accepted, false)
+})
+
+test('an unconfirmed answer can be retried after its timeout if connected', () => {
+  let state = initialLiveSessionState('active')
+
+  const openQuestion = {
+    ...question,
+    closes_at: new Date(Date.now() + 60_000).toISOString(),
+  }
+
+  state = liveSessionReducer(state, {
+    type: 'question-delivered',
+    payload: openQuestion,
+  })
+
+  state = liveSessionReducer(state, {
+    type: 'connection',
+    status: 'connected',
+  })
+
+  state = liveSessionReducer(state, {
+    type: 'select-option',
+    option: 0,
+  })
+
+  state = liveSessionReducer(state, {
+    type: 'answer-sent',
+  })
+
+  state = liveSessionReducer(state, {
+    type: 'answer-confirmation-unknown',
+    questionId: question.question_id,
+  })
+
+  assert.equal(state.checkpoint?.phase, 'answering')
+  assert.equal(state.checkpoint?.selectedOption, 0)
 })
