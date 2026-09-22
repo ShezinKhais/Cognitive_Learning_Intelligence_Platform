@@ -7,9 +7,10 @@ Ordering and replay
 -------------------
 Server events carry a monotonically increasing `seq` per session or user
 channel. A client that reconnects sends `last_seq` and the stream generation
-from READY so the server can replay missed material-progress events without
-confusing a restarted counter for the previous process. Session-wide replay
-lands in Phase 3.
+from READY so the server can replay what it missed without confusing a
+restarted counter for the previous process. Events meant for one user alone,
+such as an answer receipt or an attention prompt, carry seq 0 and are not
+replayed, so they never open a gap in anyone else's stream.
 
 Privacy
 -------
@@ -199,9 +200,14 @@ class SessionStatePayload(BaseModel):
 
     session_id: UUID
     status: SessionStatus
-    participant_count: int
+    participant_count: int = Field(description="Students connected now, each counted once.")
     active_question_id: UUID | None = None
     questions_delivered: int = 0
+    paused: bool = Field(
+        default=False,
+        description="An active session the lecturer has paused. No question goes out until "
+        "it resumes; one already open runs to the end of its window.",
+    )
 
 
 class QuestionDeliveredPayload(BaseModel):
