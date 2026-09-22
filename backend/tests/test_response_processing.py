@@ -156,3 +156,29 @@ def test_process_submission_records_free_text_unscored():
 
     assert payload.question_id == question.question_id
     assert payload.correct is None
+
+
+def test_process_submission_rejects_free_text_for_question_from_another_session():
+    question = make_delivered_question()
+
+    with pytest.raises(ValidationError):
+        process_submission(
+            session_id=uuid.uuid4(),
+            question=question,
+            free_text="Interconnected layers",
+        )
+
+
+def test_process_submission_rejects_free_text_for_question_not_yet_delivered():
+    session_id = uuid.uuid4()
+    question = make_delivered_question(
+        session_id=session_id,
+        status=QuestionStatus.APPROVED.value,
+    )
+
+    with pytest.raises(ValidationError):
+        process_submission(
+            session_id=session_id,
+            question=question,
+            free_text="Interconnected layers",
+        )

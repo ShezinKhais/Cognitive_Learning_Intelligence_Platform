@@ -3,8 +3,8 @@
 This module connects the live-session submission flow to AI 1's scoring
 service without owning persistence or changing the frozen WebSocket contract.
 
-Persistence belongs to BBIS. The live-session ResponseRecorder integration
-will be added after the General CS Phase 3 hook is merged.
+Persistence belongs to BBIS; LiveResponseRecorder in live_recorder.py
+combines this scoring with BBIS's store.
 """
 
 from uuid import UUID
@@ -20,19 +20,8 @@ from app.services.scoring import (
 )
 
 
-def process_mcq_submission(
-    *,
-    session_id: UUID,
-    question: Question,
-    selected_option: int,
-) -> FeedbackResultPayload:
-    """Score one accepted live-session MCQ and build instant feedback.
-
-    The live-session layer is responsible for deciding whether the response
-    arrived within the response window. This function verifies that the
-    question actually belongs to that session and has been delivered, then
-    delegates scoring and feedback construction to the scoring service.
-    """
+def _check_live_question(*, session_id: UUID, question: Question) -> None:
+    """Refuse an answer to a question from another session or not yet delivered."""
 
     if question.session_id != session_id:
         raise ValidationError(
@@ -51,6 +40,23 @@ def process_mcq_submission(
                 "question_status": question.status,
             },
         )
+
+
+def process_mcq_submission(
+    *,
+    session_id: UUID,
+    question: Question,
+    selected_option: int,
+) -> FeedbackResultPayload:
+    """Score one accepted live-session MCQ and build instant feedback.
+
+    The live-session layer is responsible for deciding whether the response
+    arrived within the response window. This function verifies that the
+    question actually belongs to that session and has been delivered, then
+    delegates scoring and feedback construction to the scoring service.
+    """
+
+    _check_live_question(session_id=session_id, question=question)
 
     score = score_mcq(question, selected_option)
     feedback = build_mcq_feedback(score)
@@ -76,6 +82,8 @@ def process_submission(
 
     if selected_option is None and free_text is None:
         raise ValidationError("A response must contain an answer.")
+
+    _check_live_question(session_id=session_id, question=question)
 
     if selected_option is not None:
         return process_mcq_submission(
