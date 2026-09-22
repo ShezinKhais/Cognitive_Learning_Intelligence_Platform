@@ -1,3 +1,4 @@
+
 import {
   CheckCircle2,
   ChevronLeft,
@@ -62,9 +63,16 @@ function LiveSessionPanel({ session }: { session: StudentSession }) {
     acknowledgePrompt,
     clearError,
   } = useLiveSession(session.id, session.status, session.paused ?? false)
-  const now = useCurrentTime(Boolean(state.checkpoint || state.attentionPrompt))
+
+  const now = useCurrentTime(
+    Boolean(state.checkpoint || state.attentionPrompt),
+  )
+
   const secondsRemaining = state.checkpoint
-    ? remainingResponseSeconds(state.checkpoint.question.closes_at, now)
+    ? remainingResponseSeconds(
+        state.checkpoint.question.closes_at,
+        now,
+      )
     : 0
 
   return (
@@ -80,9 +88,11 @@ function LiveSessionPanel({ session }: { session: StudentSession }) {
                 <ChevronLeft aria-hidden="true" size={17} />
                 All sessions
               </Link>
+
               <p className="mt-4 text-sm font-semibold text-info">
                 {session.course_code}
               </p>
+
               <h1 className="mt-1 text-2xl font-bold sm:text-3xl">
                 {session.title}
               </h1>
@@ -96,14 +106,19 @@ function LiveSessionPanel({ session }: { session: StudentSession }) {
               <Users aria-hidden="true" size={17} />
               {state.participantCount} connected
             </span>
+
             <span>
               Session:{' '}
               <strong className="font-medium text-foreground">
                 {state.paused ? 'paused' : state.sessionStatus}
               </strong>
             </span>
+
             <span>
-              Checkpoints delivered: <strong className="font-medium text-foreground">{state.questionsDelivered}</strong>
+              Checkpoints delivered:{' '}
+              <strong className="font-medium text-foreground">
+                {state.questionsDelivered}
+              </strong>
             </span>
           </div>
         </header>
@@ -116,11 +131,15 @@ function LiveSessionPanel({ session }: { session: StudentSession }) {
             className="mt-4 flex items-start justify-between gap-4 rounded-xl border border-critical/30 bg-card p-4 text-sm"
           >
             <div>
-              <p className="font-semibold text-critical">Live session error</p>
+              <p className="font-semibold text-critical">
+                Live session error
+              </p>
+
               <p className="mt-1 text-muted-foreground">
                 {state.error.detail ?? state.error.code}
               </p>
             </div>
+
             <button
               type="button"
               onClick={clearError}
@@ -142,7 +161,9 @@ function LiveSessionPanel({ session }: { session: StudentSession }) {
               onSubmit={submitAnswer}
             />
           ) : state.completedCheckpoint ? (
-            <CompletedCheckpointCard checkpoint={state.completedCheckpoint} />
+            <CompletedCheckpointCard
+              checkpoint={state.completedCheckpoint}
+            />
           ) : (
             <WaitingCard
               sessionStatus={state.sessionStatus}
@@ -152,53 +173,71 @@ function LiveSessionPanel({ session }: { session: StudentSession }) {
         </section>
       </div>
 
-      {state.attentionPrompt && Date.parse(state.attentionPrompt.expires_at) > now && (
-        <aside
-          role="alertdialog"
-          aria-labelledby="attention-prompt-title"
-          aria-describedby="attention-prompt-message"
-          className="fixed inset-x-4 bottom-4 z-20 mx-auto max-w-md rounded-xl border-2 border-warning bg-card p-5 shadow-2xl"
-        >
-          <p className="text-xs font-semibold uppercase tracking-wide text-warning">
-            Private check-in
-          </p>
-          <h2 id="attention-prompt-title" className="mt-1 text-lg font-semibold">
-            Are you still with us?
-          </h2>
-          <p id="attention-prompt-message" className="mt-2 text-sm text-muted-foreground">
-            {state.attentionPrompt.message}
-          </p>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Only you can see this prompt.
-          </p>
-          <div className="mt-4 flex gap-3">
-            <button
-              type="button"
-              onClick={() => acknowledgePrompt(false)}
-              className="flex-1 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+      {state.attentionPrompt &&
+        Date.parse(state.attentionPrompt.expires_at) > now && (
+          <aside
+            role="alertdialog"
+            aria-labelledby="attention-prompt-title"
+            aria-describedby="attention-prompt-message"
+            className="fixed inset-x-4 bottom-4 z-20 mx-auto max-w-md rounded-xl border-2 border-warning bg-card p-5 shadow-2xl"
+          >
+            <p className="text-xs font-semibold uppercase tracking-wide text-warning">
+              Private check-in
+            </p>
+
+            <h2
+              id="attention-prompt-title"
+              className="mt-1 text-lg font-semibold"
             >
-              I’m here
-            </button>
-            <button
-              type="button"
-              onClick={() => acknowledgePrompt(true)}
-              className="rounded-lg border border-border px-4 py-2 text-sm font-medium"
+              Are you still with us?
+            </h2>
+
+            <p
+              id="attention-prompt-message"
+              className="mt-2 text-sm text-muted-foreground"
             >
-              Dismiss
-            </button>
-          </div>
-        </aside>
-      )}
+              {state.attentionPrompt.message}
+            </p>
+
+            <p className="mt-2 text-xs text-muted-foreground">
+              Only you can see this prompt.
+            </p>
+
+            <div className="mt-4 flex gap-3">
+              <button
+                type="button"
+                onClick={() => acknowledgePrompt(false)}
+                className="flex-1 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+              >
+                I’m here
+              </button>
+
+              <button
+                type="button"
+                onClick={() => acknowledgePrompt(true)}
+                className="rounded-lg border border-border px-4 py-2 text-sm font-medium"
+              >
+                Dismiss
+              </button>
+            </div>
+          </aside>
+        )}
     </main>
   )
 }
 
-function CompletedCheckpointCard({ checkpoint }: { checkpoint: CheckpointState }) {
+function CompletedCheckpointCard({
+  checkpoint,
+}: {
+  checkpoint: CheckpointState
+}) {
   return (
     <article className="rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)] sm:p-7">
       <CheckpointOutcome checkpoint={checkpoint} />
+
       <p className="mt-4 text-sm text-muted-foreground">
-        Stay on this page. The lecturer’s next question will appear automatically.
+        Stay on this page. The lecturer’s next question will appear
+        automatically.
       </p>
     </article>
   )
@@ -220,18 +259,28 @@ function CheckpointCard({
   onSubmit: () => boolean
 }) {
   const { question } = checkpoint
+
   const editable =
     connected &&
     secondsRemaining > 0 &&
     !checkpoint.closed &&
-    (checkpoint.phase === 'answering' || checkpoint.phase === 'rejected')
+    (
+      checkpoint.phase === 'answering' ||
+      checkpoint.phase === 'rejected'
+    )
+
   const hasOptions = Boolean(question.options?.length)
+
   const answerPresent = hasOptions
     ? checkpoint.selectedOption !== null
     : checkpoint.freeText.trim().length > 0
+
   const progress = Math.max(
     0,
-    Math.min(100, (secondsRemaining / question.window_seconds) * 100),
+    Math.min(
+      100,
+      (secondsRemaining / question.window_seconds) * 100,
+    ),
   )
 
   return (
@@ -241,12 +290,14 @@ function CheckpointCard({
           <p className="text-xs font-semibold uppercase tracking-wide text-info">
             Live checkpoint
           </p>
+
           {question.source_slide !== null && (
             <p className="mt-1 text-xs text-muted-foreground">
               Based on slide {question.source_slide}
             </p>
           )}
         </div>
+
         <div
           className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold ${
             secondsRemaining <= 5
@@ -269,19 +320,33 @@ function CheckpointCard({
         aria-label="Response time remaining"
       >
         <div
-          className={`h-full transition-[width] ${secondsRemaining <= 5 ? 'bg-critical' : 'bg-info'}`}
+          className={`h-full transition-[width] ${
+            secondsRemaining <= 5
+              ? 'bg-critical'
+              : 'bg-info'
+          }`}
           style={{ width: `${progress}%` }}
         />
       </div>
 
       <div className="p-5 sm:p-7">
-        <h2 className="text-xl font-semibold leading-snug">{question.prompt}</h2>
+        <h2 className="text-xl font-semibold leading-snug">
+          {question.prompt}
+        </h2>
 
         {hasOptions ? (
-          <fieldset className="mt-6 grid gap-3" disabled={!editable}>
-            <legend className="sr-only">Choose one answer</legend>
+          <fieldset
+            className="mt-6 grid gap-3"
+            disabled={!editable}
+          >
+            <legend className="sr-only">
+              Choose one answer
+            </legend>
+
             {question.options!.map((option, index) => {
-              const selected = checkpoint.selectedOption === index
+              const selected =
+                checkpoint.selectedOption === index
+
               return (
                 <label
                   key={`${question.question_id}-${index}`}
@@ -289,7 +354,11 @@ function CheckpointCard({
                     selected
                       ? 'border-info bg-info/5'
                       : 'border-border hover:bg-muted/60'
-                  } ${!editable ? 'cursor-default opacity-70' : ''}`}
+                  } ${
+                    !editable
+                      ? 'cursor-default opacity-70'
+                      : ''
+                  }`}
                 >
                   <input
                     type="radio"
@@ -299,23 +368,32 @@ function CheckpointCard({
                     onChange={() => onSelectOption(index)}
                     className="mt-1 h-4 w-4 accent-[var(--info)]"
                   />
-                  <span className="text-sm leading-6">{option}</span>
+
+                  <span className="text-sm leading-6">
+                    {option}
+                  </span>
                 </label>
               )
             })}
           </fieldset>
         ) : (
           <div className="mt-6">
-            <label htmlFor={`answer-${question.question_id}`} className="text-sm font-medium">
+            <label
+              htmlFor={`answer-${question.question_id}`}
+              className="text-sm font-medium"
+            >
               Your answer
             </label>
+
             <textarea
               id={`answer-${question.question_id}`}
               rows={5}
               maxLength={4000}
               value={checkpoint.freeText}
               disabled={!editable}
-              onChange={(event) => onSetFreeText(event.target.value)}
+              onChange={(event) =>
+                onSetFreeText(event.target.value)
+              }
               className="mt-2 w-full resize-y rounded-xl border border-border bg-input-background p-3 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-70"
             />
           </div>
@@ -323,7 +401,10 @@ function CheckpointCard({
 
         <CheckpointOutcome checkpoint={checkpoint} />
 
-        {(checkpoint.phase === 'answering' || checkpoint.phase === 'rejected') && (
+        {(
+          checkpoint.phase === 'answering' ||
+          checkpoint.phase === 'rejected'
+        ) && (
           <button
             type="button"
             onClick={onSubmit}
@@ -335,26 +416,61 @@ function CheckpointCard({
         )}
 
         {checkpoint.phase === 'submitting' && (
-          <p role="status" className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-info">
-            <RefreshCw aria-hidden="true" size={17} className="animate-spin" />
+          <p
+            role="status"
+            className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-info"
+          >
+            <RefreshCw
+              aria-hidden="true"
+              size={17}
+              className="animate-spin"
+            />
             Saving your answer…
           </p>
+        )}
+
+        {/* NEW: Show a message instead of loading forever. */}
+        {checkpoint.phase === 'unconfirmed' && (
+          <div
+            role="status"
+            className="mt-6 rounded-xl border border-warning/30 bg-warning/5 p-4"
+          >
+            <p className="font-semibold text-warning">
+              Answer confirmation unavailable
+            </p>
+
+            <p className="mt-2 text-sm text-muted-foreground">
+              Your answer was sent, but we could not
+              confirm whether it was saved.
+              Please stay on this page while
+              your connection recovers.
+            </p>
+          </div>
         )}
       </div>
     </article>
   )
 }
 
-function CheckpointOutcome({ checkpoint }: { checkpoint: CheckpointState }) {
+function CheckpointOutcome({
+  checkpoint,
+}: {
+  checkpoint: CheckpointState
+}) {
   if (checkpoint.phase === 'missed') {
     return (
-      <div role="status" className="mt-6 rounded-xl border border-warning/30 bg-warning/5 p-4">
+      <div
+        role="status"
+        className="mt-6 rounded-xl border border-warning/30 bg-warning/5 p-4"
+      >
         <p className="flex items-center gap-2 font-semibold text-warning">
           <Clock3 aria-hidden="true" size={18} />
           Response window closed
         </p>
+
         <p className="mt-1 text-sm text-muted-foreground">
-          No answer was recorded for this checkpoint. You can continue participating in the session.
+          No answer was recorded for this checkpoint.
+          You can continue participating in the session.
         </p>
       </div>
     )
@@ -362,42 +478,69 @@ function CheckpointOutcome({ checkpoint }: { checkpoint: CheckpointState }) {
 
   if (checkpoint.phase === 'rejected') {
     return (
-      <div role="alert" className="mt-5 rounded-xl border border-critical/30 bg-critical/5 p-4 text-sm">
-        <p className="font-semibold text-critical">Answer not accepted</p>
+      <div
+        role="alert"
+        className="mt-5 rounded-xl border border-critical/30 bg-critical/5 p-4 text-sm"
+      >
+        <p className="font-semibold text-critical">
+          Answer not accepted
+        </p>
+
         <p className="mt-1 text-muted-foreground">
-          {checkpoint.receipt?.reason ?? 'Please check your answer and try again.'}
+          {checkpoint.receipt?.reason ??
+            'Please check your answer and try again.'}
         </p>
       </div>
     )
   }
 
-  if (checkpoint.phase !== 'submitted') return null
+  if (checkpoint.phase !== 'submitted') {
+    return null
+  }
 
   const feedback = checkpoint.feedback
-  const resultLabel = feedback?.correct === true
-    ? 'Correct answer'
-    : feedback?.correct === false
-      ? 'Not quite'
-      : 'Answer received'
-  const ResultIcon = feedback?.correct === false ? XCircle : CheckCircle2
-  const resultColour = feedback?.correct === false ? 'text-warning' : 'text-success'
+
+  const resultLabel =
+    feedback?.correct === true
+      ? 'Correct answer'
+      : feedback?.correct === false
+        ? 'Not quite'
+        : 'Answer received'
+
+  const ResultIcon =
+    feedback?.correct === false
+      ? XCircle
+      : CheckCircle2
+
+  const resultColour =
+    feedback?.correct === false
+      ? 'text-warning'
+      : 'text-success'
 
   return (
-    <div role="status" className="mt-6 rounded-xl border border-border bg-muted/50 p-4">
-      <p className={`flex items-center gap-2 font-semibold ${resultColour}`}>
+    <div
+      role="status"
+      className="mt-6 rounded-xl border border-border bg-muted/50 p-4"
+    >
+      <p
+        className={`flex items-center gap-2 font-semibold ${resultColour}`}
+      >
         <ResultIcon aria-hidden="true" size={19} />
         {resultLabel}
       </p>
+
       {feedback?.explanation && (
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
           {feedback.explanation}
         </p>
       )}
-      {feedback?.source_slide !== null && feedback?.source_slide !== undefined && (
-        <p className="mt-2 text-xs font-medium text-info">
-          Review slide {feedback.source_slide}
-        </p>
-      )}
+
+      {feedback?.source_slide !== null &&
+        feedback?.source_slide !== undefined && (
+          <p className="mt-2 text-xs font-medium text-info">
+            Review slide {feedback.source_slide}
+          </p>
+        )}
     </div>
   )
 }
@@ -409,16 +552,26 @@ function WaitingCard({
   sessionStatus: StudentSession['status']
   paused: boolean
 }) {
-  const ended = sessionStatus === 'ended' || sessionStatus === 'cancelled'
+  const ended =
+    sessionStatus === 'ended' ||
+    sessionStatus === 'cancelled'
+
   return (
     <div className="rounded-xl border border-border bg-card p-8 text-center shadow-[var(--shadow-card)]">
       <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-secondary">
         {ended ? (
-          <CheckCircle2 aria-hidden="true" className="text-muted-foreground" />
+          <CheckCircle2
+            aria-hidden="true"
+            className="text-muted-foreground"
+          />
         ) : (
-          <Clock3 aria-hidden="true" className="text-info" />
+          <Clock3
+            aria-hidden="true"
+            className="text-info"
+          />
         )}
       </div>
+
       <h2 className="mt-4 text-xl font-semibold">
         {ended
           ? 'This session has ended'
@@ -426,6 +579,7 @@ function WaitingCard({
             ? 'Session paused'
             : 'Waiting for the next checkpoint'}
       </h2>
+
       <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted-foreground">
         {ended
           ? 'Your responses have been saved. A review view will be available in the reporting phase.'
@@ -437,9 +591,14 @@ function WaitingCard({
   )
 }
 
-function ConnectionBadge({ status }: { status: LiveConnectionStatus }) {
+function ConnectionBadge({
+  status,
+}: {
+  status: LiveConnectionStatus
+}) {
   const connected = status === 'connected'
   const ended = status === 'ended'
+
   return (
     <span
       className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${
@@ -450,16 +609,33 @@ function ConnectionBadge({ status }: { status: LiveConnectionStatus }) {
             : 'bg-warning/10 text-warning'
       }`}
     >
-      {connected ? <Wifi aria-hidden="true" size={15} /> : <WifiOff aria-hidden="true" size={15} />}
+      {connected ? (
+        <Wifi aria-hidden="true" size={15} />
+      ) : (
+        <WifiOff aria-hidden="true" size={15} />
+      )}
+
       {connectionLabel(status)}
     </span>
   )
 }
 
-function ConnectionNotice({ status }: { status: LiveConnectionStatus }) {
-  if (status === 'connected' || status === 'ended') return null
+function ConnectionNotice({
+  status,
+}: {
+  status: LiveConnectionStatus
+}) {
+  if (
+    status === 'connected' ||
+    status === 'ended'
+  ) {
+    return null
+  }
 
-  const copy: Record<Exclude<LiveConnectionStatus, 'connected' | 'ended'>, string> = {
+  const copy: Record<
+    Exclude<LiveConnectionStatus, 'connected' | 'ended'>,
+    string
+  > = {
     connecting: 'Connecting to the live session…',
     recovering: 'Connected again. Restoring the latest session state…',
     reconnecting: 'Connection interrupted. Your page will reconnect automatically.',
@@ -469,16 +645,30 @@ function ConnectionNotice({ status }: { status: LiveConnectionStatus }) {
   }
 
   return (
-    <div role="status" className="mt-4 rounded-xl border border-warning/30 bg-card p-4 text-sm">
+    <div
+      role="status"
+      className="mt-4 rounded-xl border border-warning/30 bg-card p-4 text-sm"
+    >
       <p className="flex items-center gap-2 font-medium text-warning">
         <RefreshCw
           aria-hidden="true"
           size={17}
-          className={status === 'connecting' || status === 'reconnecting' ? 'animate-spin' : ''}
+          className={
+            status === 'connecting' ||
+            status === 'reconnecting'
+              ? 'animate-spin'
+              : ''
+          }
         />
+
         {copy[status]}
       </p>
-      {(status === 'reconnecting' || status === 'offline' || status === 'recovering') && (
+
+      {(
+        status === 'reconnecting' ||
+        status === 'offline' ||
+        status === 'recovering'
+      ) && (
         <p className="mt-1 text-muted-foreground">
           Answer controls remain locked until recovery is complete.
         </p>
@@ -487,7 +677,9 @@ function ConnectionNotice({ status }: { status: LiveConnectionStatus }) {
   )
 }
 
-function connectionLabel(status: LiveConnectionStatus): string {
+function connectionLabel(
+  status: LiveConnectionStatus,
+): string {
   return {
     connecting: 'Connecting',
     connected: 'Live',
@@ -505,7 +697,12 @@ function useCurrentTime(enabled: boolean): number {
 
   useEffect(() => {
     if (!enabled) return
-    const timer = window.setInterval(() => setNow(Date.now()), 250)
+
+    const timer = window.setInterval(
+      () => setNow(Date.now()),
+      250,
+    )
+
     return () => window.clearInterval(timer)
   }, [enabled])
 
