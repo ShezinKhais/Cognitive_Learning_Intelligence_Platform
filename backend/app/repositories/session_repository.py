@@ -108,18 +108,20 @@ class SessionRepository:
         eligible = self._deliverable(live)
 
         total = (
-            await self.session.execute(
-                select(func.count()).select_from(eligible.subquery())
-            )
+            await self.session.execute(select(func.count()).select_from(eligible.subquery()))
         ).scalar_one()
 
         questions = (
-            await self.session.execute(
-                eligible.order_by(Question.created_at, Question.question_id)
-                .limit(limit)
-                .offset(offset)
+            (
+                await self.session.execute(
+                    eligible.order_by(Question.created_at, Question.question_id)
+                    .limit(limit)
+                    .offset(offset)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         return list(questions), total
 
