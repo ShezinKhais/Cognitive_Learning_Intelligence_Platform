@@ -1,23 +1,23 @@
 import {
   apiAuthenticatedGet,
   apiAuthenticatedRequest,
-  listQuestions,
   type Page,
 } from '../../api'
-import type {
-  Material,
-} from '../materials/types'
-
-const MATERIAL_LIMIT = 100
-const QUESTION_LIMIT = 100
 
 export interface StagedQuestion {
   id: string
   materialId: string
-  materialName: string
   prompt: string
   options: string[] | null
   sourceSlide: number | null
+}
+
+interface DeliverableQuestionResponse {
+  id: string
+  material_id: string
+  prompt: string
+  options: string[] | null
+  source_slide: number | null
 }
 
 export interface DeliverQuestionResponse {
@@ -25,56 +25,30 @@ export interface DeliverQuestionResponse {
   question_id: string
 }
 
-export async function loadStagedQuestions():
-Promise<StagedQuestion[]> {
-  const materials =
+export async function loadStagedQuestions(
+  sessionId: string,
+): Promise<StagedQuestion[]> {
+  const page =
     await apiAuthenticatedGet<
-      Page<Material>
+      Page<DeliverableQuestionResponse>
     >(
-      `/materials?limit=${MATERIAL_LIMIT}&offset=0`,
+      `/sessions/${encodeURIComponent(
+        sessionId,
+      )}/questions?limit=200&offset=0`,
     )
 
-  const questionPages =
-    await Promise.all(
-      materials.items.map(
-        async (material) => ({
-          material,
-          questions:
-            await listQuestions(
-              material.id,
-              QUESTION_LIMIT,
-              0,
-            ),
-        }),
-      ),
-    )
-
-  return questionPages.flatMap(
-    ({
-      material,
-      questions,
-    }) =>
-      questions.items
-        .filter(
-          (question) =>
-            question.status ===
-            'staged',
-        )
-        .map(
-          (question) => ({
-            id: question.id,
-            materialId:
-              material.id,
-            materialName:
-              material.filename,
-            prompt:
-              question.prompt,
-            options:
-              question.options,
-            sourceSlide:
-              question.source_slide,
-          }),
-        ),
+  return page.items.map(
+    (question) => ({
+      id: question.id,
+      materialId:
+        question.material_id,
+      prompt:
+        question.prompt,
+      options:
+        question.options,
+      sourceSlide:
+        question.source_slide,
+    }),
   )
 }
 

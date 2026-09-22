@@ -97,6 +97,32 @@ class SessionRepository:
         result = await self.session.execute(self._deliverable(live).limit(1))
         return result.scalar_one_or_none() is not None
 
+    async def list_deliverable(
+        self,
+        live: Session,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[Question], int]:
+        """List staged questions this session may actually deliver."""
+        eligible = self._deliverable(live)
+
+        total = (
+            await self.session.execute(
+                select(func.count()).select_from(eligible.subquery())
+            )
+        ).scalar_one()
+
+        questions = (
+            await self.session.execute(
+                eligible.order_by(Question.created_at, Question.question_id)
+                .limit(limit)
+                .offset(offset)
+            )
+        ).scalars().all()
+
+        return list(questions), total
+
     async def claim_for_delivery(
         self, live: Session, question_id: uuid.UUID | None = None
     ) -> Question | None:

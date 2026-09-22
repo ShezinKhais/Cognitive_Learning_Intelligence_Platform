@@ -60,7 +60,9 @@ export default function ManualQuestionTrigger({
 
     try {
       const staged =
-        await loadStagedQuestions()
+        await loadStagedQuestions(
+          sessionId,
+        )
 
       setQuestions(staged)
 
@@ -182,7 +184,7 @@ export default function ManualQuestionTrigger({
       ) : questions.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">
           No staged questions are currently
-          available.
+          available for this session.
         </p>
       ) : (
         <>
@@ -224,16 +226,9 @@ export default function ManualQuestionTrigger({
                 }
               </p>
 
-              <p className="mt-2 text-xs text-muted-foreground">
-                Material:{' '}
-                {
-                  selectedQuestion.materialName
-                }
-              </p>
-
               {selectedQuestion.sourceSlide !==
                 null && (
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="mt-2 text-xs text-muted-foreground">
                   Source slide:{' '}
                   {
                     selectedQuestion.sourceSlide
