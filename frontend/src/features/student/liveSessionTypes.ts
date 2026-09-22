@@ -1,3 +1,4 @@
+
 import type { SessionStatus } from './types'
 
 export type LiveConnectionStatus =
@@ -83,6 +84,7 @@ export interface ServerEvent {
 export type CheckpointPhase =
   | 'answering'
   | 'submitting'
+  | 'unconfirmed'
   | 'submitted'
   | 'rejected'
   | 'missed'
