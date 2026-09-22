@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 
 from app.realtime.hub import MAX_TRACKED_STREAMS, Connection, SessionHub
 from app.schemas.events import ServerEventType
+from app.schemas.identity import Role
 
 
 class _FakeSocket:
@@ -179,3 +180,22 @@ async def test_leaving_empties_the_room() -> None:
 
     await hub.leave(connection)
     assert hub.participant_count(session) == 0
+
+
+async def test_staff_and_students_in_a_session_are_told_apart() -> None:
+    """The lecturer panel's student count, and anything sent to staff alone,
+    depend on this split."""
+    hub = SessionHub()
+    session, elsewhere = uuid4(), uuid4()
+    lecturer, admin, student = uuid4(), uuid4(), uuid4()
+    for user, role, room in (
+        (lecturer, Role.LECTURER, session),
+        (admin, Role.ADMIN, session),
+        (student, Role.STUDENT, session),
+        (uuid4(), Role.LECTURER, elsewhere),
+    ):
+        await hub.join(Connection(_FakeSocket(), user, room, role))  # type: ignore[arg-type]
+
+    assert hub.staff_ids(session) == {lecturer, admin}
+    assert hub.student_ids(session) == {student}
+    assert hub.staff_ids(uuid4()) == set()

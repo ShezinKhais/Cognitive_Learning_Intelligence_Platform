@@ -27,11 +27,13 @@ respondents unknown. The cycle resumes the next time anything touches the
 session: the lecturer's panel reconnecting, a student joining, or a manual
 delivery. See restore(). A session paused in the database stays paused.
 
-Scoring and storing answers and prompt outcomes belong to AI 1 and BBIS. They
-plug in through ResponseRecorder and PromptRecorder; until one is set, an
-accepted answer is counted towards the question's respondents and kept
-nowhere else. check_wiring() says so at startup, and refuses to start in
-production.
+Scoring and storing answers, question closes and prompt outcomes belong to
+AI 1 and BBIS. They plug in through ResponseRecorder, CloseRecorder and
+PromptRecorder; until one is set, an accepted answer is counted towards the
+question's respondents and kept nowhere else. check_wiring() says so at
+startup, and refuses to start in production. Feedback on an answer is what
+the ResponseRecorder returns, sent here after the receipt, and the answer
+can be revealed from the CloseRecorder once the window is over.
 """
 
 from __future__ import annotations
@@ -62,6 +64,7 @@ from app.schemas.events import (
     AnswerReceiptPayload,
     AnswerSubmitPayload,
     AttentionPromptPayload,
+    FeedbackResultPayload,
     PromptAckPayload,
     QuestionClosedPayload,
     QuestionCloseReason,
@@ -111,9 +114,39 @@ class ResponseRecorder(Protocol):
     the student is told it was not saved and may submit again while the
     window is open. A slow write may still land after that, so storing must
     be idempotent per question and student.
+
+    What it returns is sent to the student as feedback.result, after the
+    receipt accepting the answer. None sends nothing. The recorder must not
+    send feedback itself, since until it returns the answer can still be
+    refused.
     """
 
-    async def record(self, submission: Submission) -> None: ...
+    async def record(self, submission: Submission) -> FeedbackResultPayload | None: ...
+
+
+@dataclass(frozen=True)
+class ClosedQuestion:
+    """How one delivered question ended, as handed to the close recorder."""
+
+    session_id: UUID
+    question_id: UUID
+    reason: QuestionCloseReason
+    closed_at: datetime
+    # Students who were shown it, and those whose answer was accepted.
+    eligible: frozenset[UUID]
+    answered: frozenset[UUID]
+
+
+class CloseRecorder(Protocol):
+    """Stores how a question ended, and may reveal its answer. BBIS and AI 1
+    provide this.
+
+    It runs after question.closed has gone out, so the window is over and the
+    answer can be shown. A failure is logged and otherwise ignored: the class
+    has already moved on.
+    """
+
+    async def record_close(self, closed: ClosedQuestion) -> None: ...
 
 
 class PromptResult(StrEnum):
@@ -233,6 +266,7 @@ class Classroom:
         self._finished: OrderedDict[UUID, SessionStatus] = OrderedDict()
         self.recorder: ResponseRecorder | None = None
         self.prompt_recorder: PromptRecorder | None = None
+        self.close_recorder: CloseRecorder | None = None
 
     def _next_wait(self) -> timedelta | None:
         """A fresh random wait before the next scheduled question, or None
@@ -262,6 +296,8 @@ class Classroom:
             problems.append("no ResponseRecorder is registered, so answers are not stored")
         if self.prompt_recorder is None:
             problems.append("no PromptRecorder is registered, so prompt outcomes are not stored")
+        if self.close_recorder is None:
+            problems.append("no CloseRecorder is registered, so question closes are not stored")
         workers = os.environ.get(WORKERS_ENV, "1").strip() or "1"
         if not workers.isdigit() or int(workers) > 1:
             problems.append(
@@ -375,13 +411,15 @@ class Classroom:
 
         live = self._live.pop(session_id, None)
         unanswered: list[PromptOutcome] = []
+        closed = None
         if live is not None:
             async with live.lock:
-                await self._close_locked(live, QuestionCloseReason.SESSION_ENDED)
+                closed = await self._close_locked(live, QuestionCloseReason.SESSION_ENDED)
                 unanswered = self._drop_prompts_locked(live)
             _cancel(live.cycle)
         await self._announce(session_id, status, delivered)
         self._hub.forget_session(session_id)
+        await self._record_close(closed)
         for outcome in unanswered:
             await self._record_prompt(outcome)
 
@@ -556,15 +594,21 @@ class Classroom:
     async def _close_when_due(self, live: LiveSession, open_: _OpenQuestion) -> None:
         delay = (open_.closes_at - datetime.now(UTC)).total_seconds()
         await asyncio.sleep(max(delay, 0.0))
+        closed = None
         async with live.lock:
             if live.open is open_:
-                await self._close_locked(live, QuestionCloseReason.WINDOW_ELAPSED)
+                closed = await self._close_locked(live, QuestionCloseReason.WINDOW_ELAPSED)
                 await self._nudge_absent_locked(live, open_)
+        await self._record_close(closed)
 
-    async def _close_locked(self, live: LiveSession, reason: QuestionCloseReason) -> None:
+    async def _close_locked(
+        self, live: LiveSession, reason: QuestionCloseReason
+    ) -> ClosedQuestion | None:
+        """Close the open question and say so. Returns what the close
+        recorder is to be given once the caller releases the lock."""
         open_ = live.open
         if open_ is None:
-            return
+            return None
         live.open = None
         if open_.closer is not asyncio.current_task():
             _cancel(open_.closer)
@@ -577,8 +621,16 @@ class Classroom:
         await self._hub.broadcast(
             live.session_id, ServerEventType.QUESTION_CLOSED, payload.model_dump(mode="json")
         )
+        closed = ClosedQuestion(
+            session_id=live.session_id,
+            question_id=open_.question_id,
+            reason=reason,
+            closed_at=datetime.now(UTC),
+            eligible=frozenset(open_.present | open_.answered),
+            answered=frozenset(open_.answered),
+        )
         if reason is QuestionCloseReason.SESSION_ENDED:
-            return
+            return closed
         # The next wait starts now, not at the delivery, so the response
         # window is not taken out of the teaching time.
         wait = self._next_wait()
@@ -586,6 +638,7 @@ class Classroom:
             live.remaining = wait
         else:
             self._set_due(live, wait)
+        return closed
 
     async def _run_cycle(self, live: LiveSession) -> None:
         """Deliver the next staged question whenever one falls due."""
@@ -646,17 +699,44 @@ class Classroom:
         role: Role | None,
         answer: AnswerSubmitPayload,
     ) -> AnswerReceiptPayload:
-        """Accept or refuse one answer. Every outcome is a receipt, never an
-        exception, so the student always hears back."""
+        """Accept or refuse one answer and tell the student.
+
+        Every outcome is a receipt, never an exception, so the student always
+        hears back. It goes to every tab they have open, so none of them
+        offers the question again. The recorder's feedback follows the
+        receipt, and only for an accepted answer: a student is never shown a
+        result for an answer that was then refused.
+        """
+        receipt, feedback = await self._accept(session_id, user_id, role, answer)
+        await self._hub.send_to_user(
+            session_id, user_id, ServerEventType.ANSWER_RECEIPT, receipt.model_dump(mode="json")
+        )
+        if feedback is not None:
+            await self._hub.send_to_user(
+                session_id,
+                user_id,
+                ServerEventType.FEEDBACK_RESULT,
+                feedback.model_dump(mode="json"),
+            )
+        return receipt
+
+    async def _accept(
+        self,
+        session_id: UUID,
+        user_id: UUID,
+        role: Role | None,
+        answer: AnswerSubmitPayload,
+    ) -> tuple[AnswerReceiptPayload, FeedbackResultPayload | None]:
         received_at = datetime.now(UTC)
 
-        def refused(reason: str) -> AnswerReceiptPayload:
-            return AnswerReceiptPayload(
+        def refused(reason: str) -> tuple[AnswerReceiptPayload, None]:
+            receipt = AnswerReceiptPayload(
                 question_id=answer.question_id,
                 accepted=False,
                 received_at=received_at,
                 reason=reason,
             )
+            return receipt, None
 
         if role is not Role.STUDENT:
             return refused("Only students answer questions.")
@@ -681,10 +761,11 @@ class Classroom:
                 return refused("Answer this question in your own words.")
             open_.answered.add(user_id)
 
+        feedback = None
         if self.recorder is not None:
             try:
                 async with asyncio.timeout(RECORD_TIMEOUT_SECONDS):
-                    await self.recorder.record(
+                    feedback = await self.recorder.record(
                         Submission(
                             session_id=session_id,
                             question_id=answer.question_id,
@@ -704,9 +785,10 @@ class Classroom:
                     return refused("Your answer could not be saved. Please submit it again.")
                 return refused("Your answer could not be saved.")
 
-        return AnswerReceiptPayload(
+        receipt = AnswerReceiptPayload(
             question_id=answer.question_id, accepted=True, received_at=received_at
         )
+        return receipt, feedback
 
     # -- attention prompts --------------------------------------------------
 
@@ -847,6 +929,17 @@ class Classroom:
                 await self.prompt_recorder.record_prompt(outcome)
         except Exception:
             log.exception("could not record a prompt outcome in session %s", outcome.session_id)
+
+    async def _record_close(self, closed: ClosedQuestion | None) -> None:
+        # Called once the session's lock is released, so a slow store never
+        # holds up a pause, a delivery or the next answer.
+        if closed is None or self.close_recorder is None:
+            return
+        try:
+            async with asyncio.timeout(RECORD_TIMEOUT_SECONDS):
+                await self.close_recorder.record_close(closed)
+        except Exception:
+            log.exception("could not record a question close in session %s", closed.session_id)
 
 
 def _outcome(

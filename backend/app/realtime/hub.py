@@ -390,6 +390,13 @@ class SessionHub:
             return set()
         return {c.user_id for c in stream.members if c.role is Role.STUDENT}
 
+    def staff_ids(self, session_id: UUID) -> set[UUID]:
+        """The lecturers and admins connected to a session."""
+        stream = self._streams.get(session_id)
+        if stream is None:
+            return set()
+        return {c.user_id for c in stream.members if c.role in (Role.LECTURER, Role.ADMIN)}
+
     def tracked_stream_count(self) -> int:
         """How many streams are held. Exposed so the ceiling is observable
         rather than something only the logs know about."""

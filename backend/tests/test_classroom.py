@@ -18,9 +18,14 @@ import pytest
 
 from app.core.errors import ConflictError
 from app.realtime import classroom as classroom_module
-from app.realtime.classroom import Classroom, Submission
+from app.realtime.classroom import Classroom, ClosedQuestion, Submission
 from app.realtime.hub import Connection, SessionHub
-from app.schemas.events import AnswerSubmitPayload, PromptAckPayload, ServerEventType
+from app.schemas.events import (
+    AnswerSubmitPayload,
+    FeedbackResultPayload,
+    PromptAckPayload,
+    ServerEventType,
+)
 from app.schemas.identity import Role
 from app.schemas.session import SessionStatus
 
@@ -391,6 +396,132 @@ async def test_an_answer_that_could_not_be_saved_can_be_sent_again() -> None:
     assert not first.accepted
     assert "could not be saved" in (first.reason or "")
     assert retry.accepted
+    await room.shutdown()
+
+
+async def test_feedback_follows_the_receipt_and_reaches_only_that_student() -> None:
+    """A recorder that sent feedback itself could show "Correct" for an
+    answer the classroom then refused. What it returns goes out after the
+    receipt instead, to the student who answered and nobody else."""
+    room, events = _room()
+    row = _row()
+    answering, student = await _join(events, row.session_id, Role.STUDENT)
+    other, _ = await _join(events, row.session_id, Role.STUDENT)
+    lecturer, _ = await _join(events, row.session_id, Role.LECTURER)
+    question = await _deliver(room, row)
+
+    class Recorder:
+        async def record(self, submission: Submission) -> FeedbackResultPayload:
+            assert answering.of(ServerEventType.ANSWER_RECEIPT) == []
+            return FeedbackResultPayload(question_id=submission.question_id, correct=True)
+
+    room.recorder = Recorder()
+    await room.submit(row.session_id, student, Role.STUDENT, _answer(question.question_id))
+
+    receipt, feedback = answering.sent[-2:]
+    assert (receipt["type"], receipt["data"]["accepted"]) == ("answer.receipt", True)
+    assert (feedback["type"], feedback["data"]["correct"]) == ("feedback.result", True)
+    for socket in (other, lecturer):
+        assert socket.of(ServerEventType.FEEDBACK_RESULT) == []
+        assert socket.of(ServerEventType.ANSWER_RECEIPT) == []
+    await room.shutdown()
+
+
+async def test_a_refused_answer_gets_a_receipt_and_no_feedback() -> None:
+    room, events = _room()
+    row = _row()
+    socket, student = await _join(events, row.session_id, Role.STUDENT)
+    question = await _deliver(room, row)
+
+    class Recorder:
+        async def record(self, submission: Submission) -> FeedbackResultPayload:
+            raise RuntimeError("database gone")
+
+    room.recorder = Recorder()
+    await room.submit(row.session_id, student, Role.STUDENT, _answer(question.question_id))
+
+    [receipt] = socket.of(ServerEventType.ANSWER_RECEIPT)
+    assert receipt["data"]["accepted"] is False
+    assert socket.of(ServerEventType.FEEDBACK_RESULT) == []
+    await room.shutdown()
+
+
+class _Closes:
+    def __init__(self) -> None:
+        self.closed: list[ClosedQuestion] = []
+        self.release = asyncio.Event()
+        self.release.set()
+
+    async def record_close(self, closed: ClosedQuestion) -> None:
+        await self.release.wait()
+        self.closed.append(closed)
+
+
+async def test_the_close_recorder_is_told_who_was_shown_and_who_answered() -> None:
+    room, events = _room(window=0.1)
+    row = _row()
+    socket, answered = await _join(events, row.session_id, Role.STUDENT)
+    _, silent = await _join(events, row.session_id, Role.STUDENT)
+    closes = room.close_recorder = _Closes()
+    question = await _deliver(room, row)
+    await room.submit(row.session_id, answered, Role.STUDENT, _answer(question.question_id))
+
+    await asyncio.sleep(0.25)
+
+    [closed] = closes.closed
+    assert (closed.question_id, closed.reason) == (question.question_id, "window_elapsed")
+    assert closed.eligible == {answered, silent}
+    assert closed.answered == {answered}
+    assert socket.of(ServerEventType.QUESTION_CLOSED)
+    await room.shutdown()
+
+
+async def test_the_close_recorder_hears_about_a_question_the_end_closed() -> None:
+    room, _ = _room()
+    row = _row()
+    closes = room.close_recorder = _Closes()
+    question = await _deliver(room, row)
+
+    await room.end(row.session_id, SessionStatus.ENDED, delivered=1)
+
+    [closed] = closes.closed
+    assert (closed.question_id, closed.reason) == (question.question_id, "session_ended")
+
+
+async def test_a_slow_close_recorder_does_not_hold_up_the_session() -> None:
+    """It runs once the session's lock is released, so the next question can
+    go out while the last close is still being stored."""
+    room, _ = _room(window=0.05)
+    row = _row()
+    closes = room.close_recorder = _Closes()
+    closes.release.clear()
+    await _deliver(room, row)
+    await asyncio.sleep(0.15)
+
+    await asyncio.wait_for(_deliver(room, row), 1)
+
+    assert closes.closed == []
+    closes.release.set()
+    await room.shutdown()
+
+
+async def test_a_failing_close_recorder_is_logged_and_ignored(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    room, _ = _room(window=0.05)
+    row = _row()
+
+    class Broken:
+        async def record_close(self, closed: ClosedQuestion) -> None:
+            raise RuntimeError("database gone")
+
+    room.close_recorder = Broken()
+    await _deliver(room, row)
+    with caplog.at_level("ERROR", logger="clip.classroom"):
+        await asyncio.sleep(0.15)
+
+    assert "could not record a question close" in caplog.text
+    await _deliver(room, row)
     await room.shutdown()
 
 
@@ -1116,6 +1247,9 @@ class _Recorder:
     async def record_prompt(self, outcome) -> None:  # noqa: ANN001
         return None
 
+    async def record_close(self, closed) -> None:  # noqa: ANN001
+        return None
+
 
 def test_development_is_told_what_live_sessions_will_not_store(
     caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
@@ -1128,6 +1262,7 @@ def test_development_is_told_what_live_sessions_will_not_store(
 
     assert "answers are not stored" in caplog.text
     assert "prompt outcomes are not stored" in caplog.text
+    assert "question closes are not stored" in caplog.text
 
 
 def test_production_will_not_start_without_somewhere_to_store_answers(
@@ -1139,7 +1274,7 @@ def test_production_will_not_start_without_somewhere_to_store_answers(
     with pytest.raises(RuntimeError, match="answers are not stored"):
         room.check_wiring()
 
-    room.recorder = room.prompt_recorder = _Recorder()  # type: ignore[assignment]
+    room.recorder = room.prompt_recorder = room.close_recorder = _Recorder()  # type: ignore[assignment]
     room.check_wiring()
 
 
@@ -1150,7 +1285,7 @@ def test_live_sessions_refuse_more_than_one_worker(
     """Each worker would restore the same session and run its own cycle."""
     monkeypatch.setenv("WEB_CONCURRENCY", workers)
     room, _ = _room(production=True)
-    room.recorder = room.prompt_recorder = _Recorder()  # type: ignore[assignment]
+    room.recorder = room.prompt_recorder = room.close_recorder = _Recorder()  # type: ignore[assignment]
 
     with pytest.raises(RuntimeError, match="single worker"):
         room.check_wiring()
@@ -1159,7 +1294,7 @@ def test_live_sessions_refuse_more_than_one_worker(
 def test_one_worker_is_fine(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("WEB_CONCURRENCY", "1")
     room, _ = _room(production=True)
-    room.recorder = room.prompt_recorder = _Recorder()  # type: ignore[assignment]
+    room.recorder = room.prompt_recorder = room.close_recorder = _Recorder()  # type: ignore[assignment]
 
     room.check_wiring()
 

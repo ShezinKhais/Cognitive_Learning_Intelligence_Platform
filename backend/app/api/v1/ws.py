@@ -345,15 +345,9 @@ async def session_socket(
                             {"code": "PROMPT_NOT_OPEN", "detail": "that prompt is no longer open"},
                         )
                 else:
-                    receipt = await classroom.submit(session_id, user_id, role, payload)
-                    # To every tab the student has open, so none of them offers
-                    # the question again.
-                    await hub.send_to_user(
-                        session_id,
-                        user_id,
-                        ServerEventType.ANSWER_RECEIPT,
-                        receipt.model_dump(mode="json"),
-                    )
+                    # Sends the receipt, then any feedback, to every tab the
+                    # student has open.
+                    await classroom.submit(session_id, user_id, role, payload)
                 continue
 
             # Attention signals and breakout rooms belong to later workstreams.
