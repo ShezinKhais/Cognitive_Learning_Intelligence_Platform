@@ -20,20 +20,9 @@ from uuid import UUID
 
 from app.core.errors import NotFoundError
 from app.models.question import Question
+from app.realtime.classroom import Submission
 from app.schemas.events import FeedbackResultPayload
 from app.services.response_processing import process_submission
-
-
-class AnswerSubmission(Protocol):
-    """Structural match for General CS's Submission dataclass (PR #103)."""
-
-    session_id: UUID
-    question_id: UUID
-    user_id: UUID
-    selected_option: int | None
-    free_text: str | None
-    client_elapsed_ms: int
-    received_at: datetime
 
 
 class StoredResponse(Protocol):
@@ -78,7 +67,7 @@ class LiveResponseRecorder:
         self._get_question = get_question
         self._store_response = store_response
 
-    async def record(self, submission: AnswerSubmission) -> FeedbackResultPayload:
+    async def record(self, submission: Submission) -> FeedbackResultPayload:
         question = await self._get_question(submission.question_id)
         if question is None:
             raise NotFoundError("Question not found.", {"question_id": str(submission.question_id)})
