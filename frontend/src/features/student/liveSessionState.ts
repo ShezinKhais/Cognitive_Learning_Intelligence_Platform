@@ -1,3 +1,4 @@
+
 import type { SessionStatus } from './types'
 import type {
   AnswerReceipt,
@@ -31,6 +32,10 @@ export type LiveSessionAction =
   | { type: 'select-option'; option: number }
   | { type: 'set-free-text'; value: string }
   | { type: 'answer-sent' }
+  | {
+      type: 'answer-confirmation-unknown'
+      questionId: string
+    }
   | { type: 'answer-receipt'; payload: AnswerReceipt }
   | { type: 'feedback-result'; payload: FeedbackResult }
   | { type: 'question-closed'; payload: QuestionClosedEvent }
@@ -74,21 +79,41 @@ export function liveSessionReducer(
   action: LiveSessionAction,
 ): LiveSessionState {
   switch (action.type) {
-    case 'connection':
+    case 'connection': {
+      const connectionLost =
+        action.status === 'offline' ||
+        action.status === 'reconnecting' ||
+        action.status === 'disconnected'
+
+      const checkpoint = state.checkpoint
+
       return {
         ...state,
         connection: action.status,
+        checkpoint:
+          connectionLost &&
+          checkpoint?.phase === 'submitting'
+            ? {
+                ...checkpoint,
+                phase: 'unconfirmed',
+              }
+            : checkpoint,
       }
+    }
 
     case 'session-ended': {
       const checkpoint = state.checkpoint
+
       return {
         ...state,
         connection: 'ended',
         sessionStatus: 'ended',
         paused: false,
         participantCount: 0,
-        checkpoint: checkpoint?.phase === 'answering' ? null : checkpoint,
+        checkpoint:
+          checkpoint?.phase === 'answering'
+            ? null
+            : checkpoint,
         completedCheckpoint:
           checkpoint?.phase === 'answering'
             ? { ...checkpoint, phase: 'missed' }
@@ -100,13 +125,15 @@ export function liveSessionReducer(
       const sessionEnded =
         action.payload.status === 'ended' ||
         action.payload.status === 'cancelled'
+
       const checkpoint = state.checkpoint
 
       return {
         ...state,
         sessionStatus: action.payload.status,
         paused: action.payload.paused,
-        participantCount: sessionEnded ? 0 : action.payload.participant_count,
+        participantCount:
+          sessionEnded ? 0 : action.payload.participant_count,
         questionsDelivered: action.payload.questions_delivered,
         checkpoint:
           sessionEnded && checkpoint?.phase === 'answering'
@@ -119,8 +146,11 @@ export function liveSessionReducer(
       }
     }
 
-    case 'question-delivered':
-      if (state.completedCheckpoint?.question.question_id === action.payload.question_id) {
+    case 'question-delivered': {
+      if (
+        state.completedCheckpoint?.question.question_id ===
+        action.payload.question_id
+      ) {
         return {
           ...state,
           completedCheckpoint: {
@@ -132,7 +162,11 @@ export function liveSessionReducer(
           },
         }
       }
-      if (state.checkpoint?.question.question_id === action.payload.question_id) {
+
+      if (
+        state.checkpoint?.question.question_id ===
+        action.payload.question_id
+      ) {
         return {
           ...state,
           checkpoint: {
@@ -159,29 +193,36 @@ export function liveSessionReducer(
         completedCheckpoint: null,
         error: null,
       }
+    }
 
     case 'select-option':
-      return updateCheckpoint(state, (checkpoint) =>
-        checkpoint.phase === 'answering' || checkpoint.phase === 'rejected'
-          ? {
-              ...checkpoint,
-              selectedOption: action.option,
-              freeText: '',
-              phase: 'answering',
-            }
-          : checkpoint,
+      return updateCheckpoint(
+        state,
+        (checkpoint) =>
+          checkpoint.phase === 'answering' ||
+          checkpoint.phase === 'rejected'
+            ? {
+                ...checkpoint,
+                selectedOption: action.option,
+                freeText: '',
+                phase: 'answering',
+              }
+            : checkpoint,
       )
 
     case 'set-free-text':
-      return updateCheckpoint(state, (checkpoint) =>
-        checkpoint.phase === 'answering' || checkpoint.phase === 'rejected'
-          ? {
-              ...checkpoint,
-              freeText: action.value,
-              selectedOption: null,
-              phase: 'answering',
-            }
-          : checkpoint,
+      return updateCheckpoint(
+        state,
+        (checkpoint) =>
+          checkpoint.phase === 'answering' ||
+          checkpoint.phase === 'rejected'
+            ? {
+                ...checkpoint,
+                freeText: action.value,
+                selectedOption: null,
+                phase: 'answering',
+              }
+            : checkpoint,
       )
 
     case 'answer-sent':
@@ -191,24 +232,63 @@ export function liveSessionReducer(
         receipt: null,
       }))
 
-    case 'answer-receipt': {
+    case 'answer-confirmation-unknown': {
       const checkpoint = state.checkpoint
-      if (!checkpoint || checkpoint.question.question_id !== action.payload.question_id) {
+
+      if (
+        !checkpoint ||
+        checkpoint.question.question_id !== action.questionId ||
+        checkpoint.phase !== 'submitting'
+      ) {
         return state
       }
+
+      return {
+        ...state,
+        checkpoint: {
+          ...checkpoint,
+          phase: 'unconfirmed',
+        },
+      }
+    }
+
+    case 'answer-receipt': {
+      const checkpoint = state.checkpoint
+
+      if (
+        !checkpoint ||
+        checkpoint.question.question_id !== action.payload.question_id
+      ) {
+        return state
+      }
+
       const updated: CheckpointState = {
         ...checkpoint,
-        phase: action.payload.accepted ? 'submitted' : 'rejected',
+        phase: action.payload.accepted
+          ? 'submitted'
+          : 'rejected',
         receipt: action.payload,
       }
+
       return action.payload.accepted
-        ? { ...state, checkpoint: null, completedCheckpoint: updated }
-        : { ...state, checkpoint: updated }
+        ? {
+            ...state,
+            checkpoint: null,
+            completedCheckpoint: updated,
+          }
+        : {
+            ...state,
+            checkpoint: updated,
+          }
     }
 
     case 'feedback-result': {
       const checkpoint = state.checkpoint
-      if (checkpoint?.question.question_id === action.payload.question_id) {
+
+      if (
+        checkpoint?.question.question_id ===
+        action.payload.question_id
+      ) {
         return {
           ...state,
           checkpoint: null,
@@ -219,23 +299,45 @@ export function liveSessionReducer(
           },
         }
       }
+
       const completed = state.completedCheckpoint
-      return completed?.question.question_id === action.payload.question_id
+
+      return completed?.question.question_id ===
+        action.payload.question_id
         ? {
             ...state,
-            completedCheckpoint: { ...completed, feedback: action.payload },
+            completedCheckpoint: {
+              ...completed,
+              feedback: action.payload,
+            },
           }
         : state
     }
 
     case 'question-closed': {
       const checkpoint = state.checkpoint
-      if (!checkpoint || checkpoint.question.question_id !== action.payload.question_id) {
+
+      if (
+        !checkpoint ||
+        checkpoint.question.question_id !==
+          action.payload.question_id
+      ) {
         return state
       }
-      if (checkpoint.phase !== 'answering' && checkpoint.phase !== 'rejected') {
-        return { ...state, checkpoint: { ...checkpoint, closed: action.payload } }
+
+      if (
+        checkpoint.phase !== 'answering' &&
+        checkpoint.phase !== 'rejected'
+      ) {
+        return {
+          ...state,
+          checkpoint: {
+            ...checkpoint,
+            closed: action.payload,
+          },
+        }
       }
+
       return {
         ...state,
         checkpoint: null,
@@ -249,15 +351,25 @@ export function liveSessionReducer(
 
     case 'response-window-elapsed': {
       const checkpoint = state.checkpoint
+
       if (
         !checkpoint ||
         checkpoint.question.question_id !== action.questionId ||
-        (checkpoint.phase !== 'answering' && checkpoint.phase !== 'rejected')
-      ) return state
+        (
+          checkpoint.phase !== 'answering' &&
+          checkpoint.phase !== 'rejected'
+        )
+      ) {
+        return state
+      }
+
       return {
         ...state,
         checkpoint: null,
-        completedCheckpoint: { ...checkpoint, phase: 'missed' },
+        completedCheckpoint: {
+          ...checkpoint,
+          phase: 'missed',
+        },
       }
     }
 
@@ -268,8 +380,12 @@ export function liveSessionReducer(
       }
 
     case 'attention-prompt-cleared':
-      return state.attentionPrompt?.prompt_id === action.promptId
-        ? { ...state, attentionPrompt: null }
+      return state.attentionPrompt?.prompt_id ===
+        action.promptId
+        ? {
+            ...state,
+            attentionPrompt: null,
+          }
         : state
 
     case 'error':
@@ -291,7 +407,15 @@ export function remainingResponseSeconds(
   nowMilliseconds: number,
 ): number {
   const closeMilliseconds = Date.parse(closesAt)
-  if (!Number.isFinite(closeMilliseconds)) return 0
 
-  return Math.max(0, Math.ceil((closeMilliseconds - nowMilliseconds) / 1000))
+  if (!Number.isFinite(closeMilliseconds)) {
+    return 0
+  }
+
+  return Math.max(
+    0,
+    Math.ceil(
+      (closeMilliseconds - nowMilliseconds) / 1000,
+    ),
+  )
 }
