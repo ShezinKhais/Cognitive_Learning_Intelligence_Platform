@@ -25,7 +25,7 @@ from uuid import UUID
 
 from app.core.errors import NotFoundError, ValidationError
 from app.models.question import Question
-from app.realtime.classroom import ClosedQuestion, Submission
+from app.realtime.classroom import ClosedQuestion, PromptOutcome, Submission
 from app.schemas.content import QuestionType
 from app.schemas.events import FeedbackResultPayload
 from app.services.response_processing import process_submission
@@ -172,3 +172,42 @@ class LiveCloseRecorder:
             reveals.append(self._send_feedback(closed.session_id, user_id, payload))
         # Together, so one slow socket does not hold up the rest of the class.
         await asyncio.gather(*reveals)
+
+
+class StorePromptOutcome(Protocol):
+    """Matches LiveEventRepository.record_prompt_outcome."""
+
+    def __call__(
+        self,
+        *,
+        prompt_id: UUID,
+        session_id: UUID,
+        user_id: UUID,
+        escalation: int,
+        sent_at: datetime,
+        expires_at: datetime,
+        result: str,
+        responded_at: datetime | None,
+    ) -> Awaitable[object]: ...
+
+
+class LivePromptRecorder:
+    """Stores one attention-prompt outcome.
+
+    Matches PromptRecorder.record_prompt(outcome) -> None structurally.
+    """
+
+    def __init__(self, *, store_prompt_outcome: StorePromptOutcome) -> None:
+        self._store_prompt_outcome = store_prompt_outcome
+
+    async def record_prompt(self, outcome: PromptOutcome) -> None:
+        await self._store_prompt_outcome(
+            prompt_id=outcome.prompt_id,
+            session_id=outcome.session_id,
+            user_id=outcome.user_id,
+            escalation=outcome.escalation,
+            sent_at=outcome.sent_at,
+            expires_at=outcome.expires_at,
+            result=outcome.result,
+            responded_at=outcome.responded_at,
+        )

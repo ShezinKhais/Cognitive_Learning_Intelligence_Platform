@@ -348,6 +348,25 @@ class LiveEventRepository:
         await self.session.flush()
         return delivery
 
+    async def answers_to_question(
+        self, session_id: uuid.UUID, question_id: uuid.UUID
+    ) -> dict[uuid.UUID, StudentResponse]:
+        """Stored answers to one question, keyed by the student's user id.
+
+        For LiveCloseRecorder's answer reveal: it has ClosedQuestion.answered
+        as user ids, not student ids, so the join back to Student is done here
+        rather than pushed onto the caller.
+        """
+        result = await self.session.execute(
+            select(Student.user_id, StudentResponse)
+            .join(Student, Student.student_id == StudentResponse.student_id)
+            .where(
+                StudentResponse.session_id == session_id,
+                StudentResponse.question_id == question_id,
+            )
+        )
+        return dict(result.all())
+
     async def list_responses(
         self,
         *,

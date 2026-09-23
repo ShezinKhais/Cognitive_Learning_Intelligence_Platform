@@ -6,10 +6,10 @@ import pytest
 
 from app.core.errors import NotFoundError, ValidationError
 from app.models.question import Question
-from app.realtime.classroom import ClosedQuestion
+from app.realtime.classroom import ClosedQuestion, PromptOutcome, PromptResult
 from app.schemas.content import QuestionStatus
 from app.schemas.events import QuestionCloseReason
-from app.services.live_recorder import LiveCloseRecorder, LiveResponseRecorder
+from app.services.live_recorder import LiveCloseRecorder, LivePromptRecorder, LiveResponseRecorder
 
 
 def make_delivered_question(*, session_id: uuid.UUID, correct_option: int = 1) -> Question:
@@ -270,3 +270,37 @@ async def test_a_failed_store_stops_the_reveal():
     with pytest.raises(RuntimeError):
         await recorder.record_close(make_closed(question, answered={student}))
     assert sent == []
+
+
+async def test_record_prompt_stores_the_outcome():
+    stored = []
+
+    async def store_prompt_outcome(**kwargs):
+        stored.append(kwargs)
+
+    recorder = LivePromptRecorder(store_prompt_outcome=store_prompt_outcome)
+    outcome = PromptOutcome(
+        session_id=uuid.uuid4(),
+        prompt_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        escalation=1,
+        sent_at=datetime.now(UTC),
+        expires_at=datetime.now(UTC),
+        result=PromptResult.ACKNOWLEDGED,
+        responded_at=datetime.now(UTC),
+    )
+
+    await recorder.record_prompt(outcome)
+
+    assert stored == [
+        {
+            "prompt_id": outcome.prompt_id,
+            "session_id": outcome.session_id,
+            "user_id": outcome.user_id,
+            "escalation": outcome.escalation,
+            "sent_at": outcome.sent_at,
+            "expires_at": outcome.expires_at,
+            "result": outcome.result,
+            "responded_at": outcome.responded_at,
+        }
+    ]
