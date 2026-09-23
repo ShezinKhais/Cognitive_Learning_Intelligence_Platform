@@ -40,6 +40,9 @@ AT_RISK_THRESHOLD = 0.3
 # attempt_rate is not a signal yet.
 MIN_QUESTIONS_SHOWN = 2
 
+# A client attention signal older than this no longer describes the student.
+ATTENTION_SIGNAL_MAX_AGE_SECONDS = 120
+
 MIN_SIGNALS_FOR_STATUS = 1
 MIN_SIGNALS_FOR_DISENGAGED = 2
 MIN_SIGNALS_FOR_PROMPT = 2

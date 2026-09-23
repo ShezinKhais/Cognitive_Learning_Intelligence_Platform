@@ -24,6 +24,7 @@ from app.api.deps import (
 from app.core.errors import NotFoundError, not_implemented
 from app.realtime.classroom import classroom
 from app.repositories.session_repository import SessionRepository
+from app.repositories.student_repository import StudentRepository
 from app.schemas.common import Page
 from app.schemas.identity import ConsentType, Role
 from app.schemas.session import (
@@ -159,7 +160,23 @@ async def session_engagement(
     combined into one figure. Scores live with the running session, so a
     session this process is not running reports none."""
     await _analytics_session(db, principal, session_id)
-    return classroom.engagement(session_id)
+    scored = classroom.engagement(session_id)
+    # The classroom knows students by user id; the contract speaks in
+    # student.student_id, the id ResponseOut and the student table use.
+    student_ids = await StudentRepository(db).student_ids_by_user([s.user_id for s in scored])
+    return [
+        EngagementOut(
+            student_id=student_ids[s.user_id],
+            session_id=session_id,
+            score=s.engagement.score,
+            status=s.engagement.status,
+            confidence=s.engagement.confidence,
+            signals_available=s.engagement.signals_available,
+            computed_at=s.scored_at,
+        )
+        for s in scored
+        if s.user_id in student_ids
+    ]
 
 
 @router.get(

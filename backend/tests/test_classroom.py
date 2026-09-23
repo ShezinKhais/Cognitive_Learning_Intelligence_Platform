@@ -1356,8 +1356,8 @@ async def test_a_late_joiner_who_has_not_answered_is_not_nudged_by_engagement() 
     # engagement scoring stays quiet. It still reports the student.
     assert socket.of(ServerEventType.PROMPT_ATTENTION) == []
     [scored] = room.engagement(row.session_id)
-    assert (scored.student_id, scored.status.value) == (student, "at_risk")
-    assert scored.signals_available == ["attempt_rate"]
+    assert (scored.user_id, scored.engagement.status.value) == (student, "at_risk")
+    assert scored.engagement.signals_available == ["attempt_rate"]
     await room.shutdown()
 
 
@@ -1372,8 +1372,8 @@ async def test_engagement_nudges_once_a_second_signal_agrees() -> None:
     prompts = socket.of(ServerEventType.PROMPT_ATTENTION)
     assert prompts[-1]["data"]["message"] == classroom_module.ENGAGEMENT_PROMPT_MESSAGE
     [scored] = room.engagement(row.session_id)
-    assert scored.status.value == "disengaged"
-    assert scored.signals_available == ["attempt_rate", "prompt_response"]
+    assert scored.engagement.status.value == "disengaged"
+    assert scored.engagement.signals_available == ["attempt_rate", "prompt_response"]
     await room.shutdown()
 
 
@@ -1384,8 +1384,8 @@ async def test_an_answering_student_is_scored_engaged() -> None:
     await asyncio.sleep(0.15)
 
     [scored] = room.engagement(row.session_id)
-    assert scored.status.value == "engaged"
-    assert scored.signals_available == ["response_timing"]
+    assert scored.engagement.status.value == "engaged"
+    assert scored.engagement.signals_available == ["response_timing"]
     assert socket.of(ServerEventType.PROMPT_ATTENTION) == []
     await room.shutdown()
 
@@ -1401,7 +1401,7 @@ async def test_an_attention_signal_is_kept_only_for_a_connected_student() -> Non
 
     await _close(room, row)
     [scored] = room.engagement(row.session_id)
-    assert scored.signals_available == ["gaze"]
+    assert scored.engagement.signals_available == ["gaze"]
     await room.shutdown()
 
 
@@ -1444,3 +1444,47 @@ async def test_too_few_classified_answers_raise_no_alert() -> None:
     assert lecturer_socket.of(ServerEventType.ALERT_RAISED) == []
     assert room.alerts(row.session_id) == []
     await room.shutdown()
+
+
+async def test_a_stale_attention_signal_no_longer_counts(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(classroom_module, "ATTENTION_SIGNAL_MAX_AGE_SECONDS", 0.05)
+    room, _, row, _, student, _ = await _prompted_room(window=0.05, missed=0)
+    signal = AttentionSignalPayload(gaze_on_screen_ratio=0.8, window_seconds=5.0)
+    assert await room.record_attention(row.session_id, student, signal)
+    await asyncio.sleep(0.1)
+
+    await _close(room, row)
+
+    [scored] = room.engagement(row.session_id)
+    assert "gaze" not in scored.engagement.signals_available
+    await room.shutdown()
+
+
+async def test_ending_the_class_still_counts_the_last_question() -> None:
+    room, events, row, socket, student, _ = await _prompted_room(window=30, missed=0)
+    lecturer_socket, _ = await _join(events, row.session_id, Role.LECTURER)
+    labels = _Labels(["struggling"] * 5 + ["mastered"])
+    room.comprehension_source = labels
+    question = await _deliver(room, row)
+    assert (
+        await room.submit(row.session_id, student, Role.STUDENT, _answer(question.question_id))
+    ).accepted
+    scores: list = []
+    real_score = room._score_locked
+
+    def spy(live, closed):  # noqa: ANN001, ANN202
+        scored = real_score(live, closed)
+        scores.extend(live.attention[u].engagement for u in scored)
+        return scored
+
+    room._score_locked = spy  # type: ignore[method-assign]
+
+    await room.end(row.session_id, SessionStatus.ENDED, 1)
+
+    [engagement] = scores
+    assert engagement.signals_available == ["response_timing"]
+    assert labels.asked == [(row.session_id, question.question_id)]
+    [alert] = lecturer_socket.of(ServerEventType.ALERT_RAISED)
+    assert alert["data"]["kind"] == "topic_difficulty"
+    # Nobody is nudged in a class that has ended.
+    assert socket.of(ServerEventType.PROMPT_ATTENTION) == []

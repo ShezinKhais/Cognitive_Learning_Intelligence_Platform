@@ -20,6 +20,15 @@ class StudentRepository:
         result = await self.session.execute(select(Student).where(Student.user_id == user_id))
         return result.scalar_one_or_none()
 
+    async def student_ids_by_user(self, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, uuid.UUID]:
+        """user_id -> student_id for those of these users who are students."""
+        if not user_ids:
+            return {}
+        result = await self.session.execute(
+            select(Student.user_id, Student.student_id).where(Student.user_id.in_(user_ids))
+        )
+        return {user_id: student_id for user_id, student_id in result.all()}
+
     async def list_by_course(self, course_id: uuid.UUID) -> list[Student]:
         result = await self.session.execute(
             select(Student)

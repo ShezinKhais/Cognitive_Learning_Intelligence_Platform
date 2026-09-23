@@ -76,8 +76,9 @@ from app.schemas.events import (
     SessionStatePayload,
 )
 from app.schemas.identity import Role
-from app.schemas.session import ClassComprehensionAlert, EngagementOut, SessionStatus
+from app.schemas.session import ClassComprehensionAlert, SessionStatus
 from app.services.engagement import (
+    ATTENTION_SIGNAL_MAX_AGE_SECONDS,
     PROMPT_ACKNOWLEDGED,
     PROMPT_DISMISSED,
     PROMPT_EXPIRED,
@@ -253,8 +254,26 @@ class _Attention:
     response_times: list[float] = field(default_factory=list)
     prompt_responses: list[float] = field(default_factory=list)
     signal: AttentionSignalPayload | None = None
+    signal_at: datetime | None = None
     engagement: EngagementComputation | None = None
     scored_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class ScoredStudent:
+    user_id: UUID
+    engagement: EngagementComputation
+    scored_at: datetime
+
+
+def _current_signal(attention: _Attention, now: datetime) -> AttentionSignalPayload | None:
+    """The student's attention signal, unless it is too old to describe them
+    now: a camera closed early in the lecture must not keep counting."""
+    if attention.signal is None or attention.signal_at is None:
+        return None
+    if now - attention.signal_at > timedelta(seconds=ATTENTION_SIGNAL_MAX_AGE_SECONDS):
+        return None
+    return attention.signal
 
 
 class LiveSession:
@@ -458,10 +477,18 @@ class Classroom:
         closed = None
         if live is not None:
             async with live.lock:
+                open_ = live.open
                 closed = await self._close_locked(live, QuestionCloseReason.SESSION_ENDED)
                 unanswered = self._drop_prompts_locked(live)
+                # The last question still counts, but nobody is nudged in a
+                # class that has ended.
+                if open_ is not None:
+                    self._score_locked(live, open_)
             _cancel(live.cycle)
         await self._announce(session_id, status, delivered)
+        if live is not None and closed is not None:
+            # Before the session is forgotten, so the lecturer can still be told.
+            await self._check_comprehension(live, closed)
         self._hub.forget_session(session_id)
         await self._record_close(closed)
         for outcome in unanswered:
@@ -978,14 +1005,27 @@ class Classroom:
         if live is None or user_id not in self._hub.student_ids(session_id):
             return False
         async with live.lock:
-            live.attention.setdefault(user_id, _Attention()).signal = signal
+            attention = live.attention.setdefault(user_id, _Attention())
+            attention.signal = signal
+            attention.signal_at = datetime.now(UTC)
         return True
 
     async def _score_engagement_locked(self, live: LiveSession, closed: _OpenQuestion) -> None:
         """Rescore everyone who was shown the question that just closed, and
         nudge those engagement scoring says need it. prompt_student's limits
         (cap, pause, one at a time, connected) still apply."""
+        for user_id in self._score_locked(live, closed):
+            attention = live.attention[user_id]
+            if attention.engagement is not None and should_send_dynamic_prompt(
+                attention.engagement
+            ):
+                await self._prompt_locked(live, user_id, ENGAGEMENT_PROMPT_MESSAGE)
+
+    def _score_locked(self, live: LiveSession, closed: _OpenQuestion) -> list[UUID]:
+        """Count the closed question towards everyone who was shown it and
+        rescore them. Returns who was scored."""
         now = datetime.now(UTC)
+        scored = []
         for user_id in closed.present | closed.answered:
             attention = live.attention.setdefault(user_id, _Attention())
             attention.shown += 1
@@ -999,12 +1039,12 @@ class Classroom:
                     questions_answered=attention.answered,
                     response_times=tuple(attention.response_times),
                     prompt_responses=tuple(attention.prompt_responses),
-                    attention=attention.signal,
+                    attention=_current_signal(attention, now),
                 )
             )
             attention.scored_at = now
-            if should_send_dynamic_prompt(attention.engagement):
-                await self._prompt_locked(live, user_id, ENGAGEMENT_PROMPT_MESSAGE)
+            scored.append(user_id)
+        return scored
 
     async def _check_comprehension(self, live: LiveSession, closed: ClosedQuestion) -> None:
         """Raise a class comprehension alert to the lecturer once enough of
@@ -1053,22 +1093,14 @@ class Classroom:
                 closed.session_id, staff_id, ServerEventType.ALERT_RAISED, payload
             )
 
-    def engagement(self, session_id: UUID) -> list[EngagementOut]:
+    def engagement(self, session_id: UUID) -> list[ScoredStudent]:
         """The latest engagement score of each student scored in a session this
-        process is running."""
+        process is running, by user id. The caller resolves the student id."""
         live = self._live.get(session_id)
         if live is None:
             return []
         return [
-            EngagementOut(
-                student_id=user_id,
-                session_id=session_id,
-                score=a.engagement.score,
-                status=a.engagement.status,
-                confidence=a.engagement.confidence,
-                signals_available=a.engagement.signals_available,
-                computed_at=a.scored_at,
-            )
+            ScoredStudent(user_id=user_id, engagement=a.engagement, scored_at=a.scored_at)
             for user_id, a in live.attention.items()
             if a.engagement is not None and a.scored_at is not None
         ]
