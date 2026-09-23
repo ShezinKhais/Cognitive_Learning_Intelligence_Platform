@@ -6,18 +6,14 @@ from app.models.breakout_room import BreakoutRoom
 from app.models.comprehension_result import ComprehensionResult
 from app.models.consent import Consent
 from app.models.course import Course
-from app.models.delivered_question import DeliveredQuestion
 from app.models.dynamic_prompt import DynamicPrompt
 from app.models.engagement_record import EngagementRecord
 from app.models.extraction_element import ExtractionElement
 from app.models.material import Material
 from app.models.material_processing_status import MaterialProcessingStatus
-from app.models.missed_response import MissedResponse
 from app.models.question import Question
 from app.models.rag_chunk import RagChunk
 from app.models.session import Session
-from app.models.session_activity import SessionActivity
-from app.models.session_participant import SessionParticipant
 from app.models.student import Student
 from app.models.student_response import StudentResponse
 from app.models.user import User
@@ -40,8 +36,4 @@ __all__ = [
     "AIModelRun",
     "ExtractionElement",
     "MaterialProcessingStatus",
-    "DeliveredQuestion",
-    "MissedResponse",
-    "SessionActivity",
-    "SessionParticipant",
 ]
