@@ -1,17 +1,14 @@
 import {
   Navigate,
   useLocation,
-  useParams,
 } from 'react-router'
 
 import { useStudentApp } from '../features/student/StudentAppContext'
 import { accessFor } from '../authRouting'
 import StudentHomePage from './StudentHomePage'
-import StudentLiveSessionPage from './StudentLiveSessionPage'
 
 export default function ProtectedStudentPage() {
   const location = useLocation()
-  const { sessionId } = useParams<{ sessionId: string }>()
 
   const {
     authStatus,
@@ -79,7 +76,7 @@ export default function ProtectedStudentPage() {
     )
   }
 
-  return sessionId ? <StudentLiveSessionPage /> : <StudentHomePage />
+  return <StudentHomePage />
 }
 
 function StatusPanel({

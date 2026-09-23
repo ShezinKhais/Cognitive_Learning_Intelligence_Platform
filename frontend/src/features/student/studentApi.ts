@@ -1,6 +1,5 @@
 import {
   ApiError,
-  apiAuthenticatedGet,
   getAccessToken,
   getCurrentUser,
 } from '../../api'
@@ -31,9 +30,6 @@ const demoSessions: StudentSession[] = [
   },
 ]
 
-export const LIVE_SESSIONS_ENABLED =
-  import.meta.env.VITE_LIVE_SESSIONS_ENABLED === 'true'
-
 function wait(milliseconds = 150): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, milliseconds)
@@ -41,12 +37,11 @@ function wait(milliseconds = 150): Promise<void> {
 }
 
 /**
- * Student workspace API adapter.
+ * Phase 1 student API adapter.
  *
- * Authentication uses the real Cyber 1 endpoints. The Phase 3 session query
- * is feature-gated until BBIS deploys the frozen GET /sessions contract. The
- * development fallback follows the same response shape, so AI 2's route can
- * be reviewed without claiming that a backend-owned endpoint already works.
+ * Authentication uses the real Cyber 1 endpoints. Sessions remain mocked
+ * until the live-session endpoints are delivered in Phase 3, but the mock
+ * already follows the frozen paginated response contract.
  */
 export const phaseOneStudentApi: StudentApi = {
   async getCurrentStudent() {
@@ -66,10 +61,6 @@ export const phaseOneStudentApi: StudentApi = {
   },
 
   async listSessions() {
-    if (LIVE_SESSIONS_ENABLED) {
-      return apiAuthenticatedGet<StudentSessionPage>('/sessions')
-    }
-
     await wait()
 
     return {

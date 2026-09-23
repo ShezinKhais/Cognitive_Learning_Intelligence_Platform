@@ -19,14 +19,12 @@ import ProtectedStudentPage from './pages/ProtectedStudentPage'
 import QuestionReview from './pages/QuestionReview'
 import SystemStatusPage from './pages/SystemStatusPage'
 
+// Sends whoever arrives at the root, or at a page that does not exist, to
+// their own home. Always sending them to /student told every lecturer and
+// administrator "Student access required".
 const home = (
   <RoleGate allow={['student', 'lecturer', 'admin']}>
-    {(user) => (
-      <Navigate
-        to={defaultPathForRole(user.role)}
-        replace
-      />
-    )}
+    {(user) => <Navigate to={defaultPathForRole(user.role)} replace />}
   </RoleGate>
 )
 
@@ -62,35 +60,20 @@ export default function App() {
         }
       />
 
-      <Route
-        path="/student/session/:sessionId"
-        element={
-          <StudentAppProvider>
-            <ProtectedStudentPage />
-          </StudentAppProvider>
-        }
-      />
-
-      <Route
-        element={
-          <RoleGate allow={['admin']}>
-            {() => <Outlet />}
-          </RoleGate>
-        }
-      >
+      {/* The guard is a layout route, so the role check runs before
+          AdminConsole mounts and no admin-only markup renders for a
+          student who types the URL. */}
+      <Route element={<RoleGate allow={['admin']}>{() => <Outlet />}</RoleGate>}>
         <Route
           path="/admin"
           element={<AdminConsole />}
         />
       </Route>
 
-      <Route
-        element={
-          <RoleGate allow={['lecturer', 'admin']}>
-            {() => <Outlet />}
-          </RoleGate>
-        }
-      >
+      {/* Lecturers, and admins who can review on any lecturer's behalf per
+          the backend's ownership check, reach the materials workspace and the
+          review screen; students never see either mount. */}
+      <Route element={<RoleGate allow={['lecturer', 'admin']}>{() => <Outlet />}</RoleGate>}>
         <Route
           path="/lecturer"
           element={
@@ -100,22 +83,18 @@ export default function App() {
             />
           }
         />
-
         <Route
           path="/lecturer/materials"
           element={<LecturerMaterialsPage />}
         />
-
         <Route
           path="/lecturer/sessions"
           element={<LecturerSessionsPage />}
         />
-
         <Route
           path="/lecturer/sessions/:sessionId/live"
           element={<LecturerLiveSessionPage />}
         />
-
         <Route
           path="/materials/:materialId/review"
           element={<QuestionReview />}
