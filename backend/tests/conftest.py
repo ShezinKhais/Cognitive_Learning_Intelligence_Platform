@@ -11,6 +11,7 @@ from app.auth.store import (
     get_login_security_store,
 )
 from app.core.config import get_settings
+from app.core.database import get_engine
 from app.main import create_app
 from app.schemas.identity import ConsentType, Role
 
@@ -21,16 +22,8 @@ def app() -> FastAPI:
 
 
 @pytest.fixture(scope="session")
-def client(app: FastAPI):
-    """Keep one AnyIO portal and event loop for the shared async DB engine.
-
-    Using TestClient outside its context manager creates a fresh portal for
-    each request.  The cached SQLAlchemy engine can then return an asyncpg
-    connection that belongs to a portal which has already closed, making the
-    readiness check intermittently report 503 in CI.
-    """
-    with TestClient(app) as test_client:
-        yield test_client
+def client(app: FastAPI) -> TestClient:
+    return TestClient(app)
 
 
 @pytest.fixture(autouse=True)
@@ -46,6 +39,23 @@ def reset_dev_identity_state():
 
     get_login_security_store().reset()
     get_consent_repository(settings).clear()
+
+
+@pytest.fixture(autouse=True)
+def forget_pooled_connections():
+    """Drop the app engine's pooled connections after every test.
+
+    A TestClient used without `with` runs each request on an event loop of its
+    own that closes afterwards, and a connection the request left in the pool
+    is tied to that loop. The next request to be handed it failed on "Event
+    loop is closed" and the readiness check reported 503, depending on garbage
+    collection timing. A server has one loop for its lifetime, so this is a
+    property of the tests, not of the app. close=False forgets the connections
+    without trying to close them on a loop that no longer exists.
+    """
+    yield
+    if get_engine.cache_info().currsize:
+        get_engine().sync_engine.dispose(close=False)
 
 
 @pytest.fixture
