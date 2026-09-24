@@ -62,6 +62,16 @@ class SessionCreateRequest(BaseModel):
     starts_at: datetime | None = None
 
 
+class DeliverableQuestionOut(BaseModel):
+    """A staged question the current live session may deliver."""
+
+    id: UUID
+    material_id: UUID
+    prompt: str
+    options: list[str] | None = None
+    source_slide: int | None = None
+
+
 class ResponseOut(BaseModel):
     id: UUID
     question_id: UUID

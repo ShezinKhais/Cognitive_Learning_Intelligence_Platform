@@ -11,7 +11,9 @@ import { StudentAppProvider } from './features/student/StudentAppContext'
 import AccessDeniedPage from './pages/AccessDeniedPage'
 import AdminConsole from './pages/AdminConsole'
 import ConsentPage from './pages/ConsentPage'
+import LecturerLiveSessionPage from './pages/LecturerLiveSessionPage'
 import LecturerMaterialsPage from './pages/LecturerMaterialsPage'
+import LecturerSessionsPage from './pages/LecturerSessionsPage'
 import LoginPage from './pages/LoginPage'
 import ProtectedStudentPage from './pages/ProtectedStudentPage'
 import QuestionReview from './pages/QuestionReview'
@@ -84,6 +86,14 @@ export default function App() {
         <Route
           path="/lecturer/materials"
           element={<LecturerMaterialsPage />}
+        />
+        <Route
+          path="/lecturer/sessions"
+          element={<LecturerSessionsPage />}
+        />
+        <Route
+          path="/lecturer/sessions/:sessionId/live"
+          element={<LecturerLiveSessionPage />}
         />
         <Route
           path="/materials/:materialId/review"

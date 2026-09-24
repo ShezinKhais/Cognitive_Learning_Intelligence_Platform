@@ -166,6 +166,17 @@ export function apiAuthenticatedGet<T>(path: string): Promise<T> {
   return request<T>(path, {}, true)
 }
 
+export function apiAuthenticatedRequest<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  return request<T>(
+    path,
+    options,
+    true,
+  )
+}
+
 export function login(
   email: string,
   password: string,

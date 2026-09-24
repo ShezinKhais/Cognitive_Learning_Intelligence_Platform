@@ -159,6 +159,57 @@
         "title": "ConsentType",
         "type": "string"
       },
+      "DeliverableQuestionOut": {
+        "description": "A staged question the current live session may deliver.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "material_id": {
+            "format": "uuid",
+            "title": "Material Id",
+            "type": "string"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "source_slide": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Slide"
+          }
+        },
+        "required": [
+          "id",
+          "material_id",
+          "prompt"
+        ],
+        "title": "DeliverableQuestionOut",
+        "type": "object"
+      },
       "DependencyStatus": {
         "properties": {
           "detail": {
@@ -488,6 +539,37 @@
         ],
         "title": "MaterialStatus",
         "type": "string"
+      },
+      "Page_DeliverableQuestionOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DeliverableQuestionOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[DeliverableQuestionOut]",
+        "type": "object"
       },
       "Page_MaterialOut_": {
         "properties": {
@@ -2213,6 +2295,73 @@
           }
         },
         "summary": "Pause Session",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/questions": {
+      "get": {
+        "description": "List staged questions that this session may actually deliver.",
+        "operationId": "list_deliverable_questions_api_v1_sessions__session_id__questions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_DeliverableQuestionOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Deliverable Questions",
         "tags": [
           "sessions"
         ]

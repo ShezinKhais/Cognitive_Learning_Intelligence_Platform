@@ -5,6 +5,7 @@ without a server or a database.
 """
 
 import asyncio
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
@@ -265,6 +266,75 @@ async def test_a_reply_on_a_socket_the_hub_closed_is_a_disconnect_not_an_error()
 def _is_connected(hub, user_id) -> bool:
     stream = hub._streams.get(user_id)
     return stream is not None and any(c.user_id == user_id for c in stream.members)
+
+
+def test_student_session_join_and_leave_announces_presence(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A lecturer should not need to refresh to see the student count."""
+    from app.api.v1 import ws as ws_module
+
+    session_id = uuid4()
+    presence: list[tuple[UUID, str, int]] = []
+
+    async def joinable(*args: object):
+        return SimpleNamespace(
+            session_id=session_id,
+            status="prepared",
+        )
+
+    async def announce_presence(joined_session_id, recorded) -> None:
+        presence.append(
+            (
+                joined_session_id,
+                recorded.value,
+                len(ws_module.hub.student_ids(joined_session_id)),
+            )
+        )
+
+    monkeypatch.setattr(
+        ws_module,
+        "joinable_session",
+        joinable,
+    )
+    monkeypatch.setattr(
+        ws_module.classroom,
+        "announce_presence",
+        announce_presence,
+    )
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "student@clip.example.com",
+            "password": STUDENT_PASSWORD,
+        },
+    )
+    token = login.json()["access_token"]
+
+    with client.websocket_connect("/ws/session") as socket:
+        socket.send_json(
+            {
+                "type": ClientEventType.AUTH.value,
+                "data": {
+                    "token": token,
+                    "session_id": str(session_id),
+                },
+            }
+        )
+
+        ready = socket.receive_json()
+        state = socket.receive_json()
+
+        assert ready["type"] == ServerEventType.READY
+        assert state["type"] == ServerEventType.SESSION_STATE
+        assert state["data"]["participant_count"] == 1
+
+    assert presence == [
+        (session_id, "prepared", 1),
+        (session_id, "prepared", 0),
+    ]
 
 
 def test_a_closed_socket_is_removed_from_the_hub(client: TestClient) -> None:

@@ -28,6 +28,7 @@ EXPECTED_PATHS = {
     "/api/v1/materials/{material_id}/questions:bulk",
     "/api/v1/sessions",
     "/api/v1/sessions/{session_id}",
+    "/api/v1/sessions/{session_id}/questions",
     "/api/v1/sessions/{session_id}/start",
     "/api/v1/sessions/{session_id}/end",
     # Added in Phase 3 for the pause deliverable. Additive: no existing route
