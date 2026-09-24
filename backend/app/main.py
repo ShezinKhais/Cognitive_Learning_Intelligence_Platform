@@ -19,6 +19,7 @@ from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, request_id_var
 from app.realtime.classroom import classroom
 from app.repositories.comprehension_repository import DatabaseComprehensionSource
+from app.services import live_wiring  # noqa: F401
 from app.services.material_recovery import keep_sweeping
 from app.services.uploads import get_background_processor
 

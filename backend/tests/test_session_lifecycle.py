@@ -32,6 +32,7 @@ from app.models.material import Material
 from app.models.question import Question
 from app.models.session import Session as SessionModel
 from app.models.student import Student
+from app.models.student_response import StudentResponse
 from app.models.user import User
 from app.realtime import classroom as classroom_module
 from app.realtime.classroom import classroom
@@ -86,6 +87,13 @@ async def db(app):
 
     async with factory() as cleanup:
         courses, materials = created["course"], created["material"]
+        await cleanup.execute(
+            delete(StudentResponse).where(
+                StudentResponse.question_id.in_(
+                    select(Question.question_id).where(Question.source_material_id.in_(materials))
+                )
+            )
+        )
         await cleanup.execute(delete(Question).where(Question.source_material_id.in_(materials)))
         await cleanup.execute(delete(SessionModel).where(SessionModel.course_id.in_(courses)))
         await cleanup.execute(delete(Material).where(Material.id.in_(materials)))
@@ -520,6 +528,8 @@ async def test_a_question_goes_out_and_the_answer_comes_back(db, app) -> None:
             0,
             True,
         )
+        feedback = ws.receive_json()
+        assert (feedback["type"], feedback["data"]["correct"]) == ("feedback.result", True)
 
         client.post(f"/api/v1/sessions/{session['id']}/end")
         closed, ended = ws.receive_json(), ws.receive_json()
