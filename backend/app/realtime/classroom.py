@@ -358,6 +358,29 @@ class Classroom:
             self.state(session_id, status, delivered).model_dump(mode="json"),
         )
 
+    async def announce_presence(
+        self,
+        session_id: UUID,
+        recorded: SessionStatus,
+    ) -> None:
+        """Tell connected staff when the unique student count changes."""
+        if session_id in self._live:
+            status = SessionStatus.ACTIVE
+        elif session_id in self._finished:
+            return
+        else:
+            status = recorded
+
+        payload = self.state(session_id, status).model_dump(mode="json")
+
+        for staff_id in self._hub.staff_ids(session_id):
+            await self._hub.send_to_user(
+                session_id,
+                staff_id,
+                ServerEventType.SESSION_STATE,
+                payload,
+            )
+
     def welcome(
         self, session_id: UUID, recorded: SessionStatus, user_id: UUID, role: Role | None
     ) -> list[tuple[ServerEventType, dict]]:

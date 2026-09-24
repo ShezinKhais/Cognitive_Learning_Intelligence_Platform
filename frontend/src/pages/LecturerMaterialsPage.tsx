@@ -275,6 +275,14 @@ export default function LecturerMaterialsPage() {
             {MATERIAL_PIPELINE_ENABLED && (
               <ConnectionBadge status={connectionStatus} />
             )}
+
+            <Link
+              to="/lecturer/sessions"
+              className="rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted"
+            >
+              Live Sessions
+            </Link>
+
             <SignOutButton />
           </div>
         </div>
