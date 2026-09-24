@@ -35,6 +35,8 @@ EXPECTED_PATHS = {
     # or field changed.
     "/api/v1/sessions/{session_id}/pause",
     "/api/v1/sessions/{session_id}/resume",
+    # Added in Phase 4 for the content-readiness gate (AI 1). Additive.
+    "/api/v1/sessions/{session_id}/readiness",
     "/api/v1/sessions/{session_id}/questions/{question_id}:deliver",
     "/api/v1/sessions/{session_id}/responses",
     "/api/v1/sessions/{session_id}/engagement",

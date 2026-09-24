@@ -100,6 +100,28 @@ class SessionRepository:
             )
         )
 
+    async def count_deliverable(self, live: Session) -> int:
+        """How many staged questions this session may deliver."""
+        eligible = self._deliverable(live).subquery()
+        result = await self.session.execute(select(func.count()).select_from(eligible))
+        return result.scalar_one()
+
+    async def materials_for(self, live: Session) -> list[Material]:
+        """The lecturer's materials this session draws its questions from.
+
+        The same rule _deliverable uses for unclaimed questions: uploaded by
+        this session's lecturer, for its course or for no course in particular.
+        """
+        result = await self.session.execute(
+            select(Material)
+            .where(
+                Material.uploaded_by_user_id == live.instructor_id,
+                or_(Material.course_id.is_(None), Material.course_id == live.course_id),
+            )
+            .order_by(Material.uploaded_at, Material.id)
+        )
+        return list(result.scalars().all())
+
     async def has_deliverable(self, live: Session) -> bool:
         result = await self.session.execute(self._deliverable(live).limit(1))
         return result.scalar_one_or_none() is not None

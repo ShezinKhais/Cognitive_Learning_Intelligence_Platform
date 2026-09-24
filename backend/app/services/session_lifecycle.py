@@ -38,9 +38,11 @@ from app.schemas.session import (
     DeliverableQuestionOut,
     SessionCreateRequest,
     SessionOut,
+    SessionReadinessOut,
     SessionStatus,
 )
 from app.services.session_access import session_membership_allowed
+from app.services.session_readiness import evaluate_readiness
 
 log = logging.getLogger("clip.sessions")
 
@@ -79,14 +81,18 @@ async def create_session(
 
 
 async def start_session(db: AsyncSession, principal: Principal, session_id: UUID) -> SessionOut:
-    """Blocked until the session has a staged question to deliver."""
+    """Blocked until the session's content is ready. See session_readiness."""
     repo = SessionRepository(db)
     row = await _owned(repo, principal, session_id)
     _require(row, SessionStatus.PREPARED, "start")
-    if not await repo.has_deliverable(row):
+    readiness = await evaluate_readiness(db, row)
+    if not readiness.ready:
         raise ConflictError(
-            "Stage at least one approved question before starting the session.",
-            {"session_id": str(session_id)},
+            " ".join(blocker.message for blocker in readiness.blockers),
+            {
+                "session_id": str(session_id),
+                "blockers": [blocker.model_dump(mode="json") for blocker in readiness.blockers],
+            },
         )
 
     row.status = SessionStatus.ACTIVE.value
@@ -138,6 +144,18 @@ async def end_session(db: AsyncSession, principal: Principal, session_id: UUID) 
     await classroom.end(row.session_id, ended, delivered)
     log.info("session %s %s by %s", session_id, ended.value, principal.user_id)
     return await session_out(db, row)
+
+
+async def session_readiness(
+    db: AsyncSession, principal: Principal, session_id: UUID
+) -> SessionReadinessOut:
+    """Whether the session has the content it needs to start.
+
+    Read only, so the row is not locked. start_session runs the same check
+    under the lock, so this is what the start button will do right now.
+    """
+    row = await _owned(SessionRepository(db), principal, session_id, for_update=False)
+    return await evaluate_readiness(db, row)
 
 
 async def list_deliverable_questions(
