@@ -32,11 +32,6 @@ from app.realtime.classroom import classroom
 from app.realtime.hub import hub
 from app.repositories.course_repository import CourseRepository
 from app.repositories.session_repository import SessionRepository
-hunain-phase-3
-from app.schemas.identity import Role
-from app.schemas.session import SessionCreateRequest, SessionOut, SessionStatus
-from app.services.session_access import session_membership_allowed
-from app.repositories.student_repository import StudentRepository
 from app.schemas.common import Page
 from app.schemas.identity import Role
 from app.schemas.session import (
@@ -46,7 +41,6 @@ from app.schemas.session import (
     SessionStatus,
 )
 from app.services.session_access import session_membership_allowed
- main
 
 log = logging.getLogger("clip.sessions")
 
