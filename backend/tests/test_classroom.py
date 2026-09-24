@@ -18,8 +18,9 @@ import pytest
 
 from app.core.errors import ConflictError
 from app.realtime import classroom as classroom_module
-from app.realtime.classroom import Classroom, ClosedQuestion, Submission
+from app.realtime.classroom import Classroom
 from app.realtime.hub import Connection, SessionHub
+from app.realtime.recorders import ClosedQuestion, Submission
 from app.schemas.events import (
     AnswerSubmitPayload,
     FeedbackResultPayload,
@@ -320,7 +321,7 @@ async def test_an_answer_after_the_window_is_refused_even_before_it_is_closed() 
     question = await _deliver(room, row)
     live = room._live[row.session_id]
     assert live.open is not None
-    live.open.closes_at = datetime.now(UTC) - timedelta(milliseconds=1)
+    live.open.question.closes_at = datetime.now(UTC) - timedelta(milliseconds=1)
 
     receipt = await room.submit(
         row.session_id, uuid4(), Role.STUDENT, _answer(question.question_id)
@@ -626,13 +627,13 @@ async def test_each_wait_is_drawn_fresh_from_the_configured_range() -> None:
     row = _row()
 
     live = room.activate(row.session_id)
-    first = (live.next_due - datetime.now(UTC)).total_seconds()  # type: ignore[operator]
+    first = (live.countdown.due - datetime.now(UTC)).total_seconds()  # type: ignore[operator]
     await _deliver(room, row)
     await asyncio.sleep(0.1)
-    second = (live.next_due - datetime.now(UTC)).total_seconds()  # type: ignore[operator]
+    second = (live.countdown.due - datetime.now(UTC)).total_seconds()  # type: ignore[operator]
     await _deliver(room, row)
     await asyncio.sleep(0.1)
-    third = (live.next_due - datetime.now(UTC)).total_seconds()  # type: ignore[operator]
+    third = (live.countdown.due - datetime.now(UTC)).total_seconds()  # type: ignore[operator]
 
     assert draws.ranges == [(900, 1200)] * 3
     assert 899 < first <= 900
@@ -645,11 +646,11 @@ async def test_nothing_is_due_while_a_question_is_open() -> None:
     room, _ = _room(window=30)
     row = _row()
     live = room.activate(row.session_id)
-    assert live.next_due is not None
+    assert live.countdown.due is not None
 
     await _deliver(room, row)
 
-    assert live.next_due is None
+    assert live.countdown.due is None
     await room.shutdown()
 
 
@@ -661,10 +662,10 @@ async def test_pausing_mid_question_draws_the_wait_at_its_close_and_uses_it_on_r
 
     await room.pause(_Db(), row)  # type: ignore[arg-type]
     await asyncio.sleep(0.1)  # the question closes while paused
-    assert live.next_due is None and live.remaining == timedelta(seconds=10)
+    assert live.countdown.due is None and live.countdown.left == timedelta(seconds=10)
     await room.resume(_Db(), row)  # type: ignore[arg-type]
 
-    left = (live.next_due - datetime.now(UTC)).total_seconds()  # type: ignore[operator]
+    left = (live.countdown.due - datetime.now(UTC)).total_seconds()  # type: ignore[operator]
     assert 9 < left <= 10
     await room.shutdown()
 
@@ -678,7 +679,7 @@ async def test_resuming_while_a_question_is_still_open_waits_for_its_close() -> 
     await room.pause(_Db(), row)  # type: ignore[arg-type]
     await room.resume(_Db(), row)  # type: ignore[arg-type]
 
-    assert live.next_due is None
+    assert live.countdown.due is None
     await room.shutdown()
 
 
@@ -952,12 +953,12 @@ async def test_resuming_keeps_the_time_that_was_left() -> None:
     room, _ = _room(interval=10)
     row = _row()
     live = room.activate(row.session_id)
-    live.next_due = datetime.now(UTC) + timedelta(seconds=4)
+    live.countdown.start(timedelta(seconds=4))
 
     await room.pause(_Db(), row)  # type: ignore[arg-type]
     await room.resume(_Db(), row)  # type: ignore[arg-type]
 
-    left = (live.next_due - datetime.now(UTC)).total_seconds()
+    left = (live.countdown.due - datetime.now(UTC)).total_seconds()
     assert 3 < left <= 4
     await room.shutdown()
 

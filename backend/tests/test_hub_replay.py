@@ -189,7 +189,7 @@ async def test_the_welcome_follows_ready_and_replay() -> None:
     await hub.broadcast(session_id, ServerEventType.QUESTION_DELIVERED, {})
     socket = _FakeSocket()
 
-    async def welcome() -> list[tuple[ServerEventType, dict]]:
+    def welcome() -> list[tuple[ServerEventType, dict]]:
         return [(ServerEventType.SESSION_STATE, {"status": "active"})]
 
     connection = Connection(socket, uuid4(), session_id)  # type: ignore[arg-type]

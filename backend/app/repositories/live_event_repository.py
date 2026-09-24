@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Set
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any, TypeVar
 
-from sqlalchemy import delete, func, select, update
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import Select, delete, func, select, update
+from sqlalchemy.dialects.postgresql import Insert, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ValidationError
@@ -18,6 +20,12 @@ from app.models.session_activity import SessionActivity
 from app.models.session_participant import SessionParticipant
 from app.models.student import Student
 from app.models.student_response import StudentResponse
+
+T = TypeVar("T")
+
+# How the dashboard reports a delivery with no recorded close whose window has
+# passed: the process that owned the window restarted before closing it.
+RESTART_CLOSE_REASON = "process_restart"
 
 
 @dataclass(frozen=True)
@@ -53,6 +61,26 @@ class LiveEventRepository:
             select(Student.student_id).where(Student.user_id == user_id)
         )
         return result.scalar_one_or_none()
+
+    async def _require_student_id(self, user_id: uuid.UUID) -> uuid.UUID:
+        student_id = await self.student_id_for_user(user_id)
+        if student_id is None:
+            raise ValidationError(
+                "User is not registered as a student.",
+                {"user_id": str(user_id)},
+            )
+        return student_id
+
+    async def _insert_or_existing(self, statement: Insert, existing: Select[tuple[T]]) -> T:
+        """Run an insert that does nothing on conflict, and return the row it
+        inserted or, if it conflicted, the row already there."""
+        row = (await self.session.execute(statement)).scalar_one_or_none()
+        if row is not None:
+            return row
+        return (await self.session.execute(existing)).scalar_one()
+
+    async def _all(self, query: Select[tuple[T]]) -> list[T]:
+        return list((await self.session.execute(query)).scalars().all())
 
     async def record_participant_join(
         self,
@@ -150,19 +178,13 @@ class LiveEventRepository:
             )
             .returning(DeliveredQuestion)
         )
-
-        delivery = (await self.session.execute(statement)).scalar_one_or_none()
-
-        if delivery is not None:
-            return delivery
-
-        result = await self.session.execute(
+        return await self._insert_or_existing(
+            statement,
             select(DeliveredQuestion).where(
                 DeliveredQuestion.session_id == session_id,
                 DeliveredQuestion.question_id == question_id,
-            )
+            ),
         )
-        return result.scalar_one()
 
     async def record_response(
         self,
@@ -176,14 +198,7 @@ class LiveEventRepository:
         elapsed_ms: int | None,
         submitted_at: datetime | None = None,
     ) -> StudentResponse:
-        student_id = await self.student_id_for_user(user_id)
-
-        if student_id is None:
-            raise ValidationError(
-                "User is not registered as a student.",
-                {"user_id": str(user_id)},
-            )
-
+        student_id = await self._require_student_id(user_id)
         received_at = submitted_at or datetime.now(UTC)
         statement = (
             insert(StudentResponse)
@@ -202,20 +217,14 @@ class LiveEventRepository:
             )
             .returning(StudentResponse)
         )
-
-        response = (await self.session.execute(statement)).scalar_one_or_none()
-
-        if response is not None:
-            return response
-
-        result = await self.session.execute(
+        return await self._insert_or_existing(
+            statement,
             select(StudentResponse).where(
                 StudentResponse.session_id == session_id,
                 StudentResponse.question_id == question_id,
                 StudentResponse.student_id == student_id,
-            )
+            ),
         )
-        return result.scalar_one()
 
     async def record_prompt_outcome(
         self,
@@ -229,14 +238,7 @@ class LiveEventRepository:
         result: str,
         responded_at: datetime | None,
     ) -> DynamicPrompt:
-        student_id = await self.student_id_for_user(user_id)
-
-        if student_id is None:
-            raise ValidationError(
-                "User is not registered as a student.",
-                {"user_id": str(user_id)},
-            )
-
+        student_id = await self._require_student_id(user_id)
         statement = (
             insert(DynamicPrompt)
             .values(
@@ -287,8 +289,8 @@ class LiveEventRepository:
         *,
         session_id: uuid.UUID,
         question_id: uuid.UUID,
-        eligible_user_ids: set[uuid.UUID],
-        answered_user_ids: set[uuid.UUID],
+        eligible_user_ids: Set[uuid.UUID],
+        answered_user_ids: Set[uuid.UUID],
         reason: str,
         closed_at: datetime | None = None,
     ) -> DeliveredQuestion | None:
@@ -355,41 +357,21 @@ class LiveEventRepository:
         limit: int,
         offset: int,
     ) -> tuple[list[StudentResponse], int]:
-        total = (
-            await self.session.execute(
-                select(func.count())
-                .select_from(StudentResponse)
-                .where(StudentResponse.session_id == session_id)
-            )
-        ).scalar_one()
-
-        result = await self.session.execute(
-            select(StudentResponse)
-            .where(StudentResponse.session_id == session_id)
-            .order_by(
-                StudentResponse.submitted_at,
-                StudentResponse.response_id,
-            )
+        total = (await self.session.execute(_count(StudentResponse, session_id))).scalar_one()
+        responses = await self._all(
+            _of_session(StudentResponse, session_id)
+            .order_by(StudentResponse.submitted_at, StudentResponse.response_id)
             .limit(limit)
             .offset(offset)
         )
+        return responses, total
 
-        return list(result.scalars().all()), total
-
-    async def list_participants(
-        self,
-        *,
-        session_id: uuid.UUID,
-    ) -> list[SessionParticipant]:
-        result = await self.session.execute(
-            select(SessionParticipant)
-            .where(SessionParticipant.session_id == session_id)
-            .order_by(
-                SessionParticipant.joined_at,
-                SessionParticipant.participant_id,
+    async def list_participants(self, *, session_id: uuid.UUID) -> list[SessionParticipant]:
+        return await self._all(
+            _of_session(SessionParticipant, session_id).order_by(
+                SessionParticipant.joined_at, SessionParticipant.participant_id
             )
         )
-        return list(result.scalars().all())
 
     async def list_deliveries(
         self,
@@ -431,7 +413,7 @@ class LiveEventRepository:
                     delivered_at=delivery.delivered_at,
                     closes_at=delivery.closes_at,
                     closed_at=(delivery.closes_at if abandoned else delivery.closed_at),
-                    close_reason=("process_restart" if abandoned else delivery.close_reason),
+                    close_reason=(RESTART_CLOSE_REASON if abandoned else delivery.close_reason),
                     window_seconds=delivery.window_seconds,
                     eligible_count=(None if abandoned else delivery.eligible_count),
                     respondent_count=(
@@ -442,118 +424,55 @@ class LiveEventRepository:
 
         return deliveries
 
-    async def list_missed_responses(
-        self,
-        *,
-        session_id: uuid.UUID,
-    ) -> list[MissedResponse]:
-        result = await self.session.execute(
-            select(MissedResponse)
-            .join(
-                DeliveredQuestion,
-                DeliveredQuestion.delivery_id == MissedResponse.delivery_id,
+    async def list_missed_responses(self, *, session_id: uuid.UUID) -> list[MissedResponse]:
+        return await self._all(
+            _missed_in_session(select(MissedResponse), session_id).order_by(
+                MissedResponse.recorded_at, MissedResponse.missed_response_id
             )
-            .where(DeliveredQuestion.session_id == session_id)
-            .order_by(
-                MissedResponse.recorded_at,
-                MissedResponse.missed_response_id,
-            )
-        )
-        return list(result.scalars().all())
-
-    async def list_prompt_outcomes(
-        self,
-        *,
-        session_id: uuid.UUID,
-    ) -> list[DynamicPrompt]:
-        result = await self.session.execute(
-            select(DynamicPrompt)
-            .where(DynamicPrompt.session_id == session_id)
-            .order_by(
-                DynamicPrompt.sent_at,
-                DynamicPrompt.prompt_id,
-            )
-        )
-        return list(result.scalars().all())
-
-    async def list_activities(
-        self,
-        *,
-        session_id: uuid.UUID,
-    ) -> list[SessionActivity]:
-        result = await self.session.execute(
-            select(SessionActivity)
-            .where(SessionActivity.session_id == session_id)
-            .order_by(
-                SessionActivity.occurred_at,
-                SessionActivity.activity_id,
-            )
-        )
-        return list(result.scalars().all())
-
-    async def dashboard_counts(
-        self,
-        session_id: uuid.UUID,
-    ) -> SessionDashboardCounts:
-        participant_count = (
-            select(func.count())
-            .select_from(SessionParticipant)
-            .where(SessionParticipant.session_id == session_id)
-            .scalar_subquery()
-        )
-        delivery_count = (
-            select(func.count())
-            .select_from(DeliveredQuestion)
-            .where(DeliveredQuestion.session_id == session_id)
-            .scalar_subquery()
-        )
-        response_count = (
-            select(func.count())
-            .select_from(StudentResponse)
-            .where(StudentResponse.session_id == session_id)
-            .scalar_subquery()
-        )
-        missed_count = (
-            select(func.count())
-            .select_from(MissedResponse)
-            .join(
-                DeliveredQuestion,
-                DeliveredQuestion.delivery_id == MissedResponse.delivery_id,
-            )
-            .where(DeliveredQuestion.session_id == session_id)
-            .scalar_subquery()
-        )
-        prompt_count = (
-            select(func.count())
-            .select_from(DynamicPrompt)
-            .where(DynamicPrompt.session_id == session_id)
-            .scalar_subquery()
-        )
-        activity_count = (
-            select(func.count())
-            .select_from(SessionActivity)
-            .where(SessionActivity.session_id == session_id)
-            .scalar_subquery()
         )
 
+    async def list_prompt_outcomes(self, *, session_id: uuid.UUID) -> list[DynamicPrompt]:
+        return await self._all(
+            _of_session(DynamicPrompt, session_id).order_by(
+                DynamicPrompt.sent_at, DynamicPrompt.prompt_id
+            )
+        )
+
+    async def list_activities(self, *, session_id: uuid.UUID) -> list[SessionActivity]:
+        return await self._all(
+            _of_session(SessionActivity, session_id).order_by(
+                SessionActivity.occurred_at, SessionActivity.activity_id
+            )
+        )
+
+    async def dashboard_counts(self, session_id: uuid.UUID) -> SessionDashboardCounts:
+        counts = {
+            "participants": _count(SessionParticipant, session_id),
+            "delivered_questions": _count(DeliveredQuestion, session_id),
+            "responses": _count(StudentResponse, session_id),
+            "missed_responses": _missed_in_session(
+                select(func.count()).select_from(MissedResponse), session_id
+            ),
+            "prompt_outcomes": _count(DynamicPrompt, session_id),
+            "activities": _count(SessionActivity, session_id),
+        }
         row = (
-            await self.session.execute(
-                select(
-                    participant_count,
-                    delivery_count,
-                    response_count,
-                    missed_count,
-                    prompt_count,
-                    activity_count,
-                )
-            )
+            await self.session.execute(select(*(q.scalar_subquery() for q in counts.values())))
         ).one()
+        return SessionDashboardCounts(**dict(zip(counts, row, strict=True)))
 
-        return SessionDashboardCounts(
-            participants=row[0],
-            delivered_questions=row[1],
-            responses=row[2],
-            missed_responses=row[3],
-            prompt_outcomes=row[4],
-            activities=row[5],
-        )
+
+# Every table here but missed_response carries its session_id.
+def _of_session(model: Any, session_id: uuid.UUID) -> Select[Any]:
+    return select(model).where(model.session_id == session_id)
+
+
+def _count(model: Any, session_id: uuid.UUID) -> Select[Any]:
+    return select(func.count()).select_from(model).where(model.session_id == session_id)
+
+
+def _missed_in_session(query: Select[Any], session_id: uuid.UUID) -> Select[Any]:
+    """Narrow a query on missed_response to one session, through its delivery."""
+    return query.join(
+        DeliveredQuestion, DeliveredQuestion.delivery_id == MissedResponse.delivery_id
+    ).where(DeliveredQuestion.session_id == session_id)

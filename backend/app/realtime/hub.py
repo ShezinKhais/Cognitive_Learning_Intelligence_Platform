@@ -17,7 +17,7 @@ import asyncio
 import contextlib
 import logging
 from collections import OrderedDict, deque
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 from weakref import WeakValueDictionary
@@ -58,8 +58,9 @@ UNSEQUENCED = 0
 
 # What connect() sends straight after READY and any replay. Built at that
 # moment, under the channel's delivery lock, so it cannot describe a state
-# older than the stream it follows.
-Welcome = Callable[[], Awaitable[list[tuple[ServerEventType, dict]]]]
+# older than the stream it follows. Synchronous, so nothing else runs while it
+# reads the state it describes.
+Welcome = Callable[[], list[tuple[ServerEventType, dict]]]
 
 
 class Connection:
@@ -179,18 +180,13 @@ class SessionHub:
         async with self._delivering(connection.channel):
             stream = self._stream(connection.channel)
             resumed = stream.resume_point(last_seq, generation)
-            ready = ServerEvent(
-                type=ServerEventType.READY,
-                seq=0,
-                ts=datetime.now(UTC),
-                data=ReadyPayload(
-                    user_id=connection.user_id,
-                    session_id=connection.session_id,
-                    resumed_from_seq=resumed,
-                    stream_id=stream.generation,
-                ).model_dump(mode="json"),
-            )
-            if not await self._send(connection, ready.model_dump(mode="json"), "ready"):
+            ready = ReadyPayload(
+                user_id=connection.user_id,
+                session_id=connection.session_id,
+                resumed_from_seq=resumed,
+                stream_id=stream.generation,
+            ).model_dump(mode="json")
+            if not await self._send(connection, unsequenced(ServerEventType.READY, ready), "ready"):
                 return False
             await self.join(connection)
             if resumed is not None:
@@ -198,9 +194,9 @@ class SessionHub:
                     if not await self._send(connection, event.model_dump(mode="json"), "replay"):
                         return True
             if welcome is not None:
-                for event_type, data in await welcome():
+                for event_type, data in welcome():
                     if not await self._send(
-                        connection, _unsequenced(event_type, data), event_type.value
+                        connection, unsequenced(event_type, data), event_type.value
                     ):
                         break
         return True
@@ -279,7 +275,7 @@ class SessionHub:
             if only is None:
                 payload = stream.next_event(event_type, data).model_dump(mode="json")
             else:
-                payload = _unsequenced(event_type, data)
+                payload = unsequenced(event_type, data)
             async with self._lock:
                 targets = [c for c in stream.members if only is None or c.user_id == only]
 
@@ -403,7 +399,8 @@ class SessionHub:
         return len(self._streams)
 
 
-def _unsequenced(event_type: ServerEventType, data: dict) -> dict:
+def unsequenced(event_type: ServerEventType, data: dict) -> dict:
+    """An event for one connection or user, outside any stream's sequence."""
     event = ServerEvent(type=event_type, seq=UNSEQUENCED, ts=datetime.now(UTC), data=data)
     return event.model_dump(mode="json")
 

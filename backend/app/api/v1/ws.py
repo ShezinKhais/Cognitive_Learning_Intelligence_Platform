@@ -31,7 +31,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import UTC, datetime
+from functools import partial
 from typing import Any
 from uuid import UUID
 
@@ -44,13 +44,12 @@ from app.api.deps import AppSettings, DbSession
 from app.auth.service import user_from_token
 from app.core.security import TokenValidationError
 from app.realtime.classroom import classroom
-from app.realtime.hub import CLOSE_TRY_AGAIN_LATER, Connection, hub
+from app.realtime.hub import CLOSE_TRY_AGAIN_LATER, Connection, hub, unsequenced
 from app.schemas.events import (
     AnswerSubmitPayload,
     AuthPayload,
     ClientEventType,
     PromptAckPayload,
-    ServerEvent,
     ServerEventType,
     parse_client_event,
 )
@@ -77,10 +76,7 @@ async def _send(
     event_type: ServerEventType,
     data: dict,
 ) -> None:
-    """Send a connection-scoped message.
-
-    seq is 0 because these are not part of a session's ordered stream; clients
-    only track gaps in events that carry a non-zero seq.
+    """Send a connection-scoped message, outside the stream's sequence.
 
     The hub closes a socket from another task when a delivery to it fails. A
     ping already on its way was then answered on a closed socket, Starlette
@@ -91,14 +87,7 @@ async def _send(
     if websocket.application_state is not WebSocketState.CONNECTED:
         raise WebSocketDisconnect(code=CLOSE_TRY_AGAIN_LATER)
 
-    event = ServerEvent(
-        type=event_type,
-        seq=0,
-        ts=datetime.now(UTC),
-        data=data,
-    )
-
-    await websocket.send_json(event.model_dump(mode="json"))
+    await websocket.send_json(unsequenced(event_type, data))
 
 
 async def _receive_event(
@@ -270,10 +259,7 @@ async def session_socket(
                 reason="not permitted to join this session",
             )
             return
-        recorded = SessionStatus(row.status)
-
-        async def welcome() -> list[tuple[ServerEventType, dict]]:
-            return classroom.welcome(session_id, recorded, user_id, role)
+        welcome = partial(classroom.welcome, session_id, SessionStatus(row.status), user_id, role)
 
     # The socket lives for the whole class. Its database session must not
     # hold a pooled connection that long, or forty students exhaust the pool.
@@ -325,40 +311,37 @@ async def session_socket(
                 )
                 continue
 
-            if isinstance(payload, AnswerSubmitPayload | PromptAckPayload):
-                if session_id is None:
-                    await _send(
-                        websocket,
-                        ServerEventType.ERROR,
-                        {
-                            "code": "NOT_IN_SESSION",
-                            "detail": f"join a session to send {event_type}",
-                        },
-                    )
-                elif isinstance(payload, PromptAckPayload):
-                    if not await classroom.acknowledge_prompt(session_id, user_id, payload):
-                        # Usually an acknowledgement that crossed the prompt's
-                        # expiry in flight. The client can drop the prompt.
-                        await _send(
-                            websocket,
-                            ServerEventType.ERROR,
-                            {"code": "PROMPT_NOT_OPEN", "detail": "that prompt is no longer open"},
-                        )
-                else:
-                    # Sends the receipt, then any feedback, to every tab the
-                    # student has open.
-                    await classroom.submit(session_id, user_id, role, payload)
-                continue
-
-            # Attention signals and breakout rooms belong to later workstreams.
-            await _send(
-                websocket,
-                ServerEventType.ERROR,
-                {
-                    "code": "NOT_IMPLEMENTED",
-                    "detail": f"{event_type.value} is not handled yet",
-                },
-            )
+            if not isinstance(payload, AnswerSubmitPayload | PromptAckPayload):
+                # Attention signals and breakout rooms belong to later workstreams.
+                await _send(
+                    websocket,
+                    ServerEventType.ERROR,
+                    {
+                        "code": "NOT_IMPLEMENTED",
+                        "detail": f"{event_type.value} is not handled yet",
+                    },
+                )
+            elif session_id is None:
+                await _send(
+                    websocket,
+                    ServerEventType.ERROR,
+                    {
+                        "code": "NOT_IN_SESSION",
+                        "detail": f"join a session to send {event_type}",
+                    },
+                )
+            elif isinstance(payload, AnswerSubmitPayload):
+                # Sends the receipt, then any feedback, to every tab the
+                # student has open.
+                await classroom.submit(session_id, user_id, role, payload)
+            elif not await classroom.acknowledge_prompt(session_id, user_id, payload):
+                # Usually an acknowledgement that crossed the prompt's expiry
+                # in flight. The client can drop the prompt.
+                await _send(
+                    websocket,
+                    ServerEventType.ERROR,
+                    {"code": "PROMPT_NOT_OPEN", "detail": "that prompt is no longer open"},
+                )
 
     except WebSocketDisconnect:
         pass
