@@ -38,6 +38,7 @@ from app.schemas.session import (
     DeliverableQuestionOut,
     SessionCreateRequest,
     SessionOut,
+    SessionReadinessOut,
     SessionStatus,
 )
 from app.services.session_access import session_membership_allowed
@@ -143,6 +144,18 @@ async def end_session(db: AsyncSession, principal: Principal, session_id: UUID) 
     await classroom.end(row.session_id, ended, delivered)
     log.info("session %s %s by %s", session_id, ended.value, principal.user_id)
     return await session_out(db, row)
+
+
+async def session_readiness(
+    db: AsyncSession, principal: Principal, session_id: UUID
+) -> SessionReadinessOut:
+    """Whether the session has the content it needs to start.
+
+    Read only, so the row is not locked. start_session runs the same check
+    under the lock, so this is what the start button will do right now.
+    """
+    row = await _owned(SessionRepository(db), principal, session_id, for_update=False)
+    return await evaluate_readiness(db, row)
 
 
 async def list_deliverable_questions(
