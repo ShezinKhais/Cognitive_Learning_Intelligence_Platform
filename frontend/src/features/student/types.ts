@@ -33,6 +33,7 @@ export interface StudentSession {
   teams_meeting_id?: string | null
   participant_count?: number
   questions_delivered?: number
+  paused?: boolean
 }
 
 /**

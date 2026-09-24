@@ -1,11 +1,11 @@
 import {
   Navigate,
+  Outlet,
   useLocation,
 } from 'react-router'
 
 import { useStudentApp } from '../features/student/StudentAppContext'
 import { accessFor } from '../authRouting'
-import StudentHomePage from './StudentHomePage'
 
 export default function ProtectedStudentPage() {
   const location = useLocation()
@@ -76,7 +76,7 @@ export default function ProtectedStudentPage() {
     )
   }
 
-  return <StudentHomePage />
+  return <Outlet />
 }
 
 function StatusPanel({
