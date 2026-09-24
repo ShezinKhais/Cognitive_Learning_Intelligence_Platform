@@ -1,7 +1,7 @@
 """add live session persistence
 
 Revision ID: 7fb1c9da741b
-Revises: 63cc1030dce5
+Revises: 9b1d3f5a7c20
 Create Date: 2026-09-20 23:03:58.860765
 
 """
@@ -229,6 +229,26 @@ def upgrade() -> None:
         """
     )
     op.alter_column("student_response", "is_correct", existing_type=sa.BOOLEAN(), nullable=True)
+    # Retain the newest answer if a pre-migration database contains multiple
+    # responses from one student for the same question.
+    op.execute(
+        """
+        DELETE FROM student_response
+        WHERE response_id IN (
+            SELECT response_id
+            FROM (
+                SELECT
+                    response_id,
+                    row_number() OVER (
+                        PARTITION BY session_id, student_id, question_id
+                        ORDER BY submitted_at DESC, response_id DESC
+                    ) AS duplicate_number
+                FROM student_response
+            ) AS duplicate_responses
+            WHERE duplicate_number > 1
+        )
+        """
+    )
     op.create_unique_constraint(
         "uq_student_response_session_student_question",
         "student_response",

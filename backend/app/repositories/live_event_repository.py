@@ -23,10 +23,6 @@ from app.models.student_response import StudentResponse
 
 T = TypeVar("T")
 
-# How the dashboard reports a delivery with no recorded close whose window has
-# passed: the process that owned the window restarted before closing it.
-RESTART_CLOSE_REASON = "process_restart"
-
 
 @dataclass(frozen=True)
 class SessionDashboardCounts:
@@ -89,6 +85,11 @@ class LiveEventRepository:
         user_id: uuid.UUID,
         joined_at: datetime | None = None,
     ) -> SessionParticipant | None:
+        """Record a student join or reconnect.
+
+        Staff also connect to session sockets, so a user without a Student row
+        is an expected no-op and returns None.
+        """
         student_id = await self.student_id_for_user(user_id)
 
         if student_id is None:
@@ -132,6 +133,9 @@ class LiveEventRepository:
         connection_count records cumulative joins and reconnects; it is not the
         number of currently open tabs or sockets. Callers must therefore invoke
         this only after the user's last socket for this session disconnects.
+
+        Staff also connect to session sockets, so a user without a Student row
+        is an expected no-op and returns None.
         """
         student_id = await self.student_id_for_user(user_id)
 
@@ -432,7 +436,7 @@ class LiveEventRepository:
                     delivered_at=delivery.delivered_at,
                     closes_at=delivery.closes_at,
                     closed_at=(delivery.closes_at if abandoned else delivery.closed_at),
-                    close_reason=(RESTART_CLOSE_REASON if abandoned else delivery.close_reason),
+                    close_reason=None if abandoned else delivery.close_reason,
                     window_seconds=delivery.window_seconds,
                     eligible_count=(None if abandoned else delivery.eligible_count),
                     respondent_count=(
