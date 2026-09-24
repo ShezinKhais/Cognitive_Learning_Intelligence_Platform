@@ -21,7 +21,10 @@ from app.api.deps import (
     require_consents,
     require_roles,
 )
-from app.core.errors import not_implemented
+from app.core.errors import NotFoundError, not_implemented
+from app.realtime.classroom import classroom
+from app.repositories.session_repository import SessionRepository
+from app.repositories.student_repository import StudentRepository
 from app.schemas.common import Page
 from app.schemas.identity import ConsentType, Role
 from app.schemas.session import (
@@ -34,6 +37,7 @@ from app.schemas.session import (
     StudentSessionSummary,
 )
 from app.services import session_lifecycle
+from app.services.session_access import may_view_session_analytics
 
 # Running a session is staff work. Students reach a session over the socket.
 _staff = [Depends(require_roles(Role.LECTURER, Role.ADMIN))]
@@ -168,24 +172,56 @@ async def list_responses(
     raise not_implemented("BBIS", "Phase 3")
 
 
-@router.get("/{session_id}/engagement", response_model=list[EngagementOut])
+@router.get("/{session_id}/engagement", response_model=list[EngagementOut], dependencies=_staff)
 async def session_engagement(
     session_id: UUID,
     principal: CurrentUser,
     db: DbSession,
 ) -> list[EngagementOut]:
     """Engagement only. Comprehension is served separately and the two are never
-    combined into one figure."""
-    raise not_implemented("Cyber 1", "Phase 3")
+    combined into one figure. Scores live with the running session, so a
+    session this process is not running reports none."""
+    await _analytics_session(db, principal, session_id)
+    scored = classroom.engagement(session_id)
+    # The classroom knows students by user id; the contract speaks in
+    # student.student_id, the id ResponseOut and the student table use.
+    student_ids = await StudentRepository(db).student_ids_by_user([s.user_id for s in scored])
+    return [
+        EngagementOut(
+            student_id=student_ids[s.user_id],
+            session_id=session_id,
+            score=s.engagement.score,
+            status=s.engagement.status,
+            confidence=s.engagement.confidence,
+            signals_available=s.engagement.signals_available,
+            computed_at=s.scored_at,
+        )
+        for s in scored
+        if s.user_id in student_ids
+    ]
 
 
-@router.get("/{session_id}/alerts", response_model=list[ClassComprehensionAlert])
+@router.get(
+    "/{session_id}/alerts", response_model=list[ClassComprehensionAlert], dependencies=_staff
+)
 async def session_alerts(
     session_id: UUID,
     principal: CurrentUser,
     db: DbSession,
 ) -> list[ClassComprehensionAlert]:
-    raise not_implemented("Cyber 1", "Phase 3")
+    """Class comprehension alerts raised so far in a running session."""
+    await _analytics_session(db, principal, session_id)
+    return classroom.alerts(session_id)
+
+
+async def _analytics_session(db: DbSession, principal: CurrentUser, session_id: UUID) -> None:
+    """Another lecturer's session is reported as missing, as it is for the
+    lifecycle routes, so a session id cannot be probed for existence."""
+    row = await SessionRepository(db).get(session_id)
+    if row is None or not may_view_session_analytics(
+        row, user_id=principal.user_id, role=principal.role
+    ):
+        raise NotFoundError("Session was not found.", {"session_id": str(session_id)})
 
 
 @router.get(

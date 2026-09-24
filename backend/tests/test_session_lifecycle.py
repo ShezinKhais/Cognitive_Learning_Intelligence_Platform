@@ -6,7 +6,7 @@ without a database in test_classroom.py.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -34,6 +34,7 @@ from app.models.session import Session as SessionModel
 from app.models.student import Student
 from app.models.student_response import StudentResponse
 from app.models.user import User
+from app.realtime.classroom import classroom
 from app.schemas.identity import ConsentType, Role
 
 from .database_support import require_database
@@ -885,3 +886,79 @@ async def test_a_free_text_question_is_delivered_without_options(db, app) -> Non
     assert delivered["data"]["options"] is None
     assert receipt["data"]["accepted"] is True, receipt["data"]
     client.post(f"{base}/end")
+
+
+# -- engagement and alerts (Cyber 1) ------------------------------------------
+
+
+async def test_another_lecturer_cannot_read_a_sessions_engagement_or_alerts(db, app) -> None:
+    client, factory, created = db
+    course = await _course(factory, created)
+    _as(app, LECTURER_ID, Role.LECTURER)
+    session = _create(client, course)
+    _as(app, await _lecturer(factory, created), Role.LECTURER)
+
+    for path in ("engagement", "alerts"):
+        response = client.get(f"/api/v1/sessions/{session['id']}/{path}")
+        assert response.status_code == 404, path
+
+
+async def test_an_admin_may_read_any_sessions_engagement_and_alerts(db, app) -> None:
+    client, factory, created = db
+    course = await _course(factory, created)
+    _as(app, LECTURER_ID, Role.LECTURER)
+    session = _create(client, course)
+    _as(app, ADMIN_ID, Role.ADMIN)
+
+    for path in ("engagement", "alerts"):
+        response = client.get(f"/api/v1/sessions/{session['id']}/{path}")
+        assert response.status_code == 200, path
+
+
+async def test_a_student_is_refused_engagement_and_alerts(db, app) -> None:
+    client, factory, created = db
+    course = await _course(factory, created)
+    await _enrol(factory, course)
+    _as(app, LECTURER_ID, Role.LECTURER)
+    session = _create(client, course)
+    _as(app, STUDENT_ID, Role.STUDENT)
+
+    for path in ("engagement", "alerts"):
+        response = client.get(f"/api/v1/sessions/{session['id']}/{path}")
+        assert response.status_code == 403, path
+
+
+async def test_a_session_this_process_is_not_running_reports_nothing(db, app) -> None:
+    client, factory, created = db
+    course = await _course(factory, created)
+    _as(app, LECTURER_ID, Role.LECTURER)
+    session = _create(client, course)
+
+    assert client.get(f"/api/v1/sessions/{session['id']}/engagement").json() == []
+    assert client.get(f"/api/v1/sessions/{session['id']}/alerts").json() == []
+
+
+async def test_engagement_reports_the_student_id_not_the_user_id(db, app) -> None:
+    client, factory, created = db
+    course = await _course(factory, created)
+    await _enrol(factory, course)
+    _as(app, LECTURER_ID, Role.LECTURER)
+    session = _create(client, course)
+    session_id = UUID(session["id"])
+    async with factory() as read:
+        student_id = await read.scalar(
+            select(Student.student_id).where(Student.user_id == STUDENT_ID)
+        )
+
+    live = classroom.activate(session_id, paused=True)
+    # Shown two questions and answered both: attempt rate alone.
+    for _ in range(2):
+        live.engagement.count_close({STUDENT_ID}, {STUDENT_ID}, {}, datetime.now(UTC))
+    try:
+        [scored] = client.get(f"/api/v1/sessions/{session_id}/engagement").json()
+    finally:
+        classroom._live.pop(session_id, None)
+
+    assert scored["student_id"] == str(student_id)
+    assert scored["student_id"] != str(STUDENT_ID)
+    assert (scored["status"], scored["signals_available"]) == ("engaged", ["attempt_rate"])

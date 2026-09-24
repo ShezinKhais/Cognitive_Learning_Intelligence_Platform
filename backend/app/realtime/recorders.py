@@ -111,3 +111,24 @@ class PromptRecorder(Protocol):
     """
 
     async def record_prompt(self, outcome: PromptOutcome) -> None: ...
+
+
+@dataclass(frozen=True)
+class QuestionComprehension:
+    """The comprehension labels AI 1 has recorded for one delivered question."""
+
+    labels: list[str]
+    topic: str | None
+
+
+class ComprehensionSource(Protocol):
+    """Reads the classifications behind a class comprehension alert. Cyber 1
+    provides this.
+
+    A failure, or taking longer than RECORD_TIMEOUT_SECONDS, is logged and
+    raises no alert.
+    """
+
+    async def question_labels(
+        self, session_id: UUID, question_id: UUID
+    ) -> QuestionComprehension: ...

@@ -47,6 +47,7 @@ from app.realtime.classroom import classroom
 from app.realtime.hub import CLOSE_TRY_AGAIN_LATER, Connection, hub, unsequenced
 from app.schemas.events import (
     AnswerSubmitPayload,
+    AttentionSignalPayload,
     AuthPayload,
     ClientEventType,
     PromptAckPayload,
@@ -330,8 +331,22 @@ async def session_socket(
                 )
                 continue
 
-            if not isinstance(payload, AnswerSubmitPayload | PromptAckPayload):
-                # Attention signals and breakout rooms belong to later workstreams.
+            if isinstance(payload, AttentionSignalPayload):
+                # Optional client-side evidence for engagement scoring. Kept
+                # only for a student connected to a running session.
+                if session_id is None or not await classroom.record_attention(
+                    session_id, user_id, payload
+                ):
+                    await _send(
+                        websocket,
+                        ServerEventType.ERROR,
+                        {
+                            "code": "NOT_IN_SESSION",
+                            "detail": "only a student in a running session sends signal.attention",
+                        },
+                    )
+            elif not isinstance(payload, AnswerSubmitPayload | PromptAckPayload):
+                # Breakout rooms belong to a later workstream.
                 await _send(
                     websocket,
                     ServerEventType.ERROR,

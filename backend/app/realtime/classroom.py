@@ -44,7 +44,7 @@ from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -54,11 +54,17 @@ from app.core.errors import ConflictError
 from app.models.session import Session
 from app.realtime.attention import Attention, Prompt, checked_message
 from app.realtime.countdown import Countdown
+from app.realtime.engagement_tracker import (
+    ENGAGEMENT_PROMPT_MESSAGE,
+    EngagementTracker,
+    ScoredStudent,
+)
 from app.realtime.hub import SessionHub, hub
 from app.realtime.recorders import (
     RECORD_TIMEOUT_SECONDS,
     ClosedQuestion,
     CloseRecorder,
+    ComprehensionSource,
     PromptOutcome,
     PromptRecorder,
     PromptResult,
@@ -68,9 +74,12 @@ from app.realtime.recorders import (
 from app.repositories.session_repository import SessionRepository
 from app.schemas.content import QuestionType
 from app.schemas.events import (
+    AlertKind,
+    AlertRaisedPayload,
     AnswerReceiptPayload,
     AnswerSubmitPayload,
     AttentionPromptPayload,
+    AttentionSignalPayload,
     FeedbackResultPayload,
     PromptAckPayload,
     QuestionClosedPayload,
@@ -80,7 +89,15 @@ from app.schemas.events import (
     SessionStatePayload,
 )
 from app.schemas.identity import Role
-from app.schemas.session import SessionStatus
+from app.schemas.session import ClassComprehensionAlert, SessionStatus
+from app.services.engagement import (
+    PROMPT_ACKNOWLEDGED,
+    PROMPT_DISMISSED,
+    PROMPT_EXPIRED,
+    EngagementComputation,
+    evaluate_comprehension_alert,
+    should_send_dynamic_prompt,
+)
 
 log = logging.getLogger("clip.classroom")
 
@@ -103,6 +120,22 @@ class _OpenQuestion:
     present: set[UUID]
     answered: set[UUID] = field(default_factory=set)
     closer: asyncio.Task[None] | None = None
+    opened_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    # Per accepted answer, the share of the window that had passed when the
+    # server received it. Server time, since client_elapsed_ms is the
+    # client's own claim.
+    timing: dict[UUID, float] = field(default_factory=dict)
+
+    def accept(self, user_id: UUID, at: datetime) -> None:
+        self.answered.add(user_id)
+        window = (self.question.closes_at - self.opened_at).total_seconds()
+        if window > 0:
+            self.timing[user_id] = (at - self.opened_at).total_seconds() / window
+
+    def withdraw(self, user_id: UUID) -> None:
+        """Take back an answer whose recording failed."""
+        self.answered.discard(user_id)
+        self.timing.pop(user_id, None)
 
     def refusal(self, user_id: UUID, answer: AnswerSubmitPayload, at: datetime) -> str | None:
         """Why this answer to this question cannot be accepted, or None."""
@@ -137,6 +170,8 @@ class LiveSession:
         self.countdown = Countdown(first_wait, paused=paused)
         self.cycle: asyncio.Task[None] | None = None
         self.attention = Attention(session_id)
+        self.engagement = EngagementTracker()
+        self.alerts: list[ClassComprehensionAlert] = []
 
     @property
     def paused(self) -> bool:
@@ -163,6 +198,7 @@ class Classroom:
         self.recorder: ResponseRecorder | None = None
         self.prompt_recorder: PromptRecorder | None = None
         self.close_recorder: CloseRecorder | None = None
+        self.comprehension_source: ComprehensionSource | None = None
 
     def _next_wait(self) -> timedelta | None:
         """A fresh random wait before the next scheduled question, or None
@@ -299,12 +335,20 @@ class Classroom:
         withdrawn: list[Prompt] = []
         if live is not None:
             async with live.lock:
+                open_ = live.open
                 closed = await self._close_locked(live, QuestionCloseReason.SESSION_ENDED)
                 withdrawn = live.attention.withdraw_all()
                 for prompt in withdrawn:
                     _cancel(prompt.expiry)
+                # The last question still counts, but nobody is nudged in a
+                # class that has ended.
+                if open_ is not None:
+                    self._score_locked(live, open_)
             _cancel(live.cycle)
         await self.announce(session_id, status, delivered)
+        if live is not None and closed is not None:
+            # Before the session is forgotten, so the lecturer can still be told.
+            await self._check_comprehension(live, closed)
         self._hub.forget_session(session_id)
         await asyncio.gather(
             self._record_close(closed),
@@ -456,6 +500,7 @@ class Classroom:
             question = await SessionRepository(db).claim_for_delivery(row, question_id)
             if question is None:
                 return None
+            now = datetime.now(UTC)
             window = self._window
             payload = QuestionDeliveredPayload(
                 question_id=question.question_id,
@@ -468,7 +513,7 @@ class Classroom:
                 # repository will not hand out such a question, and this
                 # agrees with it.
                 options=question.options if question.question_type == QuestionType.MCQ else None,
-                closes_at=datetime.now(UTC) + window,
+                closes_at=now + window,
                 window_seconds=int(window.total_seconds()),
                 source_slide=question.source_slide,
             )
@@ -476,7 +521,9 @@ class Classroom:
             # never missing from the session's history.
             await db.commit()
 
-            live.open = _OpenQuestion(payload, present=self._hub.student_ids(row.session_id))
+            live.open = _OpenQuestion(
+                payload, present=self._hub.student_ids(row.session_id), opened_at=now
+            )
             live.delivered += 1
             # Whatever was due is discarded, manual or scheduled: the next
             # wait is drawn when this question closes, so the cycle never
@@ -501,7 +548,10 @@ class Classroom:
                 # response window is not taken out of the teaching time.
                 live.countdown.start(self._next_wait())
                 await self._nudge_absent_locked(live, open_)
+                await self._score_engagement_locked(live, open_)
         await self._record_close(closed)
+        if closed is not None:
+            await self._check_comprehension(live, closed)
 
     async def _close_locked(
         self, live: LiveSession, reason: QuestionCloseReason
@@ -645,7 +695,7 @@ class Classroom:
             refusal = open_.refusal(user_id, answer, received_at)
             if refusal is not None:
                 return refusal, None
-            open_.answered.add(user_id)
+            open_.accept(user_id, received_at)
 
         if self.recorder is None:
             return None, None
@@ -664,7 +714,7 @@ class Classroom:
         except Exception:
             log.exception("could not record an answer in session %s", session_id)
             async with live.lock:
-                open_.answered.discard(user_id)
+                open_.withdraw(user_id)
                 still_open = live.open is open_ and datetime.now(UTC) < open_.question.closes_at
             if still_open:
                 return "Your answer could not be saved. Please submit it again.", None
@@ -752,6 +802,9 @@ class Classroom:
             if prompt is None:
                 return False
             _cancel(prompt.expiry)
+            live.engagement.prompt_ended(
+                user_id, PROMPT_DISMISSED if ack.dismissed else PROMPT_ACKNOWLEDGED
+            )
         result = PromptResult.DISMISSED if ack.dismissed else PromptResult.ACKNOWLEDGED
         await self._record_prompt(prompt.outcome(result, now))
         return True
@@ -760,8 +813,100 @@ class Classroom:
         await _sleep_until(prompt.payload.expires_at)
         async with live.lock:
             expired = live.attention.expire(prompt)
+            if expired:
+                live.engagement.prompt_ended(prompt.user_id, PROMPT_EXPIRED)
         if expired:
             await self._record_prompt(prompt.outcome(PromptResult.EXPIRED))
+
+    # -- engagement and comprehension (Cyber 1) --------------------------------
+
+    async def record_attention(
+        self, session_id: UUID, user_id: UUID, signal: AttentionSignalPayload
+    ) -> bool:
+        """Keep a student's latest client attention signal for their next
+        engagement score. False when the session is not running here or the
+        sender is not a student connected to it."""
+        live = self._live.get(session_id)
+        if live is None or user_id not in self._hub.student_ids(session_id):
+            return False
+        async with live.lock:
+            live.engagement.signal(user_id, signal, datetime.now(UTC))
+        return True
+
+    def _score_locked(
+        self, live: LiveSession, closed: _OpenQuestion
+    ) -> dict[UUID, EngagementComputation]:
+        """Count the closed question towards everyone who was shown it and
+        rescore them. Returns the new scores by user id."""
+        return live.engagement.count_close(
+            closed.present, closed.answered, closed.timing, datetime.now(UTC)
+        )
+
+    async def _score_engagement_locked(self, live: LiveSession, closed: _OpenQuestion) -> None:
+        """Rescore everyone who was shown the question that just closed, and
+        nudge those engagement scoring says need it. prompt_student's limits
+        (cap, pause, one at a time, connected) still apply."""
+        for user_id, engagement in self._score_locked(live, closed).items():
+            if should_send_dynamic_prompt(engagement):
+                await self._prompt_locked(live, user_id, ENGAGEMENT_PROMPT_MESSAGE)
+
+    async def _check_comprehension(self, live: LiveSession, closed: ClosedQuestion) -> None:
+        """Raise a class comprehension alert to the lecturer once enough of
+        the class has been classified partial or struggling on a question."""
+        if self.comprehension_source is None:
+            return
+        settings = self._settings()
+        try:
+            async with asyncio.timeout(RECORD_TIMEOUT_SECONDS):
+                found = await self.comprehension_source.question_labels(
+                    closed.session_id, closed.question_id
+                )
+        except Exception:
+            log.exception("could not read comprehension for session %s", closed.session_id)
+            return
+        decision = evaluate_comprehension_alert(
+            found.labels,
+            min_respondents=settings.comprehension_alert_min_respondents,
+            threshold=settings.comprehension_alert_threshold,
+        )
+        if not decision.should_alert or decision.correct_ratio is None:
+            return
+        live.alerts.append(
+            ClassComprehensionAlert(
+                session_id=closed.session_id,
+                question_id=closed.question_id,
+                topic=found.topic,
+                correct_ratio=decision.correct_ratio,
+                respondents=decision.respondents,
+                threshold=settings.comprehension_alert_threshold,
+                raised_at=datetime.now(UTC),
+            )
+        )
+        about = f" on {found.topic}" if found.topic else ""
+        payload = AlertRaisedPayload(
+            alert_id=uuid4(),
+            kind=AlertKind.TOPIC_DIFFICULTY,
+            message=f"Much of the class is struggling{about}.",
+            reason=(
+                f"{round((decision.struggling_ratio or 0.0) * decision.respondents)} of "
+                f"{decision.respondents} classified answers were partial or struggling."
+            ),
+            confidence=min(1.0, decision.respondents / max(len(closed.eligible), 1)),
+        ).model_dump(mode="json")
+        for staff_id in self._hub.staff_ids(closed.session_id):
+            await self._hub.send_to_user(
+                closed.session_id, staff_id, ServerEventType.ALERT_RAISED, payload
+            )
+
+    def engagement(self, session_id: UUID) -> list[ScoredStudent]:
+        """The latest engagement score of each student scored in a session this
+        process is running, by user id. The caller resolves the student id."""
+        live = self._live.get(session_id)
+        return live.engagement.scores() if live is not None else []
+
+    def alerts(self, session_id: UUID) -> list[ClassComprehensionAlert]:
+        live = self._live.get(session_id)
+        return list(live.alerts) if live is not None else []
 
     # -- recording ------------------------------------------------------------
 

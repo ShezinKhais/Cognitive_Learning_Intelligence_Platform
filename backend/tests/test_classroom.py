@@ -18,11 +18,13 @@ import pytest
 
 from app.core.errors import ConflictError
 from app.realtime import classroom as classroom_module
+from app.realtime import engagement_tracker
 from app.realtime.classroom import Classroom
 from app.realtime.hub import Connection, SessionHub
-from app.realtime.recorders import ClosedQuestion, Submission
+from app.realtime.recorders import ClosedQuestion, QuestionComprehension, Submission
 from app.schemas.events import (
     AnswerSubmitPayload,
+    AttentionSignalPayload,
     FeedbackResultPayload,
     PromptAckPayload,
     ServerEventType,
@@ -124,6 +126,8 @@ def _room(
         attention_prompt_ttl_seconds=prompt_ttl,
         attention_prompt_after_missed_questions=missed,
         is_production=production,
+        comprehension_alert_threshold=0.5,
+        comprehension_alert_min_respondents=5,
     )
     room = Classroom(
         events=events,
@@ -1323,3 +1327,161 @@ async def test_how_a_question_is_answered_comes_from_its_type() -> None:
     assert not chosen.accepted and chosen.reason == "Answer this question in your own words."
     assert written.accepted
     await room.shutdown()
+
+
+# -- engagement scoring and comprehension alerts (Cyber 1) --------------------
+
+
+async def _close(room: Classroom, row: SimpleNamespace, answer: UUID | None = None) -> None:
+    question = await _deliver(room, row)
+    if answer is not None:
+        receipt = await room.submit(
+            row.session_id, answer, Role.STUDENT, _answer(question.question_id)
+        )
+        assert receipt.accepted
+    await asyncio.sleep(0.15)
+
+
+async def test_a_late_joiner_who_has_not_answered_is_not_nudged_by_engagement() -> None:
+    room, _, row, socket, student, _ = await _prompted_room(window=0.05, missed=0)
+
+    await _close(room, row)
+    await _close(room, row)
+    await _close(room, row)
+
+    # Three questions missed, but the attempt rate is the only evidence, so
+    # engagement scoring stays quiet. It still reports the student.
+    assert socket.of(ServerEventType.PROMPT_ATTENTION) == []
+    [scored] = room.engagement(row.session_id)
+    assert (scored.user_id, scored.engagement.status.value) == (student, "at_risk")
+    assert scored.engagement.signals_available == ["attempt_rate"]
+    await room.shutdown()
+
+
+async def test_engagement_nudges_once_a_second_signal_agrees() -> None:
+    room, _, row, socket, student, _ = await _prompted_room(window=0.05, prompt_ttl=0.05, missed=0)
+    assert await room.prompt_student(row.session_id, student, "Still with us?")
+    await asyncio.sleep(0.1)  # the prompt expires unanswered
+
+    await _close(room, row)
+    await _close(room, row)
+
+    prompts = socket.of(ServerEventType.PROMPT_ATTENTION)
+    assert prompts[-1]["data"]["message"] == classroom_module.ENGAGEMENT_PROMPT_MESSAGE
+    [scored] = room.engagement(row.session_id)
+    assert scored.engagement.status.value == "disengaged"
+    assert scored.engagement.signals_available == ["attempt_rate", "prompt_response"]
+    await room.shutdown()
+
+
+async def test_an_answering_student_is_scored_engaged() -> None:
+    room, _, row, socket, student, _ = await _prompted_room(window=0.2, missed=0)
+
+    await _close(room, row, answer=student)
+    await asyncio.sleep(0.15)
+
+    [scored] = room.engagement(row.session_id)
+    assert scored.engagement.status.value == "engaged"
+    assert scored.engagement.signals_available == ["response_timing"]
+    assert socket.of(ServerEventType.PROMPT_ATTENTION) == []
+    await room.shutdown()
+
+
+async def test_an_attention_signal_is_kept_only_for_a_connected_student() -> None:
+    room, events, row, _, student, _ = await _prompted_room(window=0.05, missed=0)
+    _, lecturer = await _join(events, row.session_id, Role.LECTURER)
+    signal = AttentionSignalPayload(gaze_on_screen_ratio=0.8, window_seconds=5.0)
+
+    assert await room.record_attention(row.session_id, student, signal)
+    assert not await room.record_attention(row.session_id, lecturer, signal)
+    assert not await room.record_attention(uuid4(), student, signal)
+
+    await _close(room, row)
+    [scored] = room.engagement(row.session_id)
+    assert scored.engagement.signals_available == ["gaze"]
+    await room.shutdown()
+
+
+@dataclass
+class _Labels:
+    labels: list[str]
+    topic: str | None = "Planets"
+    asked: list = field(default_factory=list)
+
+    async def question_labels(self, session_id: UUID, question_id: UUID):  # noqa: ANN201
+        self.asked.append((session_id, question_id))
+        return QuestionComprehension(labels=self.labels, topic=self.topic)
+
+
+async def test_a_struggling_class_raises_an_alert_to_the_lecturer_only() -> None:
+    room, events, row, student_socket, _, _ = await _prompted_room(window=0.05, missed=0)
+    lecturer_socket, _ = await _join(events, row.session_id, Role.LECTURER)
+    room.comprehension_source = _Labels(["struggling"] * 3 + ["partial"] + ["mastered"] * 2)
+
+    await _close(room, row)
+
+    [alert] = lecturer_socket.of(ServerEventType.ALERT_RAISED)
+    assert alert["data"]["kind"] == "topic_difficulty"
+    assert "Planets" in alert["data"]["message"]
+    assert alert["data"]["reason"] == "4 of 6 classified answers were partial or struggling."
+    assert student_socket.of(ServerEventType.ALERT_RAISED) == []
+    [stored] = room.alerts(row.session_id)
+    assert (stored.respondents, stored.threshold) == (6, 0.5)
+    assert stored.correct_ratio == 2 / 6
+    await room.shutdown()
+
+
+async def test_too_few_classified_answers_raise_no_alert() -> None:
+    room, events, row, _, _, _ = await _prompted_room(window=0.05, missed=0)
+    lecturer_socket, _ = await _join(events, row.session_id, Role.LECTURER)
+    room.comprehension_source = _Labels(["struggling"] * 4)
+
+    await _close(room, row)
+
+    assert lecturer_socket.of(ServerEventType.ALERT_RAISED) == []
+    assert room.alerts(row.session_id) == []
+    await room.shutdown()
+
+
+async def test_a_stale_attention_signal_no_longer_counts(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(engagement_tracker, "ATTENTION_SIGNAL_MAX_AGE_SECONDS", 0.05)
+    room, _, row, _, student, _ = await _prompted_room(window=0.05, missed=0)
+    signal = AttentionSignalPayload(gaze_on_screen_ratio=0.8, window_seconds=5.0)
+    assert await room.record_attention(row.session_id, student, signal)
+    await asyncio.sleep(0.1)
+
+    await _close(room, row)
+
+    [scored] = room.engagement(row.session_id)
+    assert "gaze" not in scored.engagement.signals_available
+    await room.shutdown()
+
+
+async def test_ending_the_class_still_counts_the_last_question() -> None:
+    room, events, row, socket, student, _ = await _prompted_room(window=30, missed=0)
+    lecturer_socket, _ = await _join(events, row.session_id, Role.LECTURER)
+    labels = _Labels(["struggling"] * 5 + ["mastered"])
+    room.comprehension_source = labels
+    question = await _deliver(room, row)
+    assert (
+        await room.submit(row.session_id, student, Role.STUDENT, _answer(question.question_id))
+    ).accepted
+    scores: list = []
+    real_score = room._score_locked
+
+    def spy(live, closed):  # noqa: ANN001, ANN202
+        scored = real_score(live, closed)
+        scores.extend(scored.values())
+        return scored
+
+    room._score_locked = spy  # type: ignore[method-assign]
+
+    await room.end(row.session_id, SessionStatus.ENDED, 1)
+
+    [engagement] = scores
+    assert engagement.signals_available == ["response_timing"]
+    assert labels.asked == [(row.session_id, question.question_id)]
+    [alert] = lecturer_socket.of(ServerEventType.ALERT_RAISED)
+    assert alert["data"]["kind"] == "topic_difficulty"
+    # Nobody is nudged in a class that has ended.
+    assert socket.of(ServerEventType.PROMPT_ATTENTION) == []
