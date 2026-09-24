@@ -11,10 +11,14 @@ import { StudentAppProvider } from './features/student/StudentAppContext'
 import AccessDeniedPage from './pages/AccessDeniedPage'
 import AdminConsole from './pages/AdminConsole'
 import ConsentPage from './pages/ConsentPage'
+import LecturerLiveSessionPage from './pages/LecturerLiveSessionPage'
 import LecturerMaterialsPage from './pages/LecturerMaterialsPage'
+import LecturerSessionsPage from './pages/LecturerSessionsPage'
 import LoginPage from './pages/LoginPage'
 import ProtectedStudentPage from './pages/ProtectedStudentPage'
 import QuestionReview from './pages/QuestionReview'
+import StudentHomePage from './pages/StudentHomePage'
+import StudentLiveSessionPage from './pages/StudentLiveSessionPage'
 import SystemStatusPage from './pages/SystemStatusPage'
 
 // Sends whoever arrives at the root, or at a page that does not exist, to
@@ -56,7 +60,13 @@ export default function App() {
             <ProtectedStudentPage />
           </StudentAppProvider>
         }
-      />
+      >
+        <Route index element={<StudentHomePage />} />
+        <Route
+          path="session/:sessionId"
+          element={<StudentLiveSessionPage />}
+        />
+      </Route>
 
       {/* The guard is a layout route, so the role check runs before
           AdminConsole mounts and no admin-only markup renders for a
@@ -84,6 +94,14 @@ export default function App() {
         <Route
           path="/lecturer/materials"
           element={<LecturerMaterialsPage />}
+        />
+        <Route
+          path="/lecturer/sessions"
+          element={<LecturerSessionsPage />}
+        />
+        <Route
+          path="/lecturer/sessions/:sessionId/live"
+          element={<LecturerLiveSessionPage />}
         />
         <Route
           path="/materials/:materialId/review"

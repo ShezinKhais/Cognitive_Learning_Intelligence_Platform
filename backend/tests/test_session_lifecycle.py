@@ -303,6 +303,192 @@ async def test_only_the_lecturer_who_runs_it_or_an_admin_may_start_it(db, app) -
     assert client.post(f"/api/v1/sessions/{session['id']}/start").status_code == 200
 
 
+# -- listing deliverable questions -----------------------------------------
+
+
+async def test_owner_can_list_deliverable_questions(db, app) -> None:
+    client, factory, created = db
+    course = await _course(factory, created)
+
+    question_id = await _question(
+        db,
+        course,
+        LECTURER_ID,
+    )
+
+    _as(
+        app,
+        LECTURER_ID,
+        Role.LECTURER,
+    )
+
+    session = _create(
+        client,
+        course,
+    )
+
+    base = f"/api/v1/sessions/{session['id']}"
+
+    assert client.post(f"{base}/start").status_code == 200
+
+    response = client.get(f"{base}/questions")
+
+    assert response.status_code == 200, response.text
+
+    body = response.json()
+
+    assert body["total"] == 1
+    assert len(body["items"]) == 1
+    assert body["items"][0]["id"] == str(question_id)
+    assert body["items"][0]["prompt"] == "Which planet is largest?"
+    assert body["items"][0]["options"] == [
+        "Mars",
+        "Jupiter",
+        "Venus",
+    ]
+
+    client.post(f"{base}/end")
+
+
+async def test_non_owner_cannot_list_deliverable_questions(
+    db,
+    app,
+) -> None:
+    client, factory, created = db
+    course = await _course(factory, created)
+
+    await _question(
+        db,
+        course,
+        LECTURER_ID,
+    )
+
+    _as(
+        app,
+        LECTURER_ID,
+        Role.LECTURER,
+    )
+
+    session = _create(
+        client,
+        course,
+    )
+
+    base = f"/api/v1/sessions/{session['id']}"
+
+    assert client.post(f"{base}/start").status_code == 200
+
+    other_lecturer = await _lecturer(
+        factory,
+        created,
+    )
+
+    _as(
+        app,
+        other_lecturer,
+        Role.LECTURER,
+    )
+
+    response = client.get(f"{base}/questions")
+
+    assert response.status_code == 404
+
+
+async def test_inactive_session_cannot_list_deliverable_questions(
+    db,
+    app,
+) -> None:
+    client, factory, created = db
+    course = await _course(factory, created)
+
+    await _question(
+        db,
+        course,
+        LECTURER_ID,
+    )
+
+    _as(
+        app,
+        LECTURER_ID,
+        Role.LECTURER,
+    )
+
+    session = _create(
+        client,
+        course,
+    )
+
+    response = client.get(f"/api/v1/sessions/{session['id']}/questions")
+
+    assert response.status_code == 409
+
+
+async def test_deliverable_question_list_excludes_wrong_course_and_broken_mcq(
+    db,
+    app,
+) -> None:
+    client, factory, created = db
+
+    course = await _course(
+        factory,
+        created,
+    )
+
+    other_course = await _course(
+        factory,
+        created,
+    )
+
+    valid_question = await _question(
+        db,
+        course,
+        LECTURER_ID,
+    )
+
+    wrong_course_question = await _question(
+        db,
+        other_course,
+        LECTURER_ID,
+    )
+
+    broken_mcq = await _question(
+        db,
+        course,
+        LECTURER_ID,
+        options=[],
+    )
+
+    _as(
+        app,
+        LECTURER_ID,
+        Role.LECTURER,
+    )
+
+    session = _create(
+        client,
+        course,
+    )
+
+    base = f"/api/v1/sessions/{session['id']}"
+
+    assert client.post(f"{base}/start").status_code == 200
+
+    response = client.get(f"{base}/questions")
+
+    assert response.status_code == 200, response.text
+
+    body = response.json()
+
+    returned_ids = {item["id"] for item in body["items"]}
+
+    assert str(valid_question) in returned_ids
+    assert str(wrong_course_question) not in returned_ids
+    assert str(broken_mcq) not in returned_ids
+    assert body["total"] == 1
+
+    client.post(f"{base}/end")
+
+
 # -- ending -----------------------------------------------------------------
 
 

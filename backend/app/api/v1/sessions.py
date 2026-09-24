@@ -29,6 +29,7 @@ from app.schemas.common import Page
 from app.schemas.identity import ConsentType, Role
 from app.schemas.session import (
     ClassComprehensionAlert,
+    DeliverableQuestionOut,
     EngagementOut,
     ResponseOut,
     SessionCreateRequest,
@@ -81,6 +82,27 @@ async def get_session(
     db: DbSession,
 ) -> SessionOut:
     raise not_implemented("BBIS", "Phase 3")
+
+
+@router.get(
+    "/{session_id}/questions",
+    response_model=Page[DeliverableQuestionOut],
+    dependencies=_staff,
+)
+async def list_deliverable_questions(
+    session_id: UUID,
+    principal: CurrentUser,
+    db: DbSession,
+    page: Paginated,
+) -> Page[DeliverableQuestionOut]:
+    """List staged questions that this session may actually deliver."""
+    return await session_lifecycle.list_deliverable_questions(
+        db,
+        principal,
+        session_id,
+        limit=page.limit,
+        offset=page.offset,
+    )
 
 
 @router.post("/{session_id}/start", response_model=SessionOut, dependencies=_staff)

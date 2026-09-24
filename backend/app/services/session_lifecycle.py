@@ -32,9 +32,21 @@ from app.realtime.classroom import classroom
 from app.realtime.hub import hub
 from app.repositories.course_repository import CourseRepository
 from app.repositories.session_repository import SessionRepository
+hunain-phase-3
 from app.schemas.identity import Role
 from app.schemas.session import SessionCreateRequest, SessionOut, SessionStatus
 from app.services.session_access import session_membership_allowed
+from app.repositories.student_repository import StudentRepository
+from app.schemas.common import Page
+from app.schemas.identity import Role
+from app.schemas.session import (
+    DeliverableQuestionOut,
+    SessionCreateRequest,
+    SessionOut,
+    SessionStatus,
+)
+from app.services.session_access import session_membership_allowed
+ main
 
 log = logging.getLogger("clip.sessions")
 
@@ -134,6 +146,42 @@ async def end_session(db: AsyncSession, principal: Principal, session_id: UUID) 
     return await session_out(db, row)
 
 
+async def list_deliverable_questions(
+    db: AsyncSession,
+    principal: Principal,
+    session_id: UUID,
+    *,
+    limit: int,
+    offset: int,
+) -> Page[DeliverableQuestionOut]:
+    """Return staged questions that this session may deliver."""
+    repo = SessionRepository(db)
+    row = await _owned(repo, principal, session_id, for_update=False)
+    _require(row, SessionStatus.ACTIVE, "list questions for")
+
+    questions, total = await repo.list_deliverable(
+        row,
+        limit=limit,
+        offset=offset,
+    )
+
+    return Page[DeliverableQuestionOut](
+        items=[
+            DeliverableQuestionOut(
+                id=question.question_id,
+                material_id=question.source_material_id,
+                prompt=question.question_text,
+                options=question.options,
+                source_slide=question.source_slide,
+            )
+            for question in questions
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
 async def deliver_question(
     db: AsyncSession, principal: Principal, session_id: UUID, question_id: UUID
 ) -> dict[str, str]:
@@ -182,13 +230,19 @@ async def session_out(db: AsyncSession, row: Session) -> SessionOut:
     )
 
 
-async def _owned(repo: SessionRepository, principal: Principal, session_id: UUID) -> Session:
+async def _owned(
+    repo: SessionRepository,
+    principal: Principal,
+    session_id: UUID,
+    *,
+    for_update: bool = True,
+) -> Session:
     """The session, locked, if the caller runs it or is an admin.
 
     Another lecturer's session is reported as missing, as another lecturer's
     material is, so a session id cannot be probed for existence.
     """
-    row = await repo.get(session_id, for_update=True)
+    row = await repo.get(session_id, for_update=for_update)
     if row is None or (not principal.is_(Role.ADMIN) and row.instructor_id != principal.user_id):
         raise NotFoundError("Session was not found.", {"session_id": str(session_id)})
     return row
