@@ -125,6 +125,32 @@ class ResponseRecorder(Protocol):
 
 
 @dataclass(frozen=True)
+class QuestionDelivery:
+    """One question as it went out, as handed to the delivery recorder."""
+
+    session_id: UUID
+    question_id: UUID
+    delivered_at: datetime
+    closes_at: datetime
+    window_seconds: int
+
+
+class DeliveryRecorder(Protocol):
+    """Stores that a question was delivered. BBIS provides this.
+
+    The close recorder updates the same row with who was shown the question
+    and who answered, so a close whose delivery was never stored has nothing
+    to update and is lost. This therefore runs before the caller is told the
+    question went out, rather than alongside the close.
+
+    A failure is logged and otherwise ignored: the class has the question
+    either way.
+    """
+
+    async def record_delivery(self, delivery: QuestionDelivery) -> None: ...
+
+
+@dataclass(frozen=True)
 class ClosedQuestion:
     """How one delivered question ended, as handed to the close recorder."""
 
@@ -147,6 +173,31 @@ class CloseRecorder(Protocol):
     """
 
     async def record_close(self, closed: ClosedQuestion) -> None: ...
+
+
+@dataclass(frozen=True)
+class Attendance:
+    """One student arriving in, or leaving, a live session."""
+
+    session_id: UUID
+    user_id: UUID
+    at: datetime
+
+
+class ParticipantRecorder(Protocol):
+    """Stores who attended a live session. BBIS provides this.
+
+    A student may have several tabs open. record_join is called for each
+    socket, since reconnecting is part of the attendance record, but
+    record_leave only once the last of them has closed: a student who closes
+    one tab has not left the class.
+
+    A failure is logged and otherwise ignored.
+    """
+
+    async def record_join(self, joined: Attendance) -> None: ...
+
+    async def record_leave(self, left: Attendance) -> None: ...
 
 
 class PromptResult(StrEnum):
@@ -267,6 +318,8 @@ class Classroom:
         self.recorder: ResponseRecorder | None = None
         self.prompt_recorder: PromptRecorder | None = None
         self.close_recorder: CloseRecorder | None = None
+        self.delivery_recorder: DeliveryRecorder | None = None
+        self.participant_recorder: ParticipantRecorder | None = None
 
     def _next_wait(self) -> timedelta | None:
         """A fresh random wait before the next scheduled question, or None
@@ -298,6 +351,13 @@ class Classroom:
             problems.append("no PromptRecorder is registered, so prompt outcomes are not stored")
         if self.close_recorder is None:
             problems.append("no CloseRecorder is registered, so question closes are not stored")
+        if self.delivery_recorder is None:
+            problems.append(
+                "no DeliveryRecorder is registered, so delivered questions are not stored, "
+                "and a close has no row to complete"
+            )
+        if self.participant_recorder is None:
+            problems.append("no ParticipantRecorder is registered, so who attended is not stored")
         workers = os.environ.get(WORKERS_ENV, "1").strip() or "1"
         if not workers.isdigit() or int(workers) > 1:
             problems.append(
@@ -518,6 +578,48 @@ class Classroom:
             events.append((ServerEventType.PROMPT_ATTENTION, attention.waiting.payload))
         return events
 
+    # -- attendance ---------------------------------------------------------
+
+    async def student_joined(self, session_id: UUID, user_id: UUID, role: Role) -> None:
+        """Record a student arriving, once their socket has joined the hub.
+
+        Called for every socket, since a reconnect belongs in the attendance
+        record. Staff connect to sessions too, but they are not participants,
+        so nothing is recorded for them.
+        """
+        await self._record_attendance(session_id, user_id, role, joining=True)
+
+    async def student_left(self, session_id: UUID, user_id: UUID, role: Role) -> None:
+        """Record a student leaving, once their socket has left the hub.
+
+        Only their last socket counts. A student with two tabs who closes one
+        is still in the class, and the stored record cannot tell afterwards
+        which socket it was told about.
+        """
+        if self._hub.connection_count(session_id, user_id) > 0:
+            return
+        await self._record_attendance(session_id, user_id, role, joining=False)
+
+    async def _record_attendance(
+        self, session_id: UUID, user_id: UUID, role: Role, *, joining: bool
+    ) -> None:
+        recorder = self.participant_recorder
+        if role is not Role.STUDENT or recorder is None:
+            return
+        attendance = Attendance(session_id=session_id, user_id=user_id, at=datetime.now(UTC))
+        try:
+            async with asyncio.timeout(RECORD_TIMEOUT_SECONDS):
+                if joining:
+                    await recorder.record_join(attendance)
+                else:
+                    await recorder.record_leave(attendance)
+        except Exception:
+            log.exception(
+                "could not record a student %s in session %s",
+                "join" if joining else "leave",
+                session_id,
+            )
+
     # -- delivery -----------------------------------------------------------
 
     async def deliver(
@@ -589,6 +691,17 @@ class Classroom:
                 self._close_when_due(live, live.open),
                 name=f"response-window-{question.question_id}",
             )
+            delivery = QuestionDelivery(
+                session_id=row.session_id,
+                question_id=payload.question_id,
+                delivered_at=now,
+                closes_at=payload.closes_at,
+                window_seconds=payload.window_seconds,
+            )
+        # Outside the lock, like every other recorder, but before this returns:
+        # the close that follows completes this row, and the window is the only
+        # thing keeping the two apart.
+        await self._record_delivery(delivery)
         return payload
 
     async def _close_when_due(self, live: LiveSession, open_: _OpenQuestion) -> None:
@@ -929,6 +1042,15 @@ class Classroom:
                 await self.prompt_recorder.record_prompt(outcome)
         except Exception:
             log.exception("could not record a prompt outcome in session %s", outcome.session_id)
+
+    async def _record_delivery(self, delivery: QuestionDelivery) -> None:
+        if self.delivery_recorder is None:
+            return
+        try:
+            async with asyncio.timeout(RECORD_TIMEOUT_SECONDS):
+                await self.delivery_recorder.record_delivery(delivery)
+        except Exception:
+            log.exception("could not record a question delivery in session %s", delivery.session_id)
 
     async def _record_close(self, closed: ClosedQuestion | None) -> None:
         # Called once the session's lock is released, so a slow store never

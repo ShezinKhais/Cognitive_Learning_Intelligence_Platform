@@ -18,7 +18,13 @@ import pytest
 
 from app.core.errors import ConflictError
 from app.realtime import classroom as classroom_module
-from app.realtime.classroom import Classroom, ClosedQuestion, Submission
+from app.realtime.classroom import (
+    Attendance,
+    Classroom,
+    ClosedQuestion,
+    QuestionDelivery,
+    Submission,
+)
 from app.realtime.hub import Connection, SessionHub
 from app.schemas.events import (
     AnswerSubmitPayload,
@@ -1237,6 +1243,182 @@ async def test_an_empty_queue_is_logged_not_shown_and_tried_again(
     await room.shutdown()
 
 
+class _Deliveries:
+    def __init__(self) -> None:
+        self.recorded: list[QuestionDelivery] = []
+        self.release = asyncio.Event()
+        self.release.set()
+
+    async def record_delivery(self, delivery: QuestionDelivery) -> None:
+        await self.release.wait()
+        self.recorded.append(delivery)
+
+
+async def test_the_delivery_recorder_is_told_what_went_out_and_when_it_closes() -> None:
+    room, _ = _room(window=30)
+    row = _row()
+    deliveries = room.delivery_recorder = _Deliveries()
+
+    question = await _deliver(room, row)
+
+    [delivery] = deliveries.recorded
+    assert (delivery.session_id, delivery.question_id) == (row.session_id, question.question_id)
+    assert delivery.window_seconds == 30
+    assert delivery.closes_at - delivery.delivered_at == timedelta(seconds=30)
+    await room.shutdown()
+
+
+async def test_a_delivery_is_recorded_before_the_close_that_completes_it() -> None:
+    """The close completes the row the delivery creates. Recorded the other
+    way round, a close has nothing to update and the question is stored as
+    though nobody was ever shown it."""
+    room, _ = _room(window=0.05)
+    row = _row()
+    order: list[str] = []
+
+    class Both:
+        async def record_delivery(self, delivery: QuestionDelivery) -> None:
+            order.append("delivery")
+
+        async def record_close(self, closed: ClosedQuestion) -> None:
+            order.append("close")
+
+    both = Both()
+    room.delivery_recorder = both
+    room.close_recorder = both
+
+    await _deliver(room, row)
+    await asyncio.sleep(0.15)
+
+    assert order == ["delivery", "close"]
+    await room.shutdown()
+
+
+async def test_a_failing_delivery_recorder_still_lets_the_question_out(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    room, events = _room(window=30)
+    row = _row()
+    student, _ = await _join(events, row.session_id, Role.STUDENT)
+
+    class Broken:
+        async def record_delivery(self, delivery: QuestionDelivery) -> None:
+            raise RuntimeError("database gone")
+
+    room.delivery_recorder = Broken()
+    with caplog.at_level("ERROR", logger="clip.classroom"):
+        await _deliver(room, row)
+
+    assert len(student.of(ServerEventType.QUESTION_DELIVERED)) == 1
+    assert "could not record a question delivery" in caplog.text
+    await room.shutdown()
+
+
+async def test_a_slow_delivery_recorder_is_given_up_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The delivery is recorded before this returns, so that a close cannot
+    overtake it, but only for as long as every other recorder is given."""
+    monkeypatch.setattr(classroom_module, "RECORD_TIMEOUT_SECONDS", 0.05)
+    room, events = _room(window=30)
+    row = _row()
+    student, _ = await _join(events, row.session_id, Role.STUDENT)
+    deliveries = room.delivery_recorder = _Deliveries()
+    deliveries.release.clear()
+
+    await asyncio.wait_for(_deliver(room, row), 1)
+
+    assert deliveries.recorded == []
+    assert len(student.of(ServerEventType.QUESTION_DELIVERED)) == 1
+    await room.shutdown()
+
+
+class _Attendance:
+    def __init__(self) -> None:
+        self.joined: list[Attendance] = []
+        self.left: list[Attendance] = []
+
+    async def record_join(self, joined: Attendance) -> None:
+        self.joined.append(joined)
+
+    async def record_leave(self, left: Attendance) -> None:
+        self.left.append(left)
+
+
+async def test_a_student_leaves_the_class_only_when_their_last_tab_closes() -> None:
+    """The stored connection count counts joins, not open sockets, so it
+    cannot tell that a student with two tabs closed one of them."""
+    room, events = _room()
+    row = _row()
+    attendance = room.participant_recorder = _Attendance()
+    user = uuid4()
+    tabs = [
+        Connection(_Socket(), user, row.session_id, Role.STUDENT)  # type: ignore[arg-type]
+        for _ in range(2)
+    ]
+    for tab in tabs:
+        await events.join(tab)
+        await room.student_joined(row.session_id, user, Role.STUDENT)
+
+    assert [a.user_id for a in attendance.joined] == [user, user]
+
+    await events.leave(tabs[0])
+    await room.student_left(row.session_id, user, Role.STUDENT)
+
+    assert attendance.left == []
+
+    await events.leave(tabs[1])
+    await room.student_left(row.session_id, user, Role.STUDENT)
+
+    assert [a.user_id for a in attendance.left] == [user]
+    await room.shutdown()
+
+
+async def test_staff_are_not_recorded_as_participants() -> None:
+    """A lecturer is in the room but is not attending it, and the store keeps
+    participants by student, which they have no row in."""
+    room, events = _room()
+    row = _row()
+    attendance = room.participant_recorder = _Attendance()
+    lecturer = Connection(_Socket(), uuid4(), row.session_id, Role.LECTURER)  # type: ignore[arg-type]
+    await events.join(lecturer)
+
+    await room.student_joined(row.session_id, lecturer.user_id, Role.LECTURER)
+    await events.leave(lecturer)
+    await room.student_left(row.session_id, lecturer.user_id, Role.LECTURER)
+
+    assert (attendance.joined, attendance.left) == ([], [])
+    await room.shutdown()
+
+
+async def test_a_failing_participant_recorder_is_logged_and_ignored(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    room, events = _room()
+    row = _row()
+
+    class Broken:
+        async def record_join(self, joined: Attendance) -> None:
+            raise RuntimeError("database gone")
+
+        async def record_leave(self, left: Attendance) -> None:
+            raise RuntimeError("database gone")
+
+    room.participant_recorder = Broken()
+    user = uuid4()
+    tab = Connection(_Socket(), user, row.session_id, Role.STUDENT)  # type: ignore[arg-type]
+    await events.join(tab)
+
+    with caplog.at_level("ERROR", logger="clip.classroom"):
+        await room.student_joined(row.session_id, user, Role.STUDENT)
+        await events.leave(tab)
+        await room.student_left(row.session_id, user, Role.STUDENT)
+
+    assert "could not record a student join" in caplog.text
+    assert "could not record a student leave" in caplog.text
+    await room.shutdown()
+
+
 # -- startup wiring -------------------------------------------------------------
 
 
@@ -1248,6 +1430,15 @@ class _Recorder:
         return None
 
     async def record_close(self, closed) -> None:  # noqa: ANN001
+        return None
+
+    async def record_delivery(self, delivery) -> None:  # noqa: ANN001
+        return None
+
+    async def record_join(self, joined) -> None:  # noqa: ANN001
+        return None
+
+    async def record_leave(self, left) -> None:  # noqa: ANN001
         return None
 
 
@@ -1263,6 +1454,8 @@ def test_development_is_told_what_live_sessions_will_not_store(
     assert "answers are not stored" in caplog.text
     assert "prompt outcomes are not stored" in caplog.text
     assert "question closes are not stored" in caplog.text
+    assert "delivered questions are not stored" in caplog.text
+    assert "who attended is not stored" in caplog.text
 
 
 def test_production_will_not_start_without_somewhere_to_store_answers(
@@ -1275,6 +1468,7 @@ def test_production_will_not_start_without_somewhere_to_store_answers(
         room.check_wiring()
 
     room.recorder = room.prompt_recorder = room.close_recorder = _Recorder()  # type: ignore[assignment]
+    room.delivery_recorder = room.participant_recorder = _Recorder()  # type: ignore[assignment]
     room.check_wiring()
 
 
@@ -1286,6 +1480,7 @@ def test_live_sessions_refuse_more_than_one_worker(
     monkeypatch.setenv("WEB_CONCURRENCY", workers)
     room, _ = _room(production=True)
     room.recorder = room.prompt_recorder = room.close_recorder = _Recorder()  # type: ignore[assignment]
+    room.delivery_recorder = room.participant_recorder = _Recorder()  # type: ignore[assignment]
 
     with pytest.raises(RuntimeError, match="single worker"):
         room.check_wiring()
@@ -1295,6 +1490,7 @@ def test_one_worker_is_fine(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("WEB_CONCURRENCY", "1")
     room, _ = _room(production=True)
     room.recorder = room.prompt_recorder = room.close_recorder = _Recorder()  # type: ignore[assignment]
+    room.delivery_recorder = room.participant_recorder = _Recorder()  # type: ignore[assignment]
 
     room.check_wiring()
 

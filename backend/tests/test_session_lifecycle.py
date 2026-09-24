@@ -33,6 +33,7 @@ from app.models.question import Question
 from app.models.session import Session as SessionModel
 from app.models.student import Student
 from app.models.user import User
+from app.realtime.classroom import classroom
 from app.schemas.identity import ConsentType, Role
 
 from .database_support import require_database
@@ -476,6 +477,45 @@ async def test_a_lecturer_cannot_join_another_lecturers_session(db, app) -> None
     token = _token(client, "lecturer@clip.example.com", LECTURER_PASSWORD)
 
     assert _refused_with(client, token, session["id"]) == 4003
+
+
+async def test_the_socket_records_a_student_arriving_and_leaving(
+    db, app, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Attendance is the socket's to record. Nothing else knows when a student
+    opened a tab, and nothing else knows when the last of them closed."""
+    client, factory, created = db
+    course = await _course(factory, created)
+    await _enrol(factory, course)
+    await _question(db, course, LECTURER_ID)
+    _as(app, LECTURER_ID, Role.LECTURER)
+    session = _create(client, course)
+    client.post(f"/api/v1/sessions/{session['id']}/start")
+    token = _token(client, "student@clip.example.com", STUDENT_PASSWORD)
+    joined: list = []
+    left: list = []
+
+    class Attendance:
+        async def record_join(self, arrival) -> None:  # noqa: ANN001
+            joined.append(arrival)
+
+        async def record_leave(self, departure) -> None:  # noqa: ANN001
+            left.append(departure)
+
+    monkeypatch.setattr(classroom, "participant_recorder", Attendance())
+
+    with client.websocket_connect("/ws/session") as ws:
+        ws.send_json({"type": "auth", "data": {"token": token, "session_id": session["id"]}})
+        assert ws.receive_json()["type"] == "ready"
+        assert ws.receive_json()["data"]["status"] == "active"
+        # The pong comes from the receive loop, which starts after the join.
+        ws.send_json({"type": "ping", "data": {}})
+        ws.receive_json()
+
+        assert [a.session_id for a in joined] == [UUID(session["id"])]
+        assert left == []
+
+    assert [a.session_id for a in left] == [UUID(session["id"])]
 
 
 async def test_a_question_goes_out_and_the_answer_comes_back(db, app) -> None:

@@ -199,3 +199,35 @@ async def test_staff_and_students_in_a_session_are_told_apart() -> None:
     assert hub.staff_ids(session) == {lecturer, admin}
     assert hub.student_ids(session) == {student}
     assert hub.staff_ids(uuid4()) == set()
+
+
+async def test_a_users_open_sockets_in_a_session_are_counted() -> None:
+    """Attendance is recorded when the last of a student's tabs closes, and
+    nothing else can tell one tab from the rest."""
+    hub = SessionHub()
+    session, other_session = uuid4(), uuid4()
+    student, classmate = uuid4(), uuid4()
+    tabs = [
+        Connection(_FakeSocket(), student, session, Role.STUDENT),  # type: ignore[arg-type]
+        Connection(_FakeSocket(), student, session, Role.STUDENT),  # type: ignore[arg-type]
+    ]
+    for connection in (
+        *tabs,
+        Connection(_FakeSocket(), classmate, session, Role.STUDENT),  # type: ignore[arg-type]
+        Connection(_FakeSocket(), student, other_session, Role.STUDENT),  # type: ignore[arg-type]
+    ):
+        await hub.join(connection)
+
+    assert hub.connection_count(session, student) == 2
+
+    await hub.leave(tabs[0])
+
+    assert hub.connection_count(session, student) == 1
+
+    await hub.leave(tabs[1])
+
+    # The classmate, and this student elsewhere, are counted apart.
+    assert hub.connection_count(session, student) == 0
+    assert hub.connection_count(session, classmate) == 1
+    assert hub.connection_count(other_session, student) == 1
+    assert hub.connection_count(uuid4(), student) == 0

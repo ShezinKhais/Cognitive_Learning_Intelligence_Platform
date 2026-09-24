@@ -289,6 +289,10 @@ async def session_socket(
     try:
         if not await hub.connect(connection, last_seq, stream_id, welcome):
             return
+        if session_id is not None and role is not None:
+            # After the handshake, so nobody refused a seat is recorded as
+            # having attended.
+            await classroom.student_joined(session_id, user_id, role)
 
         while True:
             raw = await _receive_event(websocket)
@@ -369,3 +373,7 @@ async def session_socket(
         )
     finally:
         await hub.leave(connection)
+        if session_id is not None and role is not None:
+            # After leave(), so a student's other tabs are what decides
+            # whether they have left the class.
+            await classroom.student_left(session_id, user_id, role)
