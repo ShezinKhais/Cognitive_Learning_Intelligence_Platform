@@ -279,7 +279,7 @@ async def test_live_events_are_stored_and_retrievable_by_session(
     ]
     stale_dashboard_delivery = deliveries[0]
     assert stale_dashboard_delivery.closed_at == stale_delivery.closes_at
-    assert stale_dashboard_delivery.close_reason == "process_restart"
+    assert stale_dashboard_delivery.close_reason is None
     assert stale_dashboard_delivery.eligible_count is None
     assert stale_dashboard_delivery.respondent_count == 1
 
@@ -300,6 +300,7 @@ async def test_live_events_are_stored_and_retrievable_by_session(
     assert counts.missed_responses == 1
     assert counts.prompt_outcomes == 1
     assert counts.activities == 1
+    # A retry with a changed answered-user set must rebuild missed responses.
     retried = await repository.close_question_delivery(
         session_id=session.session_id,
         question_id=question.question_id,
