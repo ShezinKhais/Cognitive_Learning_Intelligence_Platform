@@ -25,7 +25,7 @@ from uuid import UUID
 
 from app.core.errors import NotFoundError, ValidationError
 from app.models.question import Question
-from app.realtime.classroom import ClosedQuestion, PromptOutcome, Submission
+from app.realtime.recorders import ClosedQuestion, PromptOutcome, Submission
 from app.schemas.content import QuestionType
 from app.schemas.events import FeedbackResultPayload
 from app.services.response_processing import process_submission

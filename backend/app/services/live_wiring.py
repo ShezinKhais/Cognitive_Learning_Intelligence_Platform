@@ -10,8 +10,9 @@ from __future__ import annotations
 from uuid import UUID
 
 from app.core.database import get_session_factory
-from app.realtime.classroom import ClosedQuestion, classroom
+from app.realtime.classroom import classroom
 from app.realtime.hub import hub
+from app.realtime.recorders import ClosedQuestion
 from app.repositories.live_event_repository import LiveEventRepository
 from app.repositories.question_repository import QuestionRepository
 from app.schemas.events import FeedbackResultPayload, ServerEventType

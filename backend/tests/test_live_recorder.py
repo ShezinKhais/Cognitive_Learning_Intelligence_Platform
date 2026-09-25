@@ -6,7 +6,7 @@ import pytest
 
 from app.core.errors import NotFoundError, ValidationError
 from app.models.question import Question
-from app.realtime.classroom import ClosedQuestion, PromptOutcome, PromptResult
+from app.realtime.recorders import ClosedQuestion, PromptOutcome, PromptResult
 from app.schemas.content import QuestionStatus
 from app.schemas.events import QuestionCloseReason
 from app.services.live_recorder import LiveCloseRecorder, LivePromptRecorder, LiveResponseRecorder

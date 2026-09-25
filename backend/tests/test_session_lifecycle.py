@@ -34,10 +34,8 @@ from app.models.session import Session as SessionModel
 from app.models.student import Student
 from app.models.student_response import StudentResponse
 from app.models.user import User
-from app.realtime import classroom as classroom_module
 from app.realtime.classroom import classroom
 from app.schemas.identity import ConsentType, Role
-from app.services.engagement import EngagementInputs, compute_engagement
 
 from .database_support import require_database
 from .dev_credentials import LECTURER_PASSWORD, STUDENT_PASSWORD
@@ -953,10 +951,9 @@ async def test_engagement_reports_the_student_id_not_the_user_id(db, app) -> Non
         )
 
     live = classroom.activate(session_id, paused=True)
-    live.attention[STUDENT_ID] = classroom_module._Attention(
-        engagement=compute_engagement(EngagementInputs(questions_shown=2, questions_answered=2)),
-        scored_at=datetime.now(UTC),
-    )
+    # Two questions shown and both answered.
+    for _ in range(2):
+        live.attention.score({STUDENT_ID}, {STUDENT_ID}, {}, datetime.now(UTC))
     try:
         [scored] = client.get(f"/api/v1/sessions/{session_id}/engagement").json()
     finally:
