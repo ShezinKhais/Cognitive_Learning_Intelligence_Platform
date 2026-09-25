@@ -18,3 +18,9 @@ def test_importing_live_wiring_registers_the_prompt_recorder():
     import app.services.live_wiring  # noqa: F401
 
     assert isinstance(classroom.prompt_recorder, LivePromptRecorder)
+
+
+def test_importing_live_wiring_registers_the_participant_recorder():
+    import app.services.live_wiring  # noqa: F401
+
+    assert classroom.participant_recorder is not None

@@ -382,6 +382,14 @@ class SessionHub:
         stream = self._streams.get(session_id)
         return len(stream.members) if stream is not None else 0
 
+    def connection_count(self, session_id: UUID, user_id: UUID) -> int:
+        """How many sockets one user has open in a session, which is what
+        tells a student closing one tab from a student leaving the class."""
+        stream = self._streams.get(session_id)
+        if stream is None:
+            return 0
+        return sum(1 for c in stream.members if c.user_id == user_id)
+
     def student_ids(self, session_id: UUID) -> set[UUID]:
         """The students connected to a session, each counted once however many
         tabs they have open."""

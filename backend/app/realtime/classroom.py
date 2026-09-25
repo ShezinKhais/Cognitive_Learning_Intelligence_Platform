@@ -57,9 +57,11 @@ from app.realtime.countdown import Countdown
 from app.realtime.hub import SessionHub, hub
 from app.realtime.recorders import (
     RECORD_TIMEOUT_SECONDS,
+    Attendance,
     ClosedQuestion,
     CloseRecorder,
     ComprehensionSource,
+    ParticipantRecorder,
     PromptOutcome,
     PromptRecorder,
     PromptResult,
@@ -194,6 +196,7 @@ class Classroom:
         self.recorder: ResponseRecorder | None = None
         self.prompt_recorder: PromptRecorder | None = None
         self.close_recorder: CloseRecorder | None = None
+        self.participant_recorder: ParticipantRecorder | None = None
         self.comprehension_source: ComprehensionSource | None = None
 
     def _next_wait(self) -> timedelta | None:
@@ -209,17 +212,18 @@ class Classroom:
     def check_wiring(self) -> None:
         """Say what a live session will not do in this deployment, at startup.
 
-        Answers and prompt outcomes are kept nowhere until AI 1 and BBIS
-        register their recorders, and a second worker would run a second
-        cycle for every session. Development is told; production refuses to
+        Answers, closes, prompt outcomes and attendance are kept nowhere
+        until AI 1 and BBIS register their recorders, and a second worker would
+        run a second cycle for every session. Development is told; production refuses to
         start rather than run a class that loses its answers.
         """
         problems = [
-            f"no {name} is registered, so {what} are not stored"
+            f"no {name} is registered, so {what} not stored"
             for recorder, name, what in (
-                (self.recorder, "ResponseRecorder", "answers"),
-                (self.prompt_recorder, "PromptRecorder", "prompt outcomes"),
-                (self.close_recorder, "CloseRecorder", "question closes"),
+                (self.recorder, "ResponseRecorder", "answers are"),
+                (self.prompt_recorder, "PromptRecorder", "prompt outcomes are"),
+                (self.close_recorder, "CloseRecorder", "question closes are"),
+                (self.participant_recorder, "ParticipantRecorder", "who attended is"),
             )
             if recorder is None
         ]
@@ -401,8 +405,45 @@ class Classroom:
             self.state(session_id, status, delivered).model_dump(mode="json"),
         )
 
+    async def arrived(
+        self, session_id: UUID, user_id: UUID, role: Role | None, recorded: SessionStatus
+    ) -> None:
+        """A socket has joined the session. Every student socket is recorded
+        as attendance, since reconnecting belongs in the record; a student's
+        first one changes who is present, which connected staff are told.
+
+        recorded is the session's status when the socket was admitted.
+        """
+        if role is not Role.STUDENT:
+            return
+        if self._hub.connection_count(session_id, user_id) == 1:
+            await self.announce_presence(session_id, recorded)
+        if self.participant_recorder is not None:
+            await best_effort(
+                self.participant_recorder.record_join(Attendance(session_id, user_id, _now())),
+                "record a student joining",
+                session_id,
+            )
+
+    async def departed(
+        self, session_id: UUID, user_id: UUID, role: Role | None, recorded: SessionStatus
+    ) -> None:
+        """A socket that arrived has left the session, whoever closed it.
+        Only a student's last socket means they have left the class: one who
+        closes one of two tabs has not, and the stored record, which counts
+        joins, cannot tell."""
+        if role is not Role.STUDENT or self._hub.connection_count(session_id, user_id) > 0:
+            return
+        await self.announce_presence(session_id, recorded)
+        if self.participant_recorder is not None:
+            await best_effort(
+                self.participant_recorder.record_leave(Attendance(session_id, user_id, _now())),
+                "record a student leaving",
+                session_id,
+            )
+
     async def announce_presence(self, session_id: UUID, recorded: SessionStatus) -> None:
-        """Tell connected staff when the unique student count changes."""
+        """Tell connected staff the unique student count."""
         if session_id in self._live:
             status = SessionStatus.ACTIVE
         elif session_id in self._finished:

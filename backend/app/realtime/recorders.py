@@ -4,15 +4,16 @@ Owner: General CS, Phase 3, for the contract. AI 1, BBIS and Cyber 1 provide
 the implementations, and app/services/live_wiring.py registers them on the
 classroom at startup.
 
-Storing and scoring answers, question closes and prompt outcomes plug in
-through ResponseRecorder, CloseRecorder and PromptRecorder, and the class
-comprehension alert reads through ComprehensionSource. Until one is set, an
+Storing and scoring answers, question closes, prompt outcomes and
+attendance plug in through ResponseRecorder, CloseRecorder, PromptRecorder and
+ParticipantRecorder, and the class comprehension alert reads through
+ComprehensionSource. Until one is set, an
 accepted answer is counted towards the question's respondents and kept
 nowhere else; Classroom.check_wiring() says so at startup, and refuses to
 start in production.
 
-Recorders are called concurrently, one call per answer, close or prompt,
-so an implementation must not share one database session between
+Recorders are called concurrently, one call per answer, close, prompt or
+socket, so an implementation must not share one database session between
 calls.
 """
 
@@ -138,6 +139,29 @@ class PromptRecorder(Protocol):
     """
 
     async def record_prompt(self, outcome: PromptOutcome) -> None: ...
+
+
+@dataclass(frozen=True)
+class Attendance:
+    """One student arriving in, or leaving, a live session."""
+
+    session_id: UUID
+    user_id: UUID
+    at: datetime
+
+
+class ParticipantRecorder(Protocol):
+    """Stores who attended a live session. BBIS provides this.
+
+    A student may have several tabs open. record_join is called for each
+    socket, since reconnecting belongs in the attendance record, but
+    record_leave only once the last of them has closed: a student who closes
+    one tab has not left the class. A failure is logged and otherwise ignored.
+    """
+
+    async def record_join(self, joined: Attendance) -> None: ...
+
+    async def record_leave(self, left: Attendance) -> None: ...
 
 
 @dataclass(frozen=True)

@@ -12,7 +12,7 @@ from uuid import UUID
 from app.core.database import get_session_factory
 from app.realtime.classroom import classroom
 from app.realtime.hub import hub
-from app.realtime.recorders import ClosedQuestion
+from app.realtime.recorders import Attendance, ClosedQuestion
 from app.repositories.live_event_repository import LiveEventRepository
 from app.repositories.question_repository import QuestionRepository
 from app.schemas.events import FeedbackResultPayload, ServerEventType
@@ -122,3 +122,24 @@ classroom.close_recorder = LiveCloseRecorder(
     send_feedback=_send_feedback,
 )
 classroom.prompt_recorder = LivePromptRecorder(store_prompt_outcome=_store_prompt_outcome)
+
+
+class _Attendance:
+    """BBIS's record of who attended, one committed session per socket."""
+
+    async def record_join(self, joined: Attendance) -> None:
+        async with get_session_factory()() as db:
+            await LiveEventRepository(db).record_participant_join(
+                session_id=joined.session_id, user_id=joined.user_id, joined_at=joined.at
+            )
+            await db.commit()
+
+    async def record_leave(self, left: Attendance) -> None:
+        async with get_session_factory()() as db:
+            await LiveEventRepository(db).record_participant_leave(
+                session_id=left.session_id, user_id=left.user_id, left_at=left.at
+            )
+            await db.commit()
+
+
+classroom.participant_recorder = _Attendance()

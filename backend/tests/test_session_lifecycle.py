@@ -6,6 +6,7 @@ without a database in test_classroom.py.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, date, datetime
 from uuid import UUID, uuid4
 
@@ -32,6 +33,7 @@ from app.models.delivered_question import DeliveredQuestion
 from app.models.material import Material
 from app.models.question import Question
 from app.models.session import Session as SessionModel
+from app.models.session_participant import SessionParticipant
 from app.models.student import Student
 from app.models.student_response import StudentResponse
 from app.models.user import User
@@ -720,6 +722,50 @@ async def test_a_close_completes_the_delivery_its_claim_recorded(db, app) -> Non
     assert delivery.closed_at is not None
     assert delivery.close_reason == "session_ended"
     assert (delivery.eligible_count, delivery.respondent_count) == (1, 1)
+
+
+async def test_a_student_who_joins_and_leaves_is_recorded_as_attending(db, app) -> None:
+    """record_participant_join and record_participant_leave had no caller.
+    The socket reports both through the classroom, which knows whether it was
+    the student's last tab."""
+    client, factory, created = db
+    course = await _course(factory, created)
+    await _enrol(factory, course)
+    await _question(db, course, LECTURER_ID)
+    _as(app, LECTURER_ID, Role.LECTURER)
+    session = _create(client, course)
+    client.post(f"/api/v1/sessions/{session['id']}/start")
+    token = _token(client, "student@clip.example.com", STUDENT_PASSWORD)
+
+    async def attendance() -> SessionParticipant:
+        async with factory() as check:
+            return (
+                await check.execute(
+                    select(SessionParticipant).where(
+                        SessionParticipant.session_id == UUID(session["id"])
+                    )
+                )
+            ).scalar_one()
+
+    with client.websocket_connect("/ws/session") as ws:
+        ws.send_json({"type": "auth", "data": {"token": token, "session_id": session["id"]}})
+        assert ws.receive_json()["type"] == "ready"
+        ws.receive_json()
+        # The pong comes from the receive loop, which starts after the arrival.
+        ws.send_json({"type": "ping", "data": {}})
+        ws.receive_json()
+        present = await attendance()
+        assert (present.connection_count, present.left_at) == (1, None)
+
+        # Closed from the client while the test client still runs the handler:
+        # leaving the block would cancel it, which a real server does not do.
+        ws.close()
+        for _ in range(50):
+            if (await attendance()).left_at is not None:
+                break
+            await asyncio.sleep(0.05)
+
+    assert (await attendance()).left_at is not None
 
 
 async def test_a_question_goes_out_and_the_answer_comes_back(db, app) -> None:

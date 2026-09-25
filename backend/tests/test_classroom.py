@@ -21,7 +21,12 @@ from app.realtime import attention as attention_module
 from app.realtime import classroom as classroom_module
 from app.realtime.classroom import Classroom
 from app.realtime.hub import Connection, SessionHub
-from app.realtime.recorders import ClosedQuestion, QuestionComprehension, Submission
+from app.realtime.recorders import (
+    Attendance,
+    ClosedQuestion,
+    QuestionComprehension,
+    Submission,
+)
 from app.schemas.events import (
     AnswerSubmitPayload,
     AttentionSignalPayload,
@@ -1263,6 +1268,114 @@ async def test_an_empty_queue_is_logged_not_shown_and_tried_again(
     await room.shutdown()
 
 
+class _Attendance:
+    def __init__(self) -> None:
+        self.joined: list[Attendance] = []
+        self.left: list[Attendance] = []
+
+    async def record_join(self, joined: Attendance) -> None:
+        self.joined.append(joined)
+
+    async def record_leave(self, left: Attendance) -> None:
+        self.left.append(left)
+
+
+async def _tab(events: SessionHub, session_id: UUID, user: UUID, role: Role) -> Connection:
+    connection = Connection(_Socket(), user, session_id, role)  # type: ignore[arg-type]
+    await events.join(connection)
+    return connection
+
+
+async def test_a_student_leaves_the_class_only_when_their_last_tab_closes() -> None:
+    """The stored record counts joins, not open sockets, so it cannot tell a
+    student who closed one of two tabs from one who left."""
+    room, events = _room()
+    row = _row()
+    attendance = room.participant_recorder = _Attendance()
+    student = uuid4()
+    tabs = []
+    for _ in range(2):
+        tabs.append(await _tab(events, row.session_id, student, Role.STUDENT))
+        await room.arrived(row.session_id, student, Role.STUDENT, SessionStatus.ACTIVE)
+
+    assert [a.user_id for a in attendance.joined] == [student, student]
+
+    await events.leave(tabs[0])
+    await room.departed(row.session_id, student, Role.STUDENT, SessionStatus.ACTIVE)
+
+    assert attendance.left == []
+
+    await events.leave(tabs[1])
+    await room.departed(row.session_id, student, Role.STUDENT, SessionStatus.ACTIVE)
+
+    assert [a.user_id for a in attendance.left] == [student]
+    await room.shutdown()
+
+
+async def test_staff_are_told_when_a_student_arrives_or_leaves_but_not_about_a_second_tab() -> None:
+    """Presence changes with the student, not the socket: a second tab is
+    attendance, and says nothing new about who is in the room."""
+    room, events = _room()
+    row = _row()
+    lecturer, _ = await _join(events, row.session_id, Role.LECTURER)
+    student = uuid4()
+    tabs = []
+    for _ in range(2):
+        tabs.append(await _tab(events, row.session_id, student, Role.STUDENT))
+        await room.arrived(row.session_id, student, Role.STUDENT, SessionStatus.PREPARED)
+    for tab in tabs:
+        await events.leave(tab)
+        await room.departed(row.session_id, student, Role.STUDENT, SessionStatus.PREPARED)
+
+    counts = [e["data"]["participant_count"] for e in lecturer.of(ServerEventType.SESSION_STATE)]
+    assert counts == [1, 0]
+    await room.shutdown()
+
+
+async def test_staff_are_not_participants() -> None:
+    """A lecturer is in the room without attending it, and the store keeps
+    participants by student, which they have no row in."""
+    room, events = _room()
+    row = _row()
+    attendance = room.participant_recorder = _Attendance()
+    lecturer = uuid4()
+    tab = await _tab(events, row.session_id, lecturer, Role.LECTURER)
+
+    await room.arrived(row.session_id, lecturer, Role.LECTURER, SessionStatus.ACTIVE)
+    await events.leave(tab)
+    await room.departed(row.session_id, lecturer, Role.LECTURER, SessionStatus.ACTIVE)
+
+    assert (attendance.joined, attendance.left) == ([], [])
+    await room.shutdown()
+
+
+async def test_a_failing_participant_recorder_is_logged_and_ignored(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    room, events = _room()
+    row = _row()
+
+    class Broken:
+        async def record_join(self, joined: Attendance) -> None:
+            raise RuntimeError("database gone")
+
+        async def record_leave(self, left: Attendance) -> None:
+            raise RuntimeError("database gone")
+
+    room.participant_recorder = Broken()
+    student = uuid4()
+    tab = await _tab(events, row.session_id, student, Role.STUDENT)
+
+    with caplog.at_level("ERROR", logger="clip.classroom"):
+        await room.arrived(row.session_id, student, Role.STUDENT, SessionStatus.ACTIVE)
+        await events.leave(tab)
+        await room.departed(row.session_id, student, Role.STUDENT, SessionStatus.ACTIVE)
+
+    assert "could not record a student joining" in caplog.text
+    assert "could not record a student leaving" in caplog.text
+    await room.shutdown()
+
+
 # -- startup wiring -------------------------------------------------------------
 
 
@@ -1275,6 +1388,17 @@ class _Recorder:
 
     async def record_close(self, closed) -> None:  # noqa: ANN001
         return None
+
+    async def record_join(self, joined) -> None:  # noqa: ANN001
+        return None
+
+    async def record_leave(self, left) -> None:  # noqa: ANN001
+        return None
+
+
+def _wired(room: Classroom) -> None:
+    room.recorder = room.prompt_recorder = room.close_recorder = _Recorder()  # type: ignore[assignment]
+    room.participant_recorder = _Recorder()  # type: ignore[assignment]
 
 
 def test_development_is_told_what_live_sessions_will_not_store(
@@ -1289,6 +1413,7 @@ def test_development_is_told_what_live_sessions_will_not_store(
     assert "answers are not stored" in caplog.text
     assert "prompt outcomes are not stored" in caplog.text
     assert "question closes are not stored" in caplog.text
+    assert "who attended is not stored" in caplog.text
 
 
 def test_production_will_not_start_without_somewhere_to_store_answers(
@@ -1300,7 +1425,7 @@ def test_production_will_not_start_without_somewhere_to_store_answers(
     with pytest.raises(RuntimeError, match="answers are not stored"):
         room.check_wiring()
 
-    room.recorder = room.prompt_recorder = room.close_recorder = _Recorder()  # type: ignore[assignment]
+    _wired(room)
     room.check_wiring()
 
 
@@ -1311,7 +1436,7 @@ def test_live_sessions_refuse_more_than_one_worker(
     """Each worker would restore the same session and run its own cycle."""
     monkeypatch.setenv("WEB_CONCURRENCY", workers)
     room, _ = _room(production=True)
-    room.recorder = room.prompt_recorder = room.close_recorder = _Recorder()  # type: ignore[assignment]
+    _wired(room)
 
     with pytest.raises(RuntimeError, match="single worker"):
         room.check_wiring()
@@ -1320,7 +1445,7 @@ def test_live_sessions_refuse_more_than_one_worker(
 def test_one_worker_is_fine(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("WEB_CONCURRENCY", "1")
     room, _ = _room(production=True)
-    room.recorder = room.prompt_recorder = room.close_recorder = _Recorder()  # type: ignore[assignment]
+    _wired(room)
 
     room.check_wiring()
 
