@@ -540,6 +540,72 @@
         "title": "MaterialStatus",
         "type": "string"
       },
+      "MeetingEventIn": {
+        "description": "A meeting started or ended. Teams can deliver an event more than once,\nso one that finds the session already in that state changes nothing.",
+        "properties": {
+          "course_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Creates a session for a meeting that starts with none linked. Ignored once the meeting has a session.",
+            "title": "Course Code"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MeetingEventKind"
+          },
+          "meeting_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Meeting Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The created session's title. Defaults to 'Teams meeting'.",
+            "title": "Title"
+          }
+        },
+        "required": [
+          "kind",
+          "meeting_id"
+        ],
+        "title": "MeetingEventIn",
+        "type": "object"
+      },
+      "MeetingEventKind": {
+        "enum": [
+          "started",
+          "ended"
+        ],
+        "title": "MeetingEventKind",
+        "type": "string"
+      },
+      "MeetingLinkRequest": {
+        "properties": {
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "MeetingLinkRequest",
+        "type": "object"
+      },
       "Page_DeliverableQuestionOut_": {
         "properties": {
           "items": {
@@ -1951,6 +2017,103 @@
         "summary": "Bulk Review Questions",
         "tags": [
           "content"
+        ]
+      }
+    },
+    "/api/v1/meetings/events": {
+      "post": {
+        "description": "Start or end the meeting's session, creating one for a meeting that\nstarts with none linked when the course is named.",
+        "operationId": "meeting_event_api_v1_meetings_events_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeetingEventIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Meeting Event",
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/meetings/{meeting_id}": {
+      "put": {
+        "description": "Hold a session in this meeting. Either side's old link is replaced.",
+        "operationId": "link_meeting_api_v1_meetings__meeting_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeetingLinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Link Meeting",
+        "tags": [
+          "meetings"
         ]
       }
     },

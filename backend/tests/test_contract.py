@@ -40,6 +40,9 @@ EXPECTED_PATHS = {
     "/api/v1/sessions/{session_id}/engagement",
     "/api/v1/sessions/{session_id}/alerts",
     "/api/v1/sessions/{session_id}/summary/{student_id}",
+    # Added in Phase 4 for Teams meetings and the mock adapter. Additive.
+    "/api/v1/meetings/{meeting_id}",
+    "/api/v1/meetings/events",
 }
 
 
