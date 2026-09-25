@@ -268,6 +268,15 @@ async def link_meeting(
     return await session_out(db, row)
 
 
+async def meeting_owner(db: AsyncSession, meeting_id: str) -> Principal | None:
+    """Who the Teams bot acts as for a meeting: the lecturer of its session."""
+    session_id = await meetings.directory.session_for(meeting_id)
+    row = await SessionRepository(db).get(session_id) if session_id is not None else None
+    if row is None:
+        return None
+    return Principal(user_id=row.instructor_id, role=Role.LECTURER, email="")
+
+
 async def handle_meeting_event(
     db: AsyncSession, principal: Principal, event: MeetingEventIn
 ) -> SessionOut:

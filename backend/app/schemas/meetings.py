@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # Teams meeting IDs are opaque strings; this bounds them without assuming a shape.
 MAX_MEETING_ID_LENGTH = 256
@@ -34,3 +35,15 @@ class MeetingEventIn(BaseModel):
 
 class MeetingLinkRequest(BaseModel):
     session_id: UUID
+
+
+class TeamsActivity(BaseModel):
+    """The part of a Bot Framework activity the bot reads. The rest of what
+    Teams sends is accepted and ignored."""
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    type: str
+    name: str | None = None
+    service_url: str = Field(alias="serviceUrl")
+    channel_data: dict[str, Any] | None = Field(default=None, alias="channelData")
