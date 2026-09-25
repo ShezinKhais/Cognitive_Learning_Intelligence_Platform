@@ -1,7 +1,7 @@
 """AI 1's recorders for the live classroom's ResponseRecorder and
 CloseRecorder seams.
 
-live_wiring.py registers both at startup, built on QuestionRepository and
+live_wiring.py installs both at startup, built on QuestionRepository and
 BBIS's LiveEventRepository, each call in its own committed session.
 
 LiveResponseRecorder scores, stores, then returns the feedback. It never
@@ -10,13 +10,13 @@ the receipt accepting the answer, so a student never sees a result for a
 refused answer. That feedback withholds the correct answer, since the window
 is still open for the rest of the class.
 
-LiveCloseRecorder stores how the question ended, then reveals the correct
-answer to each student who answered, now that the window is over.
+LiveCloseRecorder stores how the question ended, then returns the correct
+answer for each student who answered, now that the window is over. The
+classroom sends those, as it sends the feedback.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
@@ -25,7 +25,7 @@ from uuid import UUID
 
 from app.core.errors import NotFoundError, ValidationError
 from app.models.question import Question
-from app.realtime.classroom import ClosedQuestion, PromptOutcome, Submission
+from app.realtime.recorders import ClosedQuestion, Submission
 from app.schemas.content import QuestionType
 from app.schemas.events import FeedbackResultPayload
 from app.services.response_processing import process_submission
@@ -69,9 +69,6 @@ StoreClose = Callable[[ClosedQuestion], Awaitable[object]]
 
 # The stored answers to one question, by user id; answers_to_question.
 GetAnswers = Callable[[UUID, UUID], Awaitable[Mapping[UUID, StoredResponse]]]
-
-# Sends one student a feedback.result.
-SendFeedback = Callable[[UUID, UUID, FeedbackResultPayload], Awaitable[object]]
 
 
 class LiveResponseRecorder:
@@ -125,7 +122,7 @@ class LiveResponseRecorder:
 
 
 class LiveCloseRecorder:
-    """Stores a question's close, then reveals its answer.
+    """Stores a question's close, then works out what each student is shown.
 
     Matches CloseRecorder.record_close(closed) structurally. It runs after
     question.closed has gone out, so the answer can no longer help anyone
@@ -138,24 +135,22 @@ class LiveCloseRecorder:
         get_question: GetQuestion,
         store_close: StoreClose,
         get_answers: GetAnswers,
-        send_feedback: SendFeedback,
     ) -> None:
         self._get_question = get_question
         self._store_close = store_close
         self._get_answers = get_answers
-        self._send_feedback = send_feedback
 
-    async def record_close(self, closed: ClosedQuestion) -> None:
+    async def record_close(self, closed: ClosedQuestion) -> dict[UUID, FeedbackResultPayload]:
         # Stored first: the record matters more than the reveal.
         await self._store_close(closed)
 
         question = await self._get_question(closed.question_id)
         if question is None or question.question_type != QuestionType.MCQ:
             # Free text has no single correct answer to reveal.
-            return
+            return {}
 
         answers = await self._get_answers(closed.session_id, closed.question_id)
-        reveals = []
+        reveals = {}
         # Only students the classroom accepted an answer from. A write that
         # timed out can still land, but that student was told it was not
         # saved, so a result for it would contradict what they saw.
@@ -168,46 +163,5 @@ class LiveCloseRecorder:
             except ValidationError:
                 log.warning("could not reveal question %s to user %s", closed.question_id, user_id)
                 continue
-            payload = feedback_payload(question.question_id, build_mcq_reveal(score))
-            reveals.append(self._send_feedback(closed.session_id, user_id, payload))
-        # Together, so one slow socket does not hold up the rest of the class.
-        await asyncio.gather(*reveals)
-
-
-class StorePromptOutcome(Protocol):
-    """Matches LiveEventRepository.record_prompt_outcome."""
-
-    def __call__(
-        self,
-        *,
-        prompt_id: UUID,
-        session_id: UUID,
-        user_id: UUID,
-        escalation: int,
-        sent_at: datetime,
-        expires_at: datetime,
-        result: str,
-        responded_at: datetime | None,
-    ) -> Awaitable[object]: ...
-
-
-class LivePromptRecorder:
-    """Stores one attention-prompt outcome.
-
-    Matches PromptRecorder.record_prompt(outcome) -> None structurally.
-    """
-
-    def __init__(self, *, store_prompt_outcome: StorePromptOutcome) -> None:
-        self._store_prompt_outcome = store_prompt_outcome
-
-    async def record_prompt(self, outcome: PromptOutcome) -> None:
-        await self._store_prompt_outcome(
-            prompt_id=outcome.prompt_id,
-            session_id=outcome.session_id,
-            user_id=outcome.user_id,
-            escalation=outcome.escalation,
-            sent_at=outcome.sent_at,
-            expires_at=outcome.expires_at,
-            result=outcome.result,
-            responded_at=outcome.responded_at,
-        )
+            reveals[user_id] = feedback_payload(question.question_id, build_mcq_reveal(score))
+        return reveals

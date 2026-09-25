@@ -2,7 +2,7 @@
 prompt gating and class comprehension alerts.
 
 Owner: Cyber 1, Phase 3. No database or app fixture needed -- these are
-plain functions. The live paths that call them are in test_classroom.py.
+plain functions. The live paths that call them are in test_classroom_attention.py.
 """
 
 from app.schemas.events import AttentionSignalPayload

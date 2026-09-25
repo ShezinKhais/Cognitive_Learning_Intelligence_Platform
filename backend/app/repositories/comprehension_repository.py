@@ -15,7 +15,7 @@ from app.core.database import get_session_factory
 from app.models.comprehension_result import ComprehensionResult
 from app.models.question import Question
 from app.models.student_response import StudentResponse
-from app.realtime.classroom import QuestionComprehension
+from app.realtime.recorders import QuestionComprehension
 
 
 class DatabaseComprehensionSource:

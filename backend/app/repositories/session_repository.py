@@ -14,9 +14,11 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.course import Course
+from app.models.delivered_question import DeliveredQuestion
 from app.models.material import Material
 from app.models.question import Question
 from app.models.session import Session
+from app.repositories.live_event_repository import LiveEventRepository
 from app.schemas.content import QuestionStatus, QuestionType
 
 
@@ -63,11 +65,8 @@ class SessionRepository:
     async def count_delivered(self, session_id: uuid.UUID) -> int:
         result = await self.session.execute(
             select(func.count())
-            .select_from(Question)
-            .where(
-                Question.session_id == session_id,
-                Question.status == QuestionStatus.DELIVERED.value,
-            )
+            .select_from(DeliveredQuestion)
+            .where(DeliveredQuestion.session_id == session_id)
         )
         return result.scalar_one()
 
@@ -133,9 +132,23 @@ class SessionRepository:
         return list(questions), total
 
     async def claim_for_delivery(
-        self, live: Session, question_id: uuid.UUID | None = None
+        self,
+        live: Session,
+        question_id: uuid.UUID | None = None,
+        *,
+        delivered_at: datetime,
+        closes_at: datetime,
+        window_seconds: int,
     ) -> Question | None:
-        """Mark the next deliverable question, or the named one, delivered.
+        """Deliver the next deliverable question, or the named one: mark it
+        delivered and record the delivery, in the caller's transaction.
+
+        The two answer different questions and are written together so they
+        cannot disagree. The question's status is whether it may still be
+        offered; the delivered_question row is the session's record of when
+        it went out and, once it closes, who was shown it and who answered.
+        That row is what the close recorder completes and what the session's
+        count of delivered questions reads.
 
         Locks the row and skips any another transaction holds, so two sessions
         of the same lecturer cannot both deliver one unassigned question.
@@ -155,4 +168,11 @@ class SessionRepository:
         question.session_id = live.session_id
         question.status = QuestionStatus.DELIVERED.value
         await self.session.flush()
+        await LiveEventRepository(self.session).record_question_delivery(
+            session_id=live.session_id,
+            question_id=question.question_id,
+            delivered_at=delivered_at,
+            closes_at=closes_at,
+            window_seconds=window_seconds,
+        )
         return question
