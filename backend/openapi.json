@@ -1278,6 +1278,49 @@
         "title": "StudentSessionSummary",
         "type": "object"
       },
+      "TeamsActivity": {
+        "additionalProperties": true,
+        "description": "The part of a Bot Framework activity the bot reads. The rest of what\nTeams sends is accepted and ignored.",
+        "properties": {
+          "channelData": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channeldata"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "serviceUrl": {
+            "title": "Serviceurl",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "serviceUrl"
+        ],
+        "title": "TeamsActivity",
+        "type": "object"
+      },
       "TimetableImportResult": {
         "description": "Result of an administrator uploading a timetable CSV or XLSX.\n\nCSV and XLSX are parsed as structured data. There is no OCR path, because a\nmisread digit would silently assign a student to the wrong session.",
         "properties": {
@@ -2793,6 +2836,46 @@
         "summary": "Student Summary",
         "tags": [
           "sessions"
+        ]
+      }
+    },
+    "/api/v1/teams/messages": {
+      "post": {
+        "description": "Receive an activity from Teams. Meeting starts and ends are applied to\nthe linked session; everything else is acknowledged.",
+        "operationId": "bot_messages_api_v1_teams_messages_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamsActivity"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bot Messages",
+        "tags": [
+          "teams"
         ]
       }
     }
