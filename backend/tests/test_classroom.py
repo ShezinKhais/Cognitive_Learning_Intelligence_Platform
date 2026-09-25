@@ -79,12 +79,15 @@ class _Repository:
     """Stands in for SessionRepository: a queue of staged questions."""
 
     staged: list[_Question] = []
+    # What each claim was told about the delivery it records.
+    deliveries: list[dict] = []
     rows: dict[UUID, SimpleNamespace] = {}
 
     def __init__(self, db: object) -> None:
         pass
 
-    async def claim_for_delivery(self, row, question_id=None):  # noqa: ANN001, ANN201
+    async def claim_for_delivery(self, row, question_id=None, **delivery):  # noqa: ANN001, ANN003, ANN201
+        _Repository.deliveries.append(delivery)
         for question in _Repository.staged:
             if question_id is None or question.question_id == question_id:
                 _Repository.staged.remove(question)
@@ -102,6 +105,7 @@ class _Repository:
 def _fake_repository(monkeypatch: pytest.MonkeyPatch):
     _Repository.staged = []
     _Repository.rows = {}
+    _Repository.deliveries = []
     monkeypatch.setattr(classroom_module, "SessionRepository", _Repository)
 
 
@@ -164,6 +168,23 @@ async def _deliver(room: Classroom, row: SimpleNamespace) -> _Question:
     _Repository.staged.append(question)
     assert await room.deliver(_Db(), row) is not None  # type: ignore[arg-type]
     return question
+
+
+async def test_the_delivery_is_recorded_with_the_window_the_class_is_shown() -> None:
+    """The delivery row and question.delivered are given one closes_at,
+    computed once, so the store and the class agree on when the window shut."""
+    room, events = _room(window=30)
+    row = _row()
+    socket, _ = await _join(events, row.session_id, Role.STUDENT)
+
+    await _deliver(room, row)
+
+    [delivery] = _Repository.deliveries
+    [shown] = socket.of(ServerEventType.QUESTION_DELIVERED)
+    assert delivery["window_seconds"] == shown["data"]["window_seconds"] == 30
+    assert delivery["closes_at"] == datetime.fromisoformat(shown["data"]["closes_at"])
+    assert delivery["closes_at"] - delivery["delivered_at"] == timedelta(seconds=30)
+    await room.shutdown()
 
 
 async def test_a_delivered_question_reaches_everyone_without_its_answer() -> None:
@@ -708,12 +729,12 @@ async def test_a_failed_scheduled_delivery_does_not_stop_the_cycle(
     real_claim = _Repository.claim_for_delivery
     calls = 0
 
-    async def flaky(self, live, question_id=None):  # noqa: ANN001, ANN202
+    async def flaky(self, live, question_id=None, **delivery):  # noqa: ANN001, ANN003, ANN202
         nonlocal calls
         calls += 1
         if calls == 1:
             raise RuntimeError("database hiccup")
-        return await real_claim(self, live, question_id)
+        return await real_claim(self, live, question_id, **delivery)
 
     monkeypatch.setattr(_Repository, "claim_for_delivery", flaky)
     _Repository.staged.append(_Question())

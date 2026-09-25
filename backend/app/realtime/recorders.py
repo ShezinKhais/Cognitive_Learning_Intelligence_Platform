@@ -100,6 +100,8 @@ class CloseRecorder(Protocol):
     """Stores how a question ended, and may reveal its answer. BBIS and AI 1
     provide this.
 
+    The delivery it completes was recorded with the claim that delivered
+    the question, in the same transaction, so it is always there to update.
     It runs after question.closed has gone out, so the window is over and the
     answer can be shown. A failure is logged and otherwise ignored: the class
     has already moved on.

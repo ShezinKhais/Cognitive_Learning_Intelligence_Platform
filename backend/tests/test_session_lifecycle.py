@@ -28,6 +28,7 @@ from app.auth.store import (
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.course import Course
+from app.models.delivered_question import DeliveredQuestion
 from app.models.material import Material
 from app.models.question import Question
 from app.models.session import Session as SessionModel
@@ -671,6 +672,54 @@ async def test_a_lecturer_cannot_join_another_lecturers_session(db, app) -> None
     token = _token(client, "lecturer@clip.example.com", LECTURER_PASSWORD)
 
     assert _refused_with(client, token, session["id"]) == 4003
+
+
+async def test_a_close_completes_the_delivery_its_claim_recorded(db, app) -> None:
+    """Closes were stored nowhere: the close recorder completes the delivery
+    row, and nothing wrote one. The claim writes it, in the transaction that
+    marks the question delivered, so the two cannot disagree."""
+    client, factory, created = db
+    course = await _course(factory, created)
+    await _enrol(factory, course)
+    question_id = await _question(db, course, LECTURER_ID)
+    _as(app, LECTURER_ID, Role.LECTURER)
+    session = _create(client, course)
+    client.post(f"/api/v1/sessions/{session['id']}/start")
+    token = _token(client, "student@clip.example.com", STUDENT_PASSWORD)
+
+    with client.websocket_connect("/ws/session") as ws:
+        ws.send_json({"type": "auth", "data": {"token": token, "session_id": session["id"]}})
+        assert ws.receive_json()["type"] == "ready"
+        ws.receive_json()
+        client.post(f"/api/v1/sessions/{session['id']}/questions/{question_id}:deliver")
+        assert ws.receive_json()["type"] == "question.delivered"
+        ws.send_json(
+            {
+                "type": "answer.submit",
+                "data": {
+                    "question_id": str(question_id),
+                    "selected_option": 1,
+                    "client_elapsed_ms": 900,
+                },
+            }
+        )
+        assert ws.receive_json()["data"]["accepted"] is True
+        client.post(f"/api/v1/sessions/{session['id']}/end")
+
+    async with factory() as check:
+        delivery = (
+            await check.execute(
+                select(DeliveredQuestion).where(DeliveredQuestion.session_id == UUID(session["id"]))
+            )
+        ).scalar_one()
+        status = await check.scalar(
+            select(Question.status).where(Question.question_id == question_id)
+        )
+
+    assert (delivery.question_id, status) == (question_id, "delivered")
+    assert delivery.closed_at is not None
+    assert delivery.close_reason == "session_ended"
+    assert (delivery.eligible_count, delivery.respondent_count) == (1, 1)
 
 
 async def test_a_question_goes_out_and_the_answer_comes_back(db, app) -> None:

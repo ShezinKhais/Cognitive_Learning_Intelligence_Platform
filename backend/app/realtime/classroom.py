@@ -485,11 +485,19 @@ class Classroom:
                     "A question is already open.",
                     {"question_id": str(live.open.question.question_id)},
                 )
-            question = await SessionRepository(db).claim_for_delivery(row, question_id)
-            if question is None:
-                return None
             now = _now()
             window = self._window
+            closes_at = now + window
+            window_seconds = int(window.total_seconds())
+            question = await SessionRepository(db).claim_for_delivery(
+                row,
+                question_id,
+                delivered_at=now,
+                closes_at=closes_at,
+                window_seconds=window_seconds,
+            )
+            if question is None:
+                return None
             payload = QuestionDeliveredPayload(
                 question_id=question.question_id,
                 prompt=question.question_text,
@@ -501,12 +509,13 @@ class Classroom:
                 # repository will not hand out such a question, and this
                 # agrees with it.
                 options=question.options if question.question_type == QuestionType.MCQ else None,
-                closes_at=now + window,
-                window_seconds=int(window.total_seconds()),
+                closes_at=closes_at,
+                window_seconds=window_seconds,
                 source_slide=question.source_slide,
             )
-            # Recorded before anyone is told, so a delivered question is
-            # never missing from the session's history.
+            # The claim and its delivery record are committed before anyone
+            # is told, so a delivered question is never missing from the
+            # session's history, and its close always has a row to complete.
             await db.commit()
 
             live.open = _OpenQuestion(
