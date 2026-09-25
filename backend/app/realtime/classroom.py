@@ -348,15 +348,14 @@ class Classroom:
         for prompt in withdrawn:
             _cancel(prompt.expiry)
         await self.announce(session_id, status, delivered)
-        if closed is not None:
-            # Before the session is forgotten, so the lecturer can still be told.
-            await self._check_comprehension(live, closed)
-        self._hub.forget_session(session_id)
-        # Independent of each other, and the lecturer's request waits on them.
+        # Before the session is forgotten, so the class can still be shown the
+        # answer and the lecturer told. Independent of each other, and the
+        # lecturer's request waits on them.
         await asyncio.gather(
-            self._record_close(closed),
+            self._after_close(live, closed),
             *(self._record_prompt(p.outcome(PromptResult.EXPIRED)) for p in withdrawn),
         )
+        self._hub.forget_session(session_id)
 
     async def shutdown(self) -> None:
         """Stop every timer this process owns. Sessions stay active in the
@@ -587,9 +586,7 @@ class Classroom:
                 live.countdown.start(self._next_wait())
                 await self._nudge_absent_locked(live, open_)
                 await self._score_engagement_locked(live, open_)
-        await self._record_close(closed)
-        if closed is not None:
-            await self._check_comprehension(live, closed)
+        await self._after_close(live, closed)
 
     async def _close_locked(
         self, live: LiveSession, reason: QuestionCloseReason
@@ -916,12 +913,27 @@ class Classroom:
                 outcome.session_id,
             )
 
-    async def _record_close(self, closed: ClosedQuestion | None) -> None:
-        if closed is not None and self.close_recorder is not None:
-            await best_effort(
-                self.close_recorder.record_close(closed),
-                "record a question close",
-                closed.session_id,
+    async def _after_close(self, live: LiveSession, closed: ClosedQuestion | None) -> None:
+        """Store a close and reveal its answer, and alert the lecturer if the
+        class did not follow. Independent, so neither waits on the other."""
+        if closed is not None:
+            await asyncio.gather(
+                self._record_close(closed), self._check_comprehension(live, closed)
+            )
+
+    async def _record_close(self, closed: ClosedQuestion) -> None:
+        if self.close_recorder is None:
+            return
+        reveals = await best_effort(
+            self.close_recorder.record_close(closed),
+            "record a question close",
+            closed.session_id,
+        )
+        # Outside the recorder's budget: the close is stored by now, and each
+        # send is bounded by the hub, so a stalled socket costs its own reveal.
+        for user_id, reveal in (reveals or {}).items():
+            await self._hub.send_to_user(
+                closed.session_id, user_id, ServerEventType.FEEDBACK_RESULT, _json(reveal)
             )
 
 

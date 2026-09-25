@@ -19,6 +19,7 @@ import pytest
 from app.core.errors import ConflictError
 from app.realtime import attention as attention_module
 from app.realtime import classroom as classroom_module
+from app.realtime import recorders as recorders_module
 from app.realtime.classroom import Classroom
 from app.realtime.hub import Connection, SessionHub
 from app.realtime.recorders import (
@@ -483,9 +484,10 @@ class _Closes:
         self.release = asyncio.Event()
         self.release.set()
 
-    async def record_close(self, closed: ClosedQuestion) -> None:
+    async def record_close(self, closed: ClosedQuestion) -> dict:
         await self.release.wait()
         self.closed.append(closed)
+        return {}
 
 
 async def test_the_close_recorder_is_told_who_was_shown_and_who_answered() -> None:
@@ -554,6 +556,70 @@ async def test_a_failing_close_recorder_is_logged_and_ignored(
     assert "could not record a question close" in caplog.text
     await _deliver(room, row)
     await room.shutdown()
+
+
+class _Reveals:
+    """Reveals the answer to everyone who answered, as AI 1's recorder does."""
+
+    async def record_close(self, closed: ClosedQuestion) -> dict:
+        return {
+            user: FeedbackResultPayload(
+                question_id=closed.question_id, correct=True, explanation="Jupiter."
+            )
+            for user in closed.answered
+        }
+
+
+async def test_the_answer_is_revealed_to_students_when_the_class_ends() -> None:
+    """The end forgot the session before recording the close, so the reveal
+    for the last question went to a stream nobody was in."""
+    room, events = _room()
+    row = _row()
+    socket, student = await _join(events, row.session_id, Role.STUDENT)
+    room.close_recorder = _Reveals()
+    question = await _deliver(room, row)
+    await room.submit(row.session_id, student, Role.STUDENT, _answer(question.question_id))
+    socket.sent.clear()
+
+    await room.end(row.session_id, SessionStatus.ENDED, delivered=1)
+
+    [reveal] = socket.of(ServerEventType.FEEDBACK_RESULT)
+    assert reveal["data"]["question_id"] == str(question.question_id)
+    assert events.tracked_stream_count() == 0
+
+
+async def test_a_slow_socket_does_not_fail_the_close_it_reveals(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The reveal is sent after the recorder returns, outside its budget, so
+    a stored close is not logged as a failure and nobody's reveal is cut off."""
+    monkeypatch.setattr(recorders_module, "RECORD_TIMEOUT_SECONDS", 0.05)
+    room, events = _room()
+    row = _row()
+
+    class Slow(_Socket):
+        async def send_json(self, payload: dict) -> None:
+            if payload["type"] == ServerEventType.FEEDBACK_RESULT.value:
+                await asyncio.sleep(0.04)
+            await super().send_json(payload)
+
+    sockets = []
+    for _ in range(3):
+        socket, student = Slow(), uuid4()
+        await events.join(Connection(socket, student, row.session_id, Role.STUDENT))  # type: ignore[arg-type]
+        sockets.append((socket, student))
+    room.close_recorder = _Reveals()
+    question = await _deliver(room, row)
+    for _, student in sockets:
+        await room.submit(row.session_id, student, Role.STUDENT, _answer(question.question_id))
+    for socket, _ in sockets:
+        socket.sent.clear()
+
+    with caplog.at_level("ERROR", logger="clip.classroom"):
+        await room.end(row.session_id, SessionStatus.ENDED, delivered=1)
+
+    assert "could not record a question close" not in caplog.text
+    assert all(len(socket.of(ServerEventType.FEEDBACK_RESULT)) == 1 for socket, _ in sockets)
 
 
 async def test_ending_closes_the_open_question_then_announces_the_end() -> None:
@@ -1386,8 +1452,8 @@ class _Recorder:
     async def record_prompt(self, outcome) -> None:  # noqa: ANN001
         return None
 
-    async def record_close(self, closed) -> None:  # noqa: ANN001
-        return None
+    async def record_close(self, closed) -> dict:  # noqa: ANN001
+        return {}
 
     async def record_join(self, joined) -> None:  # noqa: ANN001
         return None

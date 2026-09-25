@@ -6,10 +6,10 @@ import pytest
 
 from app.core.errors import NotFoundError, ValidationError
 from app.models.question import Question
-from app.realtime.recorders import ClosedQuestion, PromptOutcome, PromptResult
+from app.realtime.recorders import ClosedQuestion
 from app.schemas.content import QuestionStatus
 from app.schemas.events import QuestionCloseReason
-from app.services.live_recorder import LiveCloseRecorder, LivePromptRecorder, LiveResponseRecorder
+from app.services.live_recorder import LiveCloseRecorder, LiveResponseRecorder
 
 
 def make_delivered_question(*, session_id: uuid.UUID, correct_option: int = 1) -> Question:
@@ -164,7 +164,6 @@ def make_closed(question, *, answered=(), eligible=()):
 
 def make_close_recorder(question, answers, steps):
     """steps records the order things happened in, across every seam."""
-    sent = []
 
     async def get_question(question_id):
         return question if question_id == question.question_id else None
@@ -176,17 +175,9 @@ def make_close_recorder(question, answers, steps):
         steps.append("read answers")
         return answers
 
-    async def send_feedback(session_id, user_id, feedback):
-        steps.append("revealed")
-        sent.append((user_id, feedback))
-
-    recorder = LiveCloseRecorder(
-        get_question=get_question,
-        store_close=store_close,
-        get_answers=get_answers,
-        send_feedback=send_feedback,
+    return LiveCloseRecorder(
+        get_question=get_question, store_close=store_close, get_answers=get_answers
     )
-    return recorder, sent
 
 
 async def test_close_stores_then_reveals_the_answer_to_each_student_who_answered():
@@ -197,12 +188,13 @@ async def test_close_stores_then_reveals_the_answer_to_each_student_who_answered
         wrong: SimpleNamespace(selected_option=0, free_text=None),
     }
     steps = []
-    recorder, sent = make_close_recorder(question, answers, steps)
+    recorder = make_close_recorder(question, answers, steps)
 
-    await recorder.record_close(make_closed(question, answered={right, wrong}, eligible={silent}))
+    revealed = await recorder.record_close(
+        make_closed(question, answered={right, wrong}, eligible={silent})
+    )
 
     assert steps[0] == "stored"
-    revealed = dict(sent)
     assert set(revealed) == {right, wrong}
     assert revealed[right].correct is True
     assert revealed[wrong].correct is False
@@ -218,11 +210,9 @@ async def test_close_reveals_nothing_to_a_student_the_classroom_refused():
     question = make_delivered_question(session_id=uuid.uuid4())
     refused = uuid.uuid4()
     answers = {refused: SimpleNamespace(selected_option=1, free_text=None)}
-    recorder, sent = make_close_recorder(question, answers, [])
+    recorder = make_close_recorder(question, answers, [])
 
-    await recorder.record_close(make_closed(question, eligible={refused}))
-
-    assert sent == []
+    assert await recorder.record_close(make_closed(question, eligible={refused})) == {}
 
 
 async def test_close_of_a_free_text_question_is_stored_without_a_reveal():
@@ -233,12 +223,10 @@ async def test_close_of_a_free_text_question_is_stored_without_a_reveal():
     student = uuid.uuid4()
     answers = {student: SimpleNamespace(selected_option=None, free_text="Layers")}
     steps = []
-    recorder, sent = make_close_recorder(question, answers, steps)
+    recorder = make_close_recorder(question, answers, steps)
 
-    await recorder.record_close(make_closed(question, answered={student}))
-
+    assert await recorder.record_close(make_closed(question, answered={student})) == {}
     assert steps == ["stored"]
-    assert sent == []
 
 
 async def test_close_skips_a_reveal_it_cannot_score_and_still_reveals_the_rest():
@@ -248,18 +236,19 @@ async def test_close_skips_a_reveal_it_cannot_score_and_still_reveals_the_rest()
         good: SimpleNamespace(selected_option=1, free_text=None),
         bad: SimpleNamespace(selected_option=99, free_text=None),
     }
-    recorder, sent = make_close_recorder(question, answers, [])
+    recorder = make_close_recorder(question, answers, [])
 
-    await recorder.record_close(make_closed(question, answered={good, bad}))
+    revealed = await recorder.record_close(make_closed(question, answered={good, bad}))
 
-    assert [user for user, _ in sent] == [good]
+    assert list(revealed) == [good]
 
 
 async def test_a_failed_store_stops_the_reveal():
     question = make_delivered_question(session_id=uuid.uuid4())
     student = uuid.uuid4()
-    recorder, sent = make_close_recorder(
-        question, {student: SimpleNamespace(selected_option=1, free_text=None)}, []
+    steps = []
+    recorder = make_close_recorder(
+        question, {student: SimpleNamespace(selected_option=1, free_text=None)}, steps
     )
 
     async def broken_store(closed):
@@ -269,38 +258,4 @@ async def test_a_failed_store_stops_the_reveal():
 
     with pytest.raises(RuntimeError):
         await recorder.record_close(make_closed(question, answered={student}))
-    assert sent == []
-
-
-async def test_record_prompt_stores_the_outcome():
-    stored = []
-
-    async def store_prompt_outcome(**kwargs):
-        stored.append(kwargs)
-
-    recorder = LivePromptRecorder(store_prompt_outcome=store_prompt_outcome)
-    outcome = PromptOutcome(
-        session_id=uuid.uuid4(),
-        prompt_id=uuid.uuid4(),
-        user_id=uuid.uuid4(),
-        escalation=1,
-        sent_at=datetime.now(UTC),
-        expires_at=datetime.now(UTC),
-        result=PromptResult.ACKNOWLEDGED,
-        responded_at=datetime.now(UTC),
-    )
-
-    await recorder.record_prompt(outcome)
-
-    assert stored == [
-        {
-            "prompt_id": outcome.prompt_id,
-            "session_id": outcome.session_id,
-            "user_id": outcome.user_id,
-            "escalation": outcome.escalation,
-            "sent_at": outcome.sent_at,
-            "expires_at": outcome.expires_at,
-            "result": outcome.result,
-            "responded_at": outcome.responded_at,
-        }
-    ]
+    assert steps == []

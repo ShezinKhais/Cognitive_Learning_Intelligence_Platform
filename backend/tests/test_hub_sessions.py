@@ -229,3 +229,16 @@ async def test_a_users_open_sockets_in_a_session_are_counted() -> None:
     assert hub.connection_count(session, classmate) == 1
     assert hub.connection_count(other_session, student) == 1
     assert hub.connection_count(uuid4(), student) == 0
+
+
+async def test_a_private_send_to_a_forgotten_session_does_not_bring_it_back() -> None:
+    """A close that finishes after its session ended still sends reveals and
+    alerts. They are unsequenced, so there is nothing to keep a stream for."""
+    hub = SessionHub()
+    session, student = uuid4(), uuid4()
+    await hub.join(Connection(_FakeSocket(), student, session, Role.STUDENT))  # type: ignore[arg-type]
+    await hub.broadcast(session, ServerEventType.SESSION_STATE, {})
+    hub.forget_session(session)
+
+    assert await hub.send_to_user(session, student, ServerEventType.FEEDBACK_RESULT, {}) is False
+    assert hub.tracked_stream_count() == 0

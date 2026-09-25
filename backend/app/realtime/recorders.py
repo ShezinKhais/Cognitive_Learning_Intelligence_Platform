@@ -1,7 +1,7 @@
 """What a live session hands to the workstreams that store and score it.
 
 Owner: General CS, Phase 3, for the contract. AI 1, BBIS and Cyber 1 provide
-the implementations, and app/services/live_wiring.py registers them on the
+the implementations, and app/services/live_wiring.py installs them on the
 classroom at startup.
 
 Storing and scoring answers, question closes, prompt outcomes and
@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -98,17 +98,21 @@ class ClosedQuestion:
 
 
 class CloseRecorder(Protocol):
-    """Stores how a question ended, and may reveal its answer. BBIS and AI 1
-    provide this.
+    """Stores how a question ended, and says what each student who answered
+    is shown of the answer. BBIS and AI 1 provide this.
 
     The delivery it completes was recorded with the claim that delivered
     the question, in the same transaction, so it is always there to update.
     It runs after question.closed has gone out, so the window is over and the
-    answer can be shown. A failure is logged and otherwise ignored: the class
-    has already moved on.
+    answer can be shown. What it returns is sent as feedback.result by the
+    classroom, once it has returned: a stalled socket costs that student's
+    reveal, not the close's budget. A failure is logged and otherwise
+    ignored: the class has already moved on.
     """
 
-    async def record_close(self, closed: ClosedQuestion) -> None: ...
+    async def record_close(
+        self, closed: ClosedQuestion
+    ) -> Mapping[UUID, FeedbackResultPayload]: ...
 
 
 class PromptResult(StrEnum):

@@ -275,11 +275,16 @@ class SessionHub:
         nothing had been lost.
         """
         async with self._delivering(channel):
-            stream = self._stream(channel)
             if only is None:
+                stream = self._stream(channel)
                 payload = stream.next_event(event_type, data).model_dump(mode="json")
             else:
-                payload = _unsequenced(event_type, data)
+                # Numbers nothing, so it has no reason to create a stream, and
+                # one for a forgotten session would sit in the map until evicted.
+                found = self._streams.get(channel)
+                if found is None:
+                    return 0
+                stream, payload = found, _unsequenced(event_type, data)
             async with self._lock:
                 targets = [c for c in stream.members if only is None or c.user_id == only]
 
