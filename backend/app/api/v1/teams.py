@@ -22,8 +22,8 @@ router = APIRouter(prefix="/teams", tags=["teams"])
 
 
 @lru_cache
-def _authenticator(app_id: str) -> teams_bot.BotAuthenticator:
-    return teams_bot.BotAuthenticator(app_id)
+def _authenticator(app_id: str, tenant_id: str) -> teams_bot.BotAuthenticator:
+    return teams_bot.BotAuthenticator(app_id, tenant_id)
 
 
 class TeamsNotConfiguredError(ServiceUnavailableError):
@@ -37,7 +37,7 @@ async def get_bot_authenticator(settings: AppSettings) -> teams_bot.BotAuthentic
         raise TeamsNotConfiguredError(
             "Teams is not configured. Send meeting events to /api/v1/meetings/events."
         )
-    return _authenticator(settings.client_id)
+    return _authenticator(settings.client_id, settings.tenant_id)
 
 
 @router.post("/messages", response_model=None)
@@ -45,9 +45,14 @@ async def bot_messages(
     activity: TeamsActivity,
     request: Request,
     db: DbSession,
+    settings: AppSettings,
     authenticator: Annotated[teams_bot.BotAuthenticator, Depends(get_bot_authenticator)],
 ) -> None:
     """Receive an activity from Teams. Meeting starts and ends are applied to
-    the linked session; everything else is acknowledged."""
-    await authenticator.verify(request.headers.get("Authorization"), activity.service_url)
-    await teams_bot.handle_activity(db, activity)
+    the linked session; everything else is acknowledged. An activity from any
+    other Bot Framework channel, or from another organisation, is refused."""
+    await authenticator.verify(
+        request.headers.get("Authorization"), activity.service_url, activity.channel_id
+    )
+    authenticator.authorize(activity)
+    await teams_bot.handle_activity(db, activity, settings)

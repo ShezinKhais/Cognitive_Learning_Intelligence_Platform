@@ -36,6 +36,7 @@ from app.core.security import (
     create_access_token,
     verify_password,
 )
+from app.realtime.classroom import classroom
 from app.repositories.consent_repository import ConsentRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.identity import (
@@ -341,6 +342,12 @@ async def record_consent(
         principal.user_id,
         payload.consent_type.value,
     )
+
+    # Live classes stop acting on a withdrawal at once, as promised above. A
+    # grant waits for the user's next join, when it is read back from the
+    # store, so a class never acts on one this request might not commit.
+    if not record.granted:
+        await classroom.withdraw_consent(principal.user_id, payload.consent_type)
 
     return ConsentOut(
         consent_type=record_consent_type,

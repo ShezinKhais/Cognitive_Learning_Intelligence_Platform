@@ -25,6 +25,7 @@ from app.services.meeting_directory import InMemoryMeetingDirectory, meetings
 from .session_support import add_course, add_question, create_session, sign_in_as
 
 APP_ID = "00000000-0000-0000-0000-00000000b07"
+TENANT_ID = "11111111-1111-1111-1111-111111111111"
 SERVICE_URL = "https://smba.trafficmanager.net/emea/"
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
@@ -42,12 +43,12 @@ def _token(**overrides) -> str:  # noqa: ANN003
     return jwt.encode(claims, KEY, algorithm="RS256", headers={"kid": "test"})
 
 
-async def _public_key(token: str):  # noqa: ANN202
-    return KEY.public_key()
+async def _public_key(token: str) -> teams_bot.BotSigningKey:
+    return teams_bot.BotSigningKey(KEY.public_key(), frozenset({"msteams"}))
 
 
 def _authenticator() -> teams_bot.BotAuthenticator:
-    return teams_bot.BotAuthenticator(APP_ID, key_for=_public_key)
+    return teams_bot.BotAuthenticator(APP_ID, TENANT_ID, key_for=_public_key)
 
 
 def _activity(name: str, meeting_id: str | None, kind: str = "event") -> dict:
@@ -56,7 +57,10 @@ def _activity(name: str, meeting_id: str | None, kind: str = "event") -> dict:
         "name": name,
         "serviceUrl": SERVICE_URL,
         "channelId": "msteams",
-        "channelData": {"meeting": {"id": meeting_id}} if meeting_id else {},
+        "channelData": {
+            "tenant": {"id": TENANT_ID},
+            **({"meeting": {"id": meeting_id}} if meeting_id else {}),
+        },
     }
 
 
@@ -109,7 +113,7 @@ async def test_unreachable_keys_are_an_outage_not_a_bad_token() -> None:
         raise jwt.PyJWKClientConnectionError("no route to host")
 
     with pytest.raises(ServiceUnavailableError):
-        await teams_bot.BotAuthenticator(APP_ID, key_for=unreachable).verify(
+        await teams_bot.BotAuthenticator(APP_ID, TENANT_ID, key_for=unreachable).verify(
             f"Bearer {_token()}", SERVICE_URL
         )
 

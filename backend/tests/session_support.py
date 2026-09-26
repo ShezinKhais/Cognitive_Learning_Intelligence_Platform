@@ -6,6 +6,7 @@ import.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import date
 from uuid import UUID, uuid4
 
@@ -21,6 +22,7 @@ from app.auth.store import (
     STUDENT_ID,
     dev_user_records,
     get_consent_repository,
+    get_user_repository,
 )
 from app.core.config import get_settings
 from app.core.database import get_db
@@ -183,6 +185,19 @@ def create_session(client: TestClient, course: Course, title: str = "Week 1") ->
     return response.json()
 
 
-def token_for(client: TestClient, email: str, password: str) -> str:
+def token_for(
+    client: TestClient,
+    email: str,
+    password: str,
+    consents: Iterable[ConsentType] = (ConsentType.TERMS,),
+) -> str:
+    """Sign in a development account, having granted it consents. Terms by
+    default, since everyone in a class has accepted them; a test of consent
+    passes its own."""
+    settings = get_settings()
+    user = get_user_repository(settings).get_by_email(email)
+    assert user is not None, email
+    for consent in consents:
+        get_consent_repository(settings).record(user.id, consent, True)
     response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
     return response.json()["access_token"]

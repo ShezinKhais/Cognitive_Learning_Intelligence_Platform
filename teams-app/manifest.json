@@ -56,15 +56,13 @@
   "bots": [
     {
       "botId": "${{BOT_ID}}",
-      "scopes": ["personal", "groupChat"],
+      "scopes": ["groupChat"],
       "supportsFiles": false,
       "isNotificationOnly": false
     }
   ],
 
-  "permissions": ["identity", "messageTeamMembers"],
-
-  "devicePermissions": ["media"],
+  "permissions": ["identity"],
 
   "webApplicationInfo": {
     "id": "${{BOT_ID}}",

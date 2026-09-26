@@ -1294,6 +1294,18 @@
             ],
             "title": "Channeldata"
           },
+          "channelId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Bot Framework channel. Only 'msteams' is acted on.",
+            "title": "Channelid"
+          },
           "name": {
             "anyOf": [
               {
@@ -2841,7 +2853,7 @@
     },
     "/api/v1/teams/messages": {
       "post": {
-        "description": "Receive an activity from Teams. Meeting starts and ends are applied to\nthe linked session; everything else is acknowledged.",
+        "description": "Receive an activity from Teams. Meeting starts and ends are applied to\nthe linked session; everything else is acknowledged. An activity from any\nother Bot Framework channel, or from another organisation, is refused.",
         "operationId": "bot_messages_api_v1_teams_messages_post",
         "requestBody": {
           "content": {

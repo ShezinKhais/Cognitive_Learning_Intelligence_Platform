@@ -26,14 +26,16 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import Principal
-from app.core.errors import ConflictError, NotFoundError, ValidationError
+from app.auth.service import active_user, granted_consents
+from app.core.config import Settings
+from app.core.errors import ConflictError, NotFoundError, PermissionError_, ValidationError
 from app.models.session import Session
 from app.realtime.classroom import classroom
 from app.realtime.hub import hub
 from app.repositories.course_repository import CourseRepository
 from app.repositories.session_repository import SessionRepository
 from app.schemas.common import Page
-from app.schemas.identity import Role
+from app.schemas.identity import ConsentType, Role
 from app.schemas.meetings import MeetingEventIn, MeetingEventKind
 from app.schemas.session import (
     DeliverableQuestionOut,
@@ -268,13 +270,38 @@ async def link_meeting(
     return await session_out(db, row)
 
 
-async def meeting_owner(db: AsyncSession, meeting_id: str) -> Principal | None:
-    """Who the Teams bot acts as for a meeting: the lecturer of its session."""
+async def meeting_owner(db: AsyncSession, meeting_id: str, settings: Settings) -> Principal | None:
+    """Who the Teams bot acts as for a meeting: the lecturer of its session,
+    as their account stands now. None when no session is linked.
+
+    The bot has no C.L.I.P token, so it borrows the lecturer's authority, and
+    must hold no more than they would through the meetings routes. A disabled
+    account, one that is no longer staff, or one whose terms consent has been
+    withdrawn is refused, as that lecturer's own request would be.
+    """
     session_id = await meetings.directory.session_for(meeting_id)
     row = await SessionRepository(db).get(session_id) if session_id is not None else None
     if row is None:
         return None
-    return Principal(user_id=row.instructor_id, role=Role.LECTURER, email="")
+    user = await active_user(row.instructor_id, settings, db)
+    if user is None or user.role not in (Role.LECTURER, Role.ADMIN):
+        reason = "account_unavailable" if user is None else "not_staff"
+    elif ConsentType.TERMS not in await granted_consents(user.id, settings, db):
+        reason = "terms_consent_missing"
+    else:
+        # As a lecturer even when the account is an admin's: running this one
+        # session needs only ownership, which matches by user id.
+        return Principal(user_id=user.id, role=Role.LECTURER, email=user.email)
+    log.warning(
+        "security_event=TEAMS_ACT_AS_REFUSED user_id=%s meeting_id=%r reason=%s",
+        row.instructor_id,
+        meeting_id,
+        reason,
+    )
+    raise PermissionError_(
+        "The lecturer of this meeting's session cannot be acted for.",
+        {"meeting_id": meeting_id, "reason": reason},
+    )
 
 
 async def handle_meeting_event(
