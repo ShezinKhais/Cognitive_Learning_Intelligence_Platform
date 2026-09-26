@@ -34,18 +34,26 @@ from app.repositories.course_repository import CourseRepository
 from app.repositories.session_repository import SessionRepository
 from app.schemas.common import Page
 from app.schemas.identity import Role
+from app.schemas.meetings import MeetingEventIn, MeetingEventKind
 from app.schemas.session import (
     DeliverableQuestionOut,
     SessionCreateRequest,
     SessionOut,
     SessionStatus,
 )
+from app.services.meeting_directory import meetings
 from app.services.session_access import session_membership_allowed
 
 log = logging.getLogger("clip.sessions")
 
-# How the class is held. Teams sessions arrive with Phase 4.
+# How the class is held. A session linked to a Teams meeting is held in it.
 MODE_IN_PERSON = "in_person"
+MODE_TEAMS = "teams"
+
+# What a session created by a meeting is called when the event names nothing.
+MEETING_TITLE = "Teams meeting"
+
+FINISHED = {SessionStatus.ENDED.value, SessionStatus.CANCELLED.value}
 
 MAX_TITLE_LENGTH = 200
 
@@ -81,7 +89,7 @@ async def create_session(
 async def start_session(db: AsyncSession, principal: Principal, session_id: UUID) -> SessionOut:
     """Blocked until the session has a staged question to deliver."""
     repo = SessionRepository(db)
-    row = await _owned(repo, principal, session_id)
+    row = await owned_session(repo, principal, session_id)
     _require(row, SessionStatus.PREPARED, "start")
     if not await repo.has_deliverable(row):
         raise ConflictError(
@@ -100,7 +108,7 @@ async def start_session(db: AsyncSession, principal: Principal, session_id: UUID
 
 async def pause_session(db: AsyncSession, principal: Principal, session_id: UUID) -> SessionOut:
     """Hold the question cycle. Students stay connected."""
-    row = await _owned(SessionRepository(db), principal, session_id)
+    row = await owned_session(SessionRepository(db), principal, session_id)
     _require(row, SessionStatus.ACTIVE, "pause")
     if row.paused_at is not None:
         raise ConflictError("The session is already paused.", {"session_id": str(session_id)})
@@ -111,7 +119,7 @@ async def pause_session(db: AsyncSession, principal: Principal, session_id: UUID
 
 async def resume_session(db: AsyncSession, principal: Principal, session_id: UUID) -> SessionOut:
     """Carry on from a pause."""
-    row = await _owned(SessionRepository(db), principal, session_id)
+    row = await owned_session(SessionRepository(db), principal, session_id)
     _require(row, SessionStatus.ACTIVE, "resume")
     if row.paused_at is None:
         raise ConflictError("The session is not paused.", {"session_id": str(session_id)})
@@ -123,7 +131,7 @@ async def resume_session(db: AsyncSession, principal: Principal, session_id: UUI
 async def end_session(db: AsyncSession, principal: Principal, session_id: UUID) -> SessionOut:
     """End a running session, or cancel one that never started."""
     repo = SessionRepository(db)
-    row = await _owned(repo, principal, session_id)
+    row = await owned_session(repo, principal, session_id)
     if row.status == SessionStatus.PREPARED.value:
         ended = SessionStatus.CANCELLED
     else:
@@ -150,7 +158,7 @@ async def list_deliverable_questions(
 ) -> Page[DeliverableQuestionOut]:
     """Return staged questions that this session may deliver."""
     repo = SessionRepository(db)
-    row = await _owned(repo, principal, session_id, for_update=False)
+    row = await owned_session(repo, principal, session_id, for_update=False)
     _require(row, SessionStatus.ACTIVE, "list questions for")
 
     questions, total = await repo.list_deliverable(
@@ -180,7 +188,7 @@ async def deliver_question(
     db: AsyncSession, principal: Principal, session_id: UUID, question_id: UUID
 ) -> dict[str, str]:
     """The lecturer's manual trigger, through the same path as the cycle."""
-    row = await _owned(SessionRepository(db), principal, session_id)
+    row = await owned_session(SessionRepository(db), principal, session_id)
     _require(row, SessionStatus.ACTIVE, "deliver a question in")
     delivered = await classroom.deliver(db, row, question_id)
     if delivered is None:
@@ -218,13 +226,93 @@ async def session_out(db: AsyncSession, row: Session) -> SessionOut:
         status=SessionStatus(row.status),
         starts_at=row.start_time,
         ended_at=row.ended_at,
+        teams_meeting_id=await meetings.directory.meeting_for(row.session_id),
         participant_count=len(hub.student_ids(row.session_id)),
         questions_delivered=await repo.count_delivered(row.session_id),
         paused=row.status == SessionStatus.ACTIVE.value and row.paused_at is not None,
     )
 
 
-async def _owned(
+# -- Teams meetings ---------------------------------------------------------------
+
+
+async def link_meeting(
+    db: AsyncSession, principal: Principal, meeting_id: str, session_id: UUID
+) -> SessionOut:
+    """Hold a session in a Teams meeting, replacing either side's old link.
+
+    A meeting already holding someone else's session is refused: the link
+    decides whose class the meeting starts and ends, so replacing it would
+    hand one lecturer another's meeting.
+    """
+    repo = SessionRepository(db)
+    row = await owned_session(repo, principal, session_id)
+    held = await meetings.directory.session_for(meeting_id)
+    if held is not None and held != session_id:
+        current = await repo.get(held)
+        if current is not None and not (
+            principal.is_(Role.ADMIN) or current.instructor_id == principal.user_id
+        ):
+            raise ConflictError(
+                "This meeting holds another lecturer's session.", {"meeting_id": meeting_id}
+            )
+    if row.status in FINISHED:
+        raise ConflictError(
+            f"Cannot link a meeting to a session that is {row.status}.",
+            {"current_status": row.status},
+        )
+    row.mode = MODE_TEAMS
+    await db.commit()
+    await meetings.directory.link(meeting_id, row.session_id)
+    log.info("session %s linked to meeting %s by %s", session_id, meeting_id, principal.user_id)
+    return await session_out(db, row)
+
+
+async def meeting_owner(db: AsyncSession, meeting_id: str) -> Principal | None:
+    """Who the Teams bot acts as for a meeting: the lecturer of its session."""
+    session_id = await meetings.directory.session_for(meeting_id)
+    row = await SessionRepository(db).get(session_id) if session_id is not None else None
+    if row is None:
+        return None
+    return Principal(user_id=row.instructor_id, role=Role.LECTURER, email="")
+
+
+async def handle_meeting_event(
+    db: AsyncSession, principal: Principal, event: MeetingEventIn
+) -> SessionOut:
+    """Start or end the session a meeting is linked to.
+
+    A meeting that starts with no session linked gets one, when the event
+    names its course. An event that finds the session already started, or
+    already over, returns it unchanged, since Teams may deliver it twice.
+    """
+    session_id = await meetings.directory.session_for(event.meeting_id)
+    if session_id is None:
+        if event.kind is not MeetingEventKind.STARTED or event.course_code is None:
+            raise NotFoundError(
+                "No session is linked to this meeting.", {"meeting_id": event.meeting_id}
+            )
+        created = await create_session(
+            db,
+            principal,
+            SessionCreateRequest(course_code=event.course_code, title=event.title or MEETING_TITLE),
+        )
+        # Committed and linked before the start, which may be refused: the
+        # meeting keeps its session, and starts it once a question is staged.
+        await link_meeting(db, principal, event.meeting_id, created.id)
+        session_id = created.id
+
+    row = await owned_session(SessionRepository(db), principal, session_id, for_update=False)
+    if event.kind is MeetingEventKind.STARTED:
+        if row.status == SessionStatus.ACTIVE.value:
+            return await session_out(db, row)
+        return await start_session(db, principal, session_id)
+    if row.status in FINISHED:
+        return await session_out(db, row)
+    return await end_session(db, principal, session_id)
+
+
+async def owned_session(
     repo: SessionRepository,
     principal: Principal,
     session_id: UUID,

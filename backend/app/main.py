@@ -20,6 +20,7 @@ from app.core.logging import configure_logging, request_id_var
 from app.realtime.classroom import classroom
 from app.services.live_wiring import install_live_store
 from app.services.material_recovery import keep_sweeping
+from app.services.meeting_directory import meetings
 from app.services.uploads import get_background_processor
 
 settings = get_settings()
@@ -55,6 +56,7 @@ async def lifespan(app: FastAPI):
     # after a class.
     install_live_store(classroom)
     classroom.check_wiring()
+    meetings.check_wiring()
     # In the background, so a database that is slow or absent never holds up
     # startup; it is only needed once a development account uploads.
     seeding = asyncio.create_task(ensure_dev_users(get_settings()), name="dev-user-seed")
