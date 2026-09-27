@@ -6,6 +6,7 @@ import {
   simulatedTeamsContext,
 } from '../src/teams/teamsContext.ts'
 import { buildSessionNotificationCard } from '../src/teams/notificationCard.ts'
+import { meetingTabConfiguration } from '../src/teams/configuration.ts'
 import { applyTeamsTheme } from '../src/teams/teamsTheme.ts'
 
 test('normalizes supported Teams themes and safely falls back', () => {
@@ -60,5 +61,17 @@ test('builds an Adaptive Card linked to the authorized session route', () => {
   assert.equal(
     actions[0]?.url,
     'https://clip.example/teams/meeting?sessionId=session%2F42',
+  )
+})
+
+test('configures the meeting tab to open the student side panel', () => {
+  assert.deepEqual(
+    meetingTabConfiguration('https://clip.example/config'),
+    {
+      entityId: 'clip.meeting',
+      contentUrl: 'https://clip.example/teams/meeting',
+      websiteUrl: 'https://clip.example/teams/meeting',
+      suggestedDisplayName: 'C.L.I.P',
+    },
   )
 })

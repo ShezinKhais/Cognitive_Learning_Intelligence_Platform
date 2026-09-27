@@ -5,6 +5,7 @@ import { LiveSessionPanel } from './StudentLiveSessionPage'
 export default function TeamsMeetingPage() {
   const teams = useTeams()
   const { sessions } = useStudentApp()
+  const requestedSessionId = new URLSearchParams(window.location.search).get('sessionId')
 
   if (teams.status === 'initializing') {
     return <PanelStatus title="Connecting to Microsoft Teams" />
@@ -20,7 +21,7 @@ export default function TeamsMeetingPage() {
     )
   }
 
-  if (!teams.context) {
+  if (!teams.context && !requestedSessionId) {
     return (
       <PanelStatus
         title="Open this page in Teams"
@@ -29,7 +30,7 @@ export default function TeamsMeetingPage() {
     )
   }
 
-  if (teams.context.frameContext !== 'sidePanel') {
+  if (teams.context && teams.context.frameContext !== 'sidePanel') {
     return (
       <PanelStatus
         title="Open the in-meeting panel"
@@ -38,16 +39,14 @@ export default function TeamsMeetingPage() {
     )
   }
 
-  const requestedSessionId = new URLSearchParams(window.location.search).get('sessionId')
   const session = sessions.find(
     (candidate) =>
       (
-        teams.context?.meetingId &&
-        candidate.teams_meeting_id === teams.context.meetingId
-      ) || (
-        !teams.context?.meetingId &&
         requestedSessionId &&
         candidate.id === requestedSessionId
+      ) || (
+        teams.context?.meetingId &&
+        candidate.teams_meeting_id === teams.context.meetingId
       ),
   )
 

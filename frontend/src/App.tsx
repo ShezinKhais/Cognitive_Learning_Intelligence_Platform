@@ -21,6 +21,7 @@ import StudentHomePage from './pages/StudentHomePage'
 import StudentLiveSessionPage from './pages/StudentLiveSessionPage'
 import SystemStatusPage from './pages/SystemStatusPage'
 import TeamsMeetingPage from './pages/TeamsMeetingPage'
+import TeamsConfigPage from './pages/TeamsConfigPage'
 
 // Sends whoever arrives at the root, or at a page that does not exist, to
 // their own home. Always sending them to /student told every lecturer and
@@ -53,6 +54,11 @@ export default function App() {
         path="/access-denied"
         element={<AccessDeniedPage />}
       />
+
+      {/* Teams loads this before a user enters the student experience. The
+          meeting organizer is normally a lecturer, so it must not use the
+          student role guard. */}
+      <Route path="/config" element={<TeamsConfigPage />} />
 
       <Route
         path="/student"

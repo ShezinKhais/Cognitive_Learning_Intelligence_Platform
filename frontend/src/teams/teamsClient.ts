@@ -67,7 +67,10 @@ export function createTeamsHost(
 ): TeamsHost {
   const query = new URLSearchParams(currentWindow.location.search)
 
-  if (query.get('teamsMock') === '1') {
+  if (
+    import.meta.env.VITE_TEAMS_MOCK_ENABLED === 'true' &&
+    query.get('teamsMock') === '1'
+  ) {
     return new SimulatedTeamsHost(currentWindow.location.search)
   }
 
