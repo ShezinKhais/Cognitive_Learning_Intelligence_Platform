@@ -42,7 +42,7 @@ import os
 import random
 from collections import OrderedDict
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -118,6 +118,10 @@ class _OpenQuestion:
     # client's own claim.
     timing: dict[UUID, float] = field(default_factory=dict)
     closer: asyncio.Task[None] | None = None
+    # One per accepted answer, resolved once the recorder has stored it or
+    # given up. The close waits on these, so it never reads the answers back
+    # from the store while one it has counted is still being written.
+    saving: list[asyncio.Future[None]] = field(default_factory=list)
 
     @property
     def eligible(self) -> set[UUID]:
@@ -352,7 +356,7 @@ class Classroom:
         # answer and the lecturer told. Independent of each other, and the
         # lecturer's request waits on them.
         await asyncio.gather(
-            self._after_close(live, closed),
+            self._after_close(live, open_, closed),
             *(self._record_prompt(p.outcome(PromptResult.EXPIRED)) for p in withdrawn),
         )
         self._hub.forget_session(session_id)
@@ -586,7 +590,7 @@ class Classroom:
                 live.countdown.start(self._next_wait())
                 await self._nudge_absent_locked(live, open_)
                 await self._score_engagement_locked(live, open_)
-        await self._after_close(live, closed)
+        await self._after_close(live, open_, closed)
 
     async def _close_locked(
         self, live: LiveSession, reason: QuestionCloseReason
@@ -706,9 +710,11 @@ class Classroom:
             if reason is not None:
                 return reason, None
             open_.accept(user_id, received_at)
+            if self.recorder is None:
+                return None, None
+            saved = asyncio.get_running_loop().create_future()
+            open_.saving.append(saved)
 
-        if self.recorder is None:
-            return None, None
         try:
             async with asyncio.timeout(RECORD_TIMEOUT_SECONDS):
                 return None, await self.recorder.record(
@@ -730,6 +736,11 @@ class Classroom:
             if still_open:
                 return "Your answer could not be saved. Please submit it again.", None
             return "Your answer could not be saved.", None
+        finally:
+            # After any withdrawal, so a close waiting on this sees the answer
+            # gone.
+            if not saved.done():
+                saved.set_result(None)
 
     # -- attention prompts --------------------------------------------------
 
@@ -913,13 +924,22 @@ class Classroom:
                 outcome.session_id,
             )
 
-    async def _after_close(self, live: LiveSession, closed: ClosedQuestion | None) -> None:
+    async def _after_close(
+        self, live: LiveSession, open_: _OpenQuestion | None, closed: ClosedQuestion | None
+    ) -> None:
         """Store a close and reveal its answer, and alert the lecturer if the
-        class did not follow. Independent, so neither waits on the other."""
-        if closed is not None:
-            await asyncio.gather(
-                self._record_close(closed), self._check_comprehension(live, closed)
-            )
+        class did not follow. Independent, so neither waits on the other.
+
+        Both read the answers back from the store, so they first wait for
+        those accepted before the close to be stored. Each write is bounded by
+        RECORD_TIMEOUT_SECONDS, and one that failed is left out.
+        """
+        if open_ is None or closed is None:
+            return
+        if open_.saving:
+            await asyncio.wait(list(open_.saving))
+            closed = replace(closed, answered=closed.answered & frozenset(open_.answered))
+        await asyncio.gather(self._record_close(closed), self._check_comprehension(live, closed))
 
     async def _record_close(self, closed: ClosedQuestion) -> None:
         if self.close_recorder is None:

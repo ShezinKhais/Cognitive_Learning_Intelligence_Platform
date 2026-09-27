@@ -186,6 +186,100 @@ async def test_a_slow_socket_does_not_fail_the_close_it_reveals(
     assert all(len(socket.of(ServerEventType.FEEDBACK_RESULT)) == 1 for socket, _ in sockets)
 
 
+class _SlowAnswers:
+    """An answer store held until released, which can then fail."""
+
+    def __init__(self, fail: bool = False) -> None:
+        self.release = asyncio.Event()
+        self.fail = fail
+        self.stored: list[UUID] = []
+
+    async def record(self, submission: Submission) -> None:
+        await self.release.wait()
+        if self.fail:
+            raise RuntimeError("database gone")
+        self.stored.append(submission.user_id)
+
+
+class _ClosesReadingAnswers(_Closes):
+    """Notes which answers were stored when the close was, as the real close
+    recorder reads them back to build the reveals."""
+
+    def __init__(self, answers: _SlowAnswers) -> None:
+        super().__init__()
+        self.answers = answers
+        self.stored_at_close: list[UUID] = []
+
+    async def record_close(self, closed: ClosedQuestion) -> dict:
+        self.stored_at_close = list(self.answers.stored)
+        return await super().record_close(closed)
+
+
+async def _answer_in_flight(
+    window: float, fail: bool = False
+) -> tuple[Classroom, object, UUID, _SlowAnswers, _ClosesReadingAnswers, asyncio.Task]:
+    room, events = make_room(window=window)
+    row = make_row()
+    _, student = await join_as(events, row.session_id, Role.STUDENT)
+    answers = _SlowAnswers(fail)
+    room.recorder = answers  # type: ignore[assignment]
+    closes = room.close_recorder = _ClosesReadingAnswers(answers)
+    question = await deliver_next(room, row)
+    submitted = asyncio.create_task(
+        room.submit(row.session_id, student, Role.STUDENT, answer_to(question.question_id))
+    )
+    await asyncio.sleep(0.01)
+    return room, row, student, answers, closes, submitted
+
+
+async def test_a_close_waits_for_an_answer_accepted_before_it_to_be_stored() -> None:
+    """The answer was counted when it arrived and stored after the lock was
+    released, so a window closing in between stored the close while the
+    answer was not there to reveal."""
+    room, _, student, answers, closes, submitted = await _answer_in_flight(window=0.05)
+
+    await asyncio.sleep(0.15)
+    assert closes.closed == []
+    answers.release.set()
+    await submitted
+    await asyncio.sleep(0.05)
+
+    [closed] = closes.closed
+    assert closed.answered == {student}
+    assert closes.stored_at_close == [student]
+    await room.shutdown()
+
+
+async def test_an_answer_that_fails_to_store_after_the_close_is_left_out() -> None:
+    room, _, student, answers, closes, submitted = await _answer_in_flight(window=0.05, fail=True)
+
+    await asyncio.sleep(0.15)
+    answers.release.set()
+    receipt = await submitted
+    await asyncio.sleep(0.05)
+
+    assert not receipt.accepted
+    [closed] = closes.closed
+    assert closed.answered == frozenset()
+    assert closed.eligible == {student}
+    await room.shutdown()
+
+
+async def test_ending_the_class_waits_for_an_answer_still_being_stored() -> None:
+    room, row, student, answers, closes, submitted = await _answer_in_flight(window=30.0)
+
+    ending = asyncio.create_task(room.end(row.session_id, SessionStatus.ENDED, delivered=1))
+    await asyncio.sleep(0.05)
+    assert not ending.done()
+    answers.release.set()
+    await asyncio.wait_for(ending, 1)
+    await submitted
+
+    [closed] = closes.closed
+    assert closed.answered == {student}
+    assert closes.stored_at_close == [student]
+
+
 # -- attendance --------------------------------------------------------------
 
 
