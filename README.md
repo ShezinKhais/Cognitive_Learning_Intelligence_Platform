@@ -106,6 +106,20 @@ the app that existed then.
 The Teams integration stays dormant until a tenant is available. `/health` reports
 `teams_configured: false` and the app runs standalone in the meantime.
 
+### Simulated Teams meeting panel
+
+The student meeting panel can be exercised before a Microsoft 365 tenant is available.
+Sign in as a student, ensure an assigned session has a `teams_meeting_id`, and open:
+
+```text
+/teams/meeting?teamsMock=1&meetingId=THE_TEAMS_MEETING_ID&theme=dark
+```
+
+Use `default`, `dark`, `contrast`, or `glass` for the theme. Without `teamsMock=1`, the
+page uses the official TeamsJS context when embedded in Teams and remains in standalone
+mode in an ordinary browser. Context values are routing hints only; the existing C.L.I.P
+login and assigned-session response remain the authorization boundary.
+
 ---
 
 ## Checks

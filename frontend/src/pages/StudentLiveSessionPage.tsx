@@ -54,7 +54,13 @@ export default function StudentLiveSessionPage() {
   return <LiveSessionPanel session={session} />
 }
 
-function LiveSessionPanel({ session }: { session: StudentSession }) {
+export function LiveSessionPanel({
+  session,
+  compact = false,
+}: {
+  session: StudentSession
+  compact?: boolean
+}) {
   const {
     state,
     selectOption,
@@ -76,20 +82,22 @@ function LiveSessionPanel({ session }: { session: StudentSession }) {
     : 0
 
   return (
-    <main className="min-h-screen bg-background px-4 py-5 sm:px-6 sm:py-8">
-      <div className="mx-auto max-w-4xl">
+    <main className={`min-h-screen bg-background px-4 py-5 ${compact ? '' : 'sm:px-6 sm:py-8'}`}>
+      <div className={`mx-auto ${compact ? 'max-w-xl' : 'max-w-4xl'}`}>
         <header className="rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)] sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <Link
-                to="/student"
-                className="inline-flex items-center gap-1 text-sm font-medium text-info hover:underline"
-              >
-                <ChevronLeft aria-hidden="true" size={17} />
-                All sessions
-              </Link>
+              {!compact && (
+                <Link
+                  to="/student"
+                  className="inline-flex items-center gap-1 text-sm font-medium text-info hover:underline"
+                >
+                  <ChevronLeft aria-hidden="true" size={17} />
+                  All sessions
+                </Link>
+              )}
 
-              <p className="mt-4 text-sm font-semibold text-info">
+              <p className={`${compact ? '' : 'mt-4'} text-sm font-semibold text-info`}>
                 {session.course_code}
               </p>
 

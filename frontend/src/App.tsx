@@ -20,6 +20,7 @@ import QuestionReview from './pages/QuestionReview'
 import StudentHomePage from './pages/StudentHomePage'
 import StudentLiveSessionPage from './pages/StudentLiveSessionPage'
 import SystemStatusPage from './pages/SystemStatusPage'
+import TeamsMeetingPage from './pages/TeamsMeetingPage'
 
 // Sends whoever arrives at the root, or at a page that does not exist, to
 // their own home. Always sending them to /student told every lecturer and
@@ -66,6 +67,17 @@ export default function App() {
           path="session/:sessionId"
           element={<StudentLiveSessionPage />}
         />
+      </Route>
+
+      <Route
+        path="/teams"
+        element={
+          <StudentAppProvider>
+            <ProtectedStudentPage />
+          </StudentAppProvider>
+        }
+      >
+        <Route path="meeting" element={<TeamsMeetingPage />} />
       </Route>
 
       {/* The guard is a layout route, so the role check runs before
