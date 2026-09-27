@@ -7,6 +7,7 @@ import {
 
 import { defaultPathForRole } from './authRouting'
 import RoleGate from './components/RoleGate'
+import StaffTeamsBoundary from './components/StaffTeamsBoundary'
 import { StudentAppProvider } from './features/student/StudentAppContext'
 import AccessDeniedPage from './pages/AccessDeniedPage'
 import AdminConsole from './pages/AdminConsole'
@@ -71,7 +72,13 @@ export default function App() {
       {/* The guard is a layout route, so the role check runs before
           AdminConsole mounts and no admin-only markup renders for a
           student who types the URL. */}
-      <Route element={<RoleGate allow={['admin']}>{() => <Outlet />}</RoleGate>}>
+      <Route
+        element={
+          <RoleGate allow={['admin']}>
+            {() => <Outlet />}
+          </RoleGate>
+        }
+      >
         <Route
           path="/admin"
           element={<AdminConsole />}
@@ -80,8 +87,22 @@ export default function App() {
 
       {/* Lecturers, and admins who can review on any lecturer's behalf per
           the backend's ownership check, reach the materials workspace and the
-          review screen; students never see either mount. */}
-      <Route element={<RoleGate allow={['lecturer', 'admin']}>{() => <Outlet />}</RoleGate>}>
+          review screen; students never see either mount.
+
+          RoleGate remains authoritative for authentication, role and consent.
+          StaffTeamsBoundary receives that verified C.L.I.P identity but Teams
+          context must never be allowed to grant staff access. */}
+      <Route
+        element={
+          <RoleGate allow={['lecturer', 'admin']}>
+            {(user) => (
+              <StaffTeamsBoundary user={user}>
+                <Outlet />
+              </StaffTeamsBoundary>
+            )}
+          </RoleGate>
+        }
+      >
         <Route
           path="/lecturer"
           element={
