@@ -37,6 +37,7 @@ log = logging.getLogger("clip.live_recorder")
 class StoredResponse(Protocol):
     """The answer as stored, matching BBIS's StudentResponse."""
 
+    response_id: UUID
     selected_option: int | None
     free_text: str | None
 
@@ -64,6 +65,10 @@ class StoreResponse(Protocol):
 
 GetQuestion = Callable[[UUID], Awaitable[Question | None]]
 
+# Stores the comprehension label for one stored answer;
+# comprehension_writer.store_comprehension.
+StoreComprehension = Callable[[UUID, FeedbackResultPayload], Awaitable[object]]
+
 # Stores how a question ended; LiveEventRepository.close_question_delivery.
 StoreClose = Callable[[ClosedQuestion], Awaitable[object]]
 
@@ -81,9 +86,16 @@ class LiveResponseRecorder:
     structurally: raising refuses the answer, per that contract.
     """
 
-    def __init__(self, *, get_question: GetQuestion, store_response: StoreResponse) -> None:
+    def __init__(
+        self,
+        *,
+        get_question: GetQuestion,
+        store_response: StoreResponse,
+        store_comprehension: StoreComprehension | None = None,
+    ) -> None:
         self._get_question = get_question
         self._store_response = store_response
+        self._store_comprehension = store_comprehension
 
     async def record(self, submission: Submission) -> FeedbackResultPayload:
         question = await self._get_question(submission.question_id)
@@ -121,7 +133,23 @@ class LiveResponseRecorder:
                 free_text=stored.free_text,
             )
 
+        await self._record_comprehension(stored, feedback)
         return feedback
+
+    async def _record_comprehension(
+        self, stored: StoredResponse, feedback: FeedbackResultPayload
+    ) -> None:
+        """Label the answer for the class comprehension alert.
+
+        The answer is already stored, so a failure here must not refuse it:
+        raising from record() would tell the student their answer was lost.
+        """
+        if self._store_comprehension is None or feedback.correct is None:
+            return
+        try:
+            await self._store_comprehension(stored.response_id, feedback)
+        except Exception:
+            log.exception("could not store comprehension for response %s", stored.response_id)
 
 
 class LiveCloseRecorder:

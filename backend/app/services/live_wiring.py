@@ -15,6 +15,7 @@ from app.realtime.hub import hub
 from app.repositories.live_event_repository import LiveEventRepository
 from app.repositories.question_repository import QuestionRepository
 from app.schemas.events import FeedbackResultPayload, ServerEventType
+from app.services.comprehension_writer import store_comprehension
 from app.services.live_recorder import LiveCloseRecorder, LivePromptRecorder, LiveResponseRecorder
 
 
@@ -111,7 +112,9 @@ async def _send_feedback(session_id: UUID, user_id: UUID, payload: FeedbackResul
 
 
 classroom.recorder = LiveResponseRecorder(
-    get_question=_get_question, store_response=_store_response
+    get_question=_get_question,
+    store_response=_store_response,
+    store_comprehension=store_comprehension,
 )
 
 classroom.close_recorder = LiveCloseRecorder(

@@ -50,14 +50,31 @@ class FakeStore:
     async def __call__(self, **kwargs):
         self.calls.append(kwargs)
         key = (kwargs["session_id"], kwargs["question_id"], kwargs["user_id"])
-        return self.rows.setdefault(key, SimpleNamespace(**kwargs))
+        if key not in self.rows:
+            self.rows[key] = SimpleNamespace(response_id=uuid.uuid4(), **kwargs)
+        return self.rows[key]
 
 
-def make_recorder(question, store):
+def make_recorder(question, store, store_comprehension=None):
     async def get_question(question_id):
         return question if question is not None and question_id == question.question_id else None
 
-    return LiveResponseRecorder(get_question=get_question, store_response=store)
+    return LiveResponseRecorder(
+        get_question=get_question,
+        store_response=store,
+        store_comprehension=store_comprehension,
+    )
+
+
+class FakeComprehension:
+    def __init__(self, fail=False):
+        self.calls = []
+        self.fail = fail
+
+    async def __call__(self, response_id, feedback):
+        self.calls.append((response_id, feedback))
+        if self.fail:
+            raise RuntimeError("comprehension_result is unavailable")
 
 
 async def test_record_scores_stores_and_returns_mcq_feedback():
@@ -148,6 +165,50 @@ async def test_record_raises_when_question_missing():
         await make_recorder(None, store).record(submission)
 
     assert store.calls == []
+
+
+@pytest.mark.parametrize("selected, correct", [(1, True), (2, False)])
+async def test_record_passes_the_scored_mcq_answer_to_comprehension(selected, correct):
+    session_id = uuid.uuid4()
+    question = make_delivered_question(session_id=session_id, correct_option=1)
+    store = FakeStore()
+    comprehension = FakeComprehension()
+    submission = make_submission(
+        session_id=session_id, question_id=question.question_id, selected_option=selected
+    )
+
+    feedback = await make_recorder(question, store, comprehension).record(submission)
+
+    [stored] = store.rows.values()
+    assert comprehension.calls == [(stored.response_id, feedback)]
+    assert feedback.correct is correct
+
+
+async def test_record_does_not_label_free_text():
+    session_id = uuid.uuid4()
+    question = make_delivered_question(session_id=session_id)
+    comprehension = FakeComprehension()
+    submission = make_submission(
+        session_id=session_id, question_id=question.question_id, free_text="Layers of nodes."
+    )
+
+    await make_recorder(question, FakeStore(), comprehension).record(submission)
+
+    assert comprehension.calls == []
+
+
+async def test_a_failed_comprehension_write_still_accepts_the_answer():
+    session_id = uuid.uuid4()
+    question = make_delivered_question(session_id=session_id, correct_option=1)
+    store = FakeStore()
+    submission = make_submission(
+        session_id=session_id, question_id=question.question_id, selected_option=1
+    )
+
+    feedback = await make_recorder(question, store, FakeComprehension(fail=True)).record(submission)
+
+    assert feedback.correct is True
+    assert len(store.rows) == 1
 
 
 def make_closed(question, *, answered=(), eligible=()):
