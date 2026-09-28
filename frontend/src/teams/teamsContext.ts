@@ -5,6 +5,13 @@ import type {
   TeamsTheme,
 } from './teamsTypes'
 
+export function isTeamsMockAllowed(
+  enabled: boolean,
+  production: boolean,
+): boolean {
+  return enabled && !production
+}
+
 export function normalizeTheme(value: string | null | undefined): TeamsTheme {
   if (
     value === 'dark' ||

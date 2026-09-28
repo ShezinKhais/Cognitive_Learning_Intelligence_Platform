@@ -120,7 +120,8 @@ Use `default`, `dark`, `contrast`, or `glass` for the theme. Without `teamsMock=
 page uses the official TeamsJS context when embedded in Teams and remains in standalone
 mode in an ordinary browser. Production deployments should leave
 `VITE_TEAMS_MOCK_ENABLED` unset or false. Context values are routing hints only; the
-existing C.L.I.P login and assigned-session response remain the authorization boundary.
+production bundle also disables simulation regardless of that setting. The existing
+C.L.I.P login and assigned-session response remain the authorization boundary.
 
 ---
 

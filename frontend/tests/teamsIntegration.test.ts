@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  isTeamsMockAllowed,
   normalizeTheme,
   simulatedTeamsContext,
 } from '../src/teams/teamsContext.ts'
@@ -26,6 +27,12 @@ test('builds a simulated meeting side-panel context from the URL', () => {
   assert.equal(context.userId, 'user-7')
   assert.equal(context.theme, 'contrast')
   assert.equal(context.frameContext, 'sidePanel')
+})
+
+test('allows simulated Teams context only in non-production builds', () => {
+  assert.equal(isTeamsMockAllowed(true, false), true)
+  assert.equal(isTeamsMockAllowed(false, false), false)
+  assert.equal(isTeamsMockAllowed(true, true), false)
 })
 
 test('applies exactly one Teams theme class', () => {

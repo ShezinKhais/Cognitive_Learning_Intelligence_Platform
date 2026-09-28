@@ -1,6 +1,7 @@
 import { app } from '@microsoft/teams-js'
 
 import {
+  isTeamsMockAllowed,
   normalizeTeamsContext,
   normalizeTheme,
   simulatedTeamsContext,
@@ -68,7 +69,10 @@ export function createTeamsHost(
   const query = new URLSearchParams(currentWindow.location.search)
 
   if (
-    import.meta.env.VITE_TEAMS_MOCK_ENABLED === 'true' &&
+    isTeamsMockAllowed(
+      import.meta.env.VITE_TEAMS_MOCK_ENABLED === 'true',
+      import.meta.env.PROD,
+    ) &&
     query.get('teamsMock') === '1'
   ) {
     return new SimulatedTeamsHost(currentWindow.location.search)
