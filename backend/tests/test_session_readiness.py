@@ -142,6 +142,7 @@ async def test_processing_material_refuses_the_start_and_says_why(db, app) -> No
     ended = client.post(f"/api/v1/sessions/{session['id']}/end")
     assert ended.json()["status"] == "cancelled"
 
+
 async def test_processing_material_does_not_hold_back_a_class_with_questions(db, app) -> None:  # noqa: F811
     client, factory, created = db
     course = await _course(factory, created)
@@ -171,6 +172,7 @@ async def test_readiness_is_refused_once_the_session_has_started(db, app) -> Non
 
     assert response.status_code == 409
     client.post(f"/api/v1/sessions/{session['id']}/end")
+
 
 async def test_a_failed_material_does_not_hold_back_the_class(db, app) -> None:  # noqa: F811
     client, factory, created = db
