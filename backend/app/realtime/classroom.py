@@ -41,8 +41,8 @@ import logging
 import os
 import random
 from collections import OrderedDict
-from collections.abc import Callable
-from dataclasses import dataclass, field, replace
+from collections.abc import AsyncIterator, Callable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -119,8 +119,8 @@ class _OpenQuestion:
     timing: dict[UUID, float] = field(default_factory=dict)
     closer: asyncio.Task[None] | None = None
     # One per accepted answer, resolved once the recorder has stored it or
-    # given up. The close waits on these, so it never reads the answers back
-    # from the store while one it has counted is still being written.
+    # given up. The close waits on these, so everything it announces, scores
+    # and stores counts only answers that were kept.
     saving: list[asyncio.Future[None]] = field(default_factory=list)
 
     @property
@@ -340,7 +340,7 @@ class Classroom:
             await self.announce(session_id, status, delivered)
             self._hub.forget_session(session_id)
             return
-        async with live.lock:
+        async with self._settled(live):
             open_ = live.open
             closed = await self._close_locked(live, QuestionCloseReason.SESSION_ENDED)
             withdrawn = live.attention.withdraw_all()
@@ -356,7 +356,7 @@ class Classroom:
         # answer and the lecturer told. Independent of each other, and the
         # lecturer's request waits on them.
         await asyncio.gather(
-            self._after_close(live, open_, closed),
+            self._after_close(live, closed),
             *(self._record_prompt(p.outcome(PromptResult.EXPIRED)) for p in withdrawn),
         )
         self._hub.forget_session(session_id)
@@ -582,7 +582,7 @@ class Classroom:
     async def _close_when_due(self, live: LiveSession, open_: _OpenQuestion) -> None:
         await _sleep_until(open_.question.closes_at)
         closed = None
-        async with live.lock:
+        async with self._settled(live):
             if live.open is open_:
                 closed = await self._close_locked(live, QuestionCloseReason.WINDOW_ELAPSED)
                 # The next wait starts now, not at the delivery, so the
@@ -590,7 +590,30 @@ class Classroom:
                 live.countdown.start(self._next_wait())
                 await self._nudge_absent_locked(live, open_)
                 await self._score_engagement_locked(live, open_)
-        await self._after_close(live, open_, closed)
+        await self._after_close(live, closed)
+
+    @contextlib.asynccontextmanager
+    async def _settled(self, live: LiveSession) -> AsyncIterator[None]:
+        """Hold the session's lock once no answer to the open question is
+        still being stored, so a close announces, scores and stores only the
+        answers that were kept.
+
+        The wait is outside the lock, since a write that fails takes it to
+        withdraw the answer, and each write is bounded by
+        RECORD_TIMEOUT_SECONDS. It does not reopen the window: an answer
+        arriving after closes_at is refused whether or not the close has run.
+        """
+        while True:
+            open_ = live.open
+            pending = [saved for saved in open_.saving if not saved.done()] if open_ else []
+            if pending:
+                await asyncio.wait(pending)
+                continue
+            async with live.lock:
+                open_ = live.open
+                if open_ is None or all(saved.done() for saved in open_.saving):
+                    yield
+                    return
 
     async def _close_locked(
         self, live: LiveSession, reason: QuestionCloseReason
@@ -924,22 +947,13 @@ class Classroom:
                 outcome.session_id,
             )
 
-    async def _after_close(
-        self, live: LiveSession, open_: _OpenQuestion | None, closed: ClosedQuestion | None
-    ) -> None:
+    async def _after_close(self, live: LiveSession, closed: ClosedQuestion | None) -> None:
         """Store a close and reveal its answer, and alert the lecturer if the
-        class did not follow. Independent, so neither waits on the other.
-
-        Both read the answers back from the store, so they first wait for
-        those accepted before the close to be stored. Each write is bounded by
-        RECORD_TIMEOUT_SECONDS, and one that failed is left out.
-        """
-        if open_ is None or closed is None:
-            return
-        if open_.saving:
-            await asyncio.wait(list(open_.saving))
-            closed = replace(closed, answered=closed.answered & frozenset(open_.answered))
-        await asyncio.gather(self._record_close(closed), self._check_comprehension(live, closed))
+        class did not follow. Independent, so neither waits on the other."""
+        if closed is not None:
+            await asyncio.gather(
+                self._record_close(closed), self._check_comprehension(live, closed)
+            )
 
     async def _record_close(self, closed: ClosedQuestion) -> None:
         if self.close_recorder is None:

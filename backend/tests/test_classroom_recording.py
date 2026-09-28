@@ -8,6 +8,7 @@ real ones against a database.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from uuid import UUID, uuid4
 
 import pytest
@@ -215,12 +216,27 @@ class _ClosesReadingAnswers(_Closes):
         return await super().record_close(closed)
 
 
-async def _answer_in_flight(
-    window: float, fail: bool = False
-) -> tuple[Classroom, object, UUID, _SlowAnswers, _ClosesReadingAnswers, asyncio.Task]:
-    room, events = make_room(window=window)
+@dataclass
+class _InFlight:
+    """A class whose one student has answered, with the answer still being
+    stored."""
+
+    room: Classroom
+    session_id: UUID
+    student: UUID
+    socket: FakeSocket
+    answers: _SlowAnswers
+    closes: _ClosesReadingAnswers
+    submitted: asyncio.Task
+
+    def closed_events(self) -> list[dict]:
+        return [m["data"] for m in self.socket.of(ServerEventType.QUESTION_CLOSED)]
+
+
+async def _answer_in_flight(window: float, fail: bool = False, missed: int = 0) -> _InFlight:
+    room, events = make_room(window=window, missed=missed)
     row = make_row()
-    _, student = await join_as(events, row.session_id, Role.STUDENT)
+    socket, student = await join_as(events, row.session_id, Role.STUDENT)
     answers = _SlowAnswers(fail)
     room.recorder = answers  # type: ignore[assignment]
     closes = room.close_recorder = _ClosesReadingAnswers(answers)
@@ -229,55 +245,72 @@ async def _answer_in_flight(
         room.submit(row.session_id, student, Role.STUDENT, answer_to(question.question_id))
     )
     await asyncio.sleep(0.01)
-    return room, row, student, answers, closes, submitted
+    return _InFlight(room, row.session_id, student, socket, answers, closes, submitted)
 
 
 async def test_a_close_waits_for_an_answer_accepted_before_it_to_be_stored() -> None:
     """The answer was counted when it arrived and stored after the lock was
     released, so a window closing in between stored the close while the
     answer was not there to reveal."""
-    room, _, student, answers, closes, submitted = await _answer_in_flight(window=0.05)
+    flight = await _answer_in_flight(window=0.05)
 
     await asyncio.sleep(0.15)
-    assert closes.closed == []
-    answers.release.set()
-    await submitted
+    assert flight.closed_events() == []
+    assert flight.closes.closed == []
+    flight.answers.release.set()
+    await flight.submitted
     await asyncio.sleep(0.05)
 
-    [closed] = closes.closed
-    assert closed.answered == {student}
-    assert closes.stored_at_close == [student]
-    await room.shutdown()
+    [announced] = flight.closed_events()
+    assert announced["respondents"] == 1
+    [closed] = flight.closes.closed
+    assert closed.answered == {flight.student}
+    assert flight.closes.stored_at_close == [flight.student]
+    await flight.room.shutdown()
 
 
-async def test_an_answer_that_fails_to_store_after_the_close_is_left_out() -> None:
-    room, _, student, answers, closes, submitted = await _answer_in_flight(window=0.05, fail=True)
+async def test_an_answer_that_fails_to_store_after_the_window_is_not_counted_anywhere() -> None:
+    """Not in the close, the count the class is told, or the student's run
+    of missed questions and engagement, since the student was told it was
+    refused."""
+    flight = await _answer_in_flight(window=0.05, fail=True, missed=1)
 
     await asyncio.sleep(0.15)
-    answers.release.set()
-    receipt = await submitted
+    flight.answers.release.set()
+    receipt = await flight.submitted
     await asyncio.sleep(0.05)
 
     assert not receipt.accepted
-    [closed] = closes.closed
+    [announced] = flight.closed_events()
+    assert (announced["respondents"], announced["eligible"]) == (0, 1)
+    [closed] = flight.closes.closed
     assert closed.answered == frozenset()
-    assert closed.eligible == {student}
-    await room.shutdown()
+    assert closed.eligible == {flight.student}
+    # Counted as a question let pass, so the missed-question nudge goes out.
+    assert flight.socket.of(ServerEventType.PROMPT_ATTENTION)
+    student = flight.room._live[flight.session_id].attention._students[flight.student]
+    assert (student.shown, student.answered) == (1, 0)
+    await flight.room.shutdown()
 
 
 async def test_ending_the_class_waits_for_an_answer_still_being_stored() -> None:
-    room, row, student, answers, closes, submitted = await _answer_in_flight(window=30.0)
+    flight = await _answer_in_flight(window=30.0)
 
-    ending = asyncio.create_task(room.end(row.session_id, SessionStatus.ENDED, delivered=1))
+    ending = asyncio.create_task(
+        flight.room.end(flight.session_id, SessionStatus.ENDED, delivered=1)
+    )
     await asyncio.sleep(0.05)
     assert not ending.done()
-    answers.release.set()
+    assert flight.closed_events() == []
+    flight.answers.release.set()
     await asyncio.wait_for(ending, 1)
-    await submitted
+    await flight.submitted
 
-    [closed] = closes.closed
-    assert closed.answered == {student}
-    assert closes.stored_at_close == [student]
+    [announced] = flight.closed_events()
+    assert announced["respondents"] == 1
+    [closed] = flight.closes.closed
+    assert closed.answered == {flight.student}
+    assert flight.closes.stored_at_close == [flight.student]
 
 
 # -- attendance --------------------------------------------------------------
