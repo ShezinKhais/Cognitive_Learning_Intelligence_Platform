@@ -8,17 +8,20 @@ Only multiple-choice answers are labelled here. A right answer is mastered
 and a wrong one struggling: a single choice has no partial credit, so partial
 is left for Phase 5's free-text classifier, which is also when free-text
 answers start getting a label at all.
+
+The label is written in the same transaction as the answer it describes, so
+the two are stored together or not at all. That keeps it inside the answer's
+own write rather than a second one sharing the recorder's time budget, and
+the close, which waits for each answer's write, always finds it.
 """
 
 from __future__ import annotations
 
-from uuid import UUID
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from sqlalchemy import select
-
-from app.core.database import get_session_factory
 from app.models.comprehension_result import ComprehensionResult
-from app.schemas.events import FeedbackResultPayload
+from app.models.student_response import StudentResponse
 from app.schemas.session import ComprehensionLabel
 
 # An MCQ answer is scored against its stored correct option, not estimated.
@@ -29,36 +32,26 @@ def mcq_label(correct: bool) -> ComprehensionLabel:
     return ComprehensionLabel.MASTERED if correct else ComprehensionLabel.STRUGGLING
 
 
-async def store_comprehension(response_id: UUID, feedback: FeedbackResultPayload) -> None:
-    """Store the label for one stored answer, once.
+async def label_response(db: AsyncSession, response: StudentResponse) -> None:
+    """Add the label for a stored answer to the caller's transaction.
 
-    A retried submission comes back with the answer already stored, so the
-    label may already exist too. The reader counts a student once either way,
-    but a second row would still be a duplicate record of the same answer.
+    Labels the answer as stored, not as resubmitted: a retry is handed back
+    the answer already kept, and the label must describe that one. A response
+    already labelled keeps its label, which the unique response_id enforces
+    even for two writes at once.
     """
-    if feedback.correct is None:
+    if response.is_correct is None:
         return
-
-    async with get_session_factory()() as db:
-        try:
-            existing = await db.scalar(
-                select(ComprehensionResult.result_id).where(
-                    ComprehensionResult.response_id == response_id
-                )
-            )
-            if existing is not None:
-                return
-
-            db.add(
-                ComprehensionResult(
-                    response_id=response_id,
-                    label=mcq_label(feedback.correct).value,
-                    confidence_score=MCQ_CONFIDENCE,
-                    score=1.0 if feedback.correct else 0.0,
-                    ai_feedback_text=feedback.explanation or "",
-                )
-            )
-            await db.commit()
-        except Exception:
-            await db.rollback()
-            raise
+    await db.execute(
+        insert(ComprehensionResult)
+        .values(
+            response_id=response.response_id,
+            label=mcq_label(response.is_correct).value,
+            confidence_score=MCQ_CONFIDENCE,
+            score=1.0 if response.is_correct else 0.0,
+            # The explanation is sent to the student with the feedback; the
+            # column is filled by Phase 5's free-text classifier.
+            ai_feedback_text="",
+        )
+        .on_conflict_do_nothing(index_elements=[ComprehensionResult.response_id])
+    )
