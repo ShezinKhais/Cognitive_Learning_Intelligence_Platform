@@ -49,6 +49,10 @@ test('students return only to student pages', () => {
     '/teams/meeting',
   )
   assert.equal(
+    intendedPathForRole('student', '/teams/meeting?sessionId=session-42'),
+    '/teams/meeting?sessionId=session-42',
+  )
+  assert.equal(
     intendedPathForRole('student', '/admin'),
     '/student',
   )
