@@ -122,10 +122,6 @@ class SessionRepository:
         )
         return list(result.scalars().all())
 
-    async def has_deliverable(self, live: Session) -> bool:
-        result = await self.session.execute(self._deliverable(live).limit(1))
-        return result.scalar_one_or_none() is not None
-
     async def list_deliverable(
         self,
         live: Session,

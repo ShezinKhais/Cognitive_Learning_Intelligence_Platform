@@ -2,10 +2,13 @@
 
 Owner: AI 1, Phase 4.
 
-A session may start only when every material it draws on has finished
-processing and at least one approved, staged question is ready to deliver.
-The readiness endpoint and start_session both call evaluate_readiness, so
-what the lecturer is shown and what the start button does cannot disagree.
+A session may start once it has at least one approved, staged question to
+deliver: that question's material has processed, or it would not exist.
+Everything else explains why there is none, or is a warning when there are
+some, so a slow upload for another week never holds back a class that has
+something to ask. The readiness endpoint and start_session both call
+evaluate_readiness, so what the lecturer is shown and what the start button
+does cannot disagree.
 
 A failed material is a warning, not a blocker. It will never finish, so
 blocking on it would hold the class back forever even when the rest of the
@@ -42,6 +45,10 @@ def assess(
 
     unfinished = [m for m in materials if m.status in _UNFINISHED]
     failed = [m for m in materials if m.status == MaterialStatus.FAILED.value]
+    ready = deliverable_questions > 0
+    # Only a missing question blocks. A material still processing is the
+    # reason there is none, or a warning when there already are some.
+    reasons = warnings if ready else blockers
 
     if not materials:
         blockers.append(
@@ -52,7 +59,7 @@ def assess(
         )
 
     for material in unfinished:
-        blockers.append(
+        reasons.append(
             ReadinessIssue(
                 code=ReadinessIssueCode.MATERIAL_PROCESSING,
                 message=f"{material.filename} is still being processed.",
@@ -69,7 +76,7 @@ def assess(
             )
         )
 
-    if deliverable_questions == 0:
+    if not ready:
         blockers.append(
             ReadinessIssue(
                 code=ReadinessIssueCode.NO_APPROVED_QUESTIONS,
@@ -79,7 +86,7 @@ def assess(
 
     return SessionReadinessOut(
         session_id=session_id,
-        ready=not blockers,
+        ready=ready,
         blockers=blockers,
         warnings=warnings,
         materials_total=len(materials),

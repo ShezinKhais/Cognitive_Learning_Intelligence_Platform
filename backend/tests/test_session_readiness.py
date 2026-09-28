@@ -34,16 +34,27 @@ def test_nothing_uploaded_is_not_ready() -> None:
     assert _codes(report.blockers) == ["no_material", "no_approved_questions"]
 
 
-def test_material_still_processing_blocks_the_start() -> None:
+def test_material_still_processing_is_a_warning_when_questions_are_staged() -> None:
     pending, processing = _file("pending", "a.pdf"), _file("processing", "b.pdf")
 
     report = assess(uuid4(), [_file("completed"), pending, processing], 3)
 
-    assert report.ready is False
-    assert _codes(report.blockers) == ["material_processing", "material_processing"]
-    assert [b.material_id for b in report.blockers] == [pending.id, processing.id]
-    assert "a.pdf" in report.blockers[0].message
+    assert report.ready is True
+    assert report.blockers == []
+    assert _codes(report.warnings) == ["material_processing", "material_processing"]
+    assert [w.material_id for w in report.warnings] == [pending.id, processing.id]
+    assert "a.pdf" in report.warnings[0].message
     assert report.materials_processing == 2
+
+
+def test_material_still_processing_explains_why_there_are_no_questions() -> None:
+    processing = _file("processing", "b.pdf")
+
+    report = assess(uuid4(), [processing], 0)
+
+    assert report.ready is False
+    assert _codes(report.blockers) == ["material_processing", "no_approved_questions"]
+    assert report.blockers[0].material_id == processing.id
 
 
 def test_a_failed_material_is_a_warning_not_a_blocker() -> None:
@@ -112,7 +123,6 @@ async def test_a_session_with_a_staged_question_reports_ready(db, app) -> None: 
 async def test_processing_material_refuses_the_start_and_says_why(db, app) -> None:  # noqa: F811
     client, factory, created = db
     course = await _course(factory, created)
-    await _question(db, course, LECTURER_ID)
     processing = await _material(db, course, "processing")
     _as(app, LECTURER_ID, Role.LECTURER)
     session = _create(client, course)
@@ -123,7 +133,7 @@ async def test_processing_material_refuses_the_start_and_says_why(db, app) -> No
     assert readiness["ready"] is False
     assert start.status_code == 409
     blockers = start.json()["error"]["detail"]["blockers"]
-    assert [b["code"] for b in blockers] == ["material_processing"]
+    assert [b["code"] for b in blockers] == ["material_processing", "no_approved_questions"]
     assert blockers[0]["material_id"] == str(processing)
     # The same blockers on both, so the page and the button agree.
     assert blockers == readiness["blockers"]
@@ -132,6 +142,35 @@ async def test_processing_material_refuses_the_start_and_says_why(db, app) -> No
     ended = client.post(f"/api/v1/sessions/{session['id']}/end")
     assert ended.json()["status"] == "cancelled"
 
+async def test_processing_material_does_not_hold_back_a_class_with_questions(db, app) -> None:  # noqa: F811
+    client, factory, created = db
+    course = await _course(factory, created)
+    await _question(db, course, LECTURER_ID)
+    await _material(db, course, "processing")
+    _as(app, LECTURER_ID, Role.LECTURER)
+    session = _create(client, course)
+
+    readiness = client.get(f"/api/v1/sessions/{session['id']}/readiness").json()
+    start = client.post(f"/api/v1/sessions/{session['id']}/start")
+
+    assert readiness["ready"] is True
+    assert [w["code"] for w in readiness["warnings"]] == ["material_processing"]
+    assert start.status_code == 200, start.text
+    client.post(f"/api/v1/sessions/{session['id']}/end")
+
+
+async def test_readiness_is_refused_once_the_session_has_started(db, app) -> None:  # noqa: F811
+    client, factory, created = db
+    course = await _course(factory, created)
+    await _question(db, course, LECTURER_ID)
+    _as(app, LECTURER_ID, Role.LECTURER)
+    session = _create(client, course)
+    assert client.post(f"/api/v1/sessions/{session['id']}/start").status_code == 200
+
+    response = client.get(f"/api/v1/sessions/{session['id']}/readiness")
+
+    assert response.status_code == 409
+    client.post(f"/api/v1/sessions/{session['id']}/end")
 
 async def test_a_failed_material_does_not_hold_back_the_class(db, app) -> None:  # noqa: F811
     client, factory, created = db
