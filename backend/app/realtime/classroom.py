@@ -41,7 +41,7 @@ import logging
 import os
 import random
 from collections import OrderedDict
-from collections.abc import Callable, Iterable
+from collections.abc import AsyncIterator, Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -119,6 +119,10 @@ class _OpenQuestion:
     # client's own claim.
     timing: dict[UUID, float] = field(default_factory=dict)
     closer: asyncio.Task[None] | None = None
+    # One per accepted answer, resolved once the recorder has stored it or
+    # given up. The close waits on these, so everything it announces, scores
+    # and stores counts only answers that were kept.
+    saving: list[asyncio.Future[None]] = field(default_factory=list)
 
     @property
     def eligible(self) -> set[UUID]:
@@ -341,7 +345,7 @@ class Classroom:
             await self.announce(session_id, status, delivered)
             self._hub.forget_session(session_id)
             return
-        async with live.lock:
+        async with self._settled(live):
             open_ = live.open
             closed = await self._close_locked(live, QuestionCloseReason.SESSION_ENDED)
             withdrawn = live.attention.withdraw_all()
@@ -583,7 +587,7 @@ class Classroom:
     async def _close_when_due(self, live: LiveSession, open_: _OpenQuestion) -> None:
         await _sleep_until(open_.question.closes_at)
         closed = None
-        async with live.lock:
+        async with self._settled(live):
             if live.open is open_:
                 closed = await self._close_locked(live, QuestionCloseReason.WINDOW_ELAPSED)
                 # The next wait starts now, not at the delivery, so the
@@ -592,6 +596,29 @@ class Classroom:
                 await self._nudge_absent_locked(live, open_)
                 await self._score_engagement_locked(live, open_)
         await self._after_close(live, closed)
+
+    @contextlib.asynccontextmanager
+    async def _settled(self, live: LiveSession) -> AsyncIterator[None]:
+        """Hold the session's lock once no answer to the open question is
+        still being stored, so a close announces, scores and stores only the
+        answers that were kept.
+
+        The wait is outside the lock, since a write that fails takes it to
+        withdraw the answer, and each write is bounded by
+        RECORD_TIMEOUT_SECONDS. It does not reopen the window: an answer
+        arriving after closes_at is refused whether or not the close has run.
+        """
+        while True:
+            open_ = live.open
+            pending = [saved for saved in open_.saving if not saved.done()] if open_ else []
+            if pending:
+                await asyncio.wait(pending)
+                continue
+            async with live.lock:
+                open_ = live.open
+                if open_ is None or all(saved.done() for saved in open_.saving):
+                    yield
+                    return
 
     async def _close_locked(
         self, live: LiveSession, reason: QuestionCloseReason
@@ -711,9 +738,11 @@ class Classroom:
             if reason is not None:
                 return reason, None
             open_.accept(user_id, received_at)
+            if self.recorder is None:
+                return None, None
+            saved = asyncio.get_running_loop().create_future()
+            open_.saving.append(saved)
 
-        if self.recorder is None:
-            return None, None
         try:
             async with asyncio.timeout(RECORD_TIMEOUT_SECONDS):
                 return None, await self.recorder.record(
@@ -735,6 +764,11 @@ class Classroom:
             if still_open:
                 return "Your answer could not be saved. Please submit it again.", None
             return "Your answer could not be saved.", None
+        finally:
+            # After any withdrawal, so a close waiting on this sees the answer
+            # gone.
+            if not saved.done():
+                saved.set_result(None)
 
     # -- attention prompts --------------------------------------------------
 
