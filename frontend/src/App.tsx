@@ -21,6 +21,7 @@ import QuestionReview from './pages/QuestionReview'
 import StudentHomePage from './pages/StudentHomePage'
 import StudentLiveSessionPage from './pages/StudentLiveSessionPage'
 import SystemStatusPage from './pages/SystemStatusPage'
+import TeamsLecturerMeetingPage from './pages/TeamsLecturerMeetingPage'
 
 // Sends whoever arrives at the root, or at a page that does not exist, to
 // their own home. Always sending them to /student told every lecturer and
@@ -123,6 +124,10 @@ export default function App() {
         <Route
           path="/lecturer/sessions/:sessionId/live"
           element={<LecturerLiveSessionPage />}
+        />
+        <Route
+          path="/lecturer/teams/meeting"
+          element={<TeamsLecturerMeetingPage />}
         />
         <Route
           path="/materials/:materialId/review"
