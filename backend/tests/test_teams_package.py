@@ -39,6 +39,14 @@ def test_the_committed_manifest_and_icons_are_packageable(package: ModuleType) -
     assert package.file_problems(_manifest(package)) == []
 
 
+def test_the_meeting_tab_is_offered_only_as_the_side_panel(package: ModuleType) -> None:
+    """The configured tab opens the student panel, so a chat or details tab
+    would send the lecturer to a page they cannot use. Widen this once those
+    surfaces exist."""
+    [tab] = json.loads(_manifest(package))["configurableTabs"]
+    assert tab["context"] == ["meetingSidePanel"]
+
+
 @pytest.mark.parametrize(
     ("change", "problem"),
     [
