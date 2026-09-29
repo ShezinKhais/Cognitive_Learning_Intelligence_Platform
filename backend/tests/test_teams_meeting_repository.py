@@ -1,5 +1,6 @@
 """Tests for persistent Teams meeting-to-session links."""
 
+import asyncio
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -136,3 +137,29 @@ async def test_meeting_links_persist_and_replace_both_sides(
 
     assert await directory.session_for("meeting-b") == second_session_id
     assert await directory.meeting_for(second_session_id) == "meeting-b"
+
+
+async def test_link_if_absent_keeps_the_first_concurrent_link(
+    meeting_store: MeetingStoreSetup,
+) -> None:
+    directory = meeting_store.directory
+    first_session_id = meeting_store.first_session_id
+    second_session_id = meeting_store.second_session_id
+
+    linked_session_ids = await asyncio.gather(
+        directory.link_if_absent("meeting-first-start", first_session_id),
+        directory.link_if_absent("meeting-first-start", second_session_id),
+    )
+
+    # Both callers are told which single session won the meeting.
+    assert len(set(linked_session_ids)) == 1
+    winning_session_id = linked_session_ids[0]
+    assert winning_session_id in {first_session_id, second_session_id}
+
+    assert await directory.session_for("meeting-first-start") == winning_session_id
+    assert await directory.meeting_for(winning_session_id) == "meeting-first-start"
+
+    losing_session_id = (
+        second_session_id if winning_session_id == first_session_id else first_session_id
+    )
+    assert await directory.meeting_for(losing_session_id) is None

@@ -38,6 +38,36 @@ class DatabaseMeetingDirectory:
             )
             return result.scalar_one_or_none()
 
+    async def link_if_absent(self, meeting_id: str, session_id: UUID) -> UUID:
+        """Keep the first session linked to a meeting and return its ID."""
+        async with self._session_factory() as session:
+            async with session.begin():
+                await session.execute(
+                    text("SELECT pg_advisory_xact_lock(:lock_id)"),
+                    {"lock_id": MEETING_LINK_LOCK_ID},
+                )
+
+                existing = await session.execute(
+                    select(TeamsMeetingLink.session_id).where(
+                        TeamsMeetingLink.meeting_id == meeting_id
+                    )
+                )
+                linked_session_id = existing.scalar_one_or_none()
+                if linked_session_id is not None:
+                    return linked_session_id
+
+                await session.execute(
+                    delete(TeamsMeetingLink).where(TeamsMeetingLink.session_id == session_id)
+                )
+                session.add(
+                    TeamsMeetingLink(
+                        meeting_id=meeting_id,
+                        session_id=session_id,
+                    )
+                )
+
+        return session_id
+
     async def link(self, meeting_id: str, session_id: UUID) -> None:
         """Link both sides, replacing either side's previous association."""
         async with self._session_factory() as session:

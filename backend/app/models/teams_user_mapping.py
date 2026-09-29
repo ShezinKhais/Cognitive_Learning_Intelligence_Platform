@@ -20,7 +20,13 @@ MAX_TEAMS_USER_ID_LENGTH = 256
 
 
 class TeamsUserMapping(Base):
-    """A Teams identity resolved to a C.L.I.P. user within one tenant."""
+    """A validated Microsoft Entra identity mapped to a C.L.I.P. user.
+
+    tenant_id is the server-validated token tid claim, and teams_user_id is
+    the server-validated Entra/AAD object ID from the oid claim. Display names,
+    email addresses and client-provided TeamsJS identifiers must not be used
+    as this mapping key.
+    """
 
     __tablename__ = "teams_user_mapping"
     __table_args__ = (
