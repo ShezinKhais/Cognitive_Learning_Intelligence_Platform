@@ -8,6 +8,7 @@ should refuse, and a manifest asking for more than the app uses.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from pathlib import Path
@@ -23,7 +24,7 @@ from app.api.v1.teams import get_bot_authenticator
 from app.auth.service import AuthenticatedUser
 from app.auth.store import ADMIN_ID, LECTURER_ID, get_consent_repository
 from app.core.config import get_settings
-from app.core.errors import AuthenticationError
+from app.core.errors import AuthenticationError, ServiceUnavailableError
 from app.models.session import Session as SessionModel
 from app.schemas.identity import ConsentType, Role
 from app.services import session_lifecycle, teams_bot
@@ -159,39 +160,158 @@ async def test_a_key_endorsed_for_nothing_in_particular_is_judged_on_the_rest() 
     await _endorsed_for(frozenset()).verify(f"Bearer {_token()}", SERVICE_URL, "msteams")
 
 
-async def test_the_published_keys_keep_their_endorsements(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """PyJWK drops everything but the key, so the endorsements are read from
-    the raw set Bot Framework publishes."""
-    other = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    published = {
+OTHER_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+
+def _published(*keys: tuple[object, str, list[str]]) -> dict:
+    """A key set as Bot Framework publishes it: (private key, kid, endorsements)."""
+    return {
         "keys": [
             {
-                **json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(KEY.public_key())),
-                "kid": "teams-key",
-                "endorsements": ["msteams", "webchat"],
-            },
-            {
-                **json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(other.public_key())),
-                "kid": "chat-key",
-                "endorsements": ["webchat"],
-            },
+                **json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(key.public_key())),  # type: ignore[attr-defined]
+                "kid": kid,
+                "use": "sig",
+                "endorsements": endorsements,
+            }
+            for key, kid, endorsements in keys
         ]
     }
-    monkeypatch.setattr(jwt.PyJWKClient, "fetch_data", lambda self: published)
-    keys = teams_bot._BotFrameworkKeys("https://login.example.invalid/keys")
-    monkeypatch.setattr(teams_bot, "_keys", lambda: keys)
 
-    def signed(key, kid: str) -> str:  # noqa: ANN001
-        claims = {"iss": teams_bot.BOT_FRAMEWORK_ISSUER, "aud": APP_ID, "exp": time.time() + 60}
-        return jwt.encode(claims, key, algorithm="RS256", headers={"kid": kid})
 
-    teams = await teams_bot.bot_framework_key(signed(KEY, "teams-key"))
-    chat = await teams_bot.bot_framework_key(signed(other, "chat-key"))
+def _signed(key, kid: str) -> str:  # noqa: ANN001
+    claims = {"iss": teams_bot.BOT_FRAMEWORK_ISSUER, "aud": APP_ID, "exp": time.time() + 60}
+    return jwt.encode(claims, key, algorithm="RS256", headers={"kid": kid})
+
+
+class _KeySource:
+    """Bot Framework's key endpoint: counts fetches, and can be made to fail."""
+
+    def __init__(self, *sets: dict) -> None:
+        self.sets = list(sets)
+        self.fetches = 0
+        self.failing = False
+
+    def __call__(self) -> dict:
+        self.fetches += 1
+        if self.failing:
+            raise jwt.PyJWKClientConnectionError("no route to host")
+        return self.sets[min(self.fetches, len(self.sets)) - 1]
+
+
+class _Clock:
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def _keys(source: _KeySource, clock: _Clock) -> teams_bot.BotFrameworkKeys:
+    return teams_bot.BotFrameworkKeys("https://login.example.invalid/keys", source, clock)
+
+
+async def test_the_published_keys_keep_their_endorsements() -> None:
+    """PyJWK drops everything but the key, so the endorsements are read from
+    the raw set Bot Framework publishes."""
+    source = _KeySource(
+        _published((KEY, "teams-key", ["msteams", "webchat"]), (OTHER_KEY, "chat-key", ["webchat"]))
+    )
+    keys = _keys(source, _Clock())
+
+    teams = await keys.key_for(_signed(KEY, "teams-key"))
+    chat = await keys.key_for(_signed(OTHER_KEY, "chat-key"))
 
     assert teams.endorsements == {"msteams", "webchat"}
     assert chat.endorsements == {"webchat"}
+    assert source.fetches == 1
+
+
+async def test_a_burst_of_made_up_key_ids_causes_one_fetch() -> None:
+    """A kid is read before anything is verified, so anyone can send any.
+    Each unknown one used to refetch the whole set from Bot Framework."""
+    source = _KeySource(_published((KEY, "teams-key", ["msteams"])))
+    keys = _keys(source, _Clock())
+    authenticator = teams_bot.BotAuthenticator(APP_ID, TENANT_ID, key_for=keys.key_for)
+
+    for n in range(50):
+        with pytest.raises(AuthenticationError):
+            await authenticator.verify(f"Bearer {_signed(OTHER_KEY, f'made-up-{n}')}", SERVICE_URL)
+
+    assert source.fetches == 1
+
+
+async def test_concurrent_unknown_key_ids_share_one_fetch() -> None:
+    source = _KeySource(_published((KEY, "teams-key", ["msteams"])))
+    keys = _keys(source, _Clock())
+
+    results = await asyncio.gather(
+        *(keys.key_for(_signed(OTHER_KEY, f"made-up-{n}")) for n in range(20)),
+        return_exceptions=True,
+    )
+
+    assert all(isinstance(r, jwt.InvalidTokenError) for r in results)
+    assert source.fetches == 1
+
+
+async def test_a_known_key_needs_no_fetch_until_the_set_is_due_a_refresh() -> None:
+    source = _KeySource(_published((KEY, "teams-key", ["msteams"])))
+    clock = _Clock()
+    keys = _keys(source, clock)
+    token = _signed(KEY, "teams-key")
+
+    for _ in range(20):
+        await keys.key_for(token)
+    assert source.fetches == 1
+
+    clock.now += teams_bot.BotFrameworkKeys.REFRESH_AFTER_SECONDS
+    await keys.key_for(token)
+    assert source.fetches == 2
+
+
+async def test_a_key_bot_framework_rotates_in_is_found_after_the_interval() -> None:
+    """Refusing unknown kids between refreshes cannot lock out a key Bot
+    Framework has since published: the next refresh allowed finds it."""
+    source = _KeySource(
+        _published((KEY, "old-key", ["msteams"])),
+        _published((KEY, "old-key", ["msteams"]), (OTHER_KEY, "new-key", ["msteams"])),
+    )
+    clock = _Clock()
+    keys = _keys(source, clock)
+    await keys.key_for(_signed(KEY, "old-key"))
+
+    with pytest.raises(jwt.InvalidTokenError):
+        await keys.key_for(_signed(OTHER_KEY, "new-key"))
+    clock.now += teams_bot.BotFrameworkKeys.MIN_REFRESH_SECONDS
+
+    assert (await keys.key_for(_signed(OTHER_KEY, "new-key"))).endorsements == {"msteams"}
+    assert source.fetches == 2
+
+
+async def test_a_failed_refresh_keeps_the_keys_already_held() -> None:
+    source = _KeySource(_published((KEY, "teams-key", ["msteams"])))
+    clock = _Clock()
+    keys = _keys(source, clock)
+    token = _signed(KEY, "teams-key")
+    await keys.key_for(token)
+
+    source.failing = True
+    clock.now += teams_bot.BotFrameworkKeys.REFRESH_AFTER_SECONDS
+
+    assert (await keys.key_for(token)).endorsements == {"msteams"}
+
+
+async def test_keys_that_cannot_be_loaded_are_an_outage_not_a_bad_token() -> None:
+    """Teams retries a 503. A 401 would drop the meeting's start for good.
+    And the attempt is rate limited like any other."""
+    source = _KeySource()
+    source.failing = True
+    keys = _keys(source, _Clock())
+    authenticator = teams_bot.BotAuthenticator(APP_ID, TENANT_ID, key_for=keys.key_for)
+
+    for _ in range(5):
+        with pytest.raises(ServiceUnavailableError):
+            await authenticator.verify(f"Bearer {_signed(KEY, 'teams-key')}", SERVICE_URL)
+    assert source.fetches == 1
 
 
 # -- F4: the bot holds no more than the lecturer it acts for ------------------------

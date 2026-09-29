@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from functools import lru_cache
@@ -81,39 +82,109 @@ class BotSigningKey:
 KeyResolver = Callable[[str], Awaitable[BotSigningKey]]
 
 
-class _BotFrameworkKeys(jwt.PyJWKClient):
-    """Bot Framework's published keys, keeping each key's endorsements.
+class BotFrameworkKeys:
+    """Bot Framework's published signing keys, each with its endorsements.
 
-    PyJWK keeps only the key material, so the endorsements are read from the
-    raw set as it is fetched. Every refresh of the cached set comes through
-    here, so the two never describe different sets.
+    A token names its key by kid before anything about it is verified, so the
+    lookup is exposed to anyone who can reach the endpoint. PyJWKClient
+    refetches the whole set for every kid it does not know, which let a
+    stream of made-up kids drive one outbound fetch, and one thread from the
+    pool uploads and extraction share, per request. Here a known kid is
+    answered from memory without a thread. The set is refreshed once it is
+    older than REFRESH_AFTER_SECONDS, or for an unknown kid, but never more
+    often than MIN_REFRESH_SECONDS, however many kids ask. Callers arriving
+    during a refresh wait for that one fetch rather than starting their own.
+    If a refresh fails, the keys already held stay in use.
     """
 
-    def __init__(self, uri: str) -> None:
-        super().__init__(uri, cache_keys=True)
-        self.endorsements: dict[str, frozenset[str]] = {}
+    # Picks up keys Bot Framework has published since the last fetch.
+    REFRESH_AFTER_SECONDS = 3600
+    # The most often an unknown kid can make the set be fetched again.
+    MIN_REFRESH_SECONDS = 60
+    FETCH_TIMEOUT_SECONDS = 10
 
-    def fetch_data(self) -> Any:
-        data = super().fetch_data()
-        keys = data.get("keys") if isinstance(data, dict) else None
-        self.endorsements = {
-            entry["kid"]: frozenset(entry.get("endorsements") or ())
-            for entry in keys or ()
-            if isinstance(entry, dict) and isinstance(entry.get("kid"), str)
-        }
-        return data
+    def __init__(
+        self,
+        uri: str,
+        fetch: Callable[[], Any] | None = None,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        # PyJWKClient only fetches here: its redirect refusal and timeout,
+        # none of its caching.
+        client = jwt.PyJWKClient(
+            uri, cache_keys=False, cache_jwk_set=False, timeout=self.FETCH_TIMEOUT_SECONDS
+        )
+        self._fetch = fetch or client.fetch_data
+        self._clock = clock
+        self._keys: dict[str, BotSigningKey] = {}
+        self._fetched_at: float | None = None
+        self._refreshing = asyncio.Lock()
+
+    async def key_for(self, token: str) -> BotSigningKey:
+        kid = jwt.get_unverified_header(token).get("kid")
+        if not isinstance(kid, str) or not kid:
+            raise jwt.InvalidTokenError("the token names no signing key")
+        if kid not in self._keys or self._older_than(self.REFRESH_AFTER_SECONDS):
+            async with self._refreshing:
+                # Whoever held the lock may have just fetched what this needs.
+                if (
+                    kid not in self._keys or self._older_than(self.REFRESH_AFTER_SECONDS)
+                ) and self._older_than(self.MIN_REFRESH_SECONDS):
+                    await self._refresh()
+        if not self._keys:
+            raise jwt.PyJWKClientConnectionError("Bot Framework's signing keys are not loaded")
+        signing = self._keys.get(kid)
+        if signing is None:
+            raise jwt.InvalidTokenError("the signing key is not in Bot Framework's published set")
+        return signing
+
+    def _older_than(self, seconds: float) -> bool:
+        return self._fetched_at is None or self._clock() - self._fetched_at >= seconds
+
+    async def _refresh(self) -> None:
+        # Counted from the attempt, so a failing fetch is rate limited too.
+        self._fetched_at = self._clock()
+        try:
+            # urllib blocks, so off the event loop.
+            data = await asyncio.to_thread(self._fetch)
+        except jwt.PyJWKClientError as exc:
+            if not self._keys:
+                # An outage, not a bad token: Teams retries a 503.
+                raise jwt.PyJWKClientConnectionError(str(exc)) from exc
+            log.warning("could not refresh Bot Framework's signing keys; keeping the last set")
+            return
+        published = _published_keys(data)
+        if published:
+            self._keys = published
+        elif not self._keys:
+            raise jwt.PyJWKClientConnectionError("Bot Framework published no usable keys")
+
+
+def _published_keys(data: Any) -> dict[str, BotSigningKey]:
+    """Each usable signing key in a published set, by kid, with the channels
+    it is endorsed for. PyJWK keeps only the key, so the endorsements are read
+    from the raw entry."""
+    keys = {}
+    for entry in (data.get("keys") if isinstance(data, dict) else None) or ():
+        if not isinstance(entry, dict) or not isinstance(entry.get("kid"), str):
+            continue
+        if entry.get("use", "sig") != "sig":
+            continue
+        try:
+            key = jwt.PyJWK(entry).key
+        except jwt.PyJWTError:
+            continue
+        keys[entry["kid"]] = BotSigningKey(key, frozenset(entry.get("endorsements") or ()))
+    return keys
 
 
 @lru_cache
-def _keys() -> _BotFrameworkKeys:
-    return _BotFrameworkKeys(BOT_FRAMEWORK_KEYS)
+def _keys() -> BotFrameworkKeys:
+    return BotFrameworkKeys(BOT_FRAMEWORK_KEYS)
 
 
 async def bot_framework_key(token: str) -> BotSigningKey:
-    keys = _keys()
-    # PyJWKClient fetches with urllib, which blocks, so off the event loop.
-    signing = await asyncio.to_thread(keys.get_signing_key_from_jwt, token)
-    return BotSigningKey(signing.key, keys.endorsements.get(signing.key_id))
+    return await _keys().key_for(token)
 
 
 class BotAuthenticator:

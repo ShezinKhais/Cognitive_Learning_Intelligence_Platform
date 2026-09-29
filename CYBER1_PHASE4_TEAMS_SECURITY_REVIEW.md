@@ -38,6 +38,7 @@ locally generated signing key in place of Bot Framework's.
 | F3 | Engagement monitoring ignored engagement, camera and microphone consent, and a withdrawal did not stop collection | High | Fixed |
 | F4 | The bot acted for a meeting's lecturer without checking their account still allowed it | Medium | Fixed |
 | F5 | The manifest asked for permissions the app does not use | Medium | Fixed |
+| F6 | A made-up key id made the bot refetch Bot Framework's keys on every request | Medium | Fixed |
 | R1-R5 | Residual risks owned by other workstreams or gated on Teams access | - | Documented, section 4 |
 
 ### F1 - The bot acted on any channel and any tenant (High)
@@ -190,6 +191,35 @@ scope, and Teams cannot hide them by role. That is not an access-control gap:
 each page is gated by the frontend's `RoleGate` and every API it calls
 enforces the role on the server.
 
+### F6 - A made-up key id forced a key fetch on every request (Medium)
+
+Raised in review of this PR by General CS.
+
+**What was wrong.** A token names its signing key (`kid`) in its header, and
+the key is looked up before anything is verified, so anyone who can reach the
+endpoint chooses the kid. PyJWKClient refetches the whole key set whenever it
+does not know a kid, and does not remember the miss. Every `POST
+/api/v1/teams/messages` carrying a random kid therefore caused:
+
+- an outbound fetch to login.botframework.com;
+- a thread from the default executor, which storage and extraction also use.
+
+Every request, even with a known kid, also took a thread for the lookup.
+
+**Fix** (`BotFrameworkKeys` in `app/services/teams_bot.py`), refreshing on a
+timer as Bot Framework's own SDKs do:
+
+- A known kid is answered from memory, with no thread and no fetch.
+- The set is refreshed once it is an hour old, or for an unknown kid, but never
+  more than once a minute, however many kids ask. An unknown kid in between is
+  refused (401) without a fetch.
+- Callers arriving during a refresh wait for that one fetch rather than start
+  their own.
+- A key Bot Framework rotates in is found by the next refresh allowed.
+- If a refresh fails, the keys already held stay in use. With none held, the
+  bot answers 503, so Teams retries rather than dropping the event. Failed
+  attempts are rate limited too.
+
 ---
 
 ## 3. Unauthorised Meeting Access: Tests
@@ -210,6 +240,12 @@ missing bot tokens. This review adds:
 | Key not in Bot Framework's published set | 401 |
 | Key with no endorsements | Judged on its other claims, as Bot Framework's SDKs do |
 | Endorsements read from the published key set | Kept per key |
+| 50 made-up key ids in a row | One fetch, every one refused |
+| 20 made-up key ids at once | One shared fetch |
+| A known key, repeatedly | No fetch until the set is an hour old |
+| A key rotated in after the last fetch | Found once a refresh is allowed |
+| Refresh fails with keys held | Keys still used |
+| Keys cannot be loaded at all | 503, attempts rate limited |
 | Bot, for a lecturer who withdrew terms | Acknowledged, class not started |
 | Bot, for a disabled account or one no longer staff | Acknowledged, class not started |
 | Bot, for an admin's class | Acts with lecturer rights only |
@@ -228,7 +264,7 @@ missing bot tokens. This review adds:
 | Consent route | Withdrawal applied at once, grant at the next join |
 
 Each fix was also checked against its tests: every guard was disabled in turn
-(22 mutations) and its test failed each time.
+(28 mutations) and its test failed each time.
 
 ---
 
@@ -253,6 +289,9 @@ users:
   a Teams SSO token validated on the server (issuer, audience, `tid`).
 - Keep the mapping one to one, and refuse a second C.L.I.P. user for the same
   `oid`.
+
+When BBIS adds the mapping, Cyber 1 reviews it against these rules before it
+is used for anything.
 
 **R3 - Teams SSO (AI 2, Cyber 2).** If tabs adopt Teams SSO,
 `webApplicationInfo.resource` must change from the RSC placeholder to
@@ -292,6 +331,8 @@ After the fixes:
 
 - The bot acts only on endorsed Teams activities from this tenant, and only for
   a lecturer who could act themselves.
+- Made-up key ids cannot make the bot fetch from Bot Framework more than once a
+  minute.
 - Every live-class surface enforces terms consent.
 - Engagement, camera and microphone consent each govern exactly what they
   describe, and withdrawing any of them takes effect at once.
