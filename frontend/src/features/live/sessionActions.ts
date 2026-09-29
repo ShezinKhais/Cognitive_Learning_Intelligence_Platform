@@ -1,4 +1,7 @@
-﻿import { apiAuthenticatedRequest } from '../../api'
+﻿import {
+  apiAuthenticatedGet,
+  apiAuthenticatedRequest,
+} from '../../api'
 
 export type SessionLifecycleAction =
   | 'start'
@@ -31,6 +34,30 @@ export interface CreateSessionPayload {
   starts_at?: string | null
 }
 
+export type ReadinessIssueCode =
+  | 'no_material'
+  | 'material_processing'
+  | 'no_approved_questions'
+  | 'material_failed'
+
+export interface ReadinessIssue {
+  code: ReadinessIssueCode
+  message: string
+  material_id: string | null
+}
+
+export interface SessionReadiness {
+  session_id: string
+  ready: boolean
+  blockers: ReadinessIssue[]
+  warnings: ReadinessIssue[]
+  materials_total: number
+  materials_processing: number
+  materials_failed: number
+  deliverable_questions: number
+  checked_at: string
+}
+
 export function createSession(
   payload: CreateSessionPayload,
 ): Promise<SessionActionResponse> {
@@ -40,6 +67,16 @@ export function createSession(
       method: 'POST',
       body: JSON.stringify(payload),
     },
+  )
+}
+
+export function getSessionReadiness(
+  sessionId: string,
+): Promise<SessionReadiness> {
+  return apiAuthenticatedGet<SessionReadiness>(
+    `/sessions/${encodeURIComponent(
+      sessionId,
+    )}/readiness`,
   )
 }
 

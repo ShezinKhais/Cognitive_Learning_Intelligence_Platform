@@ -13,10 +13,12 @@ import LiveAlertsPanel from '../features/live/LiveAlertsPanel'
 import ManualQuestionTrigger from '../features/live/ManualQuestionTrigger'
 import {
   endSession,
+  getSessionReadiness,
   pauseSession,
   resumeSession,
   startSession,
   type SessionLifecycleAction,
+  type SessionReadiness,
 } from '../features/live/sessionActions'
 import {
   useLiveSession,
@@ -122,15 +124,16 @@ export default function LecturerLiveSessionPage() {
       sessionId: string
     }>()
 
- const {
-  connectionStatus,
-  sessionState,
-  activeQuestion,
-  closedQuestion,
-  alerts,
-  sessionNotice,
-  acknowledgeAlert,
-} = useLiveSession(sessionId)
+  const {
+    connectionStatus,
+    sessionState,
+    activeQuestion,
+    closedQuestion,
+    alerts,
+    sessionNotice,
+    acknowledgeAlert,
+  } = useLiveSession(sessionId)
+
   const [
     actionInProgress,
     setActionInProgress,
@@ -151,6 +154,27 @@ export default function LecturerLiveSessionPage() {
     secondsRemaining,
     setSecondsRemaining,
   ] = useState(0)
+
+  const [
+    readiness,
+    setReadiness,
+  ] =
+    useState<SessionReadiness | null>(
+      null,
+    )
+
+  const [
+    readinessLoading,
+    setReadinessLoading,
+  ] = useState(false)
+
+  const [
+    readinessError,
+    setReadinessError,
+  ] =
+    useState<string | null>(
+      null,
+    )
 
   useEffect(() => {
     setSecondsRemaining(
@@ -180,10 +204,110 @@ export default function LecturerLiveSessionPage() {
     }
   }, [activeQuestion])
 
+  useEffect(() => {
+    if (
+      !sessionId ||
+      sessionState?.status !==
+        'prepared'
+    ) {
+      setReadiness(null)
+      setReadinessError(null)
+      setReadinessLoading(false)
+      return
+    }
+
+    let active = true
+
+    async function loadReadiness() {
+      if (!sessionId) {
+        return
+      }
+
+      setReadinessLoading(true)
+      setReadinessError(null)
+
+      try {
+        const result =
+          await getSessionReadiness(
+            sessionId,
+          )
+
+        if (!active) {
+          return
+        }
+
+        setReadiness(result)
+      } catch (error: unknown) {
+        if (!active) {
+          return
+        }
+
+        setReadiness(null)
+
+        setReadinessError(
+          error instanceof ApiError
+            ? error.message
+            : 'Session readiness could not be checked.',
+        )
+      } finally {
+        if (active) {
+          setReadinessLoading(false)
+        }
+      }
+    }
+
+    void loadReadiness()
+
+    return () => {
+      active = false
+    }
+  }, [
+    sessionId,
+    sessionState?.status,
+  ])
+
+  async function refreshReadiness() {
+    if (!sessionId) {
+      return
+    }
+
+    setReadinessLoading(true)
+    setReadinessError(null)
+
+    try {
+      const result =
+        await getSessionReadiness(
+          sessionId,
+        )
+
+      setReadiness(result)
+    } catch (error: unknown) {
+      setReadiness(null)
+
+      setReadinessError(
+        error instanceof ApiError
+          ? error.message
+          : 'Session readiness could not be checked.',
+      )
+    } finally {
+      setReadinessLoading(false)
+    }
+  }
+
   async function handleSessionAction(
     action: SessionLifecycleAction,
   ) {
     if (!sessionId) {
+      return
+    }
+
+    if (
+      action === 'start' &&
+      readiness?.ready !== true
+    ) {
+      setActionError(
+        'The session cannot start until the readiness check passes.',
+      )
       return
     }
 
@@ -219,6 +343,10 @@ export default function LecturerLiveSessionPage() {
         setActionError(
           error.message,
         )
+
+        if (action === 'start') {
+          void refreshReadiness()
+        }
       } else {
         setActionError(
           'The session action could not be completed.',
@@ -235,6 +363,8 @@ export default function LecturerLiveSessionPage() {
   const canStart =
     sessionState?.status ===
       'prepared' &&
+    readiness?.ready === true &&
+    !readinessLoading &&
     !isBusy
 
   const canPause =
@@ -351,6 +481,179 @@ export default function LecturerLiveSessionPage() {
               </p>
             </div>
 
+            {sessionState?.status ===
+              'prepared' && (
+              <div className="mt-5 rounded-xl border border-border bg-muted/20 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-semibold">
+                      Content readiness
+                    </h3>
+
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Check that the session has usable material and approved questions before starting.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void refreshReadiness()
+                    }
+                    disabled={
+                      readinessLoading ||
+                      isBusy
+                    }
+                    className="rounded-md border border-border px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {readinessLoading
+                      ? 'Checking...'
+                      : 'Check again'}
+                  </button>
+                </div>
+
+                {readinessLoading &&
+                  !readiness && (
+                    <p
+                      role="status"
+                      className="mt-4 text-sm text-muted-foreground"
+                    >
+                      Checking session readiness...
+                    </p>
+                  )}
+
+                {readinessError && (
+                  <div
+                    role="alert"
+                    className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+                  >
+                    {readinessError}
+                  </div>
+                )}
+
+                {readiness && (
+                  <div className="mt-4">
+                    <div
+                      role="status"
+                      className={
+                        readiness.ready
+                          ? 'rounded-md border border-border bg-background px-4 py-3'
+                          : 'rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3'
+                      }
+                    >
+                      <p className="font-medium">
+                        {readiness.ready
+                          ? 'Ready to start'
+                          : 'Not ready to start'}
+                      </p>
+
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {readiness.ready
+                          ? 'The session has approved content available for delivery.'
+                          : 'Resolve the blockers below before starting the session.'}
+                      </p>
+                    </div>
+
+                    <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-md border border-border bg-background p-3">
+                        <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Materials
+                        </dt>
+
+                        <dd className="mt-1 text-xl font-semibold">
+                          {readiness.materials_total}
+                        </dd>
+                      </div>
+
+                      <div className="rounded-md border border-border bg-background p-3">
+                        <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Deliverable questions
+                        </dt>
+
+                        <dd className="mt-1 text-xl font-semibold">
+                          {readiness.deliverable_questions}
+                        </dd>
+                      </div>
+
+                      <div className="rounded-md border border-border bg-background p-3">
+                        <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Processing
+                        </dt>
+
+                        <dd className="mt-1 text-xl font-semibold">
+                          {readiness.materials_processing}
+                        </dd>
+                      </div>
+
+                      <div className="rounded-md border border-border bg-background p-3">
+                        <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Failed materials
+                        </dt>
+
+                        <dd className="mt-1 text-xl font-semibold">
+                          {readiness.materials_failed}
+                        </dd>
+                      </div>
+                    </dl>
+
+                    {readiness.blockers.length >
+                      0 && (
+                      <div className="mt-4">
+                        <h4 className="text-sm font-semibold">
+                          Blocking issues
+                        </h4>
+
+                        <ul className="mt-2 space-y-2">
+                          {readiness.blockers.map(
+                            (
+                              issue,
+                              index,
+                            ) => (
+                              <li
+                                key={`${issue.code}-${issue.material_id ?? 'session'}-${index}`}
+                                className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm"
+                              >
+                                {issue.message}
+                              </li>
+                            ),
+                          )}
+                        </ul>
+                      </div>
+                    )}
+
+                    {readiness.warnings.length >
+                      0 && (
+                      <div className="mt-4">
+                        <h4 className="text-sm font-semibold">
+                          Warnings
+                        </h4>
+
+                        <ul className="mt-2 space-y-2">
+                          {readiness.warnings.map(
+                            (
+                              issue,
+                              index,
+                            ) => (
+                              <li
+                                key={`${issue.code}-${issue.material_id ?? 'session'}-${index}`}
+                                className="rounded-md border border-border bg-background px-4 py-3 text-sm"
+                              >
+                                {issue.message}
+                              </li>
+                            ),
+                          )}
+                        </ul>
+                      </div>
+                    )}
+
+                    <p className="mt-4 text-xs text-muted-foreground">
+                      Readiness is checked again by the server when the session starts.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {actionError && (
               <div
                 role="alert"
@@ -378,7 +681,9 @@ export default function LecturerLiveSessionPage() {
                   {actionInProgress ===
                   'start'
                     ? 'Starting...'
-                    : 'Start Session'}
+                    : readinessLoading
+                      ? 'Checking readiness...'
+                      : 'Start Session'}
                 </button>
               )}
 
@@ -482,7 +787,8 @@ export default function LecturerLiveSessionPage() {
               {sessionState?.status === 'ended' ||
               sessionState?.status === 'cancelled'
                 ? 0
-                : (sessionState?.participant_count ?? '—')}
+                : (sessionState?.participant_count ??
+                  '—')}
             </p>
           </section>
 
@@ -526,7 +832,8 @@ export default function LecturerLiveSessionPage() {
 
                     <p className="mt-2 text-lg font-semibold">
                       Question{' '}
-                      {sessionState?.questions_delivered ?? 1}
+                      {sessionState?.questions_delivered ??
+                        1}
                     </p>
 
                     <p className="mt-1 text-sm text-muted-foreground">
@@ -534,9 +841,11 @@ export default function LecturerLiveSessionPage() {
                     </p>
                   </div>
 
-                  {activeQuestion.source_slide !== null && (
+                  {activeQuestion.source_slide !==
+                    null && (
                     <span className="rounded-full bg-background px-3 py-1 text-xs font-medium text-muted-foreground">
-                      Source slide {activeQuestion.source_slide}
+                      Source slide{' '}
+                      {activeQuestion.source_slide}
                     </span>
                   )}
                 </div>
@@ -552,16 +861,24 @@ export default function LecturerLiveSessionPage() {
                     </p>
 
                     {activeQuestion.options &&
-                      activeQuestion.options.length > 0 && (
+                      activeQuestion.options.length >
+                        0 && (
                         <div className="mt-4 grid gap-2 sm:grid-cols-2">
                           {activeQuestion.options.map(
-                            (option, index) => (
+                            (
+                              option,
+                              index,
+                            ) => (
                               <div
                                 key={`${index}-${option}`}
                                 className="rounded-md border border-border p-3 text-sm"
                               >
                                 <span className="mr-2 font-semibold">
-                                  {String.fromCharCode(65 + index)}.
+                                  {String.fromCharCode(
+                                    65 +
+                                      index,
+                                  )}
+                                  .
                                 </span>
 
                                 {option}
@@ -573,7 +890,10 @@ export default function LecturerLiveSessionPage() {
 
                     <p className="mt-4 text-xs text-muted-foreground">
                       Response window:{' '}
-                      {activeQuestion.window_seconds}s
+                      {
+                        activeQuestion.window_seconds
+                      }
+                      s
                     </p>
                   </div>
                 </details>
