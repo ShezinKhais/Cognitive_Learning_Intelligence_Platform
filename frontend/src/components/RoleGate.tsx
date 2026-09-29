@@ -25,6 +25,7 @@ type Props = {
  */
 export default function RoleGate({ allow, children }: Props) {
   const location = useLocation()
+  const requestedPath = `${location.pathname}${location.search}`
   const [state, setState] = useState<State>({ status: 'loading' })
 
   useEffect(() => {
@@ -59,7 +60,7 @@ export default function RoleGate({ allow, children }: Props) {
     return <main className="min-h-screen grid place-items-center">Checking access...</main>
   }
   if (state.status === 'unauthenticated') {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />
+    return <Navigate to="/login" replace state={{ from: requestedPath }} />
   }
   if (state.status === 'error') {
     return <main className="p-8 text-critical" role="alert">{state.message}</main>
@@ -69,7 +70,7 @@ export default function RoleGate({ allow, children }: Props) {
     return <Navigate to="/access-denied" replace />
   }
   if (access === 'needs-consent') {
-    return <Navigate to="/consent" replace state={{ from: location.pathname }} />
+    return <Navigate to="/consent" replace state={{ from: requestedPath }} />
   }
   return <>{children(state.user)}</>
 }

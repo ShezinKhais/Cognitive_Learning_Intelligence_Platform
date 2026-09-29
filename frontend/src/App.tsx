@@ -21,7 +21,10 @@ import QuestionReview from './pages/QuestionReview'
 import StudentHomePage from './pages/StudentHomePage'
 import StudentLiveSessionPage from './pages/StudentLiveSessionPage'
 import SystemStatusPage from './pages/SystemStatusPage'
+import TeamsConfigPage from './pages/TeamsConfigPage'
 import TeamsLecturerMeetingPage from './pages/TeamsLecturerMeetingPage'
+import TeamsMeetingEntryPage from './pages/TeamsMeetingEntryPage'
+import TeamsMeetingPage from './pages/TeamsMeetingPage'
 
 // Sends whoever arrives at the root, or at a page that does not exist, to
 // their own home. Always sending them to /student told every lecturer and
@@ -55,6 +58,14 @@ export default function App() {
         element={<AccessDeniedPage />}
       />
 
+      {/* Teams loads this before a user enters the authenticated experience.
+          The meeting organizer may be a lecturer, so configuration must not
+          be protected by the student-only role guard. */}
+      <Route
+        path="/config"
+        element={<TeamsConfigPage />}
+      />
+
       <Route
         path="/student"
         element={
@@ -63,11 +74,37 @@ export default function App() {
           </StudentAppProvider>
         }
       >
-        <Route index element={<StudentHomePage />} />
+        <Route
+          index
+          element={<StudentHomePage />}
+        />
         <Route
           path="session/:sessionId"
           element={<StudentLiveSessionPage />}
         />
+      </Route>
+
+      {/* Shared Teams meeting entry point. RoleGate first verifies the
+          authoritative C.L.I.P user. Students continue into the existing
+          student Teams experience, while lecturer/admin users are redirected
+          by TeamsMeetingEntryPage to the protected lecturer Teams surface. */}
+      <Route
+        path="/teams"
+        element={<TeamsMeetingEntryPage />}
+      >
+        <Route
+          path="meeting"
+          element={
+            <StudentAppProvider>
+              <ProtectedStudentPage />
+            </StudentAppProvider>
+          }
+        >
+          <Route
+            index
+            element={<TeamsMeetingPage />}
+          />
+        </Route>
       </Route>
 
       {/* The guard is a layout route, so the role check runs before
@@ -113,22 +150,27 @@ export default function App() {
             />
           }
         />
+
         <Route
           path="/lecturer/materials"
           element={<LecturerMaterialsPage />}
         />
+
         <Route
           path="/lecturer/sessions"
           element={<LecturerSessionsPage />}
         />
+
         <Route
           path="/lecturer/sessions/:sessionId/live"
           element={<LecturerLiveSessionPage />}
         />
+
         <Route
           path="/lecturer/teams/meeting"
           element={<TeamsLecturerMeetingPage />}
         />
+
         <Route
           path="/materials/:materialId/review"
           element={<QuestionReview />}

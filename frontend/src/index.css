@@ -111,6 +111,13 @@
   --ring: #1aebff;
 }
 
+/* Apple Vision Pro can report the Teams "glass" theme. Until the product has
+   dedicated translucent surfaces, keep the accessible light palette and let
+   the host-provided backdrop show through at the page edge. */
+.glass body {
+  background: transparent;
+}
+
 @theme inline {
   --font-sans: var(--font-sans);
   --color-background: var(--background);
