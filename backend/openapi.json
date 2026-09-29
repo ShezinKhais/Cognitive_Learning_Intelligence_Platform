@@ -920,6 +920,49 @@
         "title": "QuestionType",
         "type": "string"
       },
+      "ReadinessIssue": {
+        "description": "One reason a session cannot start yet, or one thing worth a warning.",
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ReadinessIssueCode"
+          },
+          "material_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The material this is about, when it is about one.",
+            "title": "Material Id"
+          },
+          "message": {
+            "description": "Plain-language explanation for the lecturer.",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ReadinessIssue",
+        "type": "object"
+      },
+      "ReadinessIssueCode": {
+        "description": "Why a session is not ready to start, or what the lecturer should know.\n\nThe first three block the start. MATERIAL_FAILED is only a warning: one\nbroken upload should not hold back a class whose other material is fine.",
+        "enum": [
+          "no_material",
+          "material_processing",
+          "no_approved_questions",
+          "material_failed"
+        ],
+        "title": "ReadinessIssueCode",
+        "type": "string"
+      },
       "ReadinessResponse": {
         "description": "Readiness. Answers \"can this instance actually serve traffic\".\n\nReturns 503 when a required dependency is down so a load balancer or the\nfrontend can distinguish \"starting\" from \"broken\".",
         "properties": {
@@ -1158,6 +1201,71 @@
           "status"
         ],
         "title": "SessionOut",
+        "type": "object"
+      },
+      "SessionReadinessOut": {
+        "description": "Whether a prepared session has the content it needs to begin.\n\nstart_session runs the same check, so a session this reports as ready\nwill not be refused for content, and one it reports as not ready will be.",
+        "properties": {
+          "blockers": {
+            "description": "Each one stops the session from starting.",
+            "items": {
+              "$ref": "#/components/schemas/ReadinessIssue"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "deliverable_questions": {
+            "default": 0,
+            "description": "Approved, staged questions this session may deliver.",
+            "title": "Deliverable Questions",
+            "type": "integer"
+          },
+          "materials_failed": {
+            "default": 0,
+            "title": "Materials Failed",
+            "type": "integer"
+          },
+          "materials_processing": {
+            "default": 0,
+            "description": "Pending or still being processed.",
+            "title": "Materials Processing",
+            "type": "integer"
+          },
+          "materials_total": {
+            "default": 0,
+            "title": "Materials Total",
+            "type": "integer"
+          },
+          "ready": {
+            "description": "True only when blockers is empty.",
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "warnings": {
+            "description": "Worth showing the lecturer, but they do not stop the start.",
+            "items": {
+              "$ref": "#/components/schemas/ReadinessIssue"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "session_id",
+          "ready",
+          "checked_at"
+        ],
+        "title": "SessionReadinessOut",
         "type": "object"
       },
       "SessionStatus": {
@@ -2426,6 +2534,50 @@
         ]
       }
     },
+    "/api/v1/sessions/{session_id}/readiness": {
+      "get": {
+        "description": "Whether the session's material has processed and approved questions are\nstaged. Start is refused, with the same blockers, until ready is true.",
+        "operationId": "session_readiness_api_v1_sessions__session_id__readiness_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionReadinessOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Session Readiness",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
     "/api/v1/sessions/{session_id}/responses": {
       "get": {
         "operationId": "list_responses_api_v1_sessions__session_id__responses_get",
@@ -2538,7 +2690,7 @@
     },
     "/api/v1/sessions/{session_id}/start": {
       "post": {
-        "description": "Blocked until the session has approved questions staged.",
+        "description": "Blocked until the session is ready. GET /readiness says why it is not.",
         "operationId": "start_session_api_v1_sessions__session_id__start_post",
         "parameters": [
           {

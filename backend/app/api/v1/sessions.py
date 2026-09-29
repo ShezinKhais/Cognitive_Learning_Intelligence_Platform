@@ -34,6 +34,7 @@ from app.schemas.session import (
     ResponseOut,
     SessionCreateRequest,
     SessionOut,
+    SessionReadinessOut,
     StudentSessionSummary,
 )
 from app.services import session_lifecycle
@@ -105,13 +106,28 @@ async def list_deliverable_questions(
     )
 
 
+@router.get(
+    "/{session_id}/readiness",
+    response_model=SessionReadinessOut,
+    dependencies=_staff,
+)
+async def session_readiness(
+    session_id: UUID,
+    principal: CurrentUser,
+    db: DbSession,
+) -> SessionReadinessOut:
+    """Whether the session's material has processed and approved questions are
+    staged. Start is refused, with the same blockers, until ready is true."""
+    return await session_lifecycle.session_readiness(db, principal, session_id)
+
+
 @router.post("/{session_id}/start", response_model=SessionOut, dependencies=_staff)
 async def start_session(
     session_id: UUID,
     principal: CurrentUser,
     db: DbSession,
 ) -> SessionOut:
-    """Blocked until the session has approved questions staged."""
+    """Blocked until the session is ready. GET /readiness says why it is not."""
     return await session_lifecycle.start_session(db, principal, session_id)
 
 
