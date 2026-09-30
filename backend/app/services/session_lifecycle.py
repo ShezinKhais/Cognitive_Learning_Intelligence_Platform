@@ -243,29 +243,47 @@ async def link_meeting(
 
     A meeting already holding someone else's session is refused: the link
     decides whose class the meeting starts and ends, so replacing it would
-    hand one lecturer another's meeting.
+    hand one lecturer another's meeting. An unlinked meeting is claimed with
+    link_if_absent, so two lecturers linking it at once cannot both see it
+    free and have the second one take it from the first.
     """
     repo = SessionRepository(db)
     row = await owned_session(repo, principal, session_id)
     held = await meetings.directory.session_for(meeting_id)
-    if held is not None and held != session_id:
-        current = await repo.get(held)
-        if current is not None and not (
-            principal.is_(Role.ADMIN) or current.instructor_id == principal.user_id
-        ):
-            raise ConflictError(
-                "This meeting holds another lecturer's session.", {"meeting_id": meeting_id}
-            )
+    await _may_replace(repo, principal, meeting_id, held, session_id)
     if row.status in FINISHED:
         raise ConflictError(
             f"Cannot link a meeting to a session that is {row.status}.",
             {"current_status": row.status},
         )
+    if held is None:
+        held = await meetings.directory.link_if_absent(meeting_id, row.session_id)
+        await _may_replace(repo, principal, meeting_id, held, session_id)
+    if held != row.session_id:
+        await meetings.directory.link(meeting_id, row.session_id)
     row.mode = MODE_TEAMS
     await db.commit()
-    await meetings.directory.link(meeting_id, row.session_id)
     log.info("session %s linked to meeting %s by %s", session_id, meeting_id, principal.user_id)
     return await session_out(db, row)
+
+
+async def _may_replace(
+    repo: SessionRepository,
+    principal: Principal,
+    meeting_id: str,
+    held: UUID | None,
+    session_id: UUID,
+) -> None:
+    """Refuse taking a meeting that holds another lecturer's session."""
+    if held is None or held == session_id:
+        return
+    current = await repo.get(held)
+    if current is not None and not (
+        principal.is_(Role.ADMIN) or current.instructor_id == principal.user_id
+    ):
+        raise ConflictError(
+            "This meeting holds another lecturer's session.", {"meeting_id": meeting_id}
+        )
 
 
 async def meeting_owner(db: AsyncSession, meeting_id: str) -> Principal | None:

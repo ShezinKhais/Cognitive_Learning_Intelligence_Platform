@@ -219,3 +219,54 @@ async def test_a_lecturer_can_move_their_meeting_to_another_of_their_sessions(db
 
     assert moved.status_code == 200
     assert await meetings.directory.meeting_for(UUID(first["id"])) is None
+
+
+class _TakenAfterRead(InMemoryMeetingDirectory):
+    """Another lecturer links the meeting between this caller reading it as
+    free and linking it, which is what two lecturers linking at once does."""
+
+    def __init__(self, meeting_id: str, theirs: UUID) -> None:
+        super().__init__()
+        self._race = (meeting_id, theirs)
+
+    async def session_for(self, meeting_id: str) -> UUID | None:
+        held = await super().session_for(meeting_id)
+        if held is None and meeting_id == self._race[0]:
+            await self.link(meeting_id, self._race[1])
+        return held
+
+
+async def test_a_meeting_linked_by_another_lecturer_while_linking_is_not_taken(
+    db, app, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, factory, created = db
+    course = await add_course(factory, created)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    theirs = create_session(client, course)
+    other = await add_lecturer(factory, created)
+    sign_in_as(app, other, Role.LECTURER)
+    mine = create_session(client, await add_course(factory, created))
+    meeting = _meeting()
+    monkeypatch.setattr(meetings, "directory", _TakenAfterRead(meeting, UUID(theirs["id"])))
+
+    taken = client.put(f"/api/v1/meetings/{meeting}", json={"session_id": mine["id"]})
+
+    assert taken.status_code == 409
+    assert await meetings.directory.session_for(meeting) == UUID(theirs["id"])
+    async with factory() as check:
+        mode = await check.scalar(
+            select(SessionModel.mode).where(SessionModel.session_id == UUID(mine["id"]))
+        )
+    assert mode != "teams"
+
+
+async def test_linking_if_absent_keeps_the_meetings_session() -> None:
+    directory = InMemoryMeetingDirectory()
+    first, second = uuid4(), uuid4()
+
+    assert await directory.link_if_absent("m1", first) == first
+    assert await directory.link_if_absent("m1", second) == first
+    assert (await directory.session_for("m1"), await directory.meeting_for(second)) == (
+        first,
+        None,
+    )
