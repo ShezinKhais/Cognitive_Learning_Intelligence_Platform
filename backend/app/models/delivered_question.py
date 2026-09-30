@@ -1,4 +1,8 @@
-"""Questions delivered during live sessions and their response windows."""
+"""Questions delivered during live sessions and their response windows.
+
+The session's record of what it delivered, written with the claim that
+delivered it and completed when the question closes. Question.status only
+says whether a question may still be offered."""
 
 import uuid
 from datetime import datetime
