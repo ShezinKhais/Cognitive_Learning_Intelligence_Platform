@@ -363,7 +363,7 @@ export default function LecturerLiveSessionPage() {
   const canStart =
     sessionState?.status ===
       'prepared' &&
-    readiness?.ready === true &&
+    readiness?.ready !== false &&
     !readinessLoading &&
     !isBusy
 

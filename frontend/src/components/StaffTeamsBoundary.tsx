@@ -19,6 +19,10 @@ type StaffTeamsBoundaryProps = {
  * authenticated staff user opens C.L.I.P inside Microsoft Teams, the shared
  * TeamsProvider supplies the host context and theme without creating a second
  * authorization path.
+ *
+ * Failure to initialize Teams host context must not remove access to an
+ * otherwise-authorized C.L.I.P staff workspace. In that case the workspace
+ * falls back to standalone behavior.
  */
 export default function StaffTeamsBoundary({
   user,
@@ -35,23 +39,15 @@ export default function StaffTeamsBoundary({
     )
   }
 
-  if (teams.status === 'error') {
-    return (
-      <StaffHostStatus
-        title="Microsoft Teams unavailable"
-        message={
-          teams.error ??
-          'The Microsoft Teams context could not be initialized.'
-        }
-        isError
-      />
-    )
-  }
+  const host =
+    teams.status === 'error'
+      ? 'standalone'
+      : teams.host
 
   return (
     <div
       data-clip-user-role={user.role}
-      data-teams-host={teams.host}
+      data-teams-host={host}
     >
       {children}
     </div>
@@ -61,25 +57,17 @@ export default function StaffTeamsBoundary({
 function StaffHostStatus({
   title,
   message,
-  isError = false,
 }: {
   title: string
   message: string
-  isError?: boolean
 }) {
   return (
     <main className="grid min-h-screen place-items-center bg-background p-6">
       <section
-        role={isError ? 'alert' : 'status'}
+        role="status"
         className="w-full max-w-md rounded-xl border border-border bg-card p-6"
       >
-        <h1
-          className={
-            isError
-              ? 'text-xl font-semibold text-critical'
-              : 'text-xl font-semibold'
-          }
-        >
+        <h1 className="text-xl font-semibold">
           {title}
         </h1>
 
