@@ -1,4 +1,9 @@
-"""Persistence and matching for Microsoft Teams roster events."""
+"""Persistence and matching for Microsoft Teams roster events.
+
+Participant display names and unmatched identities are personal data. Deployments
+must apply their approved retention schedule to roster syncs and unresolved user
+mappings; deleting a roster sync cascades to its participant records.
+"""
 
 from __future__ import annotations
 
@@ -9,13 +14,14 @@ from datetime import UTC, datetime
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import ValidationError
 from app.models.teams_participant_mapping import TeamsParticipantMapping
 from app.models.teams_roster_sync import TeamsRosterSync
 from app.repositories.teams_user_mapping_repository import (
     TeamsUserMappingRepository,
 )
 
-TEAMS_ROSTER_SYNC_LOCK_ID = 4_348_372_111
+MAX_ROSTER_PARTICIPANTS = 1_000
 
 
 @dataclass(frozen=True)
@@ -43,9 +49,17 @@ class TeamsRosterRepository:
         Repeated meeting/source-event pairs return the original event without
         creating duplicate participant records.
         """
+        if len(participants) > MAX_ROSTER_PARTICIPANTS:
+            raise ValidationError(
+                "The Teams roster event contains too many participants.",
+                {
+                    "participant_count": len(participants),
+                    "maximum": MAX_ROSTER_PARTICIPANTS,
+                },
+            )
         await self.session.execute(
-            text("SELECT pg_advisory_xact_lock(:lock_id)"),
-            {"lock_id": TEAMS_ROSTER_SYNC_LOCK_ID},
+            text("SELECT pg_advisory_xact_lock(hashtext(:meeting_id))"),
+            {"meeting_id": meeting_id},
         )
 
         existing = (

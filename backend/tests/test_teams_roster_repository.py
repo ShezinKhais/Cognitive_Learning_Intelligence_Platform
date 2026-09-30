@@ -8,10 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
+from app.core.errors import ValidationError
 from app.models.course import Course
 from app.models.session import Session
 from app.models.user import User
 from app.repositories.teams_roster_repository import (
+    MAX_ROSTER_PARTICIPANTS,
     RosterParticipantInput,
     TeamsRosterRepository,
 )
@@ -142,3 +144,29 @@ async def test_roster_sync_classifies_records_and_is_idempotent(
 
     assert repeated.sync_id == sync.sync_id
     assert len(repeated_rows) == 4
+
+
+async def test_roster_sync_rejects_an_oversized_event(
+    db: AsyncSession,
+) -> None:
+    repository = TeamsRosterRepository(db)
+    participants = [
+        RosterParticipantInput(
+            tenant_id=None,
+            teams_user_id=None,
+            display_name=None,
+        )
+        for _ in range(MAX_ROSTER_PARTICIPANTS + 1)
+    ]
+
+    with pytest.raises(
+        ValidationError,
+        match="Teams roster event contains too many participants",
+    ):
+        await repository.record_sync(
+            meeting_id="meeting-oversized",
+            session_id=None,
+            source_event_id="oversized-event",
+            event_type="snapshot",
+            participants=participants,
+        )

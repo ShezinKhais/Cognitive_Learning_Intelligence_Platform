@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 
 from sqlalchemy import delete, func, or_, select, text
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.teams_user_mapping import TeamsUserMapping
 
+log = logging.getLogger("clip.teams_identity")
 TEAMS_USER_MAPPING_LOCK_ID = 4_348_372_110
 
 
@@ -76,11 +78,31 @@ class TeamsUserMappingRepository:
         tenant_id: str,
         teams_user_id: str,
         user_id: uuid.UUID,
+        actor_user_id: uuid.UUID | None = None,
     ) -> TeamsUserMapping:
-        """Resolve both sides, replacing conflicting mappings in this tenant."""
+        """Resolve both sides and audit any replaced tenant mapping.
+
+        tenant_id and teams_user_id must come from server-validated tid and oid
+        claims, never from TeamsJS or another client-controlled identity.
+        """
         await self.session.execute(
             text("SELECT pg_advisory_xact_lock(:lock_id)"),
             {"lock_id": TEAMS_USER_MAPPING_LOCK_ID},
+        )
+        conflicts = (
+            (
+                await self.session.execute(
+                    select(TeamsUserMapping).where(
+                        TeamsUserMapping.tenant_id == tenant_id,
+                        or_(
+                            TeamsUserMapping.teams_user_id == teams_user_id,
+                            TeamsUserMapping.user_id == user_id,
+                        ),
+                    )
+                )
+            )
+            .scalars()
+            .all()
         )
         await self.session.execute(
             delete(TeamsUserMapping).where(
@@ -91,7 +113,16 @@ class TeamsUserMappingRepository:
                 ),
             )
         )
-
+        if conflicts:
+            log.info(
+                "audit_event=TEAMS_USER_MAPPING_RELINK "
+                "actor_user_id=%s tenant_id=%s new_user_id=%s "
+                "replaced_mapping_ids=%s",
+                actor_user_id or "system",
+                tenant_id,
+                user_id,
+                ",".join(str(row.mapping_id) for row in conflicts),
+            )
         mapping = TeamsUserMapping(
             tenant_id=tenant_id,
             teams_user_id=teams_user_id,

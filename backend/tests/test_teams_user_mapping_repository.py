@@ -34,7 +34,9 @@ async def db():
 
 async def test_teams_user_mappings_handle_unmatched_duplicates_and_relinks(
     db: AsyncSession,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level("INFO", logger="clip.teams_identity")
     first_user = User(
         name="First Teams User",
         role="student",
@@ -104,6 +106,8 @@ async def test_teams_user_mappings_handle_unmatched_duplicates_and_relinks(
         teams_user_id="teams-user-a",
         user_id=second_user.user_id,
     )
+    assert "audit_event=TEAMS_USER_MAPPING_RELINK" in caplog.text
+    assert "teams-user-a" not in caplog.text
 
     assert (
         await repository.teams_user_for(
