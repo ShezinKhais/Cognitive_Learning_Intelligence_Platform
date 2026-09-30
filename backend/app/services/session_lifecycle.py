@@ -267,6 +267,22 @@ async def link_meeting(
     return await session_out(db, row)
 
 
+async def meeting_session(db: AsyncSession, principal: Principal, meeting_id: str) -> SessionOut:
+    """The session a meeting holds, for the lecturer who runs it or an admin.
+
+    A meeting with no session and one holding another lecturer's session are
+    refused alike, and the refusal names only the meeting, so a meeting id
+    cannot be used to learn another lecturer's session id.
+    """
+    session_id = await meetings.directory.session_for(meeting_id)
+    row = await SessionRepository(db).get(session_id) if session_id is not None else None
+    if row is None or (not principal.is_(Role.ADMIN) and row.instructor_id != principal.user_id):
+        raise NotFoundError(
+            "No session of yours is linked to this meeting.", {"meeting_id": meeting_id}
+        )
+    return await session_out(db, row)
+
+
 async def _may_replace(
     repo: SessionRepository,
     principal: Principal,

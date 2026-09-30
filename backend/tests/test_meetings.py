@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import select
 
-from app.auth.store import LECTURER_ID, STUDENT_ID
+from app.auth.store import ADMIN_ID, LECTURER_ID, STUDENT_ID
 from app.models.session import Session as SessionModel
 from app.schemas.identity import Role
 from app.services.meeting_directory import InMemoryMeetingDirectory, Meetings, meetings
@@ -134,6 +134,35 @@ async def test_an_unlinked_meeting_with_no_course_is_not_found(db, app) -> None:
 
     assert _event(client, "started", _meeting()).status_code == 404
     assert _event(client, "ended", _meeting(), course_code="ANY").status_code == 404
+
+
+async def test_the_lecturer_tab_finds_its_session_from_the_meeting(db, app) -> None:
+    client, _, _ = db
+    linked, meeting = await _linked_session(db, app)
+
+    found = client.get(f"/api/v1/meetings/{meeting}")
+
+    assert found.status_code == 200, found.text
+    assert (found.json()["id"], found.json()["teams_meeting_id"]) == (linked["id"], meeting)
+    sign_in_as(app, ADMIN_ID, Role.ADMIN)
+    assert client.get(f"/api/v1/meetings/{meeting}").json()["id"] == linked["id"]
+
+
+async def test_a_meeting_lookup_cannot_reveal_another_lecturers_session(db, app) -> None:
+    """Their meeting and an unlinked one answer alike, naming only the
+    meeting, so the lookup cannot be used to learn a session id."""
+    client, factory, created = db
+    linked, meeting = await _linked_session(db, app)
+    sign_in_as(app, await add_lecturer(factory, created), Role.LECTURER)
+
+    theirs = client.get(f"/api/v1/meetings/{meeting}")
+    unlinked = client.get(f"/api/v1/meetings/{meeting}x")
+
+    assert (theirs.status_code, unlinked.status_code) == (404, 404)
+    assert linked["id"] not in theirs.text
+    assert theirs.json()["error"]["message"] == unlinked.json()["error"]["message"]
+    sign_in_as(app, STUDENT_ID, Role.STUDENT)
+    assert client.get(f"/api/v1/meetings/{meeting}").status_code == 403
 
 
 async def test_another_lecturer_cannot_link_or_drive_a_session(db, app) -> None:
