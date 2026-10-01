@@ -15,6 +15,9 @@ from app.core.database import get_engine
 from app.main import create_app
 from app.schemas.identity import ConsentType, Role
 
+# Fixtures shared by more than one test module, without importing them.
+pytest_plugins = ["tests.classroom_support", "tests.session_support"]
+
 
 @pytest.fixture(scope="session")
 def app() -> FastAPI:
