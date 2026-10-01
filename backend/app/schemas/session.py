@@ -38,8 +38,11 @@ class EngagementStatus(StrEnum):
 class ReadinessIssueCode(StrEnum):
     """Why a session is not ready to start, or what the lecturer should know.
 
-    The first three block the start. MATERIAL_FAILED is only a warning: one
-    broken upload should not hold back a class whose other material is fine.
+    Only NO_APPROVED_QUESTIONS always blocks the start. NO_MATERIAL and
+    MATERIAL_PROCESSING explain why there is no question to deliver, so they
+    block alongside it and are warnings when one is staged. MATERIAL_FAILED is
+    only ever a warning: one broken upload should not hold back a class whose
+    other material is fine.
     """
 
     NO_MATERIAL = "no_material"

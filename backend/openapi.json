@@ -953,7 +953,7 @@
         "type": "object"
       },
       "ReadinessIssueCode": {
-        "description": "Why a session is not ready to start, or what the lecturer should know.\n\nThe first three block the start. MATERIAL_FAILED is only a warning: one\nbroken upload should not hold back a class whose other material is fine.",
+        "description": "Why a session is not ready to start, or what the lecturer should know.\n\nOnly NO_APPROVED_QUESTIONS always blocks the start. NO_MATERIAL and\nMATERIAL_PROCESSING explain why there is no question to deliver, so they\nblock alongside it and are warnings when one is staged. MATERIAL_FAILED is\nonly ever a warning: one broken upload should not hold back a class whose\nother material is fine.",
         "enum": [
           "no_material",
           "material_processing",
