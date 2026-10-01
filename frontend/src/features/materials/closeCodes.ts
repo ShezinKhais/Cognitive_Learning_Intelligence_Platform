@@ -12,3 +12,7 @@ export function actionForClose(code: number): CloseAction {
   // the 4408 auth timeout, can succeed on another attempt.
   return 'retry'
 }
+
+export function isAccessRevocation(reason: string): boolean {
+  return /consent|access|permit|authori[sz]/i.test(reason)
+}

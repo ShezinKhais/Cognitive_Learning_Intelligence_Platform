@@ -27,7 +27,10 @@ import {
   parseSessionState,
 } from './liveSessionProtocol'
 import type { ResumeCursor } from './liveSessionProtocol'
-import { actionForClose } from '../materials/closeCodes'
+import {
+  actionForClose,
+  isAccessRevocation,
+} from '../materials/closeCodes'
 import type { SessionStatus } from './types'
 
 interface AnswerSubmission {
@@ -361,13 +364,25 @@ export function useLiveSession(
         ) {
           stopped = true
 
-          if (connectedOnce) {
+          const accessRevoked = isAccessRevocation(closeEvent.reason)
+
+          if (connectedOnce && !accessRevoked) {
             dispatch({ type: 'session-ended' })
           } else {
             dispatch({
               type: 'connection',
               status: 'forbidden',
             })
+
+            if (closeEvent.reason) {
+              dispatch({
+                type: 'error',
+                payload: {
+                  code: accessRevoked ? 'ACCESS_REVOKED' : 'ACCESS_DENIED',
+                  detail: closeEvent.reason,
+                },
+              })
+            }
           }
 
           return
