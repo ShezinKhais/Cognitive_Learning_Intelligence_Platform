@@ -9,6 +9,7 @@ import { accessFor } from '../authRouting'
 
 export default function ProtectedStudentPage() {
   const location = useLocation()
+  const requestedPath = `${location.pathname}${location.search}`
 
   const {
     authStatus,
@@ -47,7 +48,7 @@ export default function ProtectedStudentPage() {
         to="/login"
         replace
         state={{
-          from: location.pathname,
+          from: requestedPath,
         }}
       />
     )
@@ -71,7 +72,7 @@ export default function ProtectedStudentPage() {
       <Navigate
         to="/consent"
         replace
-        state={{ from: location.pathname }}
+        state={{ from: requestedPath }}
       />
     )
   }

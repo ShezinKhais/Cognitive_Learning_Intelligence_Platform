@@ -376,6 +376,23 @@ from the database only, so these do not exist there.
 
 `samples/` holds a timetable and roster to import as the administrator.
 
+### Simulated Teams meeting panel
+
+The student meeting panel can be exercised before a Microsoft 365 tenant is available.
+Set `VITE_TEAMS_MOCK_ENABLED=true` in `frontend/.env`, sign in as a student, ensure an
+assigned session has a `teams_meeting_id`, and open:
+
+```text
+/teams/meeting?teamsMock=1&meetingId=THE_TEAMS_MEETING_ID&theme=dark
+```
+
+Use `default`, `dark`, `contrast`, or `glass` for the theme. Without `teamsMock=1`, the
+page uses the official TeamsJS context when embedded in Teams and remains in standalone
+mode in an ordinary browser. Production deployments should leave
+`VITE_TEAMS_MOCK_ENABLED` unset or false. Context values are routing hints only; the
+production bundle also disables simulation regardless of that setting. The existing
+C.L.I.P login and assigned-session response remain the authorization boundary.
+
 ### Running with Microsoft Teams
 
 The Teams integration stays dormant until a tenant is available: `/health` reports
