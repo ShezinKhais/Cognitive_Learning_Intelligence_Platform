@@ -331,10 +331,17 @@ async def handle_meeting_event(
             principal,
             SessionCreateRequest(course_code=event.course_code, title=event.title or MEETING_TITLE),
         )
-        # Committed and linked before the start, which may be refused: the
-        # meeting keeps its session, and starts it once a question is staged.
-        await link_meeting(db, principal, event.meeting_id, created.id)
-        session_id = created.id
+        # Teams may deliver the start twice at once, and both copies find the
+        # meeting free. Only the first to claim it keeps its session; the
+        # other is not yet committed, so it is rolled back and the event
+        # carries on with the winner's.
+        session_id = await meetings.directory.link_if_absent(event.meeting_id, created.id)
+        if session_id != created.id:
+            await db.rollback()
+        else:
+            # Committed and linked before the start, which may be refused: the
+            # meeting keeps its session, and starts it once a question is staged.
+            await link_meeting(db, principal, event.meeting_id, created.id)
 
     row = await owned_session(SessionRepository(db), principal, session_id, for_update=False)
     if event.kind is MeetingEventKind.STARTED:

@@ -289,6 +289,34 @@ async def test_a_meeting_linked_by_another_lecturer_while_linking_is_not_taken(
     assert mode != "teams"
 
 
+async def test_a_start_delivered_twice_at_once_leaves_one_session_in_the_meeting(
+    db, app, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other copy of the event links its own new session between this one
+    reading the meeting as free and claiming it. This copy must not replace
+    it, which would leave the first session running with no meeting to end it."""
+    client, factory, created = db
+    course = await add_course(factory, created)
+    await add_question(db, course, LECTURER_ID)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    first = create_session(client, course, title="Week 3")
+    meeting = _meeting()
+    monkeypatch.setattr(meetings, "directory", _TakenAfterRead(meeting, UUID(first["id"])))
+
+    started = _event(client, "started", meeting, course_code=course.code, title="Week 3")
+
+    assert started.status_code == 200, started.text
+    assert started.json()["id"] == first["id"]
+    assert await meetings.directory.session_for(meeting) == UUID(first["id"])
+    async with factory() as check:
+        ids = (
+            await check.scalars(
+                select(SessionModel.session_id).where(SessionModel.course_id == course.id)
+            )
+        ).all()
+    assert ids == [UUID(first["id"])]
+
+
 async def test_linking_if_absent_keeps_the_meetings_session() -> None:
     directory = InMemoryMeetingDirectory()
     first, second = uuid4(), uuid4()
