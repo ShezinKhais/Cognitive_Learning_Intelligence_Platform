@@ -1,23 +1,118 @@
+import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router'
+
+import { apiAuthenticatedGet } from '../api'
+import {
+  lecturerLiveSessionPath,
+  meetingSessionPath,
+  type MeetingSession,
+} from '../teams/lecturerMeeting'
+import { useTeams } from '../teams/TeamsProvider'
 
 /**
  * Resolves the lecturer's Microsoft Teams meeting surface to the existing
  * C.L.I.P lecturer workspace.
  *
- * Microsoft Teams meeting context is deliberately not used to decide whether
- * the user is a lecturer. The route that mounts this component must first
- * authenticate the user and enforce the lecturer/admin role through C.L.I.P.
+ * Microsoft Teams supplies meeting context only. It does not authorize
+ * access to the lecturer workspace. C.L.I.P authentication, consent and
+ * role checks remain authoritative.
  *
- * The optional sessionId is only a routing hint. LecturerLiveSessionPage
- * remains the existing staff session workspace rather than duplicating the
- * dashboard for Teams.
+ * The Teams meeting ID is resolved through the authenticated C.L.I.P
+ * meeting endpoint. The backend determines whether the current lecturer
+ * may access the linked session.
  */
 export default function TeamsLecturerMeetingPage() {
-  const sessionId = new URLSearchParams(
-    window.location.search,
-  ).get('sessionId')
+  const teams = useTeams()
 
-  if (!sessionId) {
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const meetingId = teams.context?.meetingId ?? null
+
+  useEffect(() => {
+    if (teams.status === 'initializing') {
+      return
+    }
+
+    if (teams.status !== 'ready' || !meetingId) {
+      setSessionId(null)
+      setError(
+        'C.L.I.P could not determine the Microsoft Teams meeting.',
+      )
+      setIsLoading(false)
+      return
+    }
+
+    const resolvedMeetingId = meetingId
+    let active = true
+
+    async function resolveMeetingSession(): Promise<void> {
+      setIsLoading(true)
+      setError(null)
+
+      try {
+        const session = await apiAuthenticatedGet<MeetingSession>(
+          meetingSessionPath(resolvedMeetingId),
+        )
+
+        if (!active) {
+          return
+        }
+
+        if (!session.id) {
+          throw new Error(
+            'The meeting lookup did not return a C.L.I.P session.',
+          )
+        }
+
+        setSessionId(session.id)
+      } catch (caught: unknown) {
+        if (!active) {
+          return
+        }
+
+        setSessionId(null)
+
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : 'C.L.I.P could not resolve this Teams meeting.',
+        )
+      } finally {
+        if (active) {
+          setIsLoading(false)
+        }
+      }
+    }
+
+    void resolveMeetingSession()
+
+    return () => {
+      active = false
+    }
+  }, [meetingId, teams.status])
+
+  if (teams.status === 'initializing' || isLoading) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-background p-6">
+        <section
+          role="status"
+          className="w-full max-w-md rounded-xl border border-border bg-card p-6"
+        >
+          <h1 className="text-xl font-semibold">
+            Opening lecturer session
+          </h1>
+
+          <p className="mt-2 text-sm text-muted-foreground">
+            C.L.I.P is resolving this Microsoft Teams meeting.
+          </p>
+        </section>
+      </main>
+    )
+  }
+
+  if (error || !sessionId) {
     return (
       <main className="grid min-h-screen place-items-center bg-background p-6">
         <section
@@ -29,8 +124,8 @@ export default function TeamsLecturerMeetingPage() {
           </h1>
 
           <p className="mt-2 text-sm text-muted-foreground">
-            C.L.I.P could not determine which lecturer session should be
-            opened from this Teams meeting.
+            {error ??
+              'No authorised C.L.I.P session is linked to this Teams meeting.'}
           </p>
         </section>
       </main>
@@ -39,7 +134,7 @@ export default function TeamsLecturerMeetingPage() {
 
   return (
     <Navigate
-      to={`/lecturer/sessions/${encodeURIComponent(sessionId)}/live`}
+      to={lecturerLiveSessionPath(sessionId)}
       replace
     />
   )
