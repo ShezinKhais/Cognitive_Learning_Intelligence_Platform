@@ -9,6 +9,10 @@ import {
 import { buildSessionNotificationCard } from '../src/teams/notificationCard.ts'
 import { meetingTabConfiguration } from '../src/teams/configuration.ts'
 import { applyTeamsTheme } from '../src/teams/teamsTheme.ts'
+import {
+  lecturerLiveSessionPath,
+  meetingSessionPath,
+} from '../src/teams/lecturerMeeting.ts'
 
 test('normalizes supported Teams themes and safely falls back', () => {
   assert.equal(normalizeTheme('dark'), 'dark')
@@ -81,4 +85,41 @@ test('configures the meeting tab to open the student side panel', () => {
       suggestedDisplayName: 'C.L.I.P',
     },
   )
+})
+test('resolves a Teams meeting id through the authenticated meeting endpoint', () => {
+  assert.equal(
+    meetingSessionPath('meeting-42'),
+    '/meetings/meeting-42',
+  )
+
+  assert.equal(
+    meetingSessionPath('19:meeting/test@thread.v2'),
+    '/meetings/19%3Ameeting%2Ftest%40thread.v2',
+  )
+})
+
+test('opens the lecturer live workspace using the resolved session id', () => {
+  assert.equal(
+    lecturerLiveSessionPath('session-42'),
+    '/lecturer/sessions/session-42/live',
+  )
+
+  assert.equal(
+    lecturerLiveSessionPath('session/42'),
+    '/lecturer/sessions/session%2F42/live',
+  )
+})
+
+test('lecturer meeting routing does not require a session id query parameter', () => {
+  const meetingPath = meetingSessionPath('meeting-42')
+  const sessionPath = lecturerLiveSessionPath('session-42')
+
+  assert.equal(meetingPath, '/meetings/meeting-42')
+  assert.equal(
+    sessionPath,
+    '/lecturer/sessions/session-42/live',
+  )
+
+  assert.equal(meetingPath.includes('sessionId='), false)
+  assert.equal(sessionPath.includes('sessionId='), false)
 })
