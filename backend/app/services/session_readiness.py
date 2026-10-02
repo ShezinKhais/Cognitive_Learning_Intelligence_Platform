@@ -46,12 +46,13 @@ def assess(
     unfinished = [m for m in materials if m.status in _UNFINISHED]
     failed = [m for m in materials if m.status == MaterialStatus.FAILED.value]
     ready = deliverable_questions > 0
-    # Only a missing question blocks. A material still processing is the
-    # reason there is none, or a warning when there already are some.
+    # Only a missing question blocks. Missing or unfinished material is the
+    # reason there is none, or a warning when there already are some, so
+    # ready is true exactly when blockers is empty.
     reasons = warnings if ready else blockers
 
     if not materials:
-        blockers.append(
+        reasons.append(
             ReadinessIssue(
                 code=ReadinessIssueCode.NO_MATERIAL,
                 message="Upload lecture material for this course before starting.",

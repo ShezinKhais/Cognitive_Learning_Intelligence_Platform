@@ -275,11 +275,16 @@ class SessionHub:
         nothing had been lost.
         """
         async with self._delivering(channel):
-            stream = self._stream(channel)
             if only is None:
+                stream = self._stream(channel)
                 payload = stream.next_event(event_type, data).model_dump(mode="json")
             else:
-                payload = _unsequenced(event_type, data)
+                # Numbers nothing, so it has no reason to create a stream, and
+                # one for a forgotten session would sit in the map until evicted.
+                found = self._streams.get(channel)
+                if found is None:
+                    return 0
+                stream, payload = found, _unsequenced(event_type, data)
             async with self._lock:
                 targets = [c for c in stream.members if only is None or c.user_id == only]
 
@@ -381,6 +386,14 @@ class SessionHub:
     def participant_count(self, session_id: UUID) -> int:
         stream = self._streams.get(session_id)
         return len(stream.members) if stream is not None else 0
+
+    def connection_count(self, session_id: UUID, user_id: UUID) -> int:
+        """How many sockets one user has open in a session, which is what
+        tells a student closing one tab from a student leaving the class."""
+        stream = self._streams.get(session_id)
+        if stream is None:
+            return 0
+        return sum(1 for c in stream.members if c.user_id == user_id)
 
     def student_ids(self, session_id: UUID) -> set[UUID]:
         """The students connected to a session, each counted once however many

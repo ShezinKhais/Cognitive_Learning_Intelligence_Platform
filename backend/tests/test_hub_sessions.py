@@ -199,3 +199,46 @@ async def test_staff_and_students_in_a_session_are_told_apart() -> None:
     assert hub.staff_ids(session) == {lecturer, admin}
     assert hub.student_ids(session) == {student}
     assert hub.staff_ids(uuid4()) == set()
+
+
+async def test_a_users_open_sockets_in_a_session_are_counted() -> None:
+    """Whether a student has left the class depends on this, and nothing
+    else can tell one of their tabs from the rest."""
+    hub = SessionHub()
+    session, other_session = uuid4(), uuid4()
+    student, classmate = uuid4(), uuid4()
+    tabs = [
+        Connection(_FakeSocket(), student, session, Role.STUDENT),  # type: ignore[arg-type]
+        Connection(_FakeSocket(), student, session, Role.STUDENT),  # type: ignore[arg-type]
+    ]
+    for connection in (
+        *tabs,
+        Connection(_FakeSocket(), classmate, session, Role.STUDENT),  # type: ignore[arg-type]
+        Connection(_FakeSocket(), student, other_session, Role.STUDENT),  # type: ignore[arg-type]
+    ):
+        await hub.join(connection)
+
+    assert hub.connection_count(session, student) == 2
+
+    await hub.leave(tabs[0])
+    assert hub.connection_count(session, student) == 1
+
+    await hub.leave(tabs[1])
+    assert hub.connection_count(session, student) == 0
+    # A classmate, and this student in another session, are counted apart.
+    assert hub.connection_count(session, classmate) == 1
+    assert hub.connection_count(other_session, student) == 1
+    assert hub.connection_count(uuid4(), student) == 0
+
+
+async def test_a_private_send_to_a_forgotten_session_does_not_bring_it_back() -> None:
+    """A close that finishes after its session ended still sends reveals and
+    alerts. They are unsequenced, so there is nothing to keep a stream for."""
+    hub = SessionHub()
+    session, student = uuid4(), uuid4()
+    await hub.join(Connection(_FakeSocket(), student, session, Role.STUDENT))  # type: ignore[arg-type]
+    await hub.broadcast(session, ServerEventType.SESSION_STATE, {})
+    hub.forget_session(session)
+
+    assert await hub.send_to_user(session, student, ServerEventType.FEEDBACK_RESULT, {}) is False
+    assert hub.tracked_stream_count() == 0
