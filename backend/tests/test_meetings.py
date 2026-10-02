@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import select
 
-from app.auth.store import LECTURER_ID, STUDENT_ID
+from app.auth.store import ADMIN_ID, LECTURER_ID, STUDENT_ID
 from app.models.session import Session as SessionModel
 from app.schemas.identity import Role
 from app.services.meeting_directory import InMemoryMeetingDirectory, Meetings, meetings
@@ -136,6 +136,35 @@ async def test_an_unlinked_meeting_with_no_course_is_not_found(db, app) -> None:
     assert _event(client, "ended", _meeting(), course_code="ANY").status_code == 404
 
 
+async def test_the_lecturer_tab_finds_its_session_from_the_meeting(db, app) -> None:
+    client, _, _ = db
+    linked, meeting = await _linked_session(db, app)
+
+    found = client.get(f"/api/v1/meetings/{meeting}")
+
+    assert found.status_code == 200, found.text
+    assert (found.json()["id"], found.json()["teams_meeting_id"]) == (linked["id"], meeting)
+    sign_in_as(app, ADMIN_ID, Role.ADMIN)
+    assert client.get(f"/api/v1/meetings/{meeting}").json()["id"] == linked["id"]
+
+
+async def test_a_meeting_lookup_cannot_reveal_another_lecturers_session(db, app) -> None:
+    """Their meeting and an unlinked one answer alike, naming only the
+    meeting, so the lookup cannot be used to learn a session id."""
+    client, factory, created = db
+    linked, meeting = await _linked_session(db, app)
+    sign_in_as(app, await add_lecturer(factory, created), Role.LECTURER)
+
+    theirs = client.get(f"/api/v1/meetings/{meeting}")
+    unlinked = client.get(f"/api/v1/meetings/{meeting}x")
+
+    assert (theirs.status_code, unlinked.status_code) == (404, 404)
+    assert linked["id"] not in theirs.text
+    assert theirs.json()["error"]["message"] == unlinked.json()["error"]["message"]
+    sign_in_as(app, STUDENT_ID, Role.STUDENT)
+    assert client.get(f"/api/v1/meetings/{meeting}").status_code == 403
+
+
 async def test_another_lecturer_cannot_link_or_drive_a_session(db, app) -> None:
     client, factory, created = db
     linked, meeting = await _linked_session(db, app)
@@ -219,3 +248,82 @@ async def test_a_lecturer_can_move_their_meeting_to_another_of_their_sessions(db
 
     assert moved.status_code == 200
     assert await meetings.directory.meeting_for(UUID(first["id"])) is None
+
+
+class _TakenAfterRead(InMemoryMeetingDirectory):
+    """Another lecturer links the meeting between this caller reading it as
+    free and linking it, which is what two lecturers linking at once does."""
+
+    def __init__(self, meeting_id: str, theirs: UUID) -> None:
+        super().__init__()
+        self._race = (meeting_id, theirs)
+
+    async def session_for(self, meeting_id: str) -> UUID | None:
+        held = await super().session_for(meeting_id)
+        if held is None and meeting_id == self._race[0]:
+            await self.link(meeting_id, self._race[1])
+        return held
+
+
+async def test_a_meeting_linked_by_another_lecturer_while_linking_is_not_taken(
+    db, app, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, factory, created = db
+    course = await add_course(factory, created)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    theirs = create_session(client, course)
+    other = await add_lecturer(factory, created)
+    sign_in_as(app, other, Role.LECTURER)
+    mine = create_session(client, await add_course(factory, created))
+    meeting = _meeting()
+    monkeypatch.setattr(meetings, "directory", _TakenAfterRead(meeting, UUID(theirs["id"])))
+
+    taken = client.put(f"/api/v1/meetings/{meeting}", json={"session_id": mine["id"]})
+
+    assert taken.status_code == 409
+    assert await meetings.directory.session_for(meeting) == UUID(theirs["id"])
+    async with factory() as check:
+        mode = await check.scalar(
+            select(SessionModel.mode).where(SessionModel.session_id == UUID(mine["id"]))
+        )
+    assert mode != "teams"
+
+
+async def test_a_start_delivered_twice_at_once_leaves_one_session_in_the_meeting(
+    db, app, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other copy of the event links its own new session between this one
+    reading the meeting as free and claiming it. This copy must not replace
+    it, which would leave the first session running with no meeting to end it."""
+    client, factory, created = db
+    course = await add_course(factory, created)
+    await add_question(db, course, LECTURER_ID)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    first = create_session(client, course, title="Week 3")
+    meeting = _meeting()
+    monkeypatch.setattr(meetings, "directory", _TakenAfterRead(meeting, UUID(first["id"])))
+
+    started = _event(client, "started", meeting, course_code=course.code, title="Week 3")
+
+    assert started.status_code == 200, started.text
+    assert started.json()["id"] == first["id"]
+    assert await meetings.directory.session_for(meeting) == UUID(first["id"])
+    async with factory() as check:
+        ids = (
+            await check.scalars(
+                select(SessionModel.session_id).where(SessionModel.course_id == course.id)
+            )
+        ).all()
+    assert ids == [UUID(first["id"])]
+
+
+async def test_linking_if_absent_keeps_the_meetings_session() -> None:
+    directory = InMemoryMeetingDirectory()
+    first, second = uuid4(), uuid4()
+
+    assert await directory.link_if_absent("m1", first) == first
+    assert await directory.link_if_absent("m1", second) == first
+    assert (await directory.session_for("m1"), await directory.meeting_for(second)) == (
+        first,
+        None,
+    )

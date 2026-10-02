@@ -29,6 +29,17 @@ router = APIRouter(
 )
 
 
+@router.get("/{meeting_id}", response_model=SessionOut)
+async def meeting_session(
+    meeting_id: Annotated[str, Path(min_length=1, max_length=MAX_MEETING_ID_LENGTH)],
+    principal: CurrentUser,
+    db: DbSession,
+) -> SessionOut:
+    """The session this meeting holds, if the caller runs it or is an admin.
+    For the lecturer's Teams tab, which knows the meeting but not the session."""
+    return await session_lifecycle.meeting_session(db, principal, meeting_id)
+
+
 @router.put("/{meeting_id}", response_model=SessionOut)
 async def link_meeting(
     meeting_id: Annotated[str, Path(min_length=1, max_length=MAX_MEETING_ID_LENGTH)],

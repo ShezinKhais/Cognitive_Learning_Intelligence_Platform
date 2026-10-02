@@ -101,3 +101,6 @@ This needs the "Upload custom apps" permission on the tenant.
   outbound calls to Teams, which need the tenant.
 - **Replies from the bot.** The bot does not reply to messages. Replying
   needs outbound calls to Teams, which need the tenant.
+- **Meeting chat and details tabs.** The meeting tab is offered only as the
+  side panel. The chat and details tabs would open the same student panel,
+  so they are left out until a surface for them exists.

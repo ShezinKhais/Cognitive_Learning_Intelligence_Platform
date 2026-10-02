@@ -48,7 +48,7 @@
     {
       "configurationUrl": "${{BASE_URL}}/config",
       "scopes": ["groupChat"],
-      "context": ["meetingSidePanel", "meetingChatTab", "meetingDetailsTab"],
+      "context": ["meetingSidePanel"],
       "supportedSharePointHosts": []
     }
   ],

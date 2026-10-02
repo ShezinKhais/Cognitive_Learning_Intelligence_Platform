@@ -2118,6 +2118,49 @@
       }
     },
     "/api/v1/meetings/{meeting_id}": {
+      "get": {
+        "description": "The session this meeting holds, if the caller runs it or is an admin.\nFor the lecturer's Teams tab, which knows the meeting but not the session.",
+        "operationId": "meeting_session_api_v1_meetings__meeting_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Meeting Session",
+        "tags": [
+          "meetings"
+        ]
+      },
       "put": {
         "description": "Hold a session in this meeting. Either side's old link is replaced.",
         "operationId": "link_meeting_api_v1_meetings__meeting_id__put",

@@ -245,29 +245,63 @@ async def link_meeting(
 
     A meeting already holding someone else's session is refused: the link
     decides whose class the meeting starts and ends, so replacing it would
-    hand one lecturer another's meeting.
+    hand one lecturer another's meeting. An unlinked meeting is claimed with
+    link_if_absent, so two lecturers linking it at once cannot both see it
+    free and have the second one take it from the first.
     """
     repo = SessionRepository(db)
     row = await owned_session(repo, principal, session_id)
     held = await meetings.directory.session_for(meeting_id)
-    if held is not None and held != session_id:
-        current = await repo.get(held)
-        if current is not None and not (
-            principal.is_(Role.ADMIN) or current.instructor_id == principal.user_id
-        ):
-            raise ConflictError(
-                "This meeting holds another lecturer's session.", {"meeting_id": meeting_id}
-            )
+    await _may_replace(repo, principal, meeting_id, held, session_id)
     if row.status in FINISHED:
         raise ConflictError(
             f"Cannot link a meeting to a session that is {row.status}.",
             {"current_status": row.status},
         )
+    if held is None:
+        held = await meetings.directory.link_if_absent(meeting_id, row.session_id)
+        await _may_replace(repo, principal, meeting_id, held, session_id)
+    if held != row.session_id:
+        await meetings.directory.link(meeting_id, row.session_id)
     row.mode = MODE_TEAMS
     await db.commit()
-    await meetings.directory.link(meeting_id, row.session_id)
     log.info("session %s linked to meeting %s by %s", session_id, meeting_id, principal.user_id)
     return await session_out(db, row)
+
+
+async def meeting_session(db: AsyncSession, principal: Principal, meeting_id: str) -> SessionOut:
+    """The session a meeting holds, for the lecturer who runs it or an admin.
+
+    A meeting with no session and one holding another lecturer's session are
+    refused alike, and the refusal names only the meeting, so a meeting id
+    cannot be used to learn another lecturer's session id.
+    """
+    session_id = await meetings.directory.session_for(meeting_id)
+    row = await SessionRepository(db).get(session_id) if session_id is not None else None
+    if row is None or (not principal.is_(Role.ADMIN) and row.instructor_id != principal.user_id):
+        raise NotFoundError(
+            "No session of yours is linked to this meeting.", {"meeting_id": meeting_id}
+        )
+    return await session_out(db, row)
+
+
+async def _may_replace(
+    repo: SessionRepository,
+    principal: Principal,
+    meeting_id: str,
+    held: UUID | None,
+    session_id: UUID,
+) -> None:
+    """Refuse taking a meeting that holds another lecturer's session."""
+    if held is None or held == session_id:
+        return
+    current = await repo.get(held)
+    if current is not None and not (
+        principal.is_(Role.ADMIN) or current.instructor_id == principal.user_id
+    ):
+        raise ConflictError(
+            "This meeting holds another lecturer's session.", {"meeting_id": meeting_id}
+        )
 
 
 async def meeting_owner(db: AsyncSession, meeting_id: str, settings: Settings) -> Principal | None:
@@ -324,10 +358,17 @@ async def handle_meeting_event(
             principal,
             SessionCreateRequest(course_code=event.course_code, title=event.title or MEETING_TITLE),
         )
-        # Committed and linked before the start, which may be refused: the
-        # meeting keeps its session, and starts it once a question is staged.
-        await link_meeting(db, principal, event.meeting_id, created.id)
-        session_id = created.id
+        # Teams may deliver the start twice at once, and both copies find the
+        # meeting free. Only the first to claim it keeps its session; the
+        # other is not yet committed, so it is rolled back and the event
+        # carries on with the winner's.
+        session_id = await meetings.directory.link_if_absent(event.meeting_id, created.id)
+        if session_id != created.id:
+            await db.rollback()
+        else:
+            # Committed and linked before the start, which may be refused: the
+            # meeting keeps its session, and starts it once a question is staged.
+            await link_meeting(db, principal, event.meeting_id, created.id)
 
     row = await owned_session(SessionRepository(db), principal, session_id, for_update=False)
     if event.kind is MeetingEventKind.STARTED:

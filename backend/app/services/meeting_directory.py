@@ -31,6 +31,11 @@ class MeetingDirectory(Protocol):
 
     async def link(self, meeting_id: str, session_id: UUID) -> None: ...
 
+    async def link_if_absent(self, meeting_id: str, session_id: UUID) -> UUID:
+        """Link only if the meeting holds no session, as one atomic step, and
+        return the session the meeting holds afterwards."""
+        ...
+
 
 class InMemoryMeetingDirectory:
     def __init__(self) -> None:
@@ -54,6 +59,14 @@ class InMemoryMeetingDirectory:
             self._sessions.pop(old_meeting, None)
         self._sessions[meeting_id] = session_id
         self._meetings[session_id] = meeting_id
+
+    async def link_if_absent(self, meeting_id: str, session_id: UUID) -> UUID:
+        # Nothing awaits between the check and the link, so it is atomic.
+        held = self._sessions.get(meeting_id)
+        if held is not None:
+            return held
+        await self.link(meeting_id, session_id)
+        return session_id
 
 
 class Meetings:

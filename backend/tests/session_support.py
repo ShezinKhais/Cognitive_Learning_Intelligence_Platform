@@ -26,6 +26,7 @@ from app.auth.store import (
 )
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.models.comprehension_result import ComprehensionResult
 from app.models.course import Course
 from app.models.material import Material
 from app.models.question import Question
@@ -82,12 +83,17 @@ async def db(app):
 
     async with factory() as cleanup:
         courses, materials = created["course"], created["material"]
-        await cleanup.execute(
-            delete(StudentResponse).where(
-                StudentResponse.question_id.in_(
-                    select(Question.question_id).where(Question.source_material_id.in_(materials))
-                )
+        responses = select(StudentResponse.response_id).where(
+            StudentResponse.question_id.in_(
+                select(Question.question_id).where(Question.source_material_id.in_(materials))
             )
+        )
+        # Scored answers carry a comprehension label, which has to go first.
+        await cleanup.execute(
+            delete(ComprehensionResult).where(ComprehensionResult.response_id.in_(responses))
+        )
+        await cleanup.execute(
+            delete(StudentResponse).where(StudentResponse.response_id.in_(responses))
         )
         await cleanup.execute(delete(Question).where(Question.source_material_id.in_(materials)))
         await cleanup.execute(delete(SessionModel).where(SessionModel.course_id.in_(courses)))

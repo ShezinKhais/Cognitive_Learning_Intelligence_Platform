@@ -4,7 +4,7 @@ import type { CurrentUser, Role } from './api'
 // it may be returned to. The review page lives at /materials/:id/review, so a
 // lecturer following a review link from before sign-in arrives back on it.
 const ROLE_PAGES: Record<Role, { home: string; returnable: readonly string[] }> = {
-  student: { home: '/student', returnable: ['/student'] },
+  student: { home: '/student', returnable: ['/student', '/teams/'] },
   lecturer: { home: '/lecturer/materials', returnable: ['/lecturer', '/materials/'] },
   admin: { home: '/admin', returnable: ['/admin'] },
 }
