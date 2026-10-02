@@ -41,7 +41,7 @@ import logging
 import os
 import random
 from collections import OrderedDict
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -53,6 +53,7 @@ from app.core.database import get_session_factory
 from app.core.errors import ConflictError
 from app.models.session import Session
 from app.realtime.attention import Attention, Prompt, ScoredStudent, checked_message
+from app.realtime.consent import CLOSE_CONSENT, ConsentRegistry, permitted_signal
 from app.realtime.countdown import Countdown
 from app.realtime.hub import SessionHub, hub
 from app.realtime.recorders import (
@@ -86,7 +87,7 @@ from app.schemas.events import (
     ServerEventType,
     SessionStatePayload,
 )
-from app.schemas.identity import Role
+from app.schemas.identity import ConsentType, Role
 from app.schemas.session import ClassComprehensionAlert, SessionStatus
 from app.services.engagement import evaluate_comprehension_alert, should_send_dynamic_prompt
 
@@ -190,8 +191,12 @@ class Classroom:
         sessions: Callable[[], async_sessionmaker[AsyncSession]] = get_session_factory,
         settings: Callable[[], Settings] = get_settings,
         rng: random.Random | None = None,
+        consents: ConsentRegistry | None = None,
     ) -> None:
         self._hub = events
+        # What each student has consented to be monitored for. Cyber 1's
+        # rules for it are in consent.py.
+        self.consents = consents if consents is not None else ConsentRegistry()
         self._random = rng or random.Random()
         self._sessions = sessions
         self._settings = settings
@@ -347,7 +352,7 @@ class Classroom:
             # The last question still counts, but nobody is nudged in a class
             # that has ended.
             if open_ is not None:
-                live.attention.score(open_.present, open_.answered, open_.timing, _now())
+                live.attention.score(*self._monitored_in(open_), open_.timing, _now())
         _cancel(live.cycle)
         for prompt in withdrawn:
             _cancel(prompt.expiry)
@@ -794,6 +799,10 @@ class Classroom:
     ) -> AttentionPromptPayload | None:
         if live.countdown.paused or user_id not in self._hub.student_ids(live.session_id):
             return None
+        # An attention prompt is part of engagement monitoring, which the
+        # student may decline without leaving the class.
+        if not self.consents.monitored(user_id):
+            return None
         if live.open is not None and user_id not in live.open.answered:
             return None
         settings = self._settings()
@@ -860,20 +869,70 @@ class Classroom:
         self, session_id: UUID, user_id: UUID, signal: AttentionSignalPayload
     ) -> bool:
         """Keep a student's latest client attention signal for their next
-        engagement score. False when the session is not running here or the
-        sender is not a student connected to it."""
+        engagement score, less whatever their consent does not cover. False
+        when the session is not running here, the sender is not a student
+        connected to it, or they have not consented to engagement monitoring."""
         live = self._live.get(session_id)
         if live is None or user_id not in self._hub.student_ids(session_id):
             return False
+        kept = permitted_signal(signal, self.consents.granted(user_id))
+        if kept is None:
+            return False
         async with live.lock:
-            live.attention.observe(user_id, signal, _now())
+            live.attention.observe(user_id, kept, _now())
         return True
+
+    def _monitored_in(self, question: _OpenQuestion) -> tuple[set[UUID], set[UUID]]:
+        """Who was shown a question and who answered it, among the students
+        engagement scoring may consider."""
+        monitored = {u for u in question.eligible if self.consents.monitored(u)}
+        return question.present & monitored, question.answered & monitored
+
+    def admit_consents(
+        self, user_id: UUID, granted: Iterable[ConsentType], read_at: int
+    ) -> frozenset[ConsentType]:
+        """Record what a user joining a class has consented to, as read from
+        the store while the registry's version was read_at. A decision
+        recorded meanwhile wins. Returns what now holds."""
+        return self.consents.admit(user_id, granted, read_at)
+
+    async def withdraw_consent(self, user_id: UUID, consent: ConsentType) -> None:
+        """Stop acting on a consent the user has just withdrawn, in every class
+        this process runs, as the consent contract promises: at once, not at
+        their next reconnect.
+
+        Engagement monitoring: everything kept about the student's engagement
+        is dropped and any prompt waiting on them is taken down. Camera or
+        microphone: those parts of their stored signal are dropped. Terms:
+        their session sockets are closed.
+
+        A grant is not applied here. It takes effect when the user next joins,
+        read from the store, so no class ever acts on a decision the database
+        might not keep.
+        """
+        held = self.consents.set(user_id, self.consents.granted(user_id) - {consent})
+        withdrawn: list[Prompt] = []
+        for live in list(self._live.values()):
+            async with live.lock:
+                if ConsentType.ENGAGEMENT_MONITORING not in held:
+                    prompt = live.attention.forget(user_id)
+                    if prompt is not None:
+                        withdrawn.append(prompt)
+                else:
+                    live.attention.restrict_signal(
+                        user_id, lambda signal: permitted_signal(signal, held)
+                    )
+        for prompt in withdrawn:
+            _cancel(prompt.expiry)
+        if consent is ConsentType.TERMS:
+            await self._hub.close_user_sessions(user_id, CLOSE_CONSENT, "consent withdrawn")
 
     async def _score_engagement_locked(self, live: LiveSession, closed: _OpenQuestion) -> None:
         """Rescore everyone who was shown the question that just closed, and
         nudge those engagement scoring says need it. prompt_student's limits
         (cap, pause, one at a time, connected) still apply."""
-        for scored in live.attention.score(closed.present, closed.answered, closed.timing, _now()):
+        shown, answered = self._monitored_in(closed)
+        for scored in live.attention.score(shown, answered, closed.timing, _now()):
             if should_send_dynamic_prompt(scored.engagement):
                 await self._prompt_locked(live, scored.user_id, ENGAGEMENT_PROMPT_MESSAGE)
 
@@ -928,7 +987,9 @@ class Classroom:
         """The latest engagement score of each student scored in a session this
         process is running, by user id. The caller resolves the student id."""
         live = self._live.get(session_id)
-        return live.attention.scores() if live is not None else []
+        if live is None:
+            return []
+        return [s for s in live.attention.scores() if self.consents.monitored(s.user_id)]
 
     def alerts(self, session_id: UUID) -> list[ClassComprehensionAlert]:
         live = self._live.get(session_id)

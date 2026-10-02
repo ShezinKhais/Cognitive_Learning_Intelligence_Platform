@@ -23,7 +23,7 @@ from app.models.question import Question
 from app.models.session import Session as SessionModel
 from app.models.student import Student
 from app.realtime.classroom import classroom
-from app.schemas.identity import Role
+from app.schemas.identity import ConsentType, Role
 
 from .dev_credentials import LECTURER_PASSWORD, STUDENT_PASSWORD
 from .session_support import (
@@ -796,6 +796,10 @@ async def test_engagement_reports_the_student_id_not_the_user_id(db, app) -> Non
         )
 
     live = classroom.activate(session_id, paused=True)
+    # Admitted having consented to engagement monitoring, as through the socket.
+    classroom.admit_consents(
+        STUDENT_ID, {ConsentType.TERMS, ConsentType.ENGAGEMENT_MONITORING}, read_at=0
+    )
     # Two questions shown and both answered.
     for _ in range(2):
         live.attention.score({STUDENT_ID}, {STUDENT_ID}, {}, datetime.now(UTC))

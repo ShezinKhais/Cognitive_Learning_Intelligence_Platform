@@ -46,4 +46,9 @@ class TeamsActivity(BaseModel):
     type: str
     name: str | None = None
     service_url: str = Field(alias="serviceUrl")
+    channel_id: str | None = Field(
+        default=None,
+        alias="channelId",
+        description="The Bot Framework channel. Only 'msteams' is acted on.",
+    )
     channel_data: dict[str, Any] | None = Field(default=None, alias="channelData")

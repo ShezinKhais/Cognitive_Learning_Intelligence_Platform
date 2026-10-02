@@ -8,7 +8,11 @@ before authentication closes the connection. On success the server replies
 session_id to the user's own channel.
 
 Joining a session needs a seat in it: the lecturer who runs it, an admin, or
-a student enrolled on its course, while it is prepared or active. After
+a student enrolled on its course, while it is prepared or active, and terms
+consent, as every REST route asks. This is the socket behind the Teams
+in-meeting panel as much as the web one. What the student has consented to be
+monitored for is handed to the classroom here, and consent.py says what it
+does with it. After
 `ready` and any replay, a session connection is sent `session.state`, the
 question that is open (unless this student has answered it) and any
 attention prompt still waiting on this student.
@@ -21,7 +25,8 @@ Events for one user alone, such as an answer receipt, carry seq 0.
 Closing codes
 -------------
 4001  authentication required or failed
-4003  not permitted to join this session
+4003  not permitted to join this session, including for want of consent, or
+      terms consent withdrawn while in it
 4400  malformed event
 4408  no auth event arrived within the timeout
 """
@@ -41,7 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.websockets import WebSocketState
 
 from app.api.deps import AppSettings, DbSession
-from app.auth.service import user_from_token
+from app.auth.service import granted_consents, user_from_token
 from app.core.security import TokenValidationError
 from app.realtime.classroom import classroom
 from app.realtime.hub import CLOSE_TRY_AGAIN_LATER, Connection, hub
@@ -55,7 +60,7 @@ from app.schemas.events import (
     ServerEventType,
     parse_client_event,
 )
-from app.schemas.identity import Role
+from app.schemas.identity import ConsentType, Role
 from app.schemas.session import SessionStatus
 from app.services.session_lifecycle import joinable_session
 
@@ -245,9 +250,18 @@ async def session_socket(
     if session_id is not None:
         # A valid JWT alone does not authorize an arbitrary session.
         try:
-            row = await joinable_session(db, user_id, role, session_id)
-            if row is not None:
-                await classroom.restore(db, row)
+            read_at = classroom.consents.version(user_id)
+            consents = classroom.admit_consents(
+                user_id, await granted_consents(user_id, settings, db), read_at
+            )
+            if ConsentType.TERMS not in consents:
+                row = None
+                refused = "consent_required"
+            else:
+                row = await joinable_session(db, user_id, role, session_id)
+                refused = "not_a_session_member"
+                if row is not None:
+                    await classroom.restore(db, row)
         except Exception:
             log.exception("could not check membership of session %s", session_id)
             await websocket.close(
@@ -262,14 +276,19 @@ async def session_socket(
                     "transport=websocket "
                     "user_id=%s "
                     "session_id=%s "
-                    "reason=not_a_session_member"
+                    "reason=%s"
                 ),
                 user_id,
                 session_id,
+                refused,
             )
             await websocket.close(
                 code=CLOSE_FORBIDDEN,
-                reason="not permitted to join this session",
+                reason=(
+                    "consent required"
+                    if refused == "consent_required"
+                    else "not permitted to join this session"
+                ),
             )
             return
         recorded = SessionStatus(row.status)
@@ -295,6 +314,11 @@ async def session_socket(
 
     try:
         if not await hub.connect(connection, last_seq, stream_id, welcome):
+            return
+        if session_id is not None and ConsentType.TERMS not in classroom.consents.granted(user_id):
+            # Withdrawn while this socket was being admitted, too late for the
+            # withdrawal itself to find it.
+            await websocket.close(code=CLOSE_FORBIDDEN, reason="consent withdrawn")
             return
         if session_id is not None and recorded is not None:
             seat = (session_id, recorded)
@@ -362,8 +386,22 @@ async def session_socket(
 
             if isinstance(payload, AttentionSignalPayload):
                 # Optional client-side evidence for engagement scoring. Kept
-                # only for a student connected to a running session.
-                if session_id is None or not await classroom.record_attention(
+                # only for a student connected to a running session who has
+                # consented to engagement monitoring.
+                if (
+                    session_id is not None
+                    and role is Role.STUDENT
+                    and not classroom.consents.monitored(user_id)
+                ):
+                    await _send(
+                        websocket,
+                        ServerEventType.ERROR,
+                        {
+                            "code": "CONSENT_REQUIRED",
+                            "detail": "engagement monitoring consent has not been granted",
+                        },
+                    )
+                elif session_id is None or not await classroom.record_attention(
                     session_id, user_id, payload
                 ):
                     await _send(
