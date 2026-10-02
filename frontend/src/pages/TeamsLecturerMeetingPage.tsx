@@ -17,15 +17,18 @@ import { useTeams } from '../teams/TeamsProvider'
  * access to the lecturer workspace. C.L.I.P authentication, consent and
  * role checks remain authoritative.
  *
- * The Teams meeting ID is resolved through the authenticated C.L.I.P
- * meeting endpoint. The backend determines whether the current lecturer
- * may access the linked session.
+ * In Microsoft Teams, the meeting ID is resolved through the authenticated
+ * C.L.I.P meeting endpoint. For standalone/mock development, ?sessionId=
+ * remains available as an optional routing hint.
  */
 export default function TeamsLecturerMeetingPage() {
   const teams = useTeams()
 
+  const hintedSessionId =
+    new URLSearchParams(window.location.search).get('sessionId')
+
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const meetingId = teams.context?.meetingId ?? null
@@ -35,63 +38,76 @@ export default function TeamsLecturerMeetingPage() {
       return
     }
 
-    if (teams.status !== 'ready' || !meetingId) {
-      setSessionId(null)
-      setError(
-        'C.L.I.P could not determine the Microsoft Teams meeting.',
-      )
+    /*
+     * A real Teams meeting context takes priority over the optional
+     * standalone/mock session hint.
+     */
+    if (teams.status === 'ready' && meetingId) {
+      const resolvedMeetingId = meetingId
+      let active = true
+
+      async function resolveMeetingSession(): Promise<void> {
+        setIsLoading(true)
+        setError(null)
+
+        try {
+          const session = await apiAuthenticatedGet<MeetingSession>(
+            meetingSessionPath(resolvedMeetingId),
+          )
+
+          if (!active) {
+            return
+          }
+
+          if (!session.id) {
+            throw new Error(
+              'The meeting lookup did not return a C.L.I.P session.',
+            )
+          }
+
+          setSessionId(session.id)
+        } catch (caught: unknown) {
+          if (!active) {
+            return
+          }
+
+          setSessionId(null)
+          setError(
+            caught instanceof Error
+              ? caught.message
+              : 'C.L.I.P could not resolve this Teams meeting.',
+          )
+        } finally {
+          if (active) {
+            setIsLoading(false)
+          }
+        }
+      }
+
+      void resolveMeetingSession()
+
+      return () => {
+        active = false
+      }
+    }
+
+    /*
+     * Standalone/mock fallback. This is only a routing hint; the existing
+     * C.L.I.P authentication, role and backend authorization still apply.
+     */
+    if (hintedSessionId) {
+      setSessionId(hintedSessionId)
+      setError(null)
       setIsLoading(false)
       return
     }
 
-    const resolvedMeetingId = meetingId
-    let active = true
-
-    async function resolveMeetingSession(): Promise<void> {
-      setIsLoading(true)
-      setError(null)
-
-      try {
-        const session = await apiAuthenticatedGet<MeetingSession>(
-          meetingSessionPath(resolvedMeetingId),
-        )
-
-        if (!active) {
-          return
-        }
-
-        if (!session.id) {
-          throw new Error(
-            'The meeting lookup did not return a C.L.I.P session.',
-          )
-        }
-
-        setSessionId(session.id)
-      } catch (caught: unknown) {
-        if (!active) {
-          return
-        }
-
-        setSessionId(null)
-
-        setError(
-          caught instanceof Error
-            ? caught.message
-            : 'C.L.I.P could not resolve this Teams meeting.',
-        )
-      } finally {
-        if (active) {
-          setIsLoading(false)
-        }
-      }
-    }
-
-    void resolveMeetingSession()
-
-    return () => {
-      active = false
-    }
-  }, [meetingId, teams.status])
+    setSessionId(null)
+    setError(
+      'C.L.I.P could not determine the Microsoft Teams meeting.',
+    )
+    setIsLoading(false)
+  }, [hintedSessionId, meetingId, teams.status])
 
   if (teams.status === 'initializing' || isLoading) {
     return (

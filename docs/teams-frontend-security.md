@@ -34,11 +34,6 @@ The minimum C.L.I.P Teams deployment policy is:
 
 ```http
 Content-Security-Policy: frame-ancestors 'self' https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft;
-
-
-
-
-
 ```
 
 The `frame-ancestors` directive must be delivered as an HTTP response header.
