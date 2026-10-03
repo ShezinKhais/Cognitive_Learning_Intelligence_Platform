@@ -4,11 +4,14 @@ import { BrowserRouter } from 'react-router'
 
 import App from './App.tsx'
 import './index.css'
+import { TeamsProvider } from './teams'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <TeamsProvider>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </TeamsProvider>
   </StrictMode>,
 )

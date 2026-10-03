@@ -24,6 +24,7 @@ from app.realtime.recorders import Attendance, ClosedQuestion, PromptOutcome
 from app.repositories.comprehension_repository import DatabaseComprehensionSource
 from app.repositories.live_event_repository import LiveEventRepository
 from app.repositories.question_repository import QuestionRepository
+from app.services.comprehension_writer import label_response
 from app.services.live_recorder import LiveCloseRecorder, LiveResponseRecorder
 
 
@@ -47,7 +48,10 @@ async def _get_answers(session_id: UUID, question_id: UUID) -> dict[UUID, Studen
 
 async def _store_response(**response: Any) -> StudentResponse:
     async with _recording() as events:
-        return await events.record_response(**response)
+        stored = await events.record_response(**response)
+        # In the answer's transaction: stored together or not at all.
+        await label_response(events.session, stored)
+        return stored
 
 
 async def _store_close(closed: ClosedQuestion) -> None:

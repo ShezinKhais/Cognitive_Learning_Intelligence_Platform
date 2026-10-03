@@ -23,6 +23,8 @@ class ComprehensionResult(Base):
         UUID(as_uuid=True),
         ForeignKey("student_response.response_id"),
         nullable=False,
+        # One label per answer: a retried or concurrent write keeps the first.
+        unique=True,
         index=True,
     )
 
