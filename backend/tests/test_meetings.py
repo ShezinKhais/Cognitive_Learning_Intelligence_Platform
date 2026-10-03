@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.auth.store import ADMIN_ID, LECTURER_ID, STUDENT_ID
 from app.models.session import Session as SessionModel
@@ -309,12 +309,68 @@ async def test_a_start_delivered_twice_at_once_leaves_one_session_in_the_meeting
     assert started.json()["id"] == first["id"]
     assert await meetings.directory.session_for(meeting) == UUID(first["id"])
     async with factory() as check:
-        ids = (
-            await check.scalars(
-                select(SessionModel.session_id).where(SessionModel.course_id == course.id)
+        others = (
+            await check.execute(
+                select(SessionModel.status, SessionModel.ended_at).where(
+                    SessionModel.course_id == course.id,
+                    SessionModel.session_id != UUID(first["id"]),
+                )
             )
         ).all()
-    assert ids == [UUID(first["id"])]
+    assert [(status, ended is not None) for status, ended in others] == [("cancelled", True)]
+
+
+class _OwnTransaction(InMemoryMeetingDirectory):
+    """Stands in for a database-backed store. Its writes run in their own
+    transaction and reference the session row as a foreign key does: the row
+    must be committed, and must not be locked against a key-share lock."""
+
+    def __init__(self, factory) -> None:  # noqa: ANN001
+        super().__init__()
+        self._factory = factory
+
+    async def link(self, meeting_id: str, session_id: UUID) -> None:
+        async with self._factory() as other:
+            await other.execute(text("SET LOCAL lock_timeout = '2s'"))
+            referenced = await other.scalar(
+                select(SessionModel.session_id)
+                .where(SessionModel.session_id == session_id)
+                .with_for_update(read=True, key_share=True)
+            )
+        assert referenced is not None, "the session is not committed"
+        await super().link(meeting_id, session_id)
+
+
+async def test_a_store_with_its_own_transaction_can_link_a_session(
+    db, app, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, factory, created = db
+    course = await add_course(factory, created)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    session = create_session(client, course)
+    monkeypatch.setattr(meetings, "directory", _OwnTransaction(factory))
+    meeting = _meeting()
+
+    linked = client.put(f"/api/v1/meetings/{meeting}", json={"session_id": session["id"]})
+    moved = client.put(f"/api/v1/meetings/{_meeting()}", json={"session_id": session["id"]})
+
+    assert (linked.status_code, moved.status_code) == (200, 200), linked.text + moved.text
+
+
+async def test_a_store_with_its_own_transaction_sees_the_session_a_start_creates(
+    db, app, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, factory, created = db
+    course = await add_course(factory, created)
+    await add_question(db, course, LECTURER_ID)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    monkeypatch.setattr(meetings, "directory", _OwnTransaction(factory))
+    meeting = _meeting()
+
+    started = _event(client, "started", meeting, course_code=course.code)
+
+    assert started.status_code == 200, started.text
+    assert (started.json()["status"], started.json()["teams_meeting_id"]) == ("active", meeting)
 
 
 async def test_linking_if_absent_keeps_the_meetings_session() -> None:
