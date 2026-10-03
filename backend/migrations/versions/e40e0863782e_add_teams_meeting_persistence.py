@@ -1,7 +1,7 @@
 """add Teams meeting persistence
 
 Revision ID: e40e0863782e
-Revises: 7fb1c9da741b
+Revises: b3c1e7a9d204
 Create Date: 2026-09-27 22:32:20.823113
 
 """
@@ -13,7 +13,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "e40e0863782e"
-down_revision: str | Sequence[str] | None = "7fb1c9da741b"
+down_revision: str | Sequence[str] | None = "b3c1e7a9d204"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
