@@ -20,6 +20,16 @@ from app.schemas.events import (
 from .dev_credentials import STUDENT_PASSWORD
 
 
+def _student_accepts_terms() -> None:
+    """Joining a session needs terms consent, which a real student has
+    given before any class page lets them in."""
+    from app.auth.store import STUDENT_ID, get_consent_repository
+    from app.core.config import get_settings
+    from app.schemas.identity import ConsentType
+
+    get_consent_repository(get_settings()).record(STUDENT_ID, ConsentType.TERMS, True)
+
+
 def test_socket_rejects_a_non_auth_first_event(
     client: TestClient,
 ) -> None:
@@ -109,6 +119,7 @@ def test_socket_accepts_a_valid_token(
 
 
 def _session_join_close_code(client: TestClient, session_id: UUID) -> int:
+    _student_accepts_terms()
     login = client.post(
         "/api/v1/auth/login",
         json={"email": "student@clip.example.com", "password": STUDENT_PASSWORD},
@@ -304,6 +315,7 @@ def test_student_session_join_and_leave_announces_presence(
         announce_presence,
     )
 
+    _student_accepts_terms()
     login = client.post(
         "/api/v1/auth/login",
         json={

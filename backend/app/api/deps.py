@@ -13,8 +13,7 @@ from uuid import UUID
 from fastapi import Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.service import user_from_token
-from app.auth.store import get_consent_repository
+from app.auth.service import granted_consents, user_from_token
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.errors import (
@@ -26,7 +25,6 @@ from app.core.security import (
     TokenValidationError,
     extract_bearer_token,
 )
-from app.repositories.consent_repository import ConsentRepository
 from app.schemas.identity import ConsentType, Role
 
 log = logging.getLogger("clip.security")
@@ -164,13 +162,7 @@ def require_consents(
         settings: AppSettings,
         db: DbSession,
     ) -> Principal:
-        if settings.is_production:
-            repository = ConsentRepository(db)
-
-            granted = await repository.granted_for(principal.user_id)
-
-        else:
-            granted = get_consent_repository(settings).granted_for(principal.user_id)
+        granted = await granted_consents(principal.user_id, settings, db)
 
         missing = [consent for consent in consents if consent not in granted]
 

@@ -52,10 +52,16 @@ class SessionRepository:
     async def get(self, session_id: uuid.UUID, *, for_update: bool = False) -> Session | None:
         """One session. for_update locks the row until the transaction ends, so
         two lifecycle calls on the same session cannot both pass the status
-        check."""
+        check.
+
+        The lock is FOR NO KEY UPDATE. It still excludes other lifecycle calls,
+        but lets another transaction insert a row that references the session,
+        which is what a database-backed meeting store does while this one
+        holds the lock. FOR UPDATE would leave that insert waiting on the
+        request that is waiting for it."""
         query = select(Session).where(Session.session_id == session_id)
         if for_update:
-            query = query.with_for_update()
+            query = query.with_for_update(key_share=True)
         return (await self.session.execute(query)).scalar_one_or_none()
 
     async def course_code(self, course_id: uuid.UUID) -> str:
