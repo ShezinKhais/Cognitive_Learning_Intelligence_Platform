@@ -315,6 +315,28 @@ class SessionHub:
         self._closing.add(task)
         task.add_done_callback(self._closing.discard)
 
+    async def close_user_sessions(self, user_id: UUID, code: int, reason: str) -> int:
+        """Close every session socket a user holds, as when they withdraw the
+        consent a class needs. Each socket's endpoint then reports the
+        departure as it would for any other disconnect. Returns how many were
+        closed."""
+        async with self._lock:
+            targets = [
+                c
+                for stream in self._streams.values()
+                for c in stream.members
+                if c.user_id == user_id and c.session_id is not None
+            ]
+        for connection in targets:
+            # Out of the session first, so nothing more reaches it meanwhile.
+            await self.leave(connection)
+            with contextlib.suppress(Exception):
+                async with asyncio.timeout(CLOSE_TIMEOUT_SECONDS):
+                    await connection.websocket.close(code=code, reason=reason)
+        if targets:
+            log.info("closed %d session socket(s) for user %s: %s", len(targets), user_id, reason)
+        return len(targets)
+
     async def _close_quietly(self, connection: Connection) -> None:
         with contextlib.suppress(Exception):
             async with asyncio.timeout(CLOSE_TIMEOUT_SECONDS):

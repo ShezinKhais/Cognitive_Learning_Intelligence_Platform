@@ -13,6 +13,8 @@ from app.auth.store import (
 from app.core.config import get_settings
 from app.core.database import get_engine
 from app.main import create_app
+from app.realtime.classroom import classroom
+from app.realtime.consent import ConsentRegistry
 from app.schemas.identity import ConsentType, Role
 
 # Fixtures shared by more than one test module, without importing them.
@@ -37,11 +39,15 @@ def reset_dev_identity_state():
 
     get_login_security_store().reset()
     get_consent_repository(settings).clear()
+    # What live classes last saw of each user's consent, which would
+    # otherwise outlive the store it was read from.
+    classroom.consents = ConsentRegistry()
 
     yield
 
     get_login_security_store().reset()
     get_consent_repository(settings).clear()
+    classroom.consents = ConsentRegistry()
 
 
 @pytest.fixture(autouse=True)

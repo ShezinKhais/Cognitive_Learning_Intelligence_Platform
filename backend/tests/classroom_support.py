@@ -15,12 +15,13 @@ import pytest
 
 from app.realtime import classroom as classroom_module
 from app.realtime.classroom import Classroom
+from app.realtime.consent import ConsentRegistry
 from app.realtime.hub import Connection, SessionHub
 from app.schemas.events import (
     AnswerSubmitPayload,
     ServerEventType,
 )
-from app.schemas.identity import Role
+from app.schemas.identity import ConsentType, Role
 from app.schemas.session import SessionStatus
 
 
@@ -101,9 +102,13 @@ def make_room(
     interval_max: float | None = None,
     rng: object | None = None,
     production: bool = False,
+    consents: ConsentRegistry | None = None,
 ) -> tuple[Classroom, SessionHub]:
     """interval alone fixes the wait between questions, so timing tests are
-    exact; interval_max makes it the random range the cycle draws from."""
+    exact; interval_max makes it the random range the cycle draws from.
+
+    Every student has consented to everything unless consents says otherwise;
+    production assumes nobody has."""
     events = SessionHub()
     settings = SimpleNamespace(
         checkpoint_interval_min_seconds=interval,
@@ -121,6 +126,7 @@ def make_room(
         sessions=lambda: FakeDb,
         settings=lambda: settings,
         rng=rng,  # type: ignore[arg-type]
+        consents=consents if consents is not None else ConsentRegistry(default=ConsentType),
     )
     return room, events
 

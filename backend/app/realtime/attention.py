@@ -15,7 +15,7 @@ rules.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping, Set
+from collections.abc import Callable, Mapping, Set
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from uuid import UUID, uuid4
@@ -205,6 +205,33 @@ class Attention:
         student = self._student(user_id)
         student.signal = signal
         student.signal_at = now
+
+    def forget(self, user_id: UUID) -> Prompt | None:
+        """Drop all engagement evidence and the score kept for a student whose
+        consent to monitoring is withdrawn. Returns the prompt that was
+        waiting on them, now taken down; it is not counted as a response,
+        since the student did not ignore it. How many prompts they have been
+        sent is kept, so the per-student cap still holds if they consent again.
+        """
+        student = self._students.pop(user_id, None)
+        if student is None:
+            return None
+        self._students[user_id] = _Student(sent=student.sent)
+        return student.waiting
+
+    def restrict_signal(
+        self,
+        user_id: UUID,
+        keep: Callable[[AttentionSignalPayload], AttentionSignalPayload | None],
+    ) -> None:
+        """Narrow the student's stored signal to what keep allows, as when
+        camera or microphone consent is withdrawn."""
+        student = self._students.get(user_id)
+        if student is None or student.signal is None:
+            return
+        student.signal = keep(student.signal)
+        if student.signal is None:
+            student.signal_at = None
 
     def score(
         self,
