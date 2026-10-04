@@ -7,6 +7,7 @@ import {
 
 import { defaultPathForRole } from './authRouting'
 import RoleGate from './components/RoleGate'
+import StaffTeamsBoundary from './components/StaffTeamsBoundary'
 import { StudentAppProvider } from './features/student/StudentAppContext'
 import AccessDeniedPage from './pages/AccessDeniedPage'
 import AdminConsole from './pages/AdminConsole'
@@ -20,8 +21,10 @@ import QuestionReview from './pages/QuestionReview'
 import StudentHomePage from './pages/StudentHomePage'
 import StudentLiveSessionPage from './pages/StudentLiveSessionPage'
 import SystemStatusPage from './pages/SystemStatusPage'
-import TeamsMeetingPage from './pages/TeamsMeetingPage'
 import TeamsConfigPage from './pages/TeamsConfigPage'
+import TeamsLecturerMeetingPage from './pages/TeamsLecturerMeetingPage'
+import TeamsMeetingEntryPage from './pages/TeamsMeetingEntryPage'
+import TeamsMeetingPage from './pages/TeamsMeetingPage'
 
 // Sends whoever arrives at the root, or at a page that does not exist, to
 // their own home. Always sending them to /student told every lecturer and
@@ -55,10 +58,13 @@ export default function App() {
         element={<AccessDeniedPage />}
       />
 
-      {/* Teams loads this before a user enters the student experience. The
-          meeting organizer is normally a lecturer, so it must not use the
-          student role guard. */}
-      <Route path="/config" element={<TeamsConfigPage />} />
+      {/* Teams loads this before a user enters the authenticated experience.
+          The meeting organizer may be a lecturer, so configuration must not
+          be protected by the student-only role guard. */}
+      <Route
+        path="/config"
+        element={<TeamsConfigPage />}
+      />
 
       <Route
         path="/student"
@@ -68,28 +74,49 @@ export default function App() {
           </StudentAppProvider>
         }
       >
-        <Route index element={<StudentHomePage />} />
+        <Route
+          index
+          element={<StudentHomePage />}
+        />
         <Route
           path="session/:sessionId"
           element={<StudentLiveSessionPage />}
         />
       </Route>
 
+      {/* Shared Teams meeting entry point. RoleGate first verifies the
+          authoritative C.L.I.P user. Students continue into the existing
+          student Teams experience, while lecturer/admin users are redirected
+          by TeamsMeetingEntryPage to the protected lecturer Teams surface. */}
       <Route
         path="/teams"
-        element={
-          <StudentAppProvider>
-            <ProtectedStudentPage />
-          </StudentAppProvider>
-        }
+        element={<TeamsMeetingEntryPage />}
       >
-        <Route path="meeting" element={<TeamsMeetingPage />} />
+        <Route
+          path="meeting"
+          element={
+            <StudentAppProvider>
+              <ProtectedStudentPage />
+            </StudentAppProvider>
+          }
+        >
+          <Route
+            index
+            element={<TeamsMeetingPage />}
+          />
+        </Route>
       </Route>
 
       {/* The guard is a layout route, so the role check runs before
           AdminConsole mounts and no admin-only markup renders for a
           student who types the URL. */}
-      <Route element={<RoleGate allow={['admin']}>{() => <Outlet />}</RoleGate>}>
+      <Route
+        element={
+          <RoleGate allow={['admin']}>
+            {() => <Outlet />}
+          </RoleGate>
+        }
+      >
         <Route
           path="/admin"
           element={<AdminConsole />}
@@ -98,8 +125,22 @@ export default function App() {
 
       {/* Lecturers, and admins who can review on any lecturer's behalf per
           the backend's ownership check, reach the materials workspace and the
-          review screen; students never see either mount. */}
-      <Route element={<RoleGate allow={['lecturer', 'admin']}>{() => <Outlet />}</RoleGate>}>
+          review screen; students never see either mount.
+
+          RoleGate remains authoritative for authentication, role and consent.
+          StaffTeamsBoundary receives that verified C.L.I.P identity but Teams
+          context must never be allowed to grant staff access. */}
+      <Route
+        element={
+          <RoleGate allow={['lecturer', 'admin']}>
+            {(user) => (
+              <StaffTeamsBoundary user={user}>
+                <Outlet />
+              </StaffTeamsBoundary>
+            )}
+          </RoleGate>
+        }
+      >
         <Route
           path="/lecturer"
           element={
@@ -109,18 +150,27 @@ export default function App() {
             />
           }
         />
+
         <Route
           path="/lecturer/materials"
           element={<LecturerMaterialsPage />}
         />
+
         <Route
           path="/lecturer/sessions"
           element={<LecturerSessionsPage />}
         />
+
         <Route
           path="/lecturer/sessions/:sessionId/live"
           element={<LecturerLiveSessionPage />}
         />
+
+        <Route
+          path="/lecturer/teams/meeting"
+          element={<TeamsLecturerMeetingPage />}
+        />
+
         <Route
           path="/materials/:materialId/review"
           element={<QuestionReview />}
