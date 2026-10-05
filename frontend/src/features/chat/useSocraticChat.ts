@@ -22,7 +22,7 @@ export function useSocraticChat(sessionId: string) {
 
   const submit = useCallback(async (questionOverride?: string) => {
     const question = (questionOverride ?? state.draft).trim()
-    if (!question || state.activeId || question.length > MAX_CHAT_QUESTION_LENGTH) return
+    if (!question || controller.current || question.length > MAX_CHAT_QUESTION_LENGTH) return
 
     const requestId = crypto.randomUUID()
     const nextController = new AbortController()
@@ -51,7 +51,7 @@ export function useSocraticChat(sessionId: string) {
     } finally {
       if (controller.current === nextController) controller.current = null
     }
-  }, [sessionId, state.activeId, state.draft])
+  }, [sessionId, state.draft])
 
   const cancel = useCallback(() => {
     if (!controller.current) return
@@ -71,4 +71,3 @@ export function useSocraticChat(sessionId: string) {
     clearError: () => dispatch({ type: 'error-cleared' }),
   }
 }
-

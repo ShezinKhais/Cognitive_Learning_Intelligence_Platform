@@ -219,7 +219,11 @@ export function LiveSessionPanel({
         </section>
 
         <div className="mt-5" hidden={activeView !== 'chat'}>
-          <SocraticChatPanel sessionId={session.id} compact={compact} />
+          <SocraticChatPanel
+            key={session.id}
+            sessionId={session.id}
+            compact={compact}
+          />
         </div>
       </div>
 
