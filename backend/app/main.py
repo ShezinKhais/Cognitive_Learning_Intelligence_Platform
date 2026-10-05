@@ -71,8 +71,6 @@ async def lifespan(app: FastAPI):
     ai = get_ai_gateway()
     ai.start(warm_up=get_settings().ai_warmup_enabled)
     yield
-    # First, so no reply is still being written into a session that is closing.
-    await ai.shutdown()
     for task in (seeding, sweeping):
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -84,6 +82,9 @@ async def lifespan(app: FastAPI):
     # that does not wait for it kills a parse halfway and leaves the lecturer
     # watching a bar stuck at 20 per cent with no record of why.
     await get_background_processor().drain()
+    # Last, so a material job still being drained is interrupted by the drain
+    # and not refused by a gateway that closed underneath it.
+    await ai.shutdown()
 
 
 def create_app() -> FastAPI:

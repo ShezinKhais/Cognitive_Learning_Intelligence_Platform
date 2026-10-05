@@ -34,6 +34,15 @@ Nothing here runs on the request path of a live session. Every wait is an
 await, so the event loop keeps serving sockets while the model thinks, and
 the slot limit keeps model work from crowding out everything else.
 
+Embeddings take the same route as replies. They are quick, but the chatbot
+embeds every question a student asks before it can search the material, so
+in a live class they are as much a part of the load as the replies are.
+
+The model server unloads a model nobody has used for a few minutes, and
+loading it again takes longer than a student will wait. So the gateway loads
+it at startup and then keeps it loaded, by asking for one word whenever the
+model has sat idle for a while.
+
 What a prompt says, what a reply may contain and what is stored about either
 belong to the workstreams that call this. Prompts and replies are never
 logged here: they carry students' own words.
@@ -69,6 +78,7 @@ T = TypeVar("T")
 # What the warm-up sends. One token of output is enough to make the model
 # server load the weights, which is the whole point.
 WARMUP_MESSAGES: tuple[Message, ...] = ({"role": "user", "content": "Reply with OK."},)
+WARMUP_TEXT = "ok"
 # A development machine often has no model server. After this many tries the
 # warm-up stops and says so once, instead of warning every minute for ever.
 WARMUP_ATTEMPTS = 5
@@ -153,19 +163,23 @@ class ModelClient(Protocol):
         self, model: str, messages: Sequence[Message], *, max_tokens: int | None
     ) -> AsyncIterator[str]: ...
 
+    async def embed(self, model: str, texts: Sequence[str]) -> list[list[float]]: ...
+
+
+# Statuses that say "not now" rather than "not this request".
+_RETRYABLE_STATUSES = frozenset({408, 409, 425, 429})
+
 
 def _translated(exc: openai.OpenAIError) -> Exception:
     """An openai error as one of the two a ModelClient may raise."""
-    if isinstance(exc, openai.NotFoundError):
-        # The model is not installed on the server. The server itself is fine.
-        return ModelUnreachableError("the model is not installed", retry=False)
-    if isinstance(
-        exc,
-        openai.APIConnectionError | openai.RateLimitError | openai.InternalServerError,
-    ):
-        return ModelUnreachableError(type(exc).__name__)
     if isinstance(exc, openai.APIStatusError):
+        if exc.status_code == 404:
+            # The model is not installed on the server. The server itself is fine.
+            return ModelUnreachableError("the model is not installed", retry=False)
+        if exc.status_code >= 500 or exc.status_code in _RETRYABLE_STATUSES:
+            return ModelUnreachableError(f"HTTP {exc.status_code}")
         return ModelRejectedError(f"HTTP {exc.status_code}")
+    # No answer at all: refused, reset, timed out, or one that made no sense.
     return ModelUnreachableError(type(exc).__name__)
 
 
@@ -207,6 +221,14 @@ class OpenAIModelClient:
             # is what tells the server to stop generating.
             await response.close()
 
+    async def embed(self, model: str, texts: Sequence[str]) -> list[list[float]]:
+        try:
+            response = await self._client.embeddings.create(model=model, input=list(texts))
+        except openai.OpenAIError as exc:
+            raise _translated(exc) from exc
+        # By the index each vector carries, not the order they arrived in.
+        return [item.embedding for item in sorted(response.data, key=lambda item: item.index)]
+
 
 def _options(max_tokens: int | None) -> dict[str, int]:
     return {} if max_tokens is None else {"max_tokens": max_tokens}
@@ -233,6 +255,9 @@ class AiLimits:
     breaker_failures: int = 5
     breaker_cooldown: float = 30.0
     warmup_timeout: float = 120.0
+    # How long the model may sit idle before it is asked for a word, so the
+    # server does not unload it. 0 never asks.
+    keep_warm_interval: float = 240.0
 
     @classmethod
     def from_settings(cls, settings: Settings) -> AiLimits:
@@ -249,6 +274,7 @@ class AiLimits:
             breaker_failures=settings.ai_breaker_failures,
             breaker_cooldown=settings.ai_breaker_cooldown_seconds,
             warmup_timeout=settings.ai_warmup_timeout_seconds,
+            keep_warm_interval=settings.ai_keep_warm_seconds,
         )
 
 
@@ -342,6 +368,26 @@ class _Slots:
         self._free += 1
 
 
+@dataclass
+class _Warmth:
+    """What is known about whether the server still has a model loaded."""
+
+    model: str
+    # It has answered at least once since the process started.
+    loaded: bool = False
+    # When it last answered a call, and when it was last asked to stay loaded.
+    used: float = 0.0
+    asked: float = 0.0
+
+    def answered(self, now: float) -> None:
+        self.loaded = True
+        self.used = now
+
+    def due(self, interval: float) -> float:
+        """When it next needs a word to stay loaded."""
+        return max(self.used, self.asked) + interval
+
+
 class _Breaker:
     """Stops calls reaching a model that keeps failing.
 
@@ -412,6 +458,7 @@ class AiStream:
         self.cancelled = False
         self._items: asyncio.Queue[str | Exception | None] = asyncio.Queue()
         self._task: asyncio.Task[None] | None = None
+        self._finished = False
         self._ended = False
 
     def __aiter__(self) -> AiStream:
@@ -438,8 +485,13 @@ class AiStream:
         self.text += text
         self._items.put_nowait(text)
 
-    def _finish(self, error: Exception | None) -> None:
-        self._items.put_nowait(error)
+    def _finish(self, error: Exception | None = None) -> None:
+        """End the reply, once. Called by the task that writes it, and again
+        when that task is done: a task cancelled before it ran a step never
+        reaches its own finally, and the reader would wait for ever."""
+        if not self._finished:
+            self._finished = True
+            self._items.put_nowait(error)
 
 
 # -- the gateway ---------------------------------------------------------------------
@@ -455,18 +507,23 @@ class AiGateway:
         limits: AiLimits | None = None,
         *,
         fallback_model: str | None = None,
+        embedding_model: str | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._client = client
         self._model = model
         self._fallback_model = fallback_model or None
+        self._embedding_model = embedding_model or None
         self._limits = limits or AiLimits()
         self._slots = _Slots(self._limits.max_concurrency, self._limits.queue_limit)
         self._breaker = _Breaker(
             self._limits.breaker_failures, self._limits.breaker_cooldown, clock
         )
         self._clock = clock
-        self._warm = False
+        self._chat = _Warmth(model, used=clock())
+        self._embedder = (
+            _Warmth(self._embedding_model, used=clock()) if self._embedding_model else None
+        )
         self._warming: asyncio.Task[None] | None = None
         self._streams: set[asyncio.Task[None]] = set()
         self._closed = False
@@ -479,7 +536,7 @@ class AiGateway:
     def status(self) -> AiStatus:
         if self._breaker.refusing:
             return AiStatus.UNAVAILABLE
-        if self._warm:
+        if self._chat.loaded:
             return AiStatus.READY
         if self._warming is not None and not self._warming.done():
             return AiStatus.WARMING
@@ -517,6 +574,57 @@ class AiGateway:
         self._log(request, started, outcome="ok", model=model, attempts=attempts)
         return AiResult(text=text, model=model, attempts=attempts)
 
+    # -- embeddings -------------------------------------------------------------
+
+    async def embed(
+        self,
+        texts: Sequence[str],
+        *,
+        purpose: str,
+        priority: Priority = Priority.INTERACTIVE,
+        model: str | None = None,
+        attempt_timeout: float | None = None,
+        max_attempts: int | None = None,
+        queue_timeout: float | None = None,
+    ) -> list[list[float]]:
+        """One vector per text, in the order given.
+
+        Raises AiUnavailableError. There is no fallback model here: vectors
+        from two models cannot be compared, so one from the wrong model is
+        worse than none.
+        """
+        model = model or self._embedding_model
+        if model is None:
+            raise AiRejectedError("No embedding model is configured.", {})
+        request = AiRequest(
+            messages=(),
+            purpose=purpose,
+            priority=priority,
+            model=model,
+            timeout=attempt_timeout,
+            max_attempts=max_attempts,
+            queue_timeout=queue_timeout,
+        )
+        started = self._clock()
+
+        async def attempt(model: str) -> list[list[float]]:
+            async with asyncio.timeout(request.timeout or self._limits.request_timeout):
+                vectors = await self._client.embed(model, texts)
+            if len(vectors) != len(texts):
+                # Vectors are paired to texts by position, so a short reply
+                # would misalign every one after the gap.
+                raise ValueError(f"{len(vectors)} vectors for {len(texts)} texts")
+            return vectors
+
+        try:
+            async with self._slot(request):
+                vectors, _, attempts = await self._with_retries(request, attempt, chat=False)
+        except AiUnavailableError as exc:
+            self._log(request, started, outcome=exc.code)
+            raise
+        self._log(request, started, outcome="ok", model=model, attempts=attempts)
+        return vectors
+
     # -- a reply as it is written ---------------------------------------------------
 
     @contextlib.asynccontextmanager
@@ -538,6 +646,7 @@ class AiGateway:
         reply._task = task
         self._streams.add(task)
         task.add_done_callback(self._streams.discard)
+        task.add_done_callback(lambda _: reply._finish())
         try:
             yield reply
         finally:
@@ -578,18 +687,21 @@ class AiGateway:
                 raise
 
         try:
-            try:
-                async with asyncio.timeout(self._limits.stream_timeout):
-                    async with self._slot(request):
+            async with self._slot(request):
+                # Timed from the slot, not from the request: the wait for a
+                # slot has a limit of its own, and a reply that queued for a
+                # while is owed as long to be written as any other.
+                try:
+                    async with asyncio.timeout(self._limits.stream_timeout):
                         _, _, reply.attempts = await self._with_retries(request, attempt)
-            except TimeoutError:
-                if not reply.text:
-                    raise AiUnavailableError(
-                        "The assistant took too long to answer. Try again shortly.", {}
+                except TimeoutError:
+                    if not reply.text:
+                        raise AiUnavailableError(
+                            "The assistant took too long to answer. Try again shortly.", {}
+                        ) from None
+                    raise AiInterruptedError(
+                        "The reply was interrupted. Ask again to see all of it.", {}
                     ) from None
-                raise AiInterruptedError(
-                    "The reply was interrupted. Ask again to see all of it.", {}
-                ) from None
         except AiUnavailableError as exc:
             if request.fallback is not None and not reply.text:
                 reply.fallback = True
@@ -627,13 +739,15 @@ class AiGateway:
             self._slots.release()
 
     async def _with_retries(
-        self, request: AiRequest, attempt: Callable[[str], Awaitable[T]]
+        self, request: AiRequest, attempt: Callable[[str], Awaitable[T]], *, chat: bool = True
     ) -> tuple[T, str, int]:
         """Run `attempt` until it works, on the request's model and then the
         fallback model. Returns its value, the model that produced it and how
-        many attempts were made."""
+        many attempts were made. `chat` is false for embeddings, which have
+        no fallback model and say nothing about whether the chat model is
+        loaded."""
         models = [request.model or self._model]
-        if self._fallback_model and self._fallback_model not in models:
+        if chat and self._fallback_model and self._fallback_model not in models:
             models.append(self._fallback_model)
         attempts = 0
         last: BaseException | None = None
@@ -677,11 +791,23 @@ class AiGateway:
                         break
                     if attempt_number + 1 < tries:
                         await asyncio.sleep(self._pause(attempt_number))
+                except Exception as exc:
+                    # A reply the client could not read, or a bug in it. The
+                    # caller is still owed AiUnavailableError or its fallback,
+                    # and the same reply would break a second attempt too.
+                    self._breaker.abandon()
+                    log.exception("%s: attempt %d on %s broke", request.purpose, attempts, model)
+                    raise AiUnavailableError(
+                        "The assistant is unavailable. Try again shortly.", {}
+                    ) from exc
                 except BaseException:
                     self._breaker.abandon()
                     raise
                 else:
                     self._breaker.success()
+                    for warmth in (self._chat, self._embedder):
+                        if warmth is not None and warmth.model == model:
+                            warmth.answered(self._clock())
                     return value, model, attempts
 
         raise AiUnavailableError("The assistant is unavailable. Try again shortly.", {}) from last
@@ -718,37 +844,100 @@ class AiGateway:
         up startup."""
         self._closed = False
         if warm_up and (self._warming is None or self._warming.done()):
-            self._warming = asyncio.create_task(self.warm_up(), name="ai-warm-up")
+            self._warming = asyncio.create_task(self._stay_warm(), name="ai-warm-up")
+
+    async def _stay_warm(self) -> None:
+        """Load the models, then keep them loaded for as long as the process
+        runs.
+
+        The server drops a model that has been idle for a few minutes, and the
+        next student would wait out the whole load. A model that has answered
+        recently is left alone: a busy class keeps it loaded by itself.
+        """
+        await self.warm_up()
+        interval = self._limits.keep_warm_interval
+        if interval <= 0:
+            return
+        while True:
+            now = self._clock()
+            kept = [warmth for warmth in (self._chat, self._embedder) if warmth is not None]
+            wait = min(warmth.due(interval) for warmth in kept) - now
+            if wait > 0:
+                await asyncio.sleep(wait)
+                continue
+            for warmth in kept:
+                if warmth.due(interval) > now:
+                    continue
+                # Marked as asked whether or not it answers, so a model that
+                # is down is tried once an interval and not in a tight loop.
+                warmth.asked = now
+                # Only a model that has answered before. One that never has
+                # is absent, and asking it would only fill the log.
+                if warmth.loaded:
+                    await self._ask_to_stay(warmth)
+
+    async def _ask_to_stay(self, warmth: _Warmth) -> None:
+        """One word from a model, through the queue like any other call, so
+        it never runs ahead of someone who is waiting."""
+        with contextlib.suppress(AiUnavailableError):
+            if warmth is self._chat:
+                await self.complete(
+                    AiRequest(
+                        messages=WARMUP_MESSAGES,
+                        purpose="keep-warm",
+                        priority=Priority.BACKGROUND,
+                        max_tokens=1,
+                        max_attempts=1,
+                    )
+                )
+            else:
+                await self.embed(
+                    [WARMUP_TEXT], purpose="keep-warm", priority=Priority.BACKGROUND, max_attempts=1
+                )
 
     async def warm_up(self) -> None:
-        """Ask the model for one word, so its weights are in memory before a
+        """Ask each model for one word, so its weights are in memory before a
         student asks for a paragraph. Without this the first request after a
         start pays the load time, which can outlast its own deadline."""
+        await self._load(
+            self._chat,
+            lambda: self._client.complete(self._model, WARMUP_MESSAGES, max_tokens=1),
+        )
+        if self._embedder is not None:
+            embedder = self._embedder
+            await self._load(embedder, lambda: self._client.embed(embedder.model, [WARMUP_TEXT]))
+
+    async def _load(self, warmth: _Warmth, ask: Callable[[], Awaitable[object]]) -> None:
         pause = WARMUP_FIRST_PAUSE_SECONDS
         for attempt_number in range(1, WARMUP_ATTEMPTS + 1):
             try:
                 async with asyncio.timeout(self._limits.warmup_timeout):
-                    await self._client.complete(self._model, WARMUP_MESSAGES, max_tokens=1)
+                    await ask()
             except ModelRejectedError as exc:
-                log.warning("model warm-up was refused and will not be retried: %s", exc)
+                log.warning(
+                    "warm-up of %s was refused and will not be retried: %s", warmth.model, exc
+                )
                 return
             except (ModelUnreachableError, TimeoutError) as exc:
                 log.info(
-                    "model warm-up attempt %d of %d failed: %s",
+                    "warm-up of %s, attempt %d of %d, failed: %s",
+                    warmth.model,
                     attempt_number,
                     WARMUP_ATTEMPTS,
                     type(exc).__name__ if isinstance(exc, TimeoutError) else exc,
                 )
+                if isinstance(exc, ModelUnreachableError) and not exc.retry:
+                    break
                 if attempt_number < WARMUP_ATTEMPTS:
                     await asyncio.sleep(pause)
                     pause = min(pause * 2, WARMUP_MAX_PAUSE_SECONDS)
             else:
-                self._warm = True
-                log.info("model %s is loaded", self._model)
+                warmth.answered(self._clock())
+                log.info("model %s is loaded", warmth.model)
                 return
         log.warning(
             "model %s could not be warmed up, so the first request will wait for it to load",
-            self._model,
+            warmth.model,
         )
 
     async def shutdown(self) -> None:
@@ -798,6 +987,33 @@ class AiGateway:
         return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
 
 
+class GatewayEmbeddingClient:
+    """`embed(texts)` through the gateway, for the embedder and the retriever,
+    which were written against a client with that one method."""
+
+    def __init__(
+        self,
+        gateway: AiGateway,
+        purpose: str,
+        *,
+        priority: Priority = Priority.INTERACTIVE,
+        timeout: float | None = None,
+        max_attempts: int | None = None,
+        queue_timeout: float | None = None,
+    ) -> None:
+        self._gateway = gateway
+        self._options = {
+            "purpose": purpose,
+            "priority": priority,
+            "attempt_timeout": timeout,
+            "max_attempts": max_attempts,
+            "queue_timeout": queue_timeout,
+        }
+
+    async def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        return await self._gateway.embed(texts, **self._options)
+
+
 @lru_cache
 def get_ai_gateway() -> AiGateway:
     """The process's gateway, pointed at the configured model server."""
@@ -815,4 +1031,5 @@ def get_ai_gateway() -> AiGateway:
         settings.ollama_model,
         AiLimits.from_settings(settings),
         fallback_model=settings.ollama_fallback_model,
+        embedding_model=settings.embedding_model,
     )

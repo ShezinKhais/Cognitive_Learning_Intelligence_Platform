@@ -2,14 +2,14 @@
 
 Owner: General CS, Phase 5. Code: `backend/app/services/ai_gateway.py`.
 
-Every call to the language model goes through the gateway. It exists so that AI
+Every call to a model goes through the gateway, replies and embeddings alike. It exists so that AI
 work cannot slow down or block a live session, and so that each workstream gets
 queueing, deadlines, retries, cancellation and a fallback without writing them.
 
 If you are adding a model call in Phase 5 (classification, the chatbot,
-recommendations), call the gateway. Do not create your own `AsyncOpenAI` client
-for chat completions: a call made around the gateway skips the queue and competes
-with every student in a live class.
+recommendations, retrieval), call the gateway. Do not create your own `AsyncOpenAI`
+client: a call made around the gateway skips the queue and competes with every
+student in a live class.
 
 ## What it does for you
 
@@ -23,6 +23,7 @@ with every student in a live class.
 | Fallback | A fallback model is tried once if configured. A request with `fallback` text gets that text back in place of an error. |
 | Cancellation | Cancelling a call or leaving a stream closes the connection to the model and frees the slot, including while queued. |
 | Warm-up | The model is loaded in the background at startup. A cold load took 33 seconds on a development laptop. |
+| Staying warm | Ollama unloads a model five minutes after its last request. A model idle for `AI_KEEP_WARM_SECONDS` is asked for one word, which keeps it loaded. |
 
 ## Priorities
 
@@ -58,6 +59,31 @@ more specific kinds are `AiBusyError` (`AI_BUSY`), `AiRejectedError`
 (`AI_REJECTED`, the request itself was refused, so do not send it again) and
 `AiInterruptedError` (`AI_INTERRUPTED`, streams only).
 
+## Embeddings
+
+```python
+vectors = await get_ai_gateway().embed(
+    [question_text],
+    purpose="retrieval",
+    priority=Priority.LIVE,
+)
+```
+
+One vector per text, in the order given, from `EMBEDDING_MODEL`. They share the
+slots and the queue with replies. There is no fallback model and no fallback
+value: vectors from two models cannot be compared, so a failure raises
+`AiUnavailableError` and the caller decides what a search with no vector means.
+
+`Retriever` and `OllamaEmbedder` take a client with an `embed(texts)` method.
+Give them one that goes through the gateway:
+
+```python
+from app.services.ai_gateway import GatewayEmbeddingClient
+
+client = GatewayEmbeddingClient(get_ai_gateway(), "retrieval", priority=Priority.LIVE)
+retriever = Retriever(db, client, settings.embedding_model)
+```
+
 ## A reply as it is written
 
 ```python
@@ -87,8 +113,9 @@ reply.fallback
   It logs purpose, priority, outcome, model, attempts and duration.
 - It has no HTTP route or WebSocket event of its own. How a streamed reply
   reaches the browser is a contract change and needs the group's agreement.
-- Embeddings do not go through it. They use a different model and run only
-  during material processing.
+- It does not limit how often one student may ask. A student who sends many
+  questions takes many places in the queue, so the chatbot route needs its own
+  per-student limit.
 
 ## Settings
 
@@ -109,11 +136,20 @@ All are in `backend/app/core/config.py` and can be set in `backend/.env`.
 | `AI_BREAKER_COOLDOWN_SECONDS` | 30 | How long they are refused for. |
 | `AI_WARMUP_ENABLED` | true | Load the model at startup. |
 | `AI_WARMUP_TIMEOUT_SECONDS` | 120 | One warm-up attempt. |
+| `AI_KEEP_WARM_SECONDS` | 240 | Idle time before the model is asked for a word. Keep it below Ollama's `OLLAMA_KEEP_ALIVE` (five minutes by default). 0 turns it off. |
 | `OLLAMA_FALLBACK_MODEL` | empty | A second model, tried once when the first cannot answer. |
 
 `AiRequest` can override the attempt timeout, the number of attempts and the
-queue wait for one call. Question generation does: it waits up to ten minutes
-for its turn, since nobody is watching it.
+queue wait for one call. Material processing does, for its embeddings and its
+questions: it waits up to ten minutes for its turn, since nobody is watching it.
+
+## Seeing its state
+
+`GET /api/v1/ready` reports it in the `ollama` dependency's `detail`, for example
+`gateway ready` or `gateway unavailable, 3 waiting`. The states are `cold` (not
+loaded yet), `warming`, `ready` and `unavailable` (refusing calls after repeated
+failures). It does not change whether the service counts as ready: a live
+session serves prepared questions with the model down.
 
 ## Testing your code against it
 
@@ -130,7 +166,10 @@ class FakeModel:
         yield "Think about "
         yield "light."
 
-gateway = AiGateway(FakeModel(), "test-model")
+    async def embed(self, model, texts):
+        return [[0.0] * 768 for _ in texts]
+
+gateway = AiGateway(FakeModel(), "test-model", embedding_model="test-embedder")
 ```
 
 `backend/tests/test_ai_gateway.py` has a fuller fake that can fail, hang and

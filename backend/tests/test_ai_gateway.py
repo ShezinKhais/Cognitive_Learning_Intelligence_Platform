@@ -14,6 +14,8 @@ scripts for it.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import random
 from collections import deque
 from collections.abc import AsyncIterator, Callable, Sequence
 
@@ -33,6 +35,7 @@ from app.services.ai_gateway import (
     AiRequest,
     AiStatus,
     AiUnavailableError,
+    GatewayEmbeddingClient,
     Message,
     ModelRejectedError,
     ModelUnreachableError,
@@ -111,6 +114,20 @@ class FakeModel:
         finally:
             self.active -= 1
             self.closed_streams += 1
+
+    async def embed(self, model: str, texts: Sequence[str]) -> list[list[float]]:
+        step = self._begin(model, [{"content": " | ".join(texts)}])
+        try:
+            if step is None:
+                if self.hold is not None:
+                    await self.hold.wait()
+                return [[float(len(text))] for text in texts]
+            if isinstance(step, list):
+                return step
+            await _play(step)
+            raise AssertionError("an embed step is vectors, an error or HANG")
+        finally:
+            self.active -= 1
 
 
 async def _play(step: object) -> str:
@@ -501,6 +518,93 @@ async def test_a_refusal_does_not_count_against_the_model() -> None:
     assert (await gateway.complete(_ask())).text == "ok"
 
 
+# -- embeddings ---------------------------------------------------------------------
+
+
+async def test_embedding_returns_a_vector_for_each_text_in_order() -> None:
+    model = FakeModel()
+    gateway = AiGateway(model, "chat", QUICK, embedding_model="nomic-embed-text")
+
+    vectors = await gateway.embed(["ab", "abcd", "a"], purpose="retrieval")
+
+    assert vectors == [[2.0], [4.0], [1.0]]
+    assert model.calls == [("nomic-embed-text", "ab | abcd | a")]
+
+
+async def test_embedding_waits_its_turn_like_any_other_call() -> None:
+    """A student's question is embedded before the material is searched, so
+    in a live class embeddings are part of the load the queue exists for."""
+    model = FakeModel()
+    model.hold = asyncio.Event()
+    gateway = AiGateway(model, "chat", QUICK, embedding_model="embedder")
+    running = asyncio.create_task(gateway.complete(_ask("running")))
+    await _until(lambda: model.active == 1)
+
+    upload = asyncio.create_task(
+        gateway.embed(["deck"], purpose="material", priority=Priority.BACKGROUND)
+    )
+    await _until(lambda: gateway.waiting == 1)
+    student = asyncio.create_task(
+        gateway.embed(["question"], purpose="retrieval", priority=Priority.LIVE)
+    )
+    await _until(lambda: gateway.waiting == 2)
+    model.hold.set()
+    await asyncio.gather(running, upload, student)
+
+    assert model.peak == 1
+    assert [content for _, content in model.calls] == ["running", "question", "deck"]
+
+
+async def test_embedding_is_tried_again_but_never_on_another_model() -> None:
+    """Vectors from two models cannot be compared, so the fallback model,
+    which rescues a reply, must stay out of it."""
+    model = FakeModel(ModelUnreachableError("down"), [[0.5]])
+    gateway = AiGateway(model, "chat", QUICK, fallback_model="small", embedding_model="embedder")
+
+    assert await gateway.embed(["text"], purpose="retrieval") == [[0.5]]
+
+    model.steps.extend([ModelUnreachableError("down")] * 3)
+    with pytest.raises(AiUnavailableError):
+        await gateway.embed(["text"], purpose="retrieval")
+    assert {name for name, _ in model.calls} == {"embedder"}
+    assert len(model.calls) == 2 + QUICK.max_attempts
+
+
+async def test_a_reply_with_the_wrong_number_of_vectors_is_not_passed_on() -> None:
+    model = FakeModel([[0.1]])
+    gateway = AiGateway(model, "chat", QUICK, embedding_model="embedder")
+
+    with pytest.raises(AiUnavailableError):
+        await gateway.embed(["one", "two"], purpose="retrieval")
+
+    assert model.active == 0
+
+
+async def test_embedding_needs_a_model_to_be_named() -> None:
+    gateway = AiGateway(FakeModel(), "chat", QUICK)
+
+    with pytest.raises(AiRejectedError):
+        await gateway.embed(["text"], purpose="retrieval")
+    assert await gateway.embed(["text"], purpose="retrieval", model="embedder") == [[4.0]]
+
+
+async def test_embedding_does_not_pass_for_the_chat_model_being_loaded() -> None:
+    gateway = AiGateway(FakeModel(), "chat", QUICK, embedding_model="embedder")
+
+    await gateway.embed(["text"], purpose="retrieval")
+
+    assert gateway.status is AiStatus.COLD
+
+
+async def test_the_embedders_client_goes_through_the_gateway() -> None:
+    model = FakeModel()
+    gateway = AiGateway(model, "chat", QUICK, embedding_model="embedder")
+    client = GatewayEmbeddingClient(gateway, "retrieval", priority=Priority.LIVE)
+
+    assert await client.embed(["question"]) == [[8.0]]
+    assert model.calls == [("embedder", "question")]
+
+
 # -- streams -----------------------------------------------------------------------
 
 
@@ -569,6 +673,26 @@ async def test_a_stream_may_not_run_for_ever() -> None:
 
     assert model.active == 0
     assert (await gateway.complete(_ask())).text == "ok"
+
+
+async def test_a_streams_time_limit_starts_when_it_reaches_the_model() -> None:
+    """A reply that queued behind others is owed its full time to be written.
+    The wait for a slot has its own limit."""
+    model = FakeModel()
+    model.hold = asyncio.Event()
+    gateway = AiGateway(model, "m", _limits(stream_timeout=0.2))
+    running = asyncio.create_task(gateway.complete(_ask("running")))
+    await _until(lambda: model.active == 1)
+
+    async with gateway.stream(_ask("queued")) as reply:
+        await _until(lambda: gateway.waiting == 1)
+        # Longer in the queue than the whole reply is allowed to take.
+        await asyncio.sleep(0.4)
+        model.hold.set()
+        pieces = [text async for text in reply]
+
+    await running
+    assert pieces == ["ok"]
 
 
 async def test_a_stream_with_a_fallback_says_that_when_the_model_cannot() -> None:
@@ -649,6 +773,173 @@ async def test_a_stream_cancelled_while_queued_never_reaches_the_model() -> None
     assert gateway.waiting == 0
 
 
+async def test_a_stream_cancelled_before_it_starts_still_ends() -> None:
+    """Cancelled before its task has run a step, so nothing inside the task
+    gets the chance to end the reply. The reader must not wait for ever."""
+    model = FakeModel(["never sent"])
+    gateway = AiGateway(model, "m", QUICK)
+
+    async with gateway.stream(_ask()) as reply:
+        reply.cancel()
+        pieces = await asyncio.wait_for(_collect(reply), 1.0)
+
+    assert pieces == []
+    assert model.calls == []
+
+
+async def test_a_stream_cut_off_by_shutdown_before_it_starts_still_ends() -> None:
+    gateway = AiGateway(FakeModel(["never sent"]), "m", QUICK)
+
+    async with gateway.stream(_ask()) as reply:
+        await gateway.shutdown()
+        pieces = await asyncio.wait_for(_collect(reply), 1.0)
+
+    assert pieces == []
+
+
+async def _collect(reply) -> list[str]:  # noqa: ANN001
+    return [text async for text in reply]
+
+
+async def test_a_model_client_that_breaks_is_an_unavailable_model_not_a_crash() -> None:
+    """A reply the client cannot read, or a bug in the client. A caller that
+    gave a fallback was promised text, whatever went wrong underneath."""
+    model = FakeModel(IndexError("no choices"), [KeyError("delta")])
+    gateway = AiGateway(model, "m", QUICK)
+
+    result = await gateway.complete(_ask(fallback="unavailable"))
+    async with gateway.stream(_ask(fallback="unavailable")) as reply:
+        pieces = [text async for text in reply]
+
+    assert (result.text, result.fallback) == ("unavailable", True)
+    assert pieces == ["unavailable"]
+    # Not worth a second attempt: the same reply would break the same way.
+    assert len(model.calls) == 2
+    assert model.active == 0
+
+
+# -- everything at once ----------------------------------------------------------------
+
+
+class _UnrulyModel:
+    """A model that answers, fails, breaks or stalls as the dice fall."""
+
+    def __init__(self, dice: random.Random) -> None:
+        self._dice = dice
+        self.active = 0
+        self.peak = 0
+
+    async def _behave(self) -> None:
+        roll = self._dice.random()
+        # Turns of the loop, not time: a timer is too coarse on Windows to
+        # finish inside the short deadlines this test runs with.
+        for _ in range(self._dice.randint(0, 5)):
+            await asyncio.sleep(0)
+        if roll < 0.15:
+            raise ModelUnreachableError("down")
+        if roll < 0.20:
+            raise ModelRejectedError("HTTP 400")
+        if roll < 0.25:
+            raise RuntimeError("the client broke")
+        if roll < 0.35:
+            await asyncio.Event().wait()
+
+    async def complete(
+        self, model: str, messages: Sequence[Message], *, max_tokens: int | None
+    ) -> str:
+        self.active += 1
+        self.peak = max(self.peak, self.active)
+        try:
+            await self._behave()
+            return "ok"
+        finally:
+            self.active -= 1
+
+    async def stream(
+        self, model: str, messages: Sequence[Message], *, max_tokens: int | None
+    ) -> AsyncIterator[str]:
+        self.active += 1
+        self.peak = max(self.peak, self.active)
+        try:
+            for _ in range(self._dice.randint(1, 4)):
+                await self._behave()
+                yield "piece "
+        finally:
+            self.active -= 1
+
+    async def embed(self, model: str, texts: Sequence[str]) -> list[list[float]]:
+        self.active += 1
+        self.peak = max(self.peak, self.active)
+        try:
+            await self._behave()
+            return [[1.0] for _ in texts]
+        finally:
+            self.active -= 1
+
+
+@pytest.mark.parametrize("seed", range(5))
+async def test_no_slot_is_lost_whatever_callers_and_the_model_do(seed: int) -> None:
+    """Four hundred calls of every kind against a model that fails, breaks
+    and stalls, with callers that cancel, give up and walk away mid-reply.
+    When the dust settles every slot must be free and nobody left waiting:
+    a slot leaked on any path would, in a long class, end with no calls
+    reaching the model at all."""
+    dice = random.Random(seed)
+    model = _UnrulyModel(dice)
+    limits = _limits(
+        max_concurrency=3,
+        queue_limit=20,
+        queue_timeout=0.3,
+        request_timeout=0.05,
+        first_token_timeout=0.05,
+        stream_idle_timeout=0.05,
+        stream_timeout=0.3,
+        max_attempts=2,
+        breaker_failures=4,
+        breaker_cooldown=0.01,
+    )
+    gateway = AiGateway(model, "m", limits, fallback_model="small", embedding_model="embedder")
+
+    async def caller() -> None:
+        priority = dice.choice(list(Priority))
+        fallback = dice.choice([None, "fallback"])
+        kind = dice.choice(["complete", "stream", "embed"])
+        await asyncio.sleep(dice.uniform(0, 0.02))
+        with contextlib.suppress(AiUnavailableError):
+            if kind == "complete":
+                await gateway.complete(_ask(priority=priority, fallback=fallback))
+            elif kind == "embed":
+                await gateway.embed(["text"], purpose="fuzz", priority=priority)
+            else:
+                leave_after = dice.choice([None, 1, 2])
+                cancel_after = dice.choice([None, 1])
+                async with gateway.stream(_ask(priority=priority, fallback=fallback)) as reply:
+                    seen = 0
+                    async for _ in reply:
+                        seen += 1
+                        if seen == cancel_after:
+                            reply.cancel()
+                        if seen == leave_after:
+                            break
+
+    tasks = [asyncio.create_task(caller()) for _ in range(400)]
+    for task in dice.sample(tasks, 80):
+        asyncio.get_running_loop().call_later(dice.uniform(0, 0.04), task.cancel)
+    results = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 30)
+
+    unexpected = [
+        result
+        for result in results
+        if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError)
+    ]
+    assert unexpected == []
+    await _until(lambda: not gateway._streams)
+    assert model.peak <= limits.max_concurrency
+    assert (model.active, gateway.waiting) == (0, 0)
+    assert gateway._slots._free == limits.max_concurrency
+    assert all(granted.done() for _, _, granted in gateway._slots._waiters)
+
+
 # -- warm-up and shutdown ---------------------------------------------------------------
 
 
@@ -681,6 +972,123 @@ async def test_warm_up_tries_again_then_gives_up(monkeypatch: pytest.MonkeyPatch
     assert gateway.status is AiStatus.COLD
     # A failed warm-up is not held against the model.
     assert (await gateway.complete(_ask())).text == "ok"
+
+
+async def test_an_idle_model_is_kept_loaded() -> None:
+    """The server unloads a model nobody has used for a few minutes. Asking
+    for one word before then is what stops the next student waiting out a
+    load."""
+    model = FakeModel()
+    gateway = AiGateway(model, "m", _limits(keep_warm_interval=0.02))
+
+    gateway.start()
+    await _until(lambda: len(model.calls) >= 3)
+    await gateway.shutdown()
+
+    assert {content for _, content in model.calls} == {"Reply with OK."}
+
+
+async def test_a_model_in_use_is_not_asked_to_stay_loaded() -> None:
+    clock = Clock()
+    model = FakeModel()
+    gateway = AiGateway(model, "m", _limits(keep_warm_interval=0.05), clock=clock)
+    gateway.start()
+    await _until(lambda: gateway.status is AiStatus.READY)
+
+    # The clock never reaches the interval, as it never does in a busy class.
+    await asyncio.sleep(0.2)
+    await gateway.shutdown()
+
+    assert len(model.calls) == 1
+
+
+async def test_a_model_that_never_answered_is_not_asked_to_stay_loaded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(gateway_module, "WARMUP_FIRST_PAUSE_SECONDS", 0.0)
+    attempts = gateway_module.WARMUP_ATTEMPTS
+    model = FakeModel(*[ModelUnreachableError("no server")] * attempts)
+    gateway = AiGateway(model, "m", _limits(keep_warm_interval=0.01))
+
+    gateway.start()
+    await _until(lambda: len(model.calls) == attempts)
+    await asyncio.sleep(0.1)
+    await gateway.shutdown()
+
+    assert len(model.calls) == attempts
+
+
+async def test_keeping_the_model_loaded_can_be_turned_off() -> None:
+    model = FakeModel()
+    gateway = AiGateway(model, "m", _limits(keep_warm_interval=0))
+
+    gateway.start()
+    await _until(lambda: gateway.status is AiStatus.READY)
+    await asyncio.sleep(0.05)
+
+    assert len(model.calls) == 1
+    await gateway.shutdown()
+
+
+async def test_the_embedding_model_is_loaded_and_kept_loaded_too() -> None:
+    """A question is embedded before the material is searched, so an
+    embedder the server has unloaded delays the first reply just as an
+    unloaded chat model would."""
+    model = FakeModel()
+    gateway = AiGateway(model, "chat", _limits(keep_warm_interval=0.02), embedding_model="embedder")
+
+    gateway.start()
+    await _until(lambda: len(model.calls) >= 6)
+    await gateway.shutdown()
+
+    assert model.calls[:2] == [("chat", "Reply with OK."), ("embedder", "ok")]
+    asked = [name for name, _ in model.calls]
+    assert asked.count("chat") >= 2 and asked.count("embedder") >= 2
+
+
+async def test_only_the_idle_model_is_asked_to_stay() -> None:
+    """A class is chatting, so the chat model needs no reminder. Nobody has
+    searched for a while, so the embedder does."""
+    model = FakeModel()
+    gateway = AiGateway(model, "chat", _limits(keep_warm_interval=0.15), embedding_model="embedder")
+    gateway.start()
+    await _until(lambda: len(model.calls) == 2)
+
+    async with asyncio.timeout(WAIT_SECONDS):
+        while [name for name, _ in model.calls].count("embedder") < 3:
+            await gateway.complete(_ask("a student's question"))
+            await asyncio.sleep(0.02)
+    await gateway.shutdown()
+
+    assert ("chat", "Reply with OK.") not in model.calls[2:]
+
+
+async def test_a_model_that_is_down_is_asked_to_stay_once_an_interval() -> None:
+    """Loaded, then gone. The reminders must not turn into a tight loop
+    against a server that is not answering."""
+    model = FakeModel()
+    gateway = AiGateway(model, "m", _limits(keep_warm_interval=0.05, breaker_failures=1000))
+    gateway.start()
+    await _until(lambda: gateway.status is AiStatus.READY)
+
+    model.steps.extend([ModelUnreachableError("gone")] * 1000)
+    await asyncio.sleep(0.3)
+    await gateway.shutdown()
+
+    # About six intervals passed. A tight loop would have made hundreds, and
+    # a reminder that gave up after its first failure only two.
+    assert 4 <= len(model.calls) <= 12
+
+
+async def test_a_model_that_is_not_installed_is_not_warmed_up_five_times() -> None:
+    missing = ModelUnreachableError("the model is not installed", retry=False)
+    model = FakeModel(missing)
+    gateway = AiGateway(model, "m", QUICK)
+
+    await gateway.warm_up()
+
+    assert len(model.calls) == 1
+    assert gateway.status is AiStatus.COLD
 
 
 async def test_shutdown_stops_work_in_flight_and_refuses_more() -> None:
@@ -718,6 +1126,8 @@ def _status_error(kind: type[openai.APIStatusError], status: int) -> openai.APIS
         (openai.APITimeoutError(request=_REQUEST), ModelUnreachableError, True),
         (_status_error(openai.InternalServerError, 500), ModelUnreachableError, True),
         (_status_error(openai.RateLimitError, 429), ModelUnreachableError, True),
+        (_status_error(openai.APIStatusError, 408), ModelUnreachableError, True),
+        (_status_error(openai.ConflictError, 409), ModelUnreachableError, True),
         (_status_error(openai.NotFoundError, 404), ModelUnreachableError, False),
         (_status_error(openai.BadRequestError, 400), ModelRejectedError, None),
     ],
@@ -743,6 +1153,15 @@ async def test_the_client_closes_a_stream_its_reader_abandons() -> None:
     await pieces.aclose()
 
     assert response.closed is True
+
+
+async def test_the_client_orders_vectors_by_the_index_they_carry() -> None:
+    from types import SimpleNamespace
+
+    data = [SimpleNamespace(index=1, embedding=[0.2]), SimpleNamespace(index=0, embedding=[0.1])]
+    client = OpenAIModelClient(_OpenAIStandIn(SimpleNamespace(data=data)))
+
+    assert await client.embed("embedder", ["first", "second"]) == [[0.1], [0.2]]
 
 
 class _StreamedResponse:
@@ -771,6 +1190,7 @@ class _OpenAIStandIn:
         self._outcome = outcome
         self.chat = self
         self.completions = self
+        self.embeddings = self
 
     async def create(self, **_: object) -> object:
         if isinstance(self._outcome, Exception):
@@ -823,31 +1243,54 @@ def test_the_limits_come_from_settings() -> None:
     assert limits.request_timeout == settings.ai_request_timeout_seconds
 
 
-async def test_question_generation_takes_its_turn_through_the_gateway(
+async def test_material_processing_takes_its_turn_through_the_gateway(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An upload's questions must not reach the model around the queue."""
+    """An upload's embeddings and questions must not reach the model around
+    the queue, and wait behind everyone a person is watching for."""
     model = FakeModel("[]")
-    gateway = AiGateway(model, "qwen2.5", QUICK)
-    seen: list[AiRequest] = []
-    complete = gateway.complete
+    gateway = AiGateway(model, "qwen2.5", QUICK, embedding_model="embedder")
+    priorities: list[Priority] = []
+    acquire = gateway._slots.acquire
 
-    async def spy(request: AiRequest):  # noqa: ANN202
-        seen.append(request)
-        return await complete(request)
+    async def spy(priority: Priority, patience: float) -> None:
+        priorities.append(priority)
+        assert patience == uploads_module.MATERIAL_QUEUE_TIMEOUT_SECONDS
+        await acquire(priority, patience)
 
-    monkeypatch.setattr(gateway, "complete", spy)
+    monkeypatch.setattr(gateway._slots, "acquire", spy)
     monkeypatch.setattr(uploads_module, "get_ai_gateway", lambda: gateway)
     uploads_module.get_material_pipeline.cache_clear()
     try:
-        generator = uploads_module.get_material_pipeline().generator
-        response = await generator._client.chat.completions.create(
-            model=generator.model, messages=[{"role": "user", "content": "Write questions."}]
+        pipeline = uploads_module.get_material_pipeline()
+        response = await pipeline.generator._client.chat.completions.create(
+            model=pipeline.generator.model,
+            messages=[{"role": "user", "content": "Write questions."}],
         )
+        vectors = await pipeline.embedder._client.embed(["a chunk"])
     finally:
         uploads_module.get_material_pipeline.cache_clear()
 
     assert response.choices[0].message.content == "[]"
-    assert model.calls == [(generator.model, "Write questions.")]
-    assert (seen[0].priority, seen[0].purpose) == (Priority.BACKGROUND, "question_generation")
-    assert seen[0].queue_timeout == uploads_module.GENERATION_QUEUE_TIMEOUT_SECONDS
+    assert vectors == [[7.0]]
+    assert model.calls == [(pipeline.generator.model, "Write questions."), ("embedder", "a chunk")]
+    assert priorities == [Priority.BACKGROUND, Priority.BACKGROUND]
+
+
+async def test_readiness_reports_what_the_gateway_makes_of_the_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.api.v1 import health
+
+    clock = Clock()
+    limits = _limits(max_attempts=1, breaker_failures=1)
+    gateway = AiGateway(FakeModel(ModelUnreachableError("down")), "m", limits, clock=clock)
+    monkeypatch.setattr(health, "get_ai_gateway", lambda: gateway)
+
+    assert health._gateway_detail() == "gateway cold"
+    with pytest.raises(AiUnavailableError):
+        await gateway.complete(_ask())
+    assert health._gateway_detail() == "gateway unavailable"
+    clock.now = 31.0
+    await gateway.complete(_ask())
+    assert health._gateway_detail() == "gateway ready"

@@ -114,6 +114,11 @@ class Settings(BaseSettings):
     # from disk takes far longer than answering once it is loaded.
     ai_warmup_enabled: bool = True
     ai_warmup_timeout_seconds: float = Field(default=120.0, gt=0)
+    # Ollama unloads a model five minutes after its last request unless
+    # OLLAMA_KEEP_ALIVE says otherwise. A model idle for this long is asked
+    # for one word, which resets that. Keep it below the server's limit; 0
+    # leaves the model to unload.
+    ai_keep_warm_seconds: float = Field(default=240.0, ge=0)
 
     # Written by `teams app create --env .env`
     client_id: str = ""

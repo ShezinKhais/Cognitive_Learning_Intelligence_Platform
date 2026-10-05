@@ -38,6 +38,15 @@ async def main() -> None:
     print(f"\ncomplete ({time.monotonic() - started:.1f}s, {result.attempts} attempt):")
     print(f"  {result.text.strip()}")
 
+    started = time.monotonic()
+    vectors = await gateway.embed(
+        ["What is photosynthesis?", "Define osmosis."], purpose="manual-check"
+    )
+    print(
+        f"\nembed ({time.monotonic() - started:.1f}s): "
+        f"{len(vectors)} vectors of {len(vectors[0])} dimensions"
+    )
+
     print("\nstream:")
     started = time.monotonic()
     async with gateway.stream(ask("Count from 1 to 10, one number per line.")) as reply:
