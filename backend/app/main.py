@@ -18,6 +18,7 @@ from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, request_id_var
 from app.realtime.classroom import classroom
+from app.services.ai_gateway import get_ai_gateway
 from app.services.live_wiring import install_live_store
 from app.services.material_recovery import keep_sweeping
 from app.services.meeting_directory import meetings
@@ -65,7 +66,13 @@ async def lifespan(app: FastAPI):
     sweeping = asyncio.create_task(
         keep_sweeping(lambda: processor.active_material_ids), name="stranded-material-sweep"
     )
+    # Loads the model in the background, so the first student to ask does not
+    # wait for it.
+    ai = get_ai_gateway()
+    ai.start(warm_up=get_settings().ai_warmup_enabled)
     yield
+    # First, so no reply is still being written into a session that is closing.
+    await ai.shutdown()
     for task in (seeding, sweeping):
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):

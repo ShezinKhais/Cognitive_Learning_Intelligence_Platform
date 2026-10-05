@@ -83,6 +83,37 @@ class Settings(BaseSettings):
     ollama_model: str = "qwen2.5"
     embedding_model: str = "nomic-embed-text"
     embedding_dim: int = 768
+    # Tried once when the model above cannot answer. Empty for none. A smaller
+    # model that answers is worth more to a waiting student than a better one
+    # that does not.
+    ollama_fallback_model: str = ""
+
+    # Model calls. The model serves a few requests at a time however many are
+    # sent, so more than that only makes every one of them slower. Two is
+    # right for a laptop running Ollama; a host with a GPU raises it.
+    ai_max_concurrency: int = Field(default=2, ge=1)
+    # Calls allowed to wait for a slot. One more is refused at once.
+    ai_queue_limit: int = Field(default=32, ge=0)
+    # How long a call may wait for a slot before it is told to try again.
+    ai_queue_timeout_seconds: float = Field(default=20.0, gt=0)
+    # One attempt at a whole reply.
+    ai_request_timeout_seconds: float = Field(default=60.0, gt=0)
+    # A streamed reply: its first word, the gap between words, and all of it.
+    # The first word waits longest, since it may include loading the model.
+    ai_first_token_timeout_seconds: float = Field(default=30.0, gt=0)
+    ai_stream_idle_timeout_seconds: float = Field(default=15.0, gt=0)
+    ai_stream_timeout_seconds: float = Field(default=120.0, gt=0)
+    # Attempts at the configured model, the first included.
+    ai_max_attempts: int = Field(default=3, ge=1)
+    # The pause before the second attempt. It doubles for each one after.
+    ai_retry_pause_seconds: float = Field(default=0.5, ge=0)
+    # Failures in a row before the model is left alone, and for how long.
+    ai_breaker_failures: int = Field(default=5, ge=1)
+    ai_breaker_cooldown_seconds: float = Field(default=30.0, gt=0)
+    # Loading the model at startup, in the background. Loading a large model
+    # from disk takes far longer than answering once it is loaded.
+    ai_warmup_enabled: bool = True
+    ai_warmup_timeout_seconds: float = Field(default=120.0, gt=0)
 
     # Written by `teams app create --env .env`
     client_id: str = ""
