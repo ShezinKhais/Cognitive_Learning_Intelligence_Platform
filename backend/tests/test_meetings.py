@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 
 from app.auth.store import ADMIN_ID, LECTURER_ID, STUDENT_ID
@@ -383,3 +384,18 @@ async def test_linking_if_absent_keeps_the_meetings_session() -> None:
         first,
         None,
     )
+
+
+def test_startup_registers_the_persistent_directory(app, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The lifespan replaces the in-memory directory, which production needs to
+    start. Other tests keep the in-memory one, so a stand-in shows what startup
+    installs."""
+
+    class Registered(InMemoryMeetingDirectory):
+        pass
+
+    monkeypatch.setattr("app.main.DatabaseMeetingDirectory", Registered)
+    monkeypatch.setattr(meetings, "directory", InMemoryMeetingDirectory())
+
+    with TestClient(app):
+        assert isinstance(meetings.directory, Registered)
