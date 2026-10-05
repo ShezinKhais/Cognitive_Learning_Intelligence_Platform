@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   Clock3,
+  MessagesSquare,
   RefreshCw,
   Users,
   Wifi,
@@ -19,6 +20,7 @@ import {
 } from 'react-router'
 
 import { useStudentApp } from '../features/student/StudentAppContext'
+import { SocraticChatPanel } from '../features/chat/SocraticChatPanel'
 import { remainingResponseSeconds } from '../features/student/liveSessionState'
 import type {
   CheckpointState,
@@ -61,6 +63,7 @@ export function LiveSessionPanel({
   session: StudentSession
   compact?: boolean
 }) {
+  const [activeView, setActiveView] = useState<'class' | 'chat'>('class')
   const {
     state,
     selectOption,
@@ -133,6 +136,37 @@ export function LiveSessionPanel({
 
         <ConnectionNotice status={state.connection} />
 
+        <nav
+          aria-label="Student session tools"
+          className="mt-5 flex rounded-xl border border-border bg-card p-1"
+        >
+          <button
+            type="button"
+            aria-current={activeView === 'class' ? 'page' : undefined}
+            onClick={() => setActiveView('class')}
+            className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${
+              activeView === 'class'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-muted'
+            }`}
+          >
+            Live class
+          </button>
+          <button
+            type="button"
+            aria-current={activeView === 'chat' ? 'page' : undefined}
+            onClick={() => setActiveView('chat')}
+            className={`inline-flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
+              activeView === 'chat'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-muted'
+            }`}
+          >
+            <MessagesSquare aria-hidden="true" size={17} />
+            Learning assistant
+          </button>
+        </nav>
+
         {state.error && (
           <div
             role="alert"
@@ -158,7 +192,11 @@ export function LiveSessionPanel({
           </div>
         )}
 
-        <section className="mt-5" aria-live="polite">
+        <section
+          className="mt-5"
+          aria-live="polite"
+          hidden={activeView !== 'class'}
+        >
           {state.checkpoint ? (
             <CheckpointCard
               checkpoint={state.checkpoint}
@@ -179,6 +217,10 @@ export function LiveSessionPanel({
             />
           )}
         </section>
+
+        <div className="mt-5" hidden={activeView !== 'chat'}>
+          <SocraticChatPanel sessionId={session.id} compact={compact} />
+        </div>
       </div>
 
       {state.attentionPrompt &&
