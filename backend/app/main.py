@@ -18,6 +18,7 @@ from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, request_id_var
 from app.realtime.classroom import classroom
+from app.repositories.teams_meeting_repository import DatabaseMeetingDirectory
 from app.services.live_wiring import install_live_store
 from app.services.material_recovery import keep_sweeping
 from app.services.meeting_directory import meetings
@@ -55,6 +56,7 @@ async def lifespan(app: FastAPI):
     # What a live session cannot store is reported now, not discovered
     # after a class.
     install_live_store(classroom)
+    meetings.directory = DatabaseMeetingDirectory()
     classroom.check_wiring()
     meetings.check_wiring()
     # In the background, so a database that is slow or absent never holds up
