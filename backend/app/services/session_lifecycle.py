@@ -164,7 +164,7 @@ async def session_readiness(
     Read only, so the row is not locked. start_session runs the same check
     under the lock, so this is what the start button will do right now.
     """
-    row = await _owned(SessionRepository(db), principal, session_id, for_update=False)
+    row = await owned_session(SessionRepository(db), principal, session_id, for_update=False)
     _require(row, SessionStatus.PREPARED, "check the readiness of")
     return await evaluate_readiness(db, row)
 
