@@ -66,6 +66,7 @@ from app.realtime.recorders import (
     PromptOutcome,
     PromptRecorder,
     PromptResult,
+    QuestionComprehension,
     ResponseRecorder,
     Submission,
     best_effort,
@@ -89,6 +90,12 @@ from app.schemas.events import (
 )
 from app.schemas.identity import ConsentType, Role
 from app.schemas.session import ClassComprehensionAlert, SessionStatus
+from app.services.ai_explainability import (
+    AlertExplanation,
+    TopicEvidence,
+    explain_topic_difficulty,
+    fallback_explanation,
+)
 from app.services.engagement import evaluate_comprehension_alert, should_send_dynamic_prompt
 
 log = logging.getLogger("clip.classroom")
@@ -956,8 +963,11 @@ class Classroom:
         )
         if not decision.should_alert or decision.correct_ratio is None:
             return
+        explained = _explain_comprehension_alert(found, closed, settings)
+        alert_id = uuid4()
         live.alerts.append(
             ClassComprehensionAlert(
+                alert_id=alert_id,
                 session_id=closed.session_id,
                 question_id=closed.question_id,
                 topic=found.topic,
@@ -965,18 +975,25 @@ class Classroom:
                 respondents=decision.respondents,
                 threshold=settings.comprehension_alert_threshold,
                 raised_at=_now(),
+                message=explained.message,
+                reason=explained.reason,
+                confidence=explained.confidence,
+                explanation=explained.explanation,
+                explanation_source=explained.explanation_source,
+                confidence_reasons=list(explained.confidence_reasons),
+                recommendation=explained.recommendation,
             )
         )
-        about = f" on {found.topic}" if found.topic else ""
         payload = AlertRaisedPayload(
-            alert_id=uuid4(),
+            alert_id=alert_id,
             kind=AlertKind.TOPIC_DIFFICULTY,
-            message=f"Much of the class is struggling{about}.",
-            reason=(
-                f"{round((decision.struggling_ratio or 0.0) * decision.respondents)} of "
-                f"{decision.respondents} classified answers were partial or struggling."
-            ),
-            confidence=min(1.0, decision.respondents / max(len(closed.eligible), 1)),
+            message=explained.message,
+            reason=explained.reason,
+            confidence=explained.confidence,
+            explanation=explained.explanation,
+            explanation_source=explained.explanation_source,
+            confidence_reasons=list(explained.confidence_reasons),
+            recommendation=explained.recommendation,
         )
         for staff_id in self._hub.staff_ids(closed.session_id):
             await self._hub.send_to_user(
@@ -1042,6 +1059,32 @@ def _json(payload: object) -> dict:
 
 async def _sleep_until(when: datetime) -> None:
     await asyncio.sleep(max((when - _now()).total_seconds(), 0.0))
+
+
+def _explain_comprehension_alert(
+    found: QuestionComprehension, closed: ClosedQuestion, settings: Settings
+) -> AlertExplanation:
+    """The reason, explanation and recommendation for a class comprehension alert.
+
+    Explaining is never allowed to cost the lecturer the alert: if it fails for
+    any reason, the alert goes out with the generic fallback instead, which
+    says so, rather than not going out or going out with nothing to read.
+    """
+    try:
+        return explain_topic_difficulty(
+            TopicEvidence(
+                labels=found.labels,
+                eligible=len(closed.eligible),
+                min_respondents=settings.comprehension_alert_min_respondents,
+                threshold=settings.comprehension_alert_threshold,
+                confidences=found.confidences,
+                topic=found.topic,
+                source_slide=found.source_slide,
+            )
+        )
+    except Exception:
+        log.exception("could not explain a comprehension alert in session %s", closed.session_id)
+        return fallback_explanation(AlertKind.TOPIC_DIFFICULTY)
 
 
 def _missed_message(missed: int) -> str:
