@@ -96,6 +96,33 @@ kept because it reads 39 of 40 replies instead of 36.
 | Partial | 0.657 | 0.765 | 0.933 |
 | Struggling | 0.476 | 0.727 | 0.828 |
 
+## Topic difficulty
+
+`app/services/topic_difficulty.py` scores each topic as the average of its
+answers' labels (mastered 0, partial 0.5, struggling 1): below 0.33 is easy,
+0.66 and above is hard, between is medium, and a topic with fewer than 5
+answers gets no level. Each eval question is its own topic here. The 39
+answers the classifier could read give:
+
+| Topic | Answers | Human | Classifier | Uncertain labels |
+|---|---|---|---|---|
+| What is logistic regression | 7 | 0.57 medium | 0.50 medium | 2 |
+| Types of logistic regression | 8 | 0.56 medium | 0.56 medium | 3 |
+| Binary classification threshold | 8 | 0.50 medium | 0.50 medium | 3 |
+| Logistic regression and machine learning | 8 | 0.50 medium | 0.69 hard | 1 |
+| Interpreting odds ratios | 8 | 0.38 medium | 0.38 medium | 3 |
+
+The classifier gives the same level as the human for 4 of 5 topics, and the
+same score for 3 of them, although it labels only 67% of single answers the
+same. Its mistakes go both ways (partial called mastered as often as
+struggling), so they mostly cancel out across a topic. The classifier is
+more reliable for "which topic needs revisiting" than for one student's
+answer. The eval questions were written at similar difficulty, so the scores
+sit close together; a real class would spread them more.
+
+Reproduce with `python -m scripts.topic_difficulty_report <results.csv>` on a
+file written by `evaluate_classifier --out`.
+
 ## Limitations
 
 - **The score is optimistic.** The prompt was adjusted while looking at these
