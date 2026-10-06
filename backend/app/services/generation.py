@@ -26,6 +26,18 @@ GROUNDING_THRESHOLD = 80
 # unrelated answers at 44.
 ANSWER_SUPPORT_THRESHOLD = 50
 QUESTION_SUPPORT_THRESHOLD = 30
+# Share of a free-text reference answer's, or one key point's, meaningful
+# words that its cited excerpt contains. On the hand-checked set in
+# tests/eval/questions.json, reference answers scored 40-83 and key points
+# 33-86; answers written from outside knowledge for the same questions scored
+# 0-22. 30 sits in the gap.
+FREE_TEXT_SUPPORT_THRESHOLD = 30
+MIN_KEY_POINTS = 2
+MAX_KEY_POINTS = 4
+MAX_REFERENCE_ANSWER_LENGTH = 1000
+MAX_KEY_POINT_LENGTH = 300
+# A reference answer has to say something the question does not.
+MIN_NEW_ANSWER_WORDS = 3
 
 QUESTION_STOP_WORDS = {
     "a",
@@ -105,13 +117,14 @@ def answer_coverage(answer: str, excerpt: str) -> float:
     return 100.0 * len(answer_words & excerpt_words) / len(answer_words)
 
 
+def meaningful_words(text: str) -> set[str]:
+    words = re.findall(r"[a-z0-9]+", text.lower())
+    return {word for word in words if word not in QUESTION_STOP_WORDS}
+
+
 def question_coverage(question: str, material_text: str) -> float:
     """What share of the question's meaningful words occur in the cited material."""
-    question_words = {
-        word
-        for word in re.findall(r"[a-z0-9]+", question.lower())
-        if word not in QUESTION_STOP_WORDS
-    }
+    question_words = meaningful_words(question)
     material_words = set(re.findall(r"[a-z0-9]+", material_text.lower()))
 
     if not question_words:
@@ -149,6 +162,9 @@ def ungrounded_links(text: str, material_text: str) -> list[str]:
 
 def rejection_reasons(draft: DraftQuestion, chunks: list[RetrievedChunk]) -> list[str]:
     """Every reason this draft is unusable. Empty list means it passed."""
+    if draft.type == QuestionType.FREE_TEXT:
+        return _free_text_reasons(draft, chunks)
+
     reasons: list[str] = []
     options = draft.options or ()
 
@@ -175,6 +191,96 @@ def rejection_reasons(draft: DraftQuestion, chunks: list[RetrievedChunk]) -> lis
     if draft.correct_option is None or not 0 <= draft.correct_option < len(options):
         reasons.append(f"correct_option {draft.correct_option} is out of range")
 
+    reasons.extend(_grounding_reasons(draft, chunks, answers=options))
+
+    # Grounding proves the excerpt exists on the cited page, not that it
+    # supports the answer. An answer sharing almost no words with its own
+    # excerpt is the signature of a question reasoned from the model's own
+    # knowledge. A lexical proxy for entailment, not entailment itself.
+    if draft.source_excerpt and draft.correct_option is not None:
+        if 0 <= draft.correct_option < len(options):
+            answer = options[draft.correct_option]
+            support = answer_coverage(answer, draft.source_excerpt)
+            if support < ANSWER_SUPPORT_THRESHOLD:
+                reasons.append(
+                    f"correct answer has little overlap with the cited excerpt "
+                    f"(score {support:.0f})"
+                )
+
+    return reasons
+
+
+def _free_text_reasons(draft: DraftQuestion, chunks: list[RetrievedChunk]) -> list[str]:
+    """Every reason this free-text draft is unusable.
+
+    The same citation, screening and grounding checks as a multiple choice
+    question, with the reference answer and key points in place of the
+    options: each must be supported by the cited excerpt, so the classifier
+    never marks a student against what the model knew rather than what the
+    lecture said.
+    """
+    reasons: list[str] = []
+    answer = draft.reference_answer if isinstance(draft.reference_answer, str) else ""
+    key_points = tuple(draft.key_points or ())
+
+    if not draft.prompt.strip():
+        reasons.append("prompt is empty")
+
+    if draft.options is not None or draft.correct_option is not None:
+        reasons.append("free text question carries multiple choice fields")
+
+    if not answer.strip():
+        reasons.append("no reference answer")
+    elif len(answer) > MAX_REFERENCE_ANSWER_LENGTH:
+        reasons.append(f"reference answer is longer than {MAX_REFERENCE_ANSWER_LENGTH} characters")
+
+    if not MIN_KEY_POINTS <= len(key_points) <= MAX_KEY_POINTS:
+        reasons.append(
+            f"expected {MIN_KEY_POINTS}-{MAX_KEY_POINTS} key points, got {len(key_points)}"
+        )
+    if any(not isinstance(point, str) or not point.strip() for point in key_points):
+        reasons.append("a key point is blank or not text")
+        key_points = tuple(p for p in key_points if isinstance(p, str) and p.strip())
+    if any(len(point) > MAX_KEY_POINT_LENGTH for point in key_points):
+        reasons.append(f"a key point is longer than {MAX_KEY_POINT_LENGTH} characters")
+    if len({point.strip().lower() for point in key_points}) != len(key_points):
+        reasons.append("key points contain duplicates")
+
+    reasons.extend(_grounding_reasons(draft, chunks, answers=(answer, *key_points)))
+
+    if answer.strip() and draft.prompt.strip():
+        new_words = meaningful_words(answer) - meaningful_words(draft.prompt)
+        if len(new_words) < MIN_NEW_ANSWER_WORDS:
+            reasons.append("reference answer only repeats the question")
+
+    # As for a multiple choice answer: an excerpt on the cited page proves the
+    # page exists, not that it says what the answer says.
+    if draft.source_excerpt:
+        if answer.strip():
+            support = question_coverage(answer, draft.source_excerpt)
+            if support < FREE_TEXT_SUPPORT_THRESHOLD:
+                reasons.append(
+                    f"reference answer has little overlap with the cited excerpt "
+                    f"(score {support:.0f})"
+                )
+        for number, point in enumerate(key_points, start=1):
+            support = question_coverage(point, draft.source_excerpt)
+            if support < FREE_TEXT_SUPPORT_THRESHOLD:
+                reasons.append(
+                    f"key point {number} has little overlap with the cited excerpt "
+                    f"(score {support:.0f})"
+                )
+
+    return reasons
+
+
+def _grounding_reasons(
+    draft: DraftQuestion, chunks: list[RetrievedChunk], *, answers: Sequence[str]
+) -> list[str]:
+    """The checks every question type shares: its citation, what it was
+    written from and what it says. `answers` is whatever the question gives as
+    its answer: the options, or the reference answer and key points."""
+    reasons: list[str] = []
     pages = {chunk.source_page for chunk in chunks if chunk.source_page is not None}
     # A question with no citation cannot be traced back to the material, which
     # is the point of the feature.
@@ -194,11 +300,11 @@ def rejection_reasons(draft: DraftQuestion, chunks: list[RetrievedChunk]) -> lis
 
     # What the model wrote is screened too: an instruction can reach the
     # output through a chunk that was never flagged, or be invented outright.
-    written = " ".join([draft.prompt, *options, draft.topic or "", draft.source_excerpt or ""])
+    written = " ".join([draft.prompt, *answers, draft.topic or "", draft.source_excerpt or ""])
     if contains_embedded_instruction(written):
         reasons.append("the draft itself contains instructions")
     links = ungrounded_links(
-        " ".join([draft.prompt, *options, draft.topic or ""]),
+        " ".join([draft.prompt, *answers, draft.topic or ""]),
         " ".join(c.chunk_text for c in cited_chunks),
     )
     if links:
@@ -222,19 +328,6 @@ def rejection_reasons(draft: DraftQuestion, chunks: list[RetrievedChunk]) -> lis
                 f"question has little overlap with the cited material "
                 f"(score {question_support:.0f})"
             )
-    # Grounding proves the excerpt exists on the cited page, not that it
-    # supports the answer. An answer sharing almost no words with its own
-    # excerpt is the signature of a question reasoned from the model's own
-    # knowledge. A lexical proxy for entailment, not entailment itself.
-    if draft.source_excerpt and draft.correct_option is not None:
-        if 0 <= draft.correct_option < len(options):
-            answer = options[draft.correct_option]
-            support = answer_coverage(answer, draft.source_excerpt)
-            if support < ANSWER_SUPPORT_THRESHOLD:
-                reasons.append(
-                    f"correct answer has little overlap with the cited excerpt "
-                    f"(score {support:.0f})"
-                )
 
     return reasons
 
