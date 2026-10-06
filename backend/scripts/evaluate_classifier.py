@@ -102,10 +102,7 @@ async def main(label_column: str, limit: int | None, out: Path | None) -> None:
                 questions[answer["question_id"]], answer["student_answer"]
             )
         except ClassificationError as exc:
-            print(
-                f"{answer['answer_id']}  human={human:<10}  UNREADABLE REPLY: {exc}: "
-                f"{exc.reply[:200]!r}"
-            )
+            print(f"{answer['answer_id']}  human={human:<10}  UNREADABLE REPLY: {exc}")
             rows.append({"answer_id": answer["answer_id"], "human": human, "predicted": "error"})
             continue
         predicted = result.label.value

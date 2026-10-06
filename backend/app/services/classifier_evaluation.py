@@ -70,8 +70,13 @@ def label_stats(
 def macro_f1(
     expected: Sequence[str], predicted: Sequence[str], labels: Sequence[str] = LABELS
 ) -> float:
-    """The average F1 across labels, so a rare label counts as much as a common one."""
-    scores = [s.f1 or 0.0 for s in label_stats(expected, predicted, labels) if s.support]
+    """The average F1 across labels, so a rare label counts as much as a common one.
+
+    Every label that was expected or predicted counts: a label the classifier
+    gives where the human never did scores 0 rather than dropping out.
+    """
+    seen = set(expected) | set(predicted)
+    scores = [s.f1 or 0.0 for s in label_stats(expected, predicted, labels) if s.label in seen]
     return sum(scores) / len(scores) if scores else 0.0
 
 

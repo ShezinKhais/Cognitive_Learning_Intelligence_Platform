@@ -59,6 +59,11 @@ def test_macro_f1_is_one_when_everything_matches():
     assert macro_f1(labels, labels) == 1.0
 
 
+def test_macro_f1_counts_a_label_that_was_only_predicted():
+    # mastered: F1 2/3. partial, never expected but predicted once: F1 0.
+    assert macro_f1(["mastered", "mastered"], ["mastered", "partial"]) == pytest.approx(1 / 3)
+
+
 def test_kappa_is_one_for_identical_labels_and_zero_for_chance():
     same = ["mastered", "partial", "struggling", "partial"]
     assert cohen_kappa(same, same) == 1.0
