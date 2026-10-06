@@ -154,7 +154,11 @@ class QuestionGenerator(Protocol):
     model: str
 
     async def generate(
-        self, material_id: UUID, chunks: Sequence[ContentChunk], count: int | None = None
+        self,
+        material_id: UUID,
+        chunks: Sequence[ContentChunk],
+        count: int | None = None,
+        question_type: QuestionType | None = None,
     ) -> Sequence[DraftQuestion]: ...
 
 

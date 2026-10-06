@@ -83,6 +83,10 @@ class Settings(BaseSettings):
     ollama_model: str = "qwen2.5"
     embedding_model: str = "nomic-embed-text"
     embedding_dim: int = 768
+    # Short-answer questions alongside the multiple choice ones, one for every
+    # three. Off until the question table stores reference answers and key
+    # points: one saved without them has nothing to be marked against.
+    free_text_questions_enabled: bool = False
 
     # Written by `teams app create --env .env`
     client_id: str = ""

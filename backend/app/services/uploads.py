@@ -124,6 +124,8 @@ def get_material_pipeline() -> MaterialPipeline:
             OllamaEmbeddingClient(client, settings.embedding_model),
             settings.embedding_model,
         ),
-        generator=QuestionGenerator(client, settings.ollama_model),
+        generator=QuestionGenerator(
+            client, settings.ollama_model, free_text=settings.free_text_questions_enabled
+        ),
         store=DatabaseMaterialStore(),
     )
