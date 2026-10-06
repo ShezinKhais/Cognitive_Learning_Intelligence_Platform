@@ -1,3 +1,5 @@
+import ConfidenceIndicator from '../intelligence/ConfidenceIndicator'
+
 import type {
   LiveAlert,
   LiveAlertKind,
@@ -108,13 +110,11 @@ export default function LiveAlertsPanel({
                     </p>
                   </div>
 
-                  <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
-                    {Math.round(
-                      alert.confidence *
-                        100,
-                    )}
-                    % confidence
-                  </span>
+                  <ConfidenceIndicator
+                    confidence={
+                      alert.confidence
+                    }
+                  />
                 </div>
 
                 <p className="mt-3 text-sm text-muted-foreground">
