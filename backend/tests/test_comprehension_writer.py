@@ -28,7 +28,7 @@ from app.repositories import comprehension_repository
 from app.repositories.comprehension_repository import DatabaseComprehensionSource
 from app.schemas.session import ComprehensionLabel
 from app.services import live_wiring
-from app.services.comprehension_writer import label_response, mcq_label
+from app.services.comprehension_writer import label_response, mcq_label, save_classification
 
 from .database_support import require_database
 
@@ -229,3 +229,94 @@ async def test_two_labels_written_at_once_leave_one(database, question):
     await asyncio.gather(label_in_own_transaction(), label_in_own_transaction())
 
     assert len(await labels_for(database, stored.response_id)) == 1
+
+
+async def save(database, response_id, **overrides):
+    """What the free-text classifier hands save_classification for one answer."""
+    fields = {
+        "response_id": response_id,
+        "label": ComprehensionLabel.PARTIAL,
+        "confidence": 0.7,
+        "score": 0.5,
+        "feedback": "You covered one of the two points.",
+        "model_name": "qwen2.5:3b",
+        "prompt_version": "free-text-v3",
+        "reasons": ["Covered: it predicts a probability.", "Missed: why it is bounded."],
+        "key_point_coverage": ["covered", "missed"],
+        "wrong_claim": None,
+        "similarity": 0.82,
+    }
+    fields.update(overrides)
+    async with database() as db:
+        stored = await save_classification(db, **fields)
+        await db.commit()
+    return stored
+
+
+async def test_a_classification_is_stored_with_the_model_and_prompt_that_made_it(
+    database, question
+):
+    answer_row = await live_wiring._store_response(
+        **answer(question, free_text="It is a probability.")
+    )
+
+    assert await save(database, answer_row.response_id) is True
+
+    [row] = await labels_for(database, answer_row.response_id)
+    assert (row.label, row.score, row.confidence_score) == ("partial", 0.5, 0.7)
+    assert (row.model_name, row.prompt_version) == ("qwen2.5:3b", "free-text-v3")
+    assert row.reasons == ["Covered: it predicts a probability.", "Missed: why it is bounded."]
+    assert row.key_point_coverage == ["covered", "missed"]
+    assert row.wrong_claim is None
+    assert row.similarity == pytest.approx(0.82)
+    assert row.ai_feedback_text == "You covered one of the two points."
+
+
+async def test_a_second_classification_keeps_the_first(database, question):
+    answer_row = await live_wiring._store_response(
+        **answer(question, free_text="It is a probability.")
+    )
+    await save(database, answer_row.response_id)
+
+    again = await save(
+        database,
+        answer_row.response_id,
+        label=ComprehensionLabel.MASTERED,
+        prompt_version="free-text-v4",
+    )
+
+    assert again is False
+    [row] = await labels_for(database, answer_row.response_id)
+    assert (row.label, row.prompt_version) == ("partial", "free-text-v3")
+
+
+async def test_a_wrong_claim_is_kept_with_the_result(database, question):
+    answer_row = await live_wiring._store_response(
+        **answer(question, free_text="It rounds the odds.")
+    )
+
+    await save(
+        database,
+        answer_row.response_id,
+        label=ComprehensionLabel.STRUGGLING,
+        wrong_claim="It rounds the odds.",
+        similarity=None,
+    )
+
+    [row] = await labels_for(database, answer_row.response_id)
+    assert (row.label, row.wrong_claim, row.similarity) == (
+        "struggling",
+        "It rounds the odds.",
+        None,
+    )
+
+
+async def test_a_stored_classification_reaches_the_comprehension_alert(database, question):
+    answer_row = await live_wiring._store_response(
+        **answer(question, free_text="It is a probability.")
+    )
+    await save(database, answer_row.response_id)
+
+    found = await DatabaseComprehensionSource().question_labels(question.session, question.question)
+
+    assert found.labels == ["partial"]
