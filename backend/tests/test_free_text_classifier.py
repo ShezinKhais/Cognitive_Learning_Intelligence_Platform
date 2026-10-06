@@ -79,8 +79,13 @@ class FakeEmbed:
         return [[1.0, 0.0], [s, math.sqrt(max(0.0, 1 - s * s))]]
 
 
-def marking(*verdicts, wrong=None):
-    return {"key_points": [v.value for v in verdicts], "wrong_claim": wrong}
+def marking(*verdicts, wrong=None, quote="full answer"):
+    """The model's reply: each point covered or partly quotes `quote`, which the
+    test's answer must contain, and each missed point quotes nothing."""
+    return {
+        "key_points": [{"verdict": v.value, "evidence": "" if v == M else quote} for v in verdicts],
+        "wrong_claim": wrong,
+    }
 
 
 def classifier(reply, similarity=0.9, embed_fails=False):
@@ -118,7 +123,7 @@ def test_partly_covered_counts_as_half():
 
 async def test_a_full_answer_is_mastered_with_high_confidence():
     result = await classifier(marking(C, C, C), similarity=0.9).classify(
-        QUESTION, "Too many predictors make it overfit; regularization penalises big coefficients."
+        QUESTION, "A full answer: many predictors overfit; regularization penalises coefficients."
     )
 
     assert result.label == ComprehensionLabel.MASTERED
@@ -130,7 +135,7 @@ async def test_a_full_answer_is_mastered_with_high_confidence():
 
 
 async def test_a_partial_answer_names_the_points_it_missed():
-    result = await classifier(marking(M, C, M), similarity=0.6).classify(
+    result = await classifier(marking(M, C, M, quote="regularization"), similarity=0.6).classify(
         QUESTION, "You can reduce it with regularization."
     )
 
@@ -142,7 +147,9 @@ async def test_a_partial_answer_names_the_points_it_missed():
 
 
 async def test_a_wrong_claim_is_reported_and_keeps_an_otherwise_full_answer_partial():
-    result = await classifier(marking(C, C, C, wrong="says L3 regularization")).classify(
+    result = await classifier(
+        marking(C, C, C, wrong="says L3 regularization", quote="L3 regularization")
+    ).classify(
         QUESTION, "Many predictors cause it; L3 regularization penalises large coefficients."
     )
 
@@ -243,10 +250,71 @@ def test_an_answer_cannot_close_its_fence():
 def test_a_fenced_reply_with_null_written_as_text_is_read():
     raw = '```json\n{"key_points": ["Covered", "PARTLY", "missed"], "wrong_claim": "null"}\n```'
 
-    assert parse_marking(raw, 3) == ((C, P, M), None)
+    assert parse_marking(raw, 3) == (((C, None), (P, None), (M, None)), None)
 
 
 def test_confidence_stays_within_its_bounds():
     for score in (0.0, 0.5, 1.0):
         for similarity in (-1.0, 0.0, 0.5, 1.0):
             assert 0.0 < confidence_for(score, similarity) <= 1.0
+
+
+# -- holding the marking to its quotes (free-text-v2) -------------------------
+
+
+async def test_a_reply_wrapped_in_a_sentence_is_still_read():
+    reply = "Here is my marking:\n" + json.dumps(marking(C, C, C)) + "\nHope this helps!"
+
+    result = await classifier(reply).classify(QUESTION, "A full answer.")
+
+    assert result.label == ComprehensionLabel.MASTERED
+
+
+async def test_a_quote_that_is_not_in_the_answer_turns_the_point_to_missed():
+    # The lenient marking a small model gave a03: "a yes or no outcome" is not
+    # a probability, and the quote it offered is not the student's.
+    reply = marking(C, C, C, quote="predicts the probability of an event")
+
+    result = await classifier(reply).classify(QUESTION, "It predicts a yes or no outcome.")
+
+    assert result.coverage == (M, M, M)
+    assert result.label == ComprehensionLabel.STRUGGLING
+    assert "key point 1: the quoted words are not in the answer" in result.reasons
+
+
+async def test_a_point_marked_covered_without_a_quote_counts_as_partly():
+    reply = {"key_points": ["covered", "covered", "covered"], "wrong_claim": None}
+
+    result = await classifier(reply).classify(QUESTION, "A full answer.")
+
+    assert result.coverage == (P, P, P)
+    assert result.label == ComprehensionLabel.PARTIAL
+    assert any("no words were quoted" in r for r in result.reasons)
+
+
+async def test_a_quote_may_differ_in_a_word_ending():
+    reply = marking(C, C, C, quote="regularization penalizes large coefficients")
+
+    result = await classifier(reply).classify(
+        QUESTION, "Too many predictors; regularisation penalises large coefficients."
+    )
+
+    assert result.coverage == (C, C, C)
+
+
+async def test_the_quotes_are_kept_with_the_result():
+    result = await classifier(marking(C, M, C, quote="full answer")).classify(
+        QUESTION, "A full answer."
+    )
+
+    assert result.evidence == ("full answer", "", "full answer")
+
+
+def test_the_prompt_asks_for_quotes_and_its_example_is_not_from_the_labelled_set():
+    prompt = build_classifier_prompt(QUESTION, "my answer")
+    example = prompt[prompt.index("Example:") : prompt.index("Also decide")]
+
+    assert "Be strict" in prompt
+    assert '"evidence"' in prompt
+    assert "logistic" not in example.lower()
+    assert PROMPT_VERSION == "free-text-v2"

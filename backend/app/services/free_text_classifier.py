@@ -9,8 +9,12 @@ with the reference answer:
 1. Quick checks, no model: a blank or "I don't know" answer, or one that only
    repeats the question, is struggling. One carrying instructions to the
    marker is never shown to the model.
-2. The model marks each key point covered, partly covered or missed, and says
-   whether the answer states something wrong. It does not pick the label.
+2. The model marks each key point covered, partly covered or missed, quoting
+   the student's words that state it, and says whether the answer states
+   something wrong. It does not pick the label. A quote that is not in the
+   answer turns the point to missed, and a point marked covered with no quote
+   counts only as partly covered: a small model is lenient, and the quote is
+   what makes its marking checkable.
 3. The label follows from that by a fixed rule (label_for), the same rule the
    labelled answer set in tests/eval was marked by, so every label can be
    traced to the points behind it.
@@ -32,6 +36,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
+from rapidfuzz import fuzz
+
 from app.schemas.session import ComprehensionLabel
 from app.services.generation import contains_embedded_instruction, meaningful_words
 
@@ -39,7 +45,7 @@ log = logging.getLogger("clip.free_text_classifier")
 
 # Stored with every result, so a label can be traced to the prompt that made
 # it. Change it whenever CLASSIFIER_PROMPT changes.
-PROMPT_VERSION = "free-text-v1"
+PROMPT_VERSION = "free-text-v2"
 
 # What a student writes when they have nothing to say. Compared after
 # lowercasing and dropping punctuation.
@@ -73,6 +79,9 @@ MIN_CONFIDENCE = 0.35
 # Without a similarity there is nothing to cross-check the model against.
 UNCHECKED_CONFIDENCE = 0.6
 QUICK_CHECK_CONFIDENCE = 0.95
+# How closely a quoted piece of evidence must match the answer, after case and
+# punctuation are dropped: a model copying a quote may change a word's ending.
+EVIDENCE_MATCH = 85
 
 CLASSIFIER_PROMPT = """You mark a student's short answer against a marking checklist.
 
@@ -94,12 +103,23 @@ STUDENT ANSWER:
 {answer}
 >>>
 
-For each key point, in order, decide whether the student's answer states it:
-  "covered": stated, in any wording
-  "partly": touched on, but incomplete or vague
-  "missed": absent, or stated wrongly
-Judge the meaning, not the wording or spelling. A list of keywords with no
-explanation does not cover a point. A point the student gets wrong is missed.
+For each key point, in order, decide whether the student's answer states it,
+and quote the words from the student's answer that state it:
+  "covered": the answer states this point correctly, in any wording
+  "partly": the answer touches on it, but vaguely or incompletely
+  "missed": the answer does not state it, or states it wrongly
+
+Be strict. Mark a point covered only when the student's own words say it.
+Judge the meaning, not the wording or spelling. An answer about a different
+idea, a vague answer, or a list of keywords with no explanation does not
+cover a point. A point the student gets wrong is missed.
+
+"evidence" must be words copied exactly from the STUDENT ANSWER, never from
+the model answer or the key points. Use "" when the point is missed.
+
+Example: for the key point "The base layers are frozen", the answer "The whole
+network is retrained from scratch" is {{"verdict": "missed", "evidence": ""}},
+because retraining everything is the opposite of freezing the base layers.
 
 Also decide whether the answer states something factually wrong about the
 topic. If it does, describe the error in a few words; otherwise use null.
@@ -134,7 +154,8 @@ class Classification:
     # 0-1: the share of the key points the answer covers, partly covered
     # counting as half.
     score: float
-    # One verdict per key point, in order. Empty when no model was asked.
+    # One verdict per key point, in order, after the evidence check. Empty
+    # when no model was asked.
     coverage: tuple[Coverage, ...]
     wrong_claim: str | None
     # Plain-language reasons for the label, for the lecturer.
@@ -146,6 +167,8 @@ class Classification:
     # The model that marked it, when one did.
     model: str | None
     prompt_version: str = PROMPT_VERSION
+    # The student's words the model quoted for each key point, in order.
+    evidence: tuple[str, ...] = ()
 
 
 class ClassificationError(Exception):
@@ -175,7 +198,7 @@ def coverage_score(coverage: Sequence[Coverage]) -> float:
 
 def build_classifier_prompt(question: FreeTextQuestion, answer: str) -> str:
     points = "\n".join(f"{n}. {point}" for n, point in enumerate(question.key_points, start=1))
-    example = ", ".join('"covered"' for _ in question.key_points)
+    example = ", ".join('{"verdict": "covered", "evidence": "..."}' for _ in question.key_points)
     # The answer cannot end the block it sits in and continue as instructions.
     fenced = answer.replace("<<<", "< < <").replace(">>>", "> > >")
     return CLASSIFIER_PROMPT.format(
@@ -187,33 +210,93 @@ def build_classifier_prompt(question: FreeTextQuestion, answer: str) -> str:
     )
 
 
-def parse_marking(raw: str, point_count: int) -> tuple[tuple[Coverage, ...], str | None]:
-    """The model's reply as one verdict per key point and the wrong claim, if any."""
+Mark = tuple[Coverage, str | None]
+
+
+def _json_object(raw: str) -> dict:
+    """The JSON object in the model's reply. A small model may wrap it in a
+    sentence or a fence, so the outermost braces are tried when the whole
+    reply is not JSON."""
     text = raw.strip()
     if text.startswith("```"):
         text = text.split("```")[1]
         if text.startswith("json"):
             text = text[4:]
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise ClassificationError(f"model did not return valid JSON: {exc}") from exc
-    if not isinstance(payload, dict):
-        raise ClassificationError("expected a JSON object")
+    candidates = [text]
+    start, end = text.find("{"), text.rfind("}")
+    if 0 <= start < end:
+        candidates.append(text[start : end + 1])
+    for candidate in candidates:
+        try:
+            payload = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            return payload
+    raise ClassificationError(f"model did not return a JSON object: {raw[:200]!r}")
 
-    verdicts = payload.get("key_points")
-    if not isinstance(verdicts, list) or len(verdicts) != point_count:
-        raise ClassificationError(f"expected {point_count} key point verdicts, got {verdicts!r}")
-    try:
-        coverage = tuple(Coverage(str(v).strip().lower()) for v in verdicts)
-    except ValueError as exc:
-        raise ClassificationError(f"unknown verdict in {verdicts!r}") from exc
+
+def parse_marking(raw: str, point_count: int) -> tuple[tuple[Mark, ...], str | None]:
+    """The model's reply as one verdict and quote per key point, and the wrong
+    claim, if any. A verdict given without a quote has None as its quote."""
+    payload = _json_object(raw)
+    items = payload.get("key_points")
+    if not isinstance(items, list) or len(items) != point_count:
+        raise ClassificationError(f"expected {point_count} key point verdicts, got {items!r}")
+
+    marks = []
+    for item in items:
+        verdict, evidence = (
+            (item.get("verdict"), item.get("evidence")) if isinstance(item, dict) else (item, None)
+        )
+        try:
+            coverage = Coverage(str(verdict).strip().lower())
+        except ValueError as exc:
+            raise ClassificationError(f"unknown verdict in {items!r}") from exc
+        marks.append((coverage, evidence if isinstance(evidence, str) else None))
 
     wrong = payload.get("wrong_claim")
     wrong_claim = wrong.strip() if isinstance(wrong, str) and wrong.strip() else None
     if wrong_claim is not None and wrong_claim.lower() in {"null", "none", "no"}:
         wrong_claim = None
-    return coverage, wrong_claim
+    return tuple(marks), wrong_claim
+
+
+def _plain(text: str) -> str:
+    return " ".join(re.findall(r"[a-z0-9]+", text.lower()))
+
+
+def evidence_in_answer(evidence: str, answer: str) -> bool:
+    """Whether the quoted words are the student's, give or take a word ending."""
+    quote, said = _plain(evidence), _plain(answer)
+    if not quote:
+        return False
+    return quote in said or fuzz.partial_ratio(quote, said) >= EVIDENCE_MATCH
+
+
+def checked_coverage(
+    marks: Sequence[Mark], answer: str
+) -> tuple[tuple[Coverage, ...], tuple[str, ...]]:
+    """The model's verdicts once each is held to its quote, and what changed.
+
+    A quote that is not in the answer is invented support, so the point is
+    missed. A point marked covered with no quote is counted as partly covered:
+    the model has not shown where the student said it.
+    """
+    coverage, notes = [], []
+    for number, (verdict, evidence) in enumerate(marks, start=1):
+        quoted = evidence is not None and evidence.strip()
+        if verdict == Coverage.MISSED:
+            coverage.append(verdict)
+        elif quoted and not evidence_in_answer(evidence, answer):
+            coverage.append(Coverage.MISSED)
+            notes.append(f"key point {number}: the quoted words are not in the answer")
+        elif not quoted and verdict == Coverage.COVERED:
+            coverage.append(Coverage.PARTLY)
+            notes.append(f"key point {number}: no words were quoted, so it counts as partly")
+        else:
+            coverage.append(verdict)
+    return tuple(coverage), tuple(notes)
 
 
 def cosine(a: Sequence[float], b: Sequence[float]) -> float:
@@ -276,8 +359,9 @@ def reasons_for(
     wrong_claim: str | None,
     similarity: float | None,
     score: float,
+    notes: Sequence[str] = (),
 ) -> tuple[str, ...]:
-    reasons = []
+    reasons = list(notes)
     for number, (point, verdict) in enumerate(
         zip(question.key_points, coverage, strict=True), start=1
     ):
@@ -334,9 +418,10 @@ class FreeTextClassifier:
             model=self.model,
             messages=[{"role": "user", "content": build_classifier_prompt(question, answer)}],
         )
-        coverage, wrong_claim = parse_marking(
+        marks, wrong_claim = parse_marking(
             response.choices[0].message.content or "", len(question.key_points)
         )
+        coverage, notes = checked_coverage(marks, answer)
 
         similarity = await self._similarity(question, answer)
         label = label_for(coverage, wrong_claim)
@@ -347,10 +432,11 @@ class FreeTextClassifier:
             score=round(score, 2),
             coverage=coverage,
             wrong_claim=wrong_claim,
-            reasons=reasons_for(question, coverage, wrong_claim, similarity, score),
+            reasons=reasons_for(question, coverage, wrong_claim, similarity, score, notes),
             feedback=feedback_for(question, coverage, wrong_claim, label),
             similarity=None if similarity is None else round(similarity, 3),
             model=self.model,
+            evidence=tuple(evidence or "" for _, evidence in marks),
         )
 
     async def _similarity(self, question: FreeTextQuestion, answer: str) -> float | None:
