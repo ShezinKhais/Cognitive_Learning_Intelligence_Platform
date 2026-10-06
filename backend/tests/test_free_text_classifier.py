@@ -2,6 +2,7 @@
 so each rule can be checked on its own."""
 
 import json
+import logging
 import math
 
 import pytest
@@ -392,3 +393,46 @@ async def test_a_second_unreadable_reply_still_raises():
     with pytest.raises(ClassificationError):
         await marker.classify(QUESTION, "A full answer.")
     assert len(marker._chat.prompts) == 2
+
+
+# -- review fixes ------------------------------------------------------------
+
+
+async def test_a_quote_longer_than_the_answer_cannot_wrap_it_in_invented_words():
+    # The whole answer sits inside the quote, which a fuzzy match would accept.
+    reply = marking(C, C, C, quote="regularization penalizes large coefficients of predictors")
+
+    result = await classifier(reply).classify(QUESTION, "regularization")
+
+    assert result.coverage == (M, M, M)
+    assert result.label == ComprehensionLabel.STRUGGLING
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        {"key_points": [{"verdict": "covered", "evidence": "full answer"}] * 3},
+        {
+            "key_points": [{"verdict": "covered", "evidence": "full answer"}] * 3,
+            "wrong_claim": True,
+        },
+    ],
+    ids=["missing", "not-text"],
+)
+async def test_a_wrong_claim_that_is_not_text_or_null_is_unreadable_not_mastered(reply):
+    with pytest.raises(ClassificationError):
+        await classifier(reply).classify(QUESTION, "A full answer.")
+
+
+async def test_an_unreadable_reply_keeps_the_students_words_out_of_the_error_and_log(caplog):
+    caplog.set_level(logging.INFO, logger="clip.free_text_classifier")
+    answer = "my secret student wording about regularization"
+    reply = {"key_points": [{"verdict": "covered", "evidence": answer}]}
+
+    with pytest.raises(ClassificationError) as raised:
+        await classifier(reply).classify(QUESTION, answer)
+
+    assert "secret" not in str(raised.value)
+    assert "secret" in raised.value.reply
+    assert "asking again" in caplog.text
+    assert "secret" not in caplog.text

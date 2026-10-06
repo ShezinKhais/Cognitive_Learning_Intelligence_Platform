@@ -609,7 +609,7 @@ class QuestionGenerator:
         With `question_type` set, only that type is asked for, as a replacement
         keeps the type of the question it replaces. Without it, the multiple
         choice questions come first and, when free text is on, one short-answer
-        question for every MCQS_PER_FREE_TEXT of them in a second call.
+        question for every MCQS_PER_FREE_TEXT of those kept, in a second call.
         """
         usable = screened(chunks)
         if len(usable) < len(chunks):
@@ -627,12 +627,13 @@ class QuestionGenerator:
             return self._kept(await self._draft(chunks, wanted, usable, question_type))
 
         accepted = self._kept(await self._draft(chunks, wanted, usable))
-        if self._free_text:
+        # Counted from the MCQs kept, not those asked for, so the ratio holds
+        # when the checks reject some, and no MCQs means no short answers.
+        short_answers = free_text_count(len(accepted))
+        if self._free_text and short_answers:
             # Separate, so a reply the model gets wrong costs only these.
             try:
-                outcome = await self._draft(
-                    chunks, free_text_count(wanted), usable, QuestionType.FREE_TEXT
-                )
+                outcome = await self._draft(chunks, short_answers, usable, QuestionType.FREE_TEXT)
             except Exception:
                 logger.exception(
                     "material %s: short-answer questions could not be generated; "

@@ -125,7 +125,8 @@ async def test_free_text_on_asks_for_both_in_separate_calls():
     assert not is_free_text_prompt(client.prompts[0])
     assert "Write 5 multiple-choice questions" in client.prompts[0]
     assert is_free_text_prompt(client.prompts[1])
-    assert "Write 2 short-answer questions" in client.prompts[1]
+    # One per three MCQs kept: five were asked for, but the reply holds one.
+    assert "Write 1 short-answer questions" in client.prompts[1]
     assert [d.type for d in drafts] == [QuestionType.MCQ, QuestionType.FREE_TEXT]
     short = drafts[1]
     assert short.reference_answer.startswith("The base layers are frozen")
@@ -133,6 +134,18 @@ async def test_free_text_on_asks_for_both_in_separate_calls():
         "The base layers are frozen",
         "Their weights do not change during training",
     )
+
+
+async def test_no_kept_multiple_choice_means_no_free_text_call():
+    unsupported = json.loads(MCQ_REPLY)
+    unsupported[0]["options"] = ["Dropout", "Batch norm", "Pooling", "Padding"]
+    client = ScriptedClient(json.dumps(unsupported))
+    generator = QuestionGenerator(client, "test-model", free_text=True)
+
+    drafts = await generator.generate(uuid.uuid4(), chunks())
+
+    assert len(client.prompts) == 1
+    assert drafts == []
 
 
 async def test_a_failed_free_text_call_keeps_the_multiple_choice_questions():

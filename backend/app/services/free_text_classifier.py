@@ -181,7 +181,16 @@ class Classification:
 
 class ClassificationError(Exception):
     """The model's reply could not be turned into a marking. No label is
-    invented in its place: the caller decides what an unmarked answer means."""
+    invented in its place: the caller decides what an unmarked answer means.
+
+    The message says what was wrong without quoting the reply, which can hold
+    the student's words, so it is safe to log. `reply` keeps the reply for
+    debugging the evaluation locally.
+    """
+
+    def __init__(self, message: str, reply: str = "") -> None:
+        super().__init__(message)
+        self.reply = reply
 
 
 def label_for(coverage: Sequence[Coverage], wrong_claim: str | None) -> ComprehensionLabel:
@@ -243,7 +252,7 @@ def _json_object(raw: str) -> dict:
             payload = None
     if isinstance(payload, dict):
         return payload
-    raise ClassificationError(f"model did not return a JSON object: {raw[:200]!r}")
+    raise ClassificationError("model did not return a JSON object", raw)
 
 
 def parse_marking(raw: str, point_count: int) -> tuple[tuple[Mark, ...], str | None]:
@@ -252,7 +261,8 @@ def parse_marking(raw: str, point_count: int) -> tuple[tuple[Mark, ...], str | N
     payload = _json_object(raw)
     items = payload.get("key_points")
     if not isinstance(items, list) or len(items) != point_count:
-        raise ClassificationError(f"expected {point_count} key point verdicts, got {items!r}")
+        got = len(items) if isinstance(items, list) else "none"
+        raise ClassificationError(f"expected {point_count} key point verdicts, got {got}", raw)
 
     marks = []
     for item in items:
@@ -267,11 +277,17 @@ def parse_marking(raw: str, point_count: int) -> tuple[tuple[Mark, ...], str | N
         try:
             coverage = Coverage(str(verdict).strip().lower())
         except ValueError as exc:
-            raise ClassificationError(f"unknown verdict in {items!r}") from exc
+            raise ClassificationError("unknown key point verdict", raw) from exc
         marks.append((coverage, evidence if isinstance(evidence, str) else None))
 
-    wrong = payload.get("wrong_claim")
-    wrong_claim = wrong.strip() if isinstance(wrong, str) and wrong.strip() else None
+    # A reply that leaves this out, or gives something other than text or
+    # null, is not read as "nothing wrong": that could make an answer mastered.
+    if "wrong_claim" not in payload:
+        raise ClassificationError("reply has no wrong_claim", raw)
+    wrong = payload["wrong_claim"]
+    if wrong is not None and not isinstance(wrong, str):
+        raise ClassificationError("wrong_claim is neither text nor null", raw)
+    wrong_claim = wrong.strip() if wrong is not None and wrong.strip() else None
     if wrong_claim is not None and wrong_claim.lower() in {"null", "none", "no"}:
         wrong_claim = None
     return tuple(marks), wrong_claim
@@ -290,7 +306,12 @@ def evidence_in_answer(evidence: str, answer: str) -> bool:
     quote, said = _plain(evidence), _plain(answer)
     if not quote:
         return False
-    if quote in said or fuzz.partial_ratio(quote, said) >= EVIDENCE_MATCH:
+    if quote in said:
+        return True
+    # partial_ratio finds the shorter text inside the longer one, so it allows
+    # for a changed word ending only when the quote is the shorter: otherwise
+    # the whole answer plus invented words would pass as a quote.
+    if len(quote) <= len(said) and fuzz.partial_ratio(quote, said) >= EVIDENCE_MATCH:
         return True
     # Most of its meaningful words in the answer: the student's words, with a
     # few the model added. An invented quote shares few of them.
