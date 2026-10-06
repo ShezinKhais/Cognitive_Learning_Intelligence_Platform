@@ -48,7 +48,7 @@
     {
       "configurationUrl": "${{BASE_URL}}/config",
       "scopes": ["groupChat"],
-      "context": ["meetingSidePanel", "meetingChatTab", "meetingDetailsTab"],
+      "context": ["meetingSidePanel"],
       "supportedSharePointHosts": []
     }
   ],
@@ -56,15 +56,13 @@
   "bots": [
     {
       "botId": "${{BOT_ID}}",
-      "scopes": ["personal", "groupChat"],
+      "scopes": ["groupChat"],
       "supportsFiles": false,
       "isNotificationOnly": false
     }
   ],
 
-  "permissions": ["identity", "messageTeamMembers"],
-
-  "devicePermissions": ["media"],
+  "permissions": ["identity"],
 
   "webApplicationInfo": {
     "id": "${{BOT_ID}}",
