@@ -1,5 +1,6 @@
 """Database model exports."""
 
+from app.models.ai_alert import AIAlert
 from app.models.ai_model_run import AIModelRun
 from app.models.audit_log import AuditLog
 from app.models.breakout_room import BreakoutRoom
@@ -45,6 +46,7 @@ __all__ = [
     "TeamsRosterSync",
     "TeamsUserMapping",
     "User",
+    "AIAlert",
     "AIModelRun",
     "ExtractionElement",
     "MaterialProcessingStatus",
