@@ -123,6 +123,53 @@ sit close together; a real class would spread them more.
 Reproduce with `python -m scripts.topic_difficulty_report <results.csv>` on a
 file written by `evaluate_classifier --out`.
 
+## Confidence
+
+Confidence is how much the model's key-point marking and the answer's
+embedding similarity to the reference agree. It is only worth showing a
+lecturer if a confident label is right more often than an unsure one. On the
+39 readable answers:
+
+| Confidence | Answers | Right | Accuracy |
+|---|---|---|---|
+| Below 0.60 | 12 | 8 | 67% |
+| 0.60 to 0.85 | 10 | 4 | 40% |
+| 0.85 and above | 17 | 14 | **82%** |
+
+Across all labels, confidence separates right labels from wrong ones only a
+little better than chance: the area under the ROC curve is **0.61** (0.5 is a
+coin flip, 1 is perfect). Within one predicted label it does much better:
+
+| Predicted label | Labels | Mean confidence when right | When wrong | Separation |
+|---|---|---|---|---|
+| Mastered | 15 | 0.93 | 0.83 | 0.82 |
+| Partial | 7 | 0.82 | 0.82 | 0.50 |
+| Struggling | 17 | 0.60 | 0.42 | 0.88 |
+
+The reason is that struggling labels sit lower as a group, right or wrong.
+A struggling answer often reuses the lecture's words with the wrong meaning
+("an odds ratio above 1 makes the event less likely"), so it still looks
+similar to the reference. The model marks it struggling, similarity
+disagrees, and confidence drops even though the label is right. So a correct
+struggling label can look less sure than a wrong mastered one.
+
+What this means in use:
+
+- A label at 0.85 or above is right about four times in five and can be
+  shown as is.
+- Confidence should be compared within a label, not across labels: a
+  struggling label at 0.6 is a fairly sure one.
+- Partial confidence tells nothing yet (seven labels, separation 0.5).
+- The most confident mistakes (a21 at 0.95, a08 at 0.93, a30 at 0.92) are the
+  model misjudging the answer outright, which no similarity check catches.
+
+The formula was not changed: tuning it on these same 40 answers would make
+the numbers above meaningless. A proposed fix, for testing on a fresh answer
+set, is to let similarity raise or lower confidence only for mastered labels,
+where a high similarity really does support the label.
+
+Reproduce with `python -m scripts.confidence_report <results.csv>`.
+
 ## Limitations
 
 - **The score is optimistic.** The prompt was adjusted while looking at these
@@ -141,3 +188,5 @@ file written by `evaluate_classifier --out`.
 - Fill `label_nour` and report human agreement (Cohen's kappa).
 - Re-run on a larger model when hardware allows, with the prompt unchanged.
 - Label a fresh set of answers to get an unbiased score.
+- On that fresh set, test confidence that uses similarity only for mastered
+  labels.

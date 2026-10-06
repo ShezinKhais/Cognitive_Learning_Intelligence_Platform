@@ -11,6 +11,8 @@ from app.services.classifier_evaluation import (
     LABELS,
     accuracy,
     cohen_kappa,
+    confidence_buckets,
+    confidence_separation,
     confusion_matrix,
     label_stats,
     macro_f1,
@@ -69,6 +71,43 @@ def test_kappa_is_one_for_identical_labels_and_zero_for_chance():
 def test_mismatched_lengths_are_refused():
     with pytest.raises(ValueError):
         accuracy(["mastered"], ["mastered", "partial"])
+
+
+def test_confidence_buckets_count_right_labels_at_each_level():
+    low, middle, high = confidence_buckets(
+        [0.3, 0.5, 0.6, 0.84, 0.85, 0.95], [True, False, False, False, True, True]
+    )
+
+    assert (low.low, low.high, low.answers, low.right, low.accuracy) == (0.0, 0.6, 2, 1, 0.5)
+    assert (middle.answers, middle.accuracy) == (2, 0.0)
+    assert (high.low, high.high, high.answers, high.accuracy) == (0.85, None, 2, 1.0)
+
+
+def test_an_empty_bucket_has_no_accuracy():
+    [low, high] = confidence_buckets([0.9], [True], edges=(0.5,))
+
+    assert (low.answers, low.accuracy) == (0, None)
+    assert high.answers == 1
+
+
+def test_separation_is_one_when_right_labels_are_always_more_confident():
+    assert confidence_separation([0.9, 0.8, 0.4, 0.3], [True, True, False, False]) == 1.0
+    assert confidence_separation([0.3, 0.9], [True, False]) == 0.0
+
+
+def test_separation_is_a_coin_flip_when_confidence_is_the_same():
+    assert confidence_separation([0.7, 0.7], [True, False]) == 0.5
+
+
+def test_separation_needs_both_right_and_wrong_labels():
+    assert confidence_separation([0.9, 0.4], [True, True]) is None
+
+
+def test_confidences_and_results_must_pair_up():
+    with pytest.raises(ValueError):
+        confidence_buckets([0.9], [True, False])
+    with pytest.raises(ValueError):
+        confidence_separation([0.9, 0.4], [True])
 
 
 def test_every_labelled_answer_belongs_to_a_question_with_a_checklist():
