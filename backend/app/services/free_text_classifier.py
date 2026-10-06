@@ -45,7 +45,7 @@ log = logging.getLogger("clip.free_text_classifier")
 
 # Stored with every result, so a label can be traced to the prompt that made
 # it. Change it whenever CLASSIFIER_PROMPT changes.
-PROMPT_VERSION = "free-text-v2"
+PROMPT_VERSION = "free-text-v3"
 
 # What a student writes when they have nothing to say. Compared after
 # lowercasing and dropping punctuation.
@@ -82,6 +82,11 @@ QUICK_CHECK_CONFIDENCE = 0.95
 # How closely a quoted piece of evidence must match the answer, after case and
 # punctuation are dropped: a model copying a quote may change a word's ending.
 EVIDENCE_MATCH = 85
+# A quote also counts as the student's when this share of its meaningful words
+# is in the answer: a model copying a quote may add a few words of its own.
+EVIDENCE_WORD_SHARE = 0.8
+# How many times the model is asked again when its reply cannot be read.
+MARKING_RETRIES = 1
 
 CLASSIFIER_PROMPT = """You mark a student's short answer against a marking checklist.
 
@@ -117,9 +122,12 @@ cover a point. A point the student gets wrong is missed.
 "evidence" must be words copied exactly from the STUDENT ANSWER, never from
 the model answer or the key points. Use "" when the point is missed.
 
-Example: for the key point "The base layers are frozen", the answer "The whole
-network is retrained from scratch" is {{"verdict": "missed", "evidence": ""}},
-because retraining everything is the opposite of freezing the base layers.
+Examples, for the key point "The base layers are frozen":
+- the answer "We keep the early layers fixed and only retrain the last one" is
+  {{"verdict": "covered", "evidence": "keep the early layers fixed"}}
+- the answer "The whole network is retrained from scratch" is
+  {{"verdict": "missed", "evidence": ""}}, because retraining everything is
+  the opposite of freezing the base layers.
 
 Also decide whether the answer states something factually wrong about the
 topic. If it does, describe the error in a few words; otherwise use null.
@@ -222,17 +230,19 @@ def _json_object(raw: str) -> dict:
         text = text.split("```")[1]
         if text.startswith("json"):
             text = text[4:]
-    candidates = [text]
-    start, end = text.find("{"), text.rfind("}")
-    if 0 <= start < end:
-        candidates.append(text[start : end + 1])
-    for candidate in candidates:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        payload = None
+    if not isinstance(payload, dict):
+        # The first object in the reply, ignoring whatever follows it.
+        start = text.find("{")
         try:
-            payload = json.loads(candidate)
+            payload = json.JSONDecoder().raw_decode(text[start:])[0] if start >= 0 else None
         except json.JSONDecodeError:
-            continue
-        if isinstance(payload, dict):
-            return payload
+            payload = None
+    if isinstance(payload, dict):
+        return payload
     raise ClassificationError(f"model did not return a JSON object: {raw[:200]!r}")
 
 
@@ -246,9 +256,14 @@ def parse_marking(raw: str, point_count: int) -> tuple[tuple[Mark, ...], str | N
 
     marks = []
     for item in items:
-        verdict, evidence = (
-            (item.get("verdict"), item.get("evidence")) if isinstance(item, dict) else (item, None)
-        )
+        if isinstance(item, dict):
+            evidence = item.get("evidence")
+            verdict = item.get("verdict")
+            if verdict is None:
+                # A misspelt key: the verdict is whichever value is one.
+                verdict = next((v for v in item.values() if _is_verdict(v)), None)
+        else:
+            verdict, evidence = item, None
         try:
             coverage = Coverage(str(verdict).strip().lower())
         except ValueError as exc:
@@ -262,6 +277,10 @@ def parse_marking(raw: str, point_count: int) -> tuple[tuple[Mark, ...], str | N
     return tuple(marks), wrong_claim
 
 
+def _is_verdict(value) -> bool:
+    return isinstance(value, str) and value.strip().lower() in set(Coverage)
+
+
 def _plain(text: str) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", text.lower()))
 
@@ -271,7 +290,14 @@ def evidence_in_answer(evidence: str, answer: str) -> bool:
     quote, said = _plain(evidence), _plain(answer)
     if not quote:
         return False
-    return quote in said or fuzz.partial_ratio(quote, said) >= EVIDENCE_MATCH
+    if quote in said or fuzz.partial_ratio(quote, said) >= EVIDENCE_MATCH:
+        return True
+    # Most of its meaningful words in the answer: the student's words, with a
+    # few the model added. An invented quote shares few of them.
+    words = meaningful_words(evidence)
+    if not words:
+        return False
+    return len(words & set(said.split())) / len(words) >= EVIDENCE_WORD_SHARE
 
 
 def checked_coverage(
@@ -285,7 +311,8 @@ def checked_coverage(
     """
     coverage, notes = [], []
     for number, (verdict, evidence) in enumerate(marks, start=1):
-        quoted = evidence is not None and evidence.strip()
+        # "..." or "-" quotes nothing: the model copied the format's placeholder.
+        quoted = evidence is not None and bool(_plain(evidence))
         if verdict == Coverage.MISSED:
             coverage.append(verdict)
         elif quoted and not evidence_in_answer(evidence, answer):
@@ -414,13 +441,7 @@ class FreeTextClassifier:
                 model=None,
             )
 
-        response = await self._chat.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "user", "content": build_classifier_prompt(question, answer)}],
-        )
-        marks, wrong_claim = parse_marking(
-            response.choices[0].message.content or "", len(question.key_points)
-        )
+        marks, wrong_claim = await self._marking(question, answer)
         coverage, notes = checked_coverage(marks, answer)
 
         similarity = await self._similarity(question, answer)
@@ -438,6 +459,31 @@ class FreeTextClassifier:
             model=self.model,
             evidence=tuple(evidence or "" for _, evidence in marks),
         )
+
+    async def _marking(
+        self, question: FreeTextQuestion, answer: str
+    ) -> tuple[tuple[Mark, ...], str | None]:
+        """Ask the model to mark the answer, and once more if its reply cannot
+        be read: a small model sometimes drops a point or misspells a key."""
+        prompt = build_classifier_prompt(question, answer)
+        count = len(question.key_points)
+        for attempt in range(MARKING_RETRIES + 1):
+            response = await self._chat.chat.completions.create(
+                model=self.model, messages=[{"role": "user", "content": prompt}]
+            )
+            try:
+                return parse_marking(response.choices[0].message.content or "", count)
+            except ClassificationError as exc:
+                if attempt == MARKING_RETRIES:
+                    raise
+                log.info("unreadable marking, asking again: %s", exc)
+                prompt = (
+                    build_classifier_prompt(question, answer)
+                    + f"\nYour previous reply could not be used. Reply with JSON only, with "
+                    f'exactly {count} objects in "key_points", one for each key point, in '
+                    f'order, each with "verdict" and "evidence".\n'
+                )
+        raise AssertionError("unreachable")
 
     async def _similarity(self, question: FreeTextQuestion, answer: str) -> float | None:
         """The second signal. Its failure lowers confidence; it does not cost

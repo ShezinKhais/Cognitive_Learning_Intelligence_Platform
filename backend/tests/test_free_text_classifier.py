@@ -39,10 +39,12 @@ C, P, M = Coverage.COVERED, Coverage.PARTLY, Coverage.MISSED
 
 
 class FakeChat:
-    """Replies with a fixed marking and records the prompts it was sent."""
+    """Replies with a fixed marking, or each of a list of them in turn, and
+    records the prompts it was sent."""
 
     def __init__(self, reply):
-        self.reply = reply if isinstance(reply, str) else json.dumps(reply)
+        replies = reply if isinstance(reply, list) else [reply]
+        self.replies = [r if isinstance(r, str) else json.dumps(r) for r in replies]
         self.prompts: list[str] = []
         self.chat = self
 
@@ -52,9 +54,10 @@ class FakeChat:
 
     async def create(self, model, messages):
         self.prompts.append(messages[0]["content"])
+        reply = self.replies[min(len(self.prompts), len(self.replies)) - 1]
 
         class M:
-            content = self.reply
+            content = reply
 
         class Ch:
             message = M()
@@ -312,9 +315,80 @@ async def test_the_quotes_are_kept_with_the_result():
 
 def test_the_prompt_asks_for_quotes_and_its_example_is_not_from_the_labelled_set():
     prompt = build_classifier_prompt(QUESTION, "my answer")
-    example = prompt[prompt.index("Example:") : prompt.index("Also decide")]
+    example = prompt[prompt.index("Examples,") : prompt.index("Also decide")]
 
     assert "Be strict" in prompt
     assert '"evidence"' in prompt
     assert "logistic" not in example.lower()
-    assert PROMPT_VERSION == "free-text-v2"
+    assert '"verdict": "covered", "evidence": "keep the early layers fixed"' in example
+    assert PROMPT_VERSION == "free-text-v3"
+
+
+# -- free-text-v3 ---------------------------------------------------------------
+
+
+async def test_a_placeholder_quote_counts_as_no_quote_not_an_invented_one():
+    # a09: the model copied the format's "..." instead of quoting the student.
+    reply = marking(C, C, C, quote="...")
+
+    result = await classifier(reply).classify(QUESTION, "A full answer.")
+
+    assert result.coverage == (P, P, P)
+    assert not any("not in the answer" in r for r in result.reasons)
+
+
+async def test_a_quote_with_a_few_added_words_is_still_the_students():
+    # a17: the model added "of the outcome" to what the student wrote.
+    reply = marking(C, C, C, quote="OR < 1 means lower odds of the outcome")
+
+    result = await classifier(reply).classify(
+        QUESTION,
+        "OR > 1 means the event is linked to higher odds of the outcome, OR < 1 means lower odds.",
+    )
+
+    assert result.coverage == (C, C, C)
+
+
+async def test_a_reply_followed_by_more_text_is_read():
+    # a05: a valid object with something after it.
+    reply = json.dumps(marking(C, C, C)) + "}\nI hope this helps."
+
+    result = await classifier(reply).classify(QUESTION, "A full answer.")
+
+    assert result.label == ComprehensionLabel.MASTERED
+
+
+async def test_a_misspelt_verdict_key_is_read():
+    # a31: "verdoc" for "verdict".
+    reply = {
+        "key_points": [
+            {"verdict": "missed", "evidence": ""},
+            {"verdoc": "missed", "evidence": ""},
+            {"verdict": "missed", "evidence": ""},
+        ],
+        "wrong_claim": None,
+    }
+
+    result = await classifier(reply).classify(QUESTION, "They are different things.")
+
+    assert result.coverage == (M, M, M)
+
+
+async def test_a_reply_with_too_few_verdicts_is_asked_for_again():
+    # a24 and a33: the model dropped a point.
+    first = {"key_points": [{"verdict": "covered", "evidence": "full answer"}]}
+    marker = classifier([first, marking(C, C, C)])
+
+    result = await marker.classify(QUESTION, "A full answer.")
+
+    assert result.label == ComprehensionLabel.MASTERED
+    assert len(marker._chat.prompts) == 2
+    assert 'exactly 3 objects in "key_points"' in marker._chat.prompts[1]
+
+
+async def test_a_second_unreadable_reply_still_raises():
+    marker = classifier(["not json", "still not json"])
+
+    with pytest.raises(ClassificationError):
+        await marker.classify(QUESTION, "A full answer.")
+    assert len(marker._chat.prompts) == 2
