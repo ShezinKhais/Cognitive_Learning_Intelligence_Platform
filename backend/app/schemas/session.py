@@ -9,7 +9,9 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.content import Difficulty
 
 
 class SessionStatus(StrEnum):
@@ -179,3 +181,29 @@ class ClassComprehensionAlert(BaseModel):
     respondents: int
     threshold: float
     raised_at: datetime
+
+
+class TopicDifficultyOut(BaseModel):
+    """How hard the class found one topic, from its answers' comprehension
+    labels. See app/services/topic_difficulty.py for how each figure is made."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    topic: str
+    questions: int = Field(ge=0)
+    answers: int = Field(ge=0, description="One per student per question, by its newest label.")
+    mastered: int = Field(ge=0)
+    partial: int = Field(ge=0)
+    struggling: int = Field(ge=0)
+    uncertain: int = Field(ge=0, description="Labels below 0.6 confidence. Still counted in full.")
+    score: float | None = Field(
+        ge=0.0,
+        le=1.0,
+        description="0 when every answer was mastered, 1 when every one was struggling. "
+        "Null below 5 answers.",
+    )
+    level: Difficulty | None = Field(description="Null when score is null.")
+    expected: Difficulty | None = Field(
+        description="The difficulty the question generator gave most of the topic's "
+        "questions. Null when evenly split."
+    )

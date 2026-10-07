@@ -1509,6 +1509,97 @@
         "title": "TokenResponse",
         "type": "object"
       },
+      "TopicDifficultyOut": {
+        "description": "How hard the class found one topic, from its answers' comprehension\nlabels. See app/services/topic_difficulty.py for how each figure is made.",
+        "properties": {
+          "answers": {
+            "description": "One per student per question, by its newest label.",
+            "minimum": 0.0,
+            "title": "Answers",
+            "type": "integer"
+          },
+          "expected": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Difficulty"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The difficulty the question generator gave most of the topic's questions. Null when evenly split."
+          },
+          "level": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Difficulty"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when score is null."
+          },
+          "mastered": {
+            "minimum": 0.0,
+            "title": "Mastered",
+            "type": "integer"
+          },
+          "partial": {
+            "minimum": 0.0,
+            "title": "Partial",
+            "type": "integer"
+          },
+          "questions": {
+            "minimum": 0.0,
+            "title": "Questions",
+            "type": "integer"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "0 when every answer was mastered, 1 when every one was struggling. Null below 5 answers.",
+            "title": "Score"
+          },
+          "struggling": {
+            "minimum": 0.0,
+            "title": "Struggling",
+            "type": "integer"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          },
+          "uncertain": {
+            "description": "Labels below 0.6 confidence. Still counted in full.",
+            "minimum": 0.0,
+            "title": "Uncertain",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "topic",
+          "questions",
+          "answers",
+          "mastered",
+          "partial",
+          "struggling",
+          "uncertain",
+          "score",
+          "level",
+          "expected"
+        ],
+        "title": "TopicDifficultyOut",
+        "type": "object"
+      },
       "UserOut": {
         "properties": {
           "consents": {
@@ -3041,6 +3132,54 @@
           }
         },
         "summary": "Student Summary",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/topics": {
+      "get": {
+        "description": "How hard the class found each topic, hardest first. Read from stored\ncomprehension labels, so it works during and after a session. Topics with\ntoo few answers for a level come last.",
+        "operationId": "session_topics_api_v1_sessions__session_id__topics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TopicDifficultyOut"
+                  },
+                  "title": "Response Session Topics Api V1 Sessions  Session Id  Topics Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Session Topics",
         "tags": [
           "sessions"
         ]
