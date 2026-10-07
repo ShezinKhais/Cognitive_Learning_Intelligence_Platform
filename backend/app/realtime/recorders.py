@@ -22,7 +22,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from typing import Protocol, TypeVar
@@ -174,6 +174,11 @@ class QuestionComprehension:
 
     labels: list[str]
     topic: str | None
+    # The classifier's confidence in each label, in step with the respondents.
+    # Empty when it reports none, which the alert's confidence then ignores.
+    confidences: list[float] = field(default_factory=list)
+    # The page or slide the question was written from, for the lecturer.
+    source_slide: int | None = None
 
 
 class ComprehensionSource(Protocol):
