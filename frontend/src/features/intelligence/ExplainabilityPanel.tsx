@@ -23,8 +23,17 @@ interface ExplainabilityPanelProps {
     | number
     | null
 
+  confidenceReasons?:
+    | string[]
+    | null
+
   explanation?:
     | string
+    | null
+
+  explanationSource?:
+    | 'ai'
+    | 'fallback'
     | null
 
   recommendation?:
@@ -40,10 +49,18 @@ export default function ExplainabilityPanel({
   topic,
   classification,
   confidence,
+  confidenceReasons,
   explanation,
+  explanationSource,
   recommendation,
   sources,
 }: ExplainabilityPanelProps) {
+  const usableConfidenceReasons =
+    confidenceReasons?.filter(
+      (reason) =>
+        reason.trim().length > 0,
+    ) ?? []
+
   return (
     <section className="rounded-xl border border-border bg-card p-6">
       <div>
@@ -85,11 +102,45 @@ export default function ExplainabilityPanel({
         </div>
       )}
 
+      {confidenceReasons !== undefined && (
+        <div className="mt-5">
+          <p className="text-xs font-medium text-muted-foreground">
+            Confidence reasons
+          </p>
+
+          {usableConfidenceReasons.length > 0 ? (
+            <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+              {usableConfidenceReasons.map(
+                (reason) => (
+                  <li key={reason}>
+                    {reason}
+                  </li>
+                ),
+              )}
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm text-muted-foreground">
+              Confidence reasons unavailable
+            </p>
+          )}
+        </div>
+      )}
+
       {explanation !== undefined && (
         <div className="mt-5 border-t border-border pt-5">
           <FlagExplanation
             explanation={explanation}
           />
+
+          {explanationSource !== undefined &&
+            explanationSource !== null && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Source:{' '}
+                {explanationSource === 'ai'
+                  ? 'AI explanation'
+                  : 'Safe fallback explanation'}
+              </p>
+            )}
         </div>
       )}
 

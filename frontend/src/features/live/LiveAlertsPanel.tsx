@@ -97,6 +97,10 @@ export default function LiveAlertsPanel({
               const hasIntelligenceDetails =
                 alert.explanation !==
                   undefined ||
+                alert.explanation_source !==
+                  undefined ||
+                alert.confidence_reasons !==
+                  undefined ||
                 alert.recommendation !==
                   undefined
 
@@ -135,8 +139,14 @@ export default function LiveAlertsPanel({
                         confidence={
                           alert.confidence
                         }
+                        confidenceReasons={
+                          alert.confidence_reasons
+                        }
                         explanation={
                           alert.explanation
+                        }
+                        explanationSource={
+                          alert.explanation_source
                         }
                         recommendation={
                           alert.recommendation
