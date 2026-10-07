@@ -10,7 +10,9 @@ import type {
 interface LiveAlertsPanelProps {
   alerts: LiveAlert[]
   sessionNotice: LiveSessionNotice | null
-  onAcknowledge: (alertId: string) => void
+  onAcknowledge: (
+    alertId: string,
+  ) => Promise<void>
 }
 
 function alertKindLabel(
@@ -158,11 +160,11 @@ export default function LiveAlertsPanel({
                   <div className="mt-4 flex justify-end">
                     <button
                       type="button"
-                      onClick={() =>
-                        onAcknowledge(
+                      onClick={() => {
+                        void onAcknowledge(
                           alert.alert_id,
                         )
-                      }
+                      }}
                       className="rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted"
                     >
                       Acknowledge
