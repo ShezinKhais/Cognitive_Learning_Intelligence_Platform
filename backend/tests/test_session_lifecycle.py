@@ -19,9 +19,12 @@ from app.auth.store import (
     LECTURER_ID,
     STUDENT_ID,
 )
+from app.models.comprehension_result import ComprehensionResult
 from app.models.question import Question
 from app.models.session import Session as SessionModel
 from app.models.student import Student
+from app.models.student_response import StudentResponse
+from app.models.user import User
 from app.realtime.classroom import classroom
 from app.schemas.identity import ConsentType, Role
 
@@ -743,7 +746,7 @@ async def test_another_lecturer_cannot_read_a_sessions_engagement_or_alerts(db, 
     session = create_session(client, course)
     sign_in_as(app, await add_lecturer(factory, created), Role.LECTURER)
 
-    for path in ("engagement", "alerts"):
+    for path in ("engagement", "alerts", "topics"):
         response = client.get(f"/api/v1/sessions/{session['id']}/{path}")
         assert response.status_code == 404, path
 
@@ -755,7 +758,7 @@ async def test_an_admin_may_read_any_sessions_engagement_and_alerts(db, app) -> 
     session = create_session(client, course)
     sign_in_as(app, ADMIN_ID, Role.ADMIN)
 
-    for path in ("engagement", "alerts"):
+    for path in ("engagement", "alerts", "topics"):
         response = client.get(f"/api/v1/sessions/{session['id']}/{path}")
         assert response.status_code == 200, path
 
@@ -768,7 +771,7 @@ async def test_a_student_is_refused_engagement_and_alerts(db, app) -> None:
     session = create_session(client, course)
     sign_in_as(app, STUDENT_ID, Role.STUDENT)
 
-    for path in ("engagement", "alerts"):
+    for path in ("engagement", "alerts", "topics"):
         response = client.get(f"/api/v1/sessions/{session['id']}/{path}")
         assert response.status_code == 403, path
 
@@ -781,6 +784,96 @@ async def test_a_session_this_process_is_not_running_reports_nothing(db, app) ->
 
     assert client.get(f"/api/v1/sessions/{session['id']}/engagement").json() == []
     assert client.get(f"/api/v1/sessions/{session['id']}/alerts").json() == []
+
+
+async def test_topics_report_how_hard_the_class_found_each_one(db, app) -> None:
+    client, factory, created = db
+    course = await add_course(factory, created)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    session = create_session(client, course)
+    session_id = UUID(session["id"])
+    hard = await add_question(db, course, LECTURER_ID, status="delivered")
+    unrated = await add_question(db, course, LECTURER_ID, status="delivered")
+
+    async with factory() as seed:
+        hard_row = await seed.get(Question, hard)
+        hard_row.topic, hard_row.difficulty = "Recursion", "easy"
+        (await seed.get(Question, unrated)).topic = "Loops"
+        students = []
+        for _ in range(5):
+            user = User(name="Topic Student", role="student", email=f"{uuid4().hex}@t.test")
+            seed.add(user)
+            await seed.flush()
+            created["user"].append(user.user_id)
+            student = Student(
+                user_id=user.user_id,
+                course_id=course.id,
+                consent_status="granted",
+                enrolled_at=datetime.now(UTC).date(),
+            )
+            seed.add(student)
+            await seed.flush()
+            students.append(student.student_id)
+        # Five struggling answers on Recursion, one mastered answer on Loops.
+        answers = [(s, hard, "struggling") for s in students] + [(students[0], unrated, "mastered")]
+        for student_id, question_id, label in answers:
+            response = StudentResponse(
+                session_id=session_id,
+                student_id=student_id,
+                question_id=question_id,
+                selected_option=1,
+            )
+            seed.add(response)
+            await seed.flush()
+            seed.add(
+                ComprehensionResult(
+                    response_id=response.response_id,
+                    label=label,
+                    confidence_score=1.0,
+                    score=0.0 if label == "struggling" else 1.0,
+                    ai_feedback_text="",
+                )
+            )
+        await seed.commit()
+
+    response = client.get(f"/api/v1/sessions/{session_id}/topics")
+
+    assert response.status_code == 200, response.text
+    assert response.json() == [
+        {
+            "topic": "Recursion",
+            "questions": 1,
+            "answers": 5,
+            "mastered": 0,
+            "partial": 0,
+            "struggling": 5,
+            "uncertain": 0,
+            "score": 1.0,
+            "level": "hard",
+            "expected": "easy",
+        },
+        {
+            "topic": "Loops",
+            "questions": 1,
+            "answers": 1,
+            "mastered": 1,
+            "partial": 0,
+            "struggling": 0,
+            "uncertain": 0,
+            "score": None,
+            "level": None,
+            "expected": "medium",
+        },
+    ]
+
+
+async def test_a_session_with_no_labelled_answers_has_no_topics(db, app) -> None:
+    client, factory, created = db
+    course = await add_course(factory, created)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    session = create_session(client, course)
+
+    assert client.get(f"/api/v1/sessions/{session['id']}/topics").json() == []
 
 
 async def test_engagement_reports_the_student_id_not_the_user_id(db, app) -> None:

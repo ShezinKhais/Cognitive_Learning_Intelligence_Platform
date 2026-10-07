@@ -23,13 +23,13 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.content import MaterialStatus
-from app.schemas.session import EngagementStatus, SessionStatus
+from app.schemas.session import EngagementStatus, SessionStatus, ShownText
 
 # Client to server fields are the one part of this contract an unauthenticated
 # or hostile caller controls, so the string ones are bounded here. Without a
@@ -272,11 +272,30 @@ class EngagementUpdatePayload(BaseModel):
 
 
 class AlertRaisedPayload(BaseModel):
+    """An alert for the lecturer, with why it was raised and what to do.
+
+    Every alert carries a reason, an explanation and a recommendation, none of
+    them blank, so the lecturer can see why it was raised and how far to trust
+    it. See app/services/ai_explainability.py for how each is built.
+    """
+
     alert_id: UUID
     kind: AlertKind
-    message: str
-    reason: str = Field(description="Plain-language justification. Required, never empty.")
+    message: ShownText
+    reason: ShownText = Field(
+        description="Plain-language justification, built from the counts behind the alert."
+    )
     confidence: float = Field(ge=0.0, le=1.0)
+    explanation: ShownText = Field(
+        description="A fuller account. A model's, once screened, else the automatic one."
+    )
+    explanation_source: Literal["ai", "fallback"] = Field(
+        description="Whether the explanation was written by a model or is the automatic fallback."
+    )
+    confidence_reasons: list[ShownText] = Field(
+        default_factory=list, description="Why the confidence is what it is."
+    )
+    recommendation: ShownText = Field(description="What the lecturer might do about it.")
 
 
 class MaterialProgressPayload(BaseModel):

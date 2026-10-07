@@ -11,7 +11,7 @@ from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -178,6 +178,31 @@ async def test_the_label_reaches_the_comprehension_alert(database, question):
 
     assert found.labels == ["mastered"]
     assert found.topic == "Neural networks"
+
+
+async def test_the_reader_brings_the_classifiers_confidence_and_the_slide(database, question):
+    async with database() as db:
+        await db.execute(
+            update(Question).where(Question.question_id == question.question).values(source_slide=4)
+        )
+        await db.commit()
+    await live_wiring._store_response(**answer(question, selected_option=1, is_correct=True))
+
+    found = await DatabaseComprehensionSource().question_labels(question.session, question.question)
+
+    assert found.confidences == [1.0]
+    assert found.source_slide == 4
+
+
+async def test_a_question_that_is_not_there_has_no_topic_or_slide(database):
+    found = await DatabaseComprehensionSource().question_labels(uuid.uuid4(), uuid.uuid4())
+
+    assert (found.labels, found.confidences, found.topic, found.source_slide) == (
+        [],
+        [],
+        None,
+        None,
+    )
 
 
 async def test_free_text_is_stored_without_a_label(database, question):

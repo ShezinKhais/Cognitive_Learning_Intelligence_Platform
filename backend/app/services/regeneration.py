@@ -21,6 +21,7 @@ from app.core.errors import ConflictError, ServiceUnavailableError
 from app.models.question import Question
 from app.repositories.material_repository import MaterialRepository
 from app.repositories.question_repository import QuestionRepository
+from app.schemas.content import QuestionType
 from app.services.extraction import ContentChunk
 from app.services.material_seams import DraftQuestion, QuestionGenerator
 from app.services.material_store import question_row
@@ -63,6 +64,9 @@ async def regenerate(
             {"material_id": str(material_id)},
         )
 
+    # A replacement keeps the type of the question it replaces: a lecturer who
+    # rejects one short-answer question has not asked for a multiple choice one.
+    question_type = QuestionType(question.question_type)
     chunks = [
         ContentChunk(
             chunk_id=chunk.chunk_id,
@@ -78,14 +82,16 @@ async def regenerate(
     # so a lecturer regenerating a batch cannot starve every other request.
     await session.commit()
     try:
-        drafts = await generator.generate(material_id, chunks, count=REPLACEMENT_CANDIDATES)
+        drafts = await generator.generate(
+            material_id, chunks, count=REPLACEMENT_CANDIDATES, question_type=question_type
+        )
     except Exception:
         log.exception("regeneration failed for question %s", question.question_id)
         raise ServiceUnavailableError(
             "The question generator did not respond. Try again shortly.", {}
         ) from None
 
-    replacement = _first_usable(drafts, question.question_text)
+    replacement = _first_usable(drafts, question.question_text, question_type)
     if replacement is None:
         raise ServiceUnavailableError(
             "No usable replacement was generated this time. Try again.",
@@ -116,12 +122,18 @@ def _require_draft(question: Question) -> None:
         )
 
 
-def _first_usable(drafts, replaced_prompt: str) -> DraftQuestion | None:
+def _first_usable(
+    drafts, replaced_prompt: str, question_type: QuestionType
+) -> DraftQuestion | None:
     for draft in drafts:
         try:
             problem = draft.problem()
         except Exception:
             continue
-        if problem is None and not _same_question(draft.prompt, replaced_prompt):
+        if (
+            problem is None
+            and draft.type == question_type
+            and not _same_question(draft.prompt, replaced_prompt)
+        ):
             return draft
     return None
