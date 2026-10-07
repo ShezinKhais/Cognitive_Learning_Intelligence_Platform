@@ -9,6 +9,7 @@ import {
 
 import { ApiError } from '../api'
 import SignOutButton from '../components/SignOutButton'
+import TopicRecoveryPanel from '../features/intelligence/TopicRecoveryPanel'
 import LiveAlertsPanel from '../features/live/LiveAlertsPanel'
 import ManualQuestionTrigger from '../features/live/ManualQuestionTrigger'
 import {
@@ -961,6 +962,10 @@ export default function LecturerLiveSessionPage() {
               </div>
             )}
           </section>
+
+          <TopicRecoveryPanel
+            topics={[]}
+          />
 
           <LiveAlertsPanel
             alerts={alerts}
