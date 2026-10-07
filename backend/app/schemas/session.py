@@ -7,9 +7,14 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
+
+# Text a lecturer reads. Blank is not text: an alert with a blank reason, or
+# with only whitespace for one, would tell the lecturer nothing.
+ShownText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
 class SessionStatus(StrEnum):
@@ -172,6 +177,9 @@ class StudentSessionSummary(BaseModel):
 
 
 class ClassComprehensionAlert(BaseModel):
+    # The id the lecturer's alert.raised event carried, so a reloaded page and
+    # the live stream refer to one alert.
+    alert_id: UUID
     session_id: UUID
     question_id: UUID
     topic: str | None
@@ -179,3 +187,10 @@ class ClassComprehensionAlert(BaseModel):
     respondents: int
     threshold: float
     raised_at: datetime
+    message: ShownText
+    reason: ShownText
+    confidence: float = Field(ge=0.0, le=1.0)
+    explanation: ShownText
+    explanation_source: Literal["ai", "fallback"]
+    confidence_reasons: list[ShownText] = Field(default_factory=list)
+    recommendation: ShownText
