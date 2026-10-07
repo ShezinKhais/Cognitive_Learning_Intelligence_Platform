@@ -4,8 +4,14 @@ import FlagExplanation from './FlagExplanation'
 import RecommendationCard from './RecommendationCard'
 import SourceCitationList from './SourceCitationList'
 
+import {
+  explanationSourceLabel,
+  usableConfidenceReasons,
+} from './intelligenceDisplay'
+
 import type {
   ComprehensionClassification,
+  ExplanationSource,
 } from './intelligenceDisplay'
 
 import type {
@@ -32,8 +38,7 @@ interface ExplainabilityPanelProps {
     | null
 
   explanationSource?:
-    | 'ai'
-    | 'fallback'
+    | ExplanationSource
     | null
 
   recommendation?:
@@ -55,11 +60,10 @@ export default function ExplainabilityPanel({
   recommendation,
   sources,
 }: ExplainabilityPanelProps) {
-  const usableConfidenceReasons =
-    confidenceReasons?.filter(
-      (reason) =>
-        reason.trim().length > 0,
-    ) ?? []
+  const confidenceReasonsToShow =
+    usableConfidenceReasons(
+      confidenceReasons,
+    )
 
   return (
     <section className="rounded-xl border border-border bg-card p-6">
@@ -108,9 +112,9 @@ export default function ExplainabilityPanel({
             Confidence reasons
           </p>
 
-          {usableConfidenceReasons.length > 0 ? (
+          {confidenceReasonsToShow.length > 0 ? (
             <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-              {usableConfidenceReasons.map(
+              {confidenceReasonsToShow.map(
                 (reason) => (
                   <li key={reason}>
                     {reason}
@@ -136,9 +140,9 @@ export default function ExplainabilityPanel({
             explanationSource !== null && (
               <p className="mt-2 text-xs text-muted-foreground">
                 Source:{' '}
-                {explanationSource === 'ai'
-                  ? 'AI explanation'
-                  : 'Safe fallback explanation'}
+                {explanationSourceLabel(
+                  explanationSource,
+                )}
               </p>
             )}
         </div>

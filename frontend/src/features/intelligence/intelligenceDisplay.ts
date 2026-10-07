@@ -3,6 +3,10 @@ export type ComprehensionClassification =
   | 'partial'
   | 'struggling'
 
+export type ExplanationSource =
+  | 'ai'
+  | 'fallback'
+
 export function classificationLabel(
   classification:
     | ComprehensionClassification
@@ -77,4 +81,37 @@ export function recommendationText(
   }
 
   return recommendation.trim()
+}
+
+export function explanationSourceLabel(
+  source:
+    | ExplanationSource
+    | null
+    | undefined,
+): string {
+  if (source === 'ai') {
+    return 'AI explanation'
+  }
+
+  if (source === 'fallback') {
+    return 'Safe fallback explanation'
+  }
+
+  return 'Explanation source unavailable'
+}
+
+export function usableConfidenceReasons(
+  reasons:
+    | string[]
+    | null
+    | undefined,
+): string[] {
+  if (!reasons) {
+    return []
+  }
+
+  return reasons.filter(
+    (reason) =>
+      reason.trim().length > 0,
+  )
 }
