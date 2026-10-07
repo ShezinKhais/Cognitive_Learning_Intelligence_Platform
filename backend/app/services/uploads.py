@@ -139,6 +139,7 @@ def get_material_pipeline() -> MaterialPipeline:
         generator=QuestionGenerator(
             gateway.chat_client("question_generation", **background),
             settings.ollama_model,
+            free_text=settings.free_text_questions_enabled,
         ),
         store=DatabaseMaterialStore(),
     )

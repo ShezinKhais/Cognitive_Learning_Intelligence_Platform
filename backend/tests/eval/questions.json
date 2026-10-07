@@ -1,0 +1,64 @@
+[
+  {
+    "question_id": "q1",
+    "topic": "What is logistic regression",
+    "source_slide": 2,
+    "question_text": "In your own words, what does logistic regression predict, and why is its output always between 0 and 1?",
+    "reference_answer": "Logistic regression predicts the probability that an event happens, such as whether someone voted or not, from a set of independent variables. Because the output is a probability, it is always between 0 and 1.",
+    "key_points": [
+      "It predicts the probability of an event or class",
+      "The output is a probability, so it is bounded between 0 and 1"
+    ],
+    "source_excerpt": "Logistic regression estimates the probability of an event occurring, such as voted or didn't vote, based on a given dataset of independent variables. Since the outcome is a probability, the dependent variable is bounded between 0 and 1."
+  },
+  {
+    "question_id": "q2",
+    "topic": "Binary classification threshold",
+    "source_slide": 3,
+    "question_text": "How does a binary logistic regression model turn a predicted probability into a class of 0 or 1?",
+    "reference_answer": "It compares the probability with a threshold of 0.5. A probability below 0.5 predicts class 0 and a probability above 0.5 predicts class 1.",
+    "key_points": [
+      "It uses a threshold of 0.5",
+      "Below the threshold predicts 0, above predicts 1"
+    ],
+    "source_excerpt": "For binary classification, a probability less than .5 will predict 0 while a probability greater than 0 will predict 1."
+  },
+  {
+    "question_id": "q3",
+    "topic": "Interpreting odds ratios",
+    "source_slide": 4,
+    "question_text": "What does an odds ratio greater than 1 mean, and what does an odds ratio less than 1 mean?",
+    "reference_answer": "An odds ratio greater than 1 means the event is associated with higher odds of the outcome. An odds ratio less than 1 means the event is associated with lower odds of the outcome.",
+    "key_points": [
+      "Greater than 1 means higher odds of the outcome",
+      "Less than 1 means lower odds of the outcome"
+    ],
+    "source_excerpt": "If the OR is greater than 1, then the event is associated with a higher odds of generating a specific outcome. Conversely, if the OR is less than 1, then the event is associated with a lower odds of that outcome occurring."
+  },
+  {
+    "question_id": "q4",
+    "topic": "Types of logistic regression",
+    "source_slide": 5,
+    "question_text": "What is the difference between multinomial and ordinal logistic regression? Give an example of each.",
+    "reference_answer": "Both are used when the response has three or more possible outcomes. In multinomial logistic regression the outcomes have no order, for example which film genre someone prefers. In ordinal logistic regression the outcomes have a defined order, for example grades from A to F or a rating from 1 to 5.",
+    "key_points": [
+      "Both have three or more possible outcomes",
+      "Multinomial outcomes have no order, with a valid example",
+      "Ordinal outcomes have a defined order, with a valid example"
+    ],
+    "source_excerpt": "Multinomial logistic regression: the dependent variable has three or more possible outcomes; however, these values have no specified order. Ordinal logistic regression: the response variable has three or more possible outcomes, but in this case, these values do have a defined order. Examples of ordinal responses include grading scales from A to F or rating scales from 1 to 5."
+  },
+  {
+    "question_id": "q5",
+    "topic": "Logistic regression and machine learning",
+    "source_slide": 6,
+    "question_text": "Why can logistic regression overfit, and what is typically used to reduce it?",
+    "reference_answer": "Logistic regression can overfit when there are many predictor variables, which is high dimensionality. Regularization is used to reduce this by penalizing large coefficients.",
+    "key_points": [
+      "Overfitting happens when there are many predictor variables (high dimensionality)",
+      "Regularization is used to reduce it",
+      "Regularization penalizes large coefficients"
+    ],
+    "source_excerpt": "Logistic regression can also be prone to overfitting, particularly when there is a high number of predictor variables within the model. Regularization is typically used to penalize parameters large coefficients when the model suffers from high dimensionality."
+  }
+]

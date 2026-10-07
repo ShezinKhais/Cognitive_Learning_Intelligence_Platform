@@ -58,6 +58,10 @@ class DraftQuestion:
     topic: str | None = None
     source_slide: int | None = None
     source_excerpt: str | None = None
+    # Free text only: the model answer and the points it makes, which the
+    # free-text classifier marks a student's answer against.
+    reference_answer: str | None = None
+    key_points: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         # A generator building drafts from model JSON passes "mcq", not the
@@ -67,6 +71,8 @@ class DraftQuestion:
         object.__setattr__(self, "difficulty", Difficulty(self.difficulty))
         if self.options is not None and not isinstance(self.options, tuple):
             object.__setattr__(self, "options", tuple(self.options))
+        if self.key_points is not None and not isinstance(self.key_points, tuple):
+            object.__setattr__(self, "key_points", tuple(self.key_points))
 
     def problem(self) -> str | None:
         """Why this draft cannot be stored, or None when it can."""
@@ -86,6 +92,8 @@ class DraftQuestion:
                 or not 0 <= self.correct_option < len(self.options)
             ):
                 return "has an answer key that points at no option"
+            if self.reference_answer is not None or self.key_points is not None:
+                return "is multiple choice but carries free text fields"
         elif self.options is not None or self.correct_option is not None:
             return "is free text but carries multiple choice fields"
         if self.source_slide is not None and self.source_slide < 1:
@@ -146,7 +154,11 @@ class QuestionGenerator(Protocol):
     model: str
 
     async def generate(
-        self, material_id: UUID, chunks: Sequence[ContentChunk], count: int | None = None
+        self,
+        material_id: UUID,
+        chunks: Sequence[ContentChunk],
+        count: int | None = None,
+        question_type: QuestionType | None = None,
     ) -> Sequence[DraftQuestion]: ...
 
 

@@ -120,6 +120,11 @@ class Settings(BaseSettings):
     # leaves the model to unload.
     ai_keep_warm_seconds: float = Field(default=240.0, ge=0)
 
+    # Short-answer questions alongside the multiple choice ones, one for every
+    # three. Off until the question table stores reference answers and key
+    # points: one saved without them has nothing to be marked against.
+    free_text_questions_enabled: bool = False
+
     # Written by `teams app create --env .env`
     client_id: str = ""
     client_secret: str = ""
