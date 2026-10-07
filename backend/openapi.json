@@ -1,6 +1,178 @@
 {
   "components": {
     "schemas": {
+      "AlertOut": {
+        "description": "An alert kept for the lecturer: what was raised, why, what to do about it,\nand whether anyone has seen it.\n\nServed from the stored alert, so it is there after a refresh and after the\nsession. The three figures at the end are those of a topic difficulty alert,\nnull for any other kind.",
+        "properties": {
+          "acknowledged_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledged At"
+          },
+          "acknowledged_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whoever acknowledged it first. The first one is kept.",
+            "title": "Acknowledged By"
+          },
+          "alert_id": {
+            "format": "uuid",
+            "title": "Alert Id",
+            "type": "string"
+          },
+          "confidence": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "confidence_reasons": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Confidence Reasons",
+            "type": "array"
+          },
+          "correct_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correct Ratio"
+          },
+          "explanation": {
+            "minLength": 1,
+            "title": "Explanation",
+            "type": "string"
+          },
+          "explanation_source": {
+            "enum": [
+              "ai",
+              "fallback"
+            ],
+            "title": "Explanation Source",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "question_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Id"
+          },
+          "raised_at": {
+            "format": "date-time",
+            "title": "Raised At",
+            "type": "string"
+          },
+          "reason": {
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "recommendation": {
+            "minLength": 1,
+            "title": "Recommendation",
+            "type": "string"
+          },
+          "respondents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Respondents"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "acknowledged"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic"
+          }
+        },
+        "required": [
+          "alert_id",
+          "session_id",
+          "question_id",
+          "kind",
+          "topic",
+          "message",
+          "reason",
+          "confidence",
+          "explanation",
+          "explanation_source",
+          "recommendation",
+          "status",
+          "raised_at"
+        ],
+        "title": "AlertOut",
+        "type": "object"
+      },
       "Body_import_roster_api_v1_admin_roster_post": {
         "properties": {
           "file": {
@@ -41,115 +213,6 @@
           "file"
         ],
         "title": "Body_upload_material_api_v1_materials_post",
-        "type": "object"
-      },
-      "ClassComprehensionAlert": {
-        "properties": {
-          "alert_id": {
-            "format": "uuid",
-            "title": "Alert Id",
-            "type": "string"
-          },
-          "confidence": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Confidence",
-            "type": "number"
-          },
-          "confidence_reasons": {
-            "items": {
-              "minLength": 1,
-              "type": "string"
-            },
-            "title": "Confidence Reasons",
-            "type": "array"
-          },
-          "correct_ratio": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Correct Ratio",
-            "type": "number"
-          },
-          "explanation": {
-            "minLength": 1,
-            "title": "Explanation",
-            "type": "string"
-          },
-          "explanation_source": {
-            "enum": [
-              "ai",
-              "fallback"
-            ],
-            "title": "Explanation Source",
-            "type": "string"
-          },
-          "message": {
-            "minLength": 1,
-            "title": "Message",
-            "type": "string"
-          },
-          "question_id": {
-            "format": "uuid",
-            "title": "Question Id",
-            "type": "string"
-          },
-          "raised_at": {
-            "format": "date-time",
-            "title": "Raised At",
-            "type": "string"
-          },
-          "reason": {
-            "minLength": 1,
-            "title": "Reason",
-            "type": "string"
-          },
-          "recommendation": {
-            "minLength": 1,
-            "title": "Recommendation",
-            "type": "string"
-          },
-          "respondents": {
-            "title": "Respondents",
-            "type": "integer"
-          },
-          "session_id": {
-            "format": "uuid",
-            "title": "Session Id",
-            "type": "string"
-          },
-          "threshold": {
-            "title": "Threshold",
-            "type": "number"
-          },
-          "topic": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Topic"
-          }
-        },
-        "required": [
-          "alert_id",
-          "session_id",
-          "question_id",
-          "topic",
-          "correct_ratio",
-          "respondents",
-          "threshold",
-          "raised_at",
-          "message",
-          "reason",
-          "confidence",
-          "explanation",
-          "explanation_source",
-          "recommendation"
-        ],
-        "title": "ClassComprehensionAlert",
         "type": "object"
       },
       "ComprehensionLabel": {
@@ -2542,7 +2605,7 @@
     },
     "/api/v1/sessions/{session_id}/alerts": {
       "get": {
-        "description": "Class comprehension alerts raised so far in a running session.",
+        "description": "The alerts raised in a session, oldest first, with why, what to do about\nthem and whether a lecturer has acknowledged them.\n\nRead from the stored alerts, so it works during and after a session and\nafter a refresh.",
         "operationId": "session_alerts_api_v1_sessions__session_id__alerts_get",
         "parameters": [
           {
@@ -2554,6 +2617,28 @@
               "title": "Session Id",
               "type": "string"
             }
+          },
+          {
+            "description": "Only the alerts in this state.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "open",
+                    "acknowledged"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only the alerts in this state.",
+              "title": "Status"
+            }
           }
         ],
         "responses": {
@@ -2562,7 +2647,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/ClassComprehensionAlert"
+                    "$ref": "#/components/schemas/AlertOut"
                   },
                   "title": "Response Session Alerts Api V1 Sessions  Session Id  Alerts Get",
                   "type": "array"
@@ -2583,6 +2668,60 @@
           }
         },
         "summary": "Session Alerts",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/alerts/{alert_id}/acknowledge": {
+      "post": {
+        "description": "Mark an alert as seen. The lecturer who runs the session, or an admin.\n\nThe first acknowledgement is kept: acknowledging an alert again, as\nanyone, returns it unchanged. An alert from another session is reported as\nmissing.",
+        "operationId": "acknowledge_session_alert_api_v1_sessions__session_id__alerts__alert_id__acknowledge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "alert_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Alert Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Acknowledge Session Alert",
         "tags": [
           "sessions"
         ]

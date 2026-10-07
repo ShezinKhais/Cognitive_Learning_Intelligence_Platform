@@ -444,9 +444,15 @@ class _Recorder:
         return None
 
 
+class _AlertKeeper:
+    async def record_alert(self, alert) -> None:  # noqa: ANN001
+        return None
+
+
 def _wired(room: Classroom) -> None:
     room.recorder = room.prompt_recorder = room.close_recorder = _Recorder()  # type: ignore[assignment]
     room.participant_recorder = _Recorder()  # type: ignore[assignment]
+    room.alert_recorder = _AlertKeeper()  # type: ignore[assignment]
 
 
 def test_development_is_told_what_live_sessions_will_not_store(
@@ -462,6 +468,7 @@ def test_development_is_told_what_live_sessions_will_not_store(
     assert "prompt outcomes are not stored" in caplog.text
     assert "question closes are not stored" in caplog.text
     assert "who attended is not stored" in caplog.text
+    assert "alerts are not stored" in caplog.text
 
 
 def test_production_will_not_start_without_somewhere_to_store_answers(

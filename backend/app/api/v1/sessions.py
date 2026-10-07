@@ -10,9 +10,10 @@ bodies are owned by:
 
 from __future__ import annotations
 
+from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.api.deps import (
     CurrentUser,
@@ -28,7 +29,7 @@ from app.repositories.student_repository import StudentRepository
 from app.schemas.common import Page
 from app.schemas.identity import ConsentType, Role
 from app.schemas.session import (
-    ClassComprehensionAlert,
+    AlertOut,
     DeliverableQuestionOut,
     EngagementOut,
     ResponseOut,
@@ -37,7 +38,7 @@ from app.schemas.session import (
     SessionReadinessOut,
     StudentSessionSummary,
 )
-from app.services import session_lifecycle
+from app.services import alert_store, session_lifecycle
 from app.services.session_access import may_view_session_analytics
 
 # Running a session is staff work. Students reach a session over the socket.
@@ -217,17 +218,43 @@ async def session_engagement(
     ]
 
 
-@router.get(
-    "/{session_id}/alerts", response_model=list[ClassComprehensionAlert], dependencies=_staff
-)
+@router.get("/{session_id}/alerts", response_model=list[AlertOut], dependencies=_staff)
 async def session_alerts(
     session_id: UUID,
     principal: CurrentUser,
     db: DbSession,
-) -> list[ClassComprehensionAlert]:
-    """Class comprehension alerts raised so far in a running session."""
+    status_filter: Annotated[
+        Literal["open", "acknowledged"] | None,
+        Query(alias="status", description="Only the alerts in this state."),
+    ] = None,
+) -> list[AlertOut]:
+    """The alerts raised in a session, oldest first, with why, what to do about
+    them and whether a lecturer has acknowledged them.
+
+    Read from the stored alerts, so it works during and after a session and
+    after a refresh."""
     await _analytics_session(db, principal, session_id)
-    return classroom.alerts(session_id)
+    return await alert_store.list_session_alerts(db, session_id, status=status_filter)
+
+
+@router.post(
+    "/{session_id}/alerts/{alert_id}/acknowledge",
+    response_model=AlertOut,
+    dependencies=_staff,
+)
+async def acknowledge_session_alert(
+    session_id: UUID,
+    alert_id: UUID,
+    principal: CurrentUser,
+    db: DbSession,
+) -> AlertOut:
+    """Mark an alert as seen. The lecturer who runs the session, or an admin.
+
+    The first acknowledgement is kept: acknowledging an alert again, as
+    anyone, returns it unchanged. An alert from another session is reported as
+    missing."""
+    await _analytics_session(db, principal, session_id)
+    return await alert_store.acknowledge_session_alert(db, session_id, alert_id, principal.user_id)
 
 
 async def _analytics_session(db: DbSession, principal: CurrentUser, session_id: UUID) -> None:

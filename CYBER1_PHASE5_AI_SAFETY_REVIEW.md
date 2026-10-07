@@ -339,3 +339,101 @@ a test, and the final run above is on the code in this PR.
 - **Cyber 2 (Aliyeh).** The explanation fields above are ready for the alert
   views in PR #128, and `explanation_source` lets the lecturer see whether they
   are reading a model's words.
+
+---
+
+## 8. Addendum: alerts that survive a refresh, and acknowledging them
+
+Branch `hunain-phase-5-alerts`, built on `main` with #129 (this review's code) and
+#131 (BBIS's alert, recommendation and classification stores) merged in. It exists
+because the Cyber 2 dashboard needs two things the alert path did not give it: an
+alert that is still there after a refresh or once the session is over, and a way for
+a lecturer to say they have seen it.
+
+### 8.1 What was missing
+
+| Need | State before |
+|---|---|
+| Alerts after a refresh or post-session | `GET /sessions/{id}/alerts` returned the in-memory list of the process running the session: empty once the session ended, and empty after a restart |
+| Acknowledging | BBIS's `acknowledge_alert()` existed (#131) and nothing called it. There was no route |
+| Saving | Nothing saved a live alert. `save_alert()` existed and nothing called it |
+
+### 8.2 What it does
+
+- **Keeping.** `Classroom` gains an `AlertRecorder` seam (like the answer, close and
+  prompt recorders). When a class comprehension alert is raised it is handed to the
+  recorder **before** the lecturer is sent the event, so the alert they can click
+  already exists. `alert_store.store_comprehension_alert` writes it through
+  `alert_repository.save_alert` under the **same `alert_id`** the lecturer's screen
+  received. The reason, explanation, recommendation and confidence reasons go in the
+  row's `details` beside the figures it rests on, so no schema change was needed.
+  A failure or a hang is bounded by the recorder timeout and logged
+  (`could not store an alert`); the alert still reaches the lecturer. Production now
+  refuses to start without an `AlertRecorder`, like the others, and `install_live_store`
+  registers it.
+- **Listing.** `GET /sessions/{id}/alerts` reads the stored alerts, oldest first, with
+  an optional `?status=open|acknowledged`. It works during a session, after it, and
+  after a restart.
+- **Acknowledging.** `POST /sessions/{id}/alerts/{alert_id}/acknowledge` calls
+  `acknowledge_alert()` and returns the alert.
+
+Both routes return `AlertOut`: `alert_id`, `session_id`, `question_id`, `kind`, `topic`,
+`message`, `reason`, `confidence`, `explanation`, `explanation_source`,
+`confidence_reasons`, `recommendation`, `status` (`open` or `acknowledged`),
+`raised_at`, `acknowledged_by`, `acknowledged_at`, and for a topic difficulty alert
+`respondents`, `threshold` and `correct_ratio`. Those last three, and `question_id`,
+`topic`, `raised_at`, are the fields the old list route returned, so nothing it
+returned is gone.
+
+### 8.3 Who may do what
+
+| Rule | Result |
+|---|---|
+| Not signed in | 401 |
+| A student | 403 on both routes |
+| A lecturer without terms consent | 403 (the router's own consent check) |
+| A lecturer who does not run the session | 404, the same answer as for a session that does not exist, so a session id cannot be probed |
+| The lecturer who runs it, or an admin | Allowed, during the session and after it |
+| An alert id that belongs to another session, **even one the same lecturer runs** | 404, and the alert is untouched: the alert is looked up by its id and the session in the route together |
+| An alert that does not exist | 404 |
+| Acknowledging an acknowledged alert, as anyone | 200, unchanged: the first acknowledgement, who and when, is kept |
+| Two acknowledgements at once | One winner, both told who won |
+
+### 8.4 A stored alert always has something to read
+
+`alert_from_row` never raises on a row it did not expect, and never returns one with
+nothing to read. A reason, explanation, recommendation or confidence reasons that are
+missing, blank or of the wrong type are replaced with the fallback explanation for the
+alert's kind, an unknown status reads as `open`, a confidence outside zero to one is
+held to it, and an unreadable figure is null rather than wrong. So an alert written by
+other code, or by an older version of this one, still satisfies "every AI alert has a
+safe reason and fallback explanation" when it is read.
+
+### 8.5 Topic recovery is not here
+
+The topic recovery data is Luna's: PR #132, `GET /sessions/{session_id}/topics`,
+stacked on her #130. It returns the ten fields the dashboard asked for, to the same
+lecturer-or-admin audience, from stored labels. This branch does not touch it.
+
+### 8.6 Residual risks
+
+| # | Risk | Owner |
+|---|---|---|
+| R9 | A failed write is only logged. The alert still reaches the lecturer live, but is not in the list after a refresh and cannot be acknowledged. A database that cannot take this write is also failing to take answers, so this is the same outage | General CS |
+| R10 | Acknowledging is not announced to other staff screens. A second lecturer's page learns of it on its next read | Cyber 2 |
+| R11 | Alerts raised before this deployed are not stored. Nothing backfills | - |
+| R12 | Only class comprehension alerts are written. A student or room alert needs its own writer, and will be listed and acknowledged by these routes unchanged | - |
+
+### 8.7 Verification
+
+- 1320 backend tests pass against Postgres 16 with pgvector: 1275 on `main` with #129 and
+  #131 merged in, and 45 new. `ruff check`, `ruff format --check` and
+  `export_contract.py --check` are clean, and there is one migration head.
+- Each of 35 guards was disabled in turn (the session scoping of an acknowledgement, the
+  commit, each access rule, each fallback on the read side, the keeping of an alert before
+  it is sent, the wiring check and the startup registration), and a test failed every time.
+  A first run caught 34 of 35: a blank stored reason was not tested, since the table's own
+  check stops one being written. That test was added, and all 35 are caught.
+- Contract: one new path, `POST /sessions/{session_id}/alerts/{alert_id}/acknowledge`, and
+  `GET /sessions/{session_id}/alerts` now returns `AlertOut` (a superset of what it returned),
+  with an optional `status` query parameter. `events.schema.json` is unchanged by this branch.
