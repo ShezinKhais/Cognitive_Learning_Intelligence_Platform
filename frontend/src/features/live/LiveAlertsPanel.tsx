@@ -1,4 +1,5 @@
 import ConfidenceIndicator from '../intelligence/ConfidenceIndicator'
+import ExplainabilityPanel from '../intelligence/ExplainabilityPanel'
 
 import type {
   LiveAlert,
@@ -92,50 +93,74 @@ export default function LiveAlertsPanel({
       {alerts.length > 0 && (
         <div className="mt-5 space-y-3">
           {alerts.map(
-            (alert) => (
-              <article
-                key={alert.alert_id}
-                className="rounded-md border border-border p-4"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {alertKindLabel(
-                        alert.kind,
-                      )}
-                    </p>
+            (alert) => {
+              const hasIntelligenceDetails =
+                alert.explanation !==
+                  undefined ||
+                alert.recommendation !==
+                  undefined
 
-                    <p className="mt-1 font-semibold">
-                      {alert.message}
-                    </p>
+              return (
+                <article
+                  key={alert.alert_id}
+                  className="rounded-md border border-border p-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {alertKindLabel(
+                          alert.kind,
+                        )}
+                      </p>
+
+                      <p className="mt-1 font-semibold">
+                        {alert.message}
+                      </p>
+                    </div>
+
+                    <ConfidenceIndicator
+                      confidence={
+                        alert.confidence
+                      }
+                    />
                   </div>
 
-                  <ConfidenceIndicator
-                    confidence={
-                      alert.confidence
-                    }
-                  />
-                </div>
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    {alert.reason}
+                  </p>
 
-                <p className="mt-3 text-sm text-muted-foreground">
-                  {alert.reason}
-                </p>
+                  {hasIntelligenceDetails && (
+                    <div className="mt-4">
+                      <ExplainabilityPanel
+                        confidence={
+                          alert.confidence
+                        }
+                        explanation={
+                          alert.explanation
+                        }
+                        recommendation={
+                          alert.recommendation
+                        }
+                      />
+                    </div>
+                  )}
 
-                <div className="mt-4 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onAcknowledge(
-                        alert.alert_id,
-                      )
-                    }
-                    className="rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted"
-                  >
-                    Acknowledge
-                  </button>
-                </div>
-              </article>
-            ),
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onAcknowledge(
+                          alert.alert_id,
+                        )
+                      }
+                      className="rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted"
+                    >
+                      Acknowledge
+                    </button>
+                  </div>
+                </article>
+              )
+            },
           )}
         </div>
       )}

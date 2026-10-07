@@ -1,6 +1,7 @@
 import ClassificationBadge from './ClassificationBadge'
 import ConfidenceIndicator from './ConfidenceIndicator'
 import FlagExplanation from './FlagExplanation'
+import RecommendationCard from './RecommendationCard'
 import SourceCitationList from './SourceCitationList'
 
 import type {
@@ -26,6 +27,10 @@ interface ExplainabilityPanelProps {
     | string
     | null
 
+  recommendation?:
+    | string
+    | null
+
   sources?:
     | SourceCitation[]
     | null
@@ -36,12 +41,9 @@ export default function ExplainabilityPanel({
   classification,
   confidence,
   explanation,
+  recommendation,
   sources,
 }: ExplainabilityPanelProps) {
-  const topicLabel =
-    topic?.trim() ||
-    'Topic unavailable'
-
   return (
     <section className="rounded-xl border border-border bg-card p-6">
       <div>
@@ -54,41 +56,58 @@ export default function ExplainabilityPanel({
         </h3>
       </div>
 
-      <div className="mt-5">
-        <p className="text-xs font-medium text-muted-foreground">
-          Topic
-        </p>
+      {topic !== undefined && (
+        <div className="mt-5">
+          <p className="text-xs font-medium text-muted-foreground">
+            Topic
+          </p>
 
-        <p className="mt-1 text-sm font-medium">
-          {topicLabel}
-        </p>
-      </div>
+          <p className="mt-1 text-sm font-medium">
+            {topic?.trim() || 'Topic unavailable'}
+          </p>
+        </div>
+      )}
 
-      <div className="mt-5 flex flex-wrap gap-3">
-        <ClassificationBadge
-          classification={
-            classification
-          }
-        />
+      {(classification !== undefined ||
+        confidence !== undefined) && (
+        <div className="mt-5 flex flex-wrap gap-3">
+          {classification !== undefined && (
+            <ClassificationBadge
+              classification={classification}
+            />
+          )}
 
-        <ConfidenceIndicator
-          confidence={confidence}
-        />
-      </div>
+          {confidence !== undefined && (
+            <ConfidenceIndicator
+              confidence={confidence}
+            />
+          )}
+        </div>
+      )}
 
-      <div className="mt-5 border-t border-border pt-5">
-        <FlagExplanation
-          explanation={
-            explanation
-          }
-        />
-      </div>
+      {explanation !== undefined && (
+        <div className="mt-5 border-t border-border pt-5">
+          <FlagExplanation
+            explanation={explanation}
+          />
+        </div>
+      )}
 
-      <div className="mt-5 border-t border-border pt-5">
-        <SourceCitationList
-          sources={sources}
-        />
-      </div>
+      {recommendation !== undefined && (
+        <div className="mt-5 border-t border-border pt-5">
+          <RecommendationCard
+            recommendation={recommendation}
+          />
+        </div>
+      )}
+
+      {sources !== undefined && (
+        <div className="mt-5 border-t border-border pt-5">
+          <SourceCitationList
+            sources={sources}
+          />
+        </div>
+      )}
     </section>
   )
 }

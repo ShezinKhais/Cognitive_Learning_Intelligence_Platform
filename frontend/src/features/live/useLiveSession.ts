@@ -63,6 +63,15 @@ export interface LiveAlert {
   message: string
   reason: string
   confidence: number
+
+  explanation?: string
+  explanation_source?:
+    | 'ai'
+    | 'fallback'
+
+  confidence_reasons?: string[]
+
+  recommendation?: string
 }
 
 export interface LiveSessionNotice {
@@ -211,14 +220,48 @@ function isLiveAlert(
   const alert =
     value as Record<string, unknown>
 
+  const explanationValid =
+    alert.explanation === undefined ||
+    typeof alert.explanation === 'string'
+
+  const explanationSourceValid =
+    alert.explanation_source ===
+      undefined ||
+    alert.explanation_source === 'ai' ||
+    alert.explanation_source ===
+      'fallback'
+
+  const confidenceReasonsValid =
+    alert.confidence_reasons ===
+      undefined ||
+    (
+      Array.isArray(
+        alert.confidence_reasons,
+      ) &&
+      alert.confidence_reasons.every(
+        (reason) =>
+          typeof reason === 'string',
+      )
+    )
+
+  const recommendationValid =
+    alert.recommendation === undefined ||
+    typeof alert.recommendation ===
+      'string'
+
   return (
     typeof alert.alert_id === 'string' &&
     isLiveAlertKind(alert.kind) &&
     typeof alert.message === 'string' &&
     typeof alert.reason === 'string' &&
-    typeof alert.confidence === 'number' &&
+    typeof alert.confidence ===
+      'number' &&
     alert.confidence >= 0 &&
-    alert.confidence <= 1
+    alert.confidence <= 1 &&
+    explanationValid &&
+    explanationSourceValid &&
+    confidenceReasonsValid &&
+    recommendationValid
   )
 }
 
