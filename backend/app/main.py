@@ -17,7 +17,7 @@ from app.auth.dev_seed import ensure_dev_users
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, request_id_var
-from app.realtime.classroom import classroom 
+from app.realtime.classroom import classroom
 from app.repositories.teams_meeting_repository import DatabaseMeetingDirectory
 from app.services.ai_gateway import get_ai_gateway
 from app.services.live_wiring import install_live_store
