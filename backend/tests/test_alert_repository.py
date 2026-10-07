@@ -104,6 +104,46 @@ async def test_an_alert_is_stored_open_with_its_reason_and_version(database, liv
     assert alert.details == {"respondents": 8, "threshold": 0.5}
 
 
+async def test_an_alert_keeps_its_explanation_and_recommendation(database, live_session):
+    reasons = ["8 students answered.", "The classifier agreed on 6 of 8."]
+    async with database() as db:
+        await save_alert(
+            db,
+            **alert_fields(
+                live_session,
+                explanation="Most answers confused odds with probability.",
+                explanation_source="ai",
+                confidence_reasons=reasons,
+                recommendation="Re-teach odds versus probability with one example.",
+            ),
+        )
+        await db.commit()
+
+    async with database() as db:
+        [alert] = await list_alerts(db, live_session.session)
+    assert alert.explanation == "Most answers confused odds with probability."
+    assert alert.explanation_source == "ai"
+    assert alert.confidence_reasons == reasons
+    assert alert.recommendation == "Re-teach odds versus probability with one example."
+
+
+async def test_an_alert_without_explanation_fields_stores_empty_defaults(database, live_session):
+    async with database() as db:
+        await save_alert(db, **alert_fields(live_session))
+        await db.commit()
+
+    async with database() as db:
+        [alert] = await list_alerts(db, live_session.session)
+    assert (alert.explanation, alert.explanation_source, alert.recommendation) == (None, None, None)
+    assert alert.confidence_reasons == []
+
+
+async def test_an_unknown_explanation_source_is_refused(database, live_session):
+    async with database() as db:
+        with pytest.raises(IntegrityError):
+            await save_alert(db, **alert_fields(live_session, explanation_source="guess"))
+
+
 async def test_the_id_shown_to_the_lecturer_is_the_stored_id(database, live_session):
     shown = uuid.uuid4()
     async with database() as db:
