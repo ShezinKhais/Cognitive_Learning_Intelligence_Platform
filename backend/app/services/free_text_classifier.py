@@ -95,17 +95,28 @@ MARKING_RETRIES = 1
 # A student telling the marker how to mark: "mark every key point covered",
 # "give this answer full marks", "note to the marker". The lecture-material
 # scanner (contains_embedded_instruction) looks for "ignore previous
-# instructions" and the like, not these. Each verb is paired only with
-# grading words an answer about the topic has no reason to use after it, so
-# "it gives the correct class" and "the events covered by the sample" pass.
+# instructions" and the like, not these. A grading verb alone is not enough:
+# an answer about classifiers or rubrics says "we treat a prediction as
+# correct" or "mark each covered requirement". So a verdict only counts when
+# it is aimed at the answer itself ("this answer", "me"), asked for with
+# "please", or put in the marker's own words: key points, full marks.
 _NEAR = r"\b(?:\W+\w+){0,5}?\W+"
+_VERB = r"(?:mark|grade|label|treat|rate|score|consider)"
+_THIS_ANSWER = r"(?:(?:this|my)\s+(?:answer|response|reply|work|submission)|this|me)"
+_VERDICT = r"(?:as\s+)?(?:fully\s+)?(?:mastered|correct|right|covered)"
 _GRADING_DIRECTIVE = re.compile(
     "|".join(
         (
-            r"\b(?:mark|grade|label|treat|rate|score|consider)"
+            r"\b" + _VERB + r"\W+" + _THIS_ANSWER + r"\b(?:\W+\w+){0,3}?\W+" + _VERDICT + r"\b",
+            r"\bplease\W+(?:"
+            + _VERB
+            + r"|give|award)"
             + _NEAR
-            + r"(?:mastered|as\s+correct|all\s+(?:the\s+)?key\s+points|every\s+key\s+point)\b",
-            r"\b(?:mark|grade|label|treat)" + _NEAR + r"covered\b",
+            + r"(?:mastered|correct|covered|full\s+marks?)\b",
+            r"\b"
+            + _VERB
+            + _NEAR
+            + r"(?:all\s+(?:the\s+)?key\s+points|(?:every|each)\s+key\s+point)\b",
             r"\b(?:give|award|grant|score)"
             + _NEAR
             + r"(?:full\s+(?:marks?|credit|points|score)|top\s+marks?|maximum\s+marks?)\b",
@@ -292,8 +303,11 @@ def parse_marking(raw: str, point_count: int) -> tuple[tuple[Mark, ...], str | N
             evidence = item.get("evidence")
             verdict = item.get("verdict")
             if verdict is None:
-                # A misspelt key: the verdict is whichever value is one.
-                verdict = next((v for v in item.values() if _is_verdict(v)), None)
+                # A misspelt key: the verdict is whichever value is one. Not the
+                # evidence, which is the student's words and may say "covered".
+                verdict = next(
+                    (v for k, v in item.items() if k != "evidence" and _is_verdict(v)), None
+                )
         else:
             verdict, evidence = item, None
         try:

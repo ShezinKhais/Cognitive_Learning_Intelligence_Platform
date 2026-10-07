@@ -149,7 +149,11 @@ async def main(label_column: str, limit: int | None, out: Path | None) -> None:
             )
         print("\nsimilarity by human label (min / median / max)")
         for label in LABELS:
-            sims = [r["similarity"] for r in marked if r["human"] == label and r["similarity"]]
+            sims = [
+                r["similarity"]
+                for r in marked
+                if r["human"] == label and r["similarity"] is not None
+            ]
             if sims:
                 print(
                     f"{label:<12} {min(sims):.3f} / {statistics.median(sims):.3f} / {max(sims):.3f}"
