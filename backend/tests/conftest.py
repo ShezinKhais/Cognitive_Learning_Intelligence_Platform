@@ -26,6 +26,21 @@ def app() -> FastAPI:
     return create_app()
 
 
+@pytest.fixture(autouse=True, scope="session")
+def no_model_warm_up():
+    """Keep the suite from loading a model.
+
+    A test client used with `with` runs the app's startup, which warms the
+    model up in the background. On a machine with Ollama running that would
+    load several gigabytes of weights for tests that never ask it anything.
+    """
+    settings = get_settings()
+    enabled = settings.ai_warmup_enabled
+    settings.ai_warmup_enabled = False
+    yield
+    settings.ai_warmup_enabled = enabled
+
+
 @pytest.fixture(scope="session")
 def client(app: FastAPI) -> TestClient:
     return TestClient(app)

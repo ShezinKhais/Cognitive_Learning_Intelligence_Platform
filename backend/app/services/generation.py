@@ -6,7 +6,6 @@ import json
 import logging
 import math
 import re
-import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID
@@ -17,6 +16,7 @@ from app.schemas.content import Difficulty, QuestionType
 from app.services.extraction import ContentChunk
 from app.services.material_seams import DraftQuestion
 from app.services.retrieval import RetrievedChunk
+from app.services.text_variants import normalise_for_screening, screening_variants
 
 OPTION_COUNT = 4
 GROUNDING_THRESHOLD = 80
@@ -134,21 +134,9 @@ def question_coverage(question: str, material_text: str) -> float:
     return 100.0 * len(question_words & material_words) / len(question_words)
 
 
-def normalise_for_screening(text: str) -> str:
-    """The text as a reader sees it, for pattern matching.
-
-    NFKC folds compatibility forms (fullwidth letters, ligatures) onto plain
-    ones, format characters such as zero-width spaces are dropped, and runs of
-    whitespace become one space, so none of them can split a phrase apart.
-    """
-    folded = unicodedata.normalize("NFKC", text)
-    visible = "".join(ch for ch in folded if unicodedata.category(ch) != "Cf")
-    return re.sub(r"\s+", " ", visible)
-
-
 def contains_embedded_instruction(text: str) -> bool:
-    """Whether text contains an instruction aimed at the model."""
-    return _INSTRUCTION.search(normalise_for_screening(text)) is not None
+    """Whether text contains an instruction aimed at the model, however disguised."""
+    return any(_INSTRUCTION.search(variant) for variant in screening_variants(text))
 
 
 def ungrounded_links(text: str, material_text: str) -> list[str]:
