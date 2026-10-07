@@ -16,10 +16,10 @@ from functools import lru_cache
 from uuid import UUID, uuid4
 
 from fastapi import UploadFile
-from openai import AsyncOpenAI
 
 from app.core.config import Settings, get_settings
-from app.services.embeddings import OllamaEmbedder, OllamaEmbeddingClient
+from app.services.ai_gateway import GatewayEmbeddingClient, Priority, get_ai_gateway
+from app.services.embeddings import OllamaEmbedder
 from app.services.extraction import SUPPORTED
 from app.services.generation import QuestionGenerator
 from app.services.jobs import BackgroundProcessor
@@ -27,6 +27,15 @@ from app.services.material_store import DatabaseMaterialStore
 from app.services.pipeline import MaterialPipeline
 from app.services.storage import CHUNK_BYTES, LocalDiskStorage, StoredFile
 from app.services.upload_security import validate_uploaded_file
+
+# One model call while processing a material, and how many attempts it gets.
+# These are what the pipeline's own client used before its calls went through
+# the gateway: a long reply from a model that may still be loading.
+MATERIAL_MODEL_TIMEOUT_SECONDS = 120.0
+MATERIAL_MODEL_ATTEMPTS = 2
+# How long such a call may wait for its turn at the model. A deck uploaded
+# during a busy class is still wanted when the class has gone quiet.
+MATERIAL_QUEUE_TIMEOUT_SECONDS = 600.0
 
 
 async def accept_upload(file: UploadFile, owner_id: UUID) -> StoredFile:
@@ -110,20 +119,26 @@ def get_material_pipeline() -> MaterialPipeline:
     long before the job runs, so it cannot borrow the request's.
     """
     settings = get_settings()
-    client = AsyncOpenAI(
-        base_url=settings.ollama_base_url,
-        api_key="ollama",
-        timeout=120.0,
-        max_retries=1,
-    )
+    # Both through the gateway, at background priority: indexing a deck and
+    # writing its questions wait their turn behind anyone in a live class.
+    background = {
+        "priority": Priority.BACKGROUND,
+        "timeout": MATERIAL_MODEL_TIMEOUT_SECONDS,
+        "max_attempts": MATERIAL_MODEL_ATTEMPTS,
+        "queue_timeout": MATERIAL_QUEUE_TIMEOUT_SECONDS,
+    }
+    gateway = get_ai_gateway()
 
     return MaterialPipeline(
         storage=get_material_storage(),
         settings=settings,
         embedder=OllamaEmbedder(
-            OllamaEmbeddingClient(client, settings.embedding_model),
+            GatewayEmbeddingClient(gateway, "material_embedding", **background),
             settings.embedding_model,
         ),
-        generator=QuestionGenerator(client, settings.ollama_model),
+        generator=QuestionGenerator(
+            gateway.chat_client("question_generation", **background),
+            settings.ollama_model,
+        ),
         store=DatabaseMaterialStore(),
     )

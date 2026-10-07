@@ -17,6 +17,7 @@ from sqlalchemy import text
 from app.api.deps import AppSettings, DbSession
 from app.core.config import get_settings
 from app.schemas.common import DependencyStatus, HealthResponse, ReadinessResponse
+from app.services.ai_gateway import get_ai_gateway
 
 router = APIRouter(tags=["meta"])
 
@@ -54,6 +55,15 @@ async def _check_database(db: DbSession) -> DependencyStatus:
         return DependencyStatus(name="postgres", ok=False, detail=type(exc).__name__)
 
 
+def _gateway_detail() -> str:
+    """What the AI gateway makes of the model, which the server being up does
+    not say: whether it is loaded, and whether calls are being refused after
+    repeated failures."""
+    gateway = get_ai_gateway()
+    waiting = f", {gateway.waiting} waiting" if gateway.waiting else ""
+    return f"gateway {gateway.status}{waiting}"
+
+
 async def _check_ollama() -> DependencyStatus:
     """Confirms the daemon answers and that the configured models are present.
 
@@ -81,7 +91,9 @@ async def _check_ollama() -> DependencyStatus:
                 detail=f"models not pulled: {', '.join(sorted(missing))}",
                 latency_ms=latency,
             )
-        return DependencyStatus(name="ollama", ok=True, latency_ms=latency)
+        return DependencyStatus(
+            name="ollama", ok=True, detail=_gateway_detail(), latency_ms=latency
+        )
     except Exception as exc:
         return DependencyStatus(name="ollama", ok=False, detail=type(exc).__name__)
 
