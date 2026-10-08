@@ -55,4 +55,3 @@ export type ChatAction =
   | { type: 'request-failed'; detail: string }
   | { type: 'follow-up-selected'; prompt: string }
   | { type: 'error-cleared' }
-

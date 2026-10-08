@@ -101,4 +101,3 @@ export function parseNdjsonLine(line: string): ChatStreamEvent | null {
     return null
   }
 }
-

@@ -136,4 +136,3 @@ test('validates newline-delimited stream events at the client boundary', () => {
     null,
   )
 })
-
