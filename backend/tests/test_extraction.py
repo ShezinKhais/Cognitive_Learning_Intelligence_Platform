@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -15,6 +16,8 @@ from app.core.errors import ValidationError
 from app.services.extraction import (
     ContentChunk,
     ExtractedElement,
+    _docling_elements,
+    _docx_heading_level,
     chunk_elements,
     clean_text,
     looks_letter_spaced,
@@ -392,3 +395,155 @@ def test_a_second_heading_on_a_page_applies_to_the_text_after_it():
     assert indexing
     assert all("Normalisation" not in c.chunk_text for c in indexing)
     assert any("Indexing" in c.chunk_text for c in indexing)
+
+
+# --- heading paths (Phase 6, #127) -------------------------------------------
+
+
+def _first_line(chunk: ContentChunk) -> str:
+    return chunk.chunk_text.split("\n", 1)[0]
+
+
+def test_a_chunk_starts_with_the_full_path_of_its_headings():
+    els = [
+        ExtractedElement("heading", "Chapter 2", 1, level=1),
+        ExtractedElement("heading", "2.1 Layers", 1, level=2),
+        ExtractedElement("text", "A dense layer connects every input to every output.", 1),
+    ]
+
+    [chunk] = chunk_elements(els, material_id=uuid.uuid4())
+
+    assert _first_line(chunk) == "Chapter 2 > 2.1 Layers"
+
+
+def test_a_sibling_heading_replaces_the_one_before_it():
+    els = [
+        ExtractedElement("heading", "Chapter 2", 1, level=1),
+        ExtractedElement("heading", "2.1 Layers", 1, level=2),
+        ExtractedElement("text", "Dense layers.", 1),
+        ExtractedElement("heading", "2.2 Activations", 1, level=2),
+        ExtractedElement("text", "ReLU keeps positive values.", 1),
+    ]
+
+    chunks = chunk_elements(els, material_id=uuid.uuid4())
+
+    relu = next(c for c in chunks if "ReLU" in c.chunk_text)
+    assert _first_line(relu) == "Chapter 2 > 2.2 Activations"
+    assert "Dense layers" not in relu.chunk_text
+
+
+def test_a_higher_heading_closes_the_sections_inside_the_last_one():
+    els = [
+        ExtractedElement("heading", "Chapter 2", 1, level=1),
+        ExtractedElement("heading", "2.1 Layers", 1, level=2),
+        ExtractedElement("text", "Dense layers.", 1),
+        ExtractedElement("heading", "Chapter 3", 1, level=1),
+        ExtractedElement("text", "Training loops.", 1),
+    ]
+
+    chunks = chunk_elements(els, material_id=uuid.uuid4())
+
+    training = next(c for c in chunks if "Training" in c.chunk_text)
+    assert _first_line(training) == "Chapter 3"
+
+
+def test_a_section_runs_on_across_pages():
+    """A document section continues onto the next page. Only headings with no
+    level, such as slide titles, stop at the end of their page."""
+    els = [
+        ExtractedElement("heading", "Chapter 2", 4, level=1),
+        ExtractedElement("text", "Start of the chapter.", 4),
+        ExtractedElement("text", "The chapter continues here.", 5),
+    ]
+
+    chunks = chunk_elements(els, material_id=uuid.uuid4())
+
+    page5 = next(c for c in chunks if c.source_page == 5)
+    assert _first_line(page5) == "Chapter 2"
+
+
+def test_a_path_too_long_for_its_chunk_drops_the_outermost_headings():
+    els = [
+        ExtractedElement("heading", "A" * 150, 1, level=1),
+        ExtractedElement("heading", "B" * 150, 1, level=2),
+        ExtractedElement("heading", "Backpropagation", 1, level=3),
+        ExtractedElement("text", "Gradients flow backwards through the network.", 1),
+    ]
+
+    [chunk] = chunk_elements(els, material_id=uuid.uuid4(), size=500, overlap=100)
+
+    assert _first_line(chunk) == f"{'B' * 150} > Backpropagation"
+    assert len(chunk.chunk_text) <= 500
+
+
+@pytest.mark.parametrize(
+    ("style", "level"),
+    [
+        ("title", 1),
+        ("heading 1", 1),
+        ("heading 3", 3),
+        ("heading", 1),
+        ("normal", None),
+        ("list paragraph", None),
+    ],
+)
+def test_word_heading_styles_give_their_level(style, level):
+    assert _docx_heading_level(style) == level
+
+
+class _FakeItem:
+    def __init__(self, label, text="", page=1, level=None, table=None):
+        self.label = label
+        self.text = text
+        self.prov = [SimpleNamespace(page_no=page)]
+        if level is not None:
+            self.level = level
+        self._table = table
+
+    def export_to_markdown(self, doc=None):
+        if self._table is None:
+            raise ValueError("not a table")
+        return self._table
+
+
+class _FakeDoclingDocument:
+    def __init__(self, items):
+        self.items = items
+
+    def iterate_items(self):
+        return ((item, 0) for item in self.items)
+
+
+def test_docling_output_keeps_levels_lists_and_tables():
+    table = "| Layer | Units |\n|---|---|\n| Dense | 64 |"
+    doc = _FakeDoclingDocument(
+        [
+            _FakeItem("DocItemLabel.PAGE_HEADER", "CS101 - Lecture 3", page=2),
+            _FakeItem("title", "Neural Networks", page=2),
+            _FakeItem("DocItemLabel.SECTION_HEADER", "2.1 Layers", page=2, level=2),
+            _FakeItem("text", "Layers are stacked.", page=2),
+            _FakeItem("list_item", "Dense", page=2),
+            _FakeItem("table", page=3, table=table),
+            _FakeItem("picture", page=3),
+            _FakeItem("page_footer", "Page 3", page=3),
+        ]
+    )
+
+    els = _docling_elements(doc)
+
+    assert [(e.el_type, e.content, e.page, e.level) for e in els] == [
+        ("heading", "Neural Networks", 2, 1),
+        ("heading", "2.1 Layers", 2, 2),
+        ("text", "Layers are stacked.", 2, 0),
+        ("text", "- Dense", 2, 0),
+        ("table", table, 3, 0),
+        ("image", "[image]", 3, 0),
+    ]
+
+
+def test_a_docling_table_that_cannot_be_exported_does_not_lose_the_file():
+    doc = _FakeDoclingDocument(
+        [_FakeItem("table", page=1), _FakeItem("text", "Still read.", page=1)]
+    )
+
+    assert [e.content for e in _docling_elements(doc)] == ["Still read."]

@@ -62,6 +62,10 @@ class ExtractedElement:
     el_type: str  # "text" | "heading" | "image" | "table"
     content: str  # the text, or a placeholder note for images
     page: int  # page number (PDF) or slide number (PPTX). 1 for docx/txt.
+    # Headings only: 1 for a top-level section, 2 for one inside it, and so on,
+    # where the format says. 0 is a heading with no known level, such as a
+    # slide title: it applies to its own page only.
+    level: int = 0
 
 
 @dataclass
@@ -151,36 +155,62 @@ def read_pdf_docling(path: str) -> list[ExtractedElement]:
     converter = DocumentConverter(
         format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)}
     )
-    doc = converter.convert(path).document
+    return _docling_elements(converter.convert(path).document)
 
+
+# Running text docling finds at the top and bottom of every page, such as
+# "CS101 - Lecture 3" or a page number. Not content, and taken for headings
+# they would head every page's chunks.
+_DOCLING_SKIPPED = {"page_header", "page_footer"}
+
+
+def _docling_page(item) -> int:
+    """The page an item is on, from its provenance, when docling knows it."""
+    prov = getattr(item, "prov", None)
+    return getattr(prov[0], "page_no", 1) if prov else 1
+
+
+def _docling_elements(doc) -> list[ExtractedElement]:
+    """A docling document as elements, in reading order, kept as Markdown.
+
+    Headings carry their section level, so chunks can say where they sit
+    ("Chapter 2 > 2.1 Layers"). List items keep their bullet, and a table is
+    its Markdown table: a table item has no text, so reading text alone lost
+    every table. Images stay placeholders.
+    """
     els: list[ExtractedElement] = []
-    for item, _level in doc.iterate_items():
+    for item, _depth in doc.iterate_items():
+        label = str(getattr(item, "label", "")).lower().rsplit(".", 1)[-1]
+        if label in _DOCLING_SKIPPED:
+            continue
+        page = _docling_page(item)
+
+        if label == "table":
+            try:
+                table = (item.export_to_markdown(doc=doc) or "").strip()
+            except Exception:
+                # One unreadable table is not a reason to lose the file.
+                log.warning("could not export a table on page %s", page)
+                continue
+            if table:
+                els.append(ExtractedElement("table", table, page))
+            continue
+        if label == "picture":
+            els.append(ExtractedElement("image", "[image]", page))
+            continue
+
         text = getattr(item, "text", "") or ""
         if not text.strip():
             continue
-
-        # docling tags every item with its layout role, e.g. section_header
-        label = str(getattr(item, "label", "")).lower()
-        el_type = "heading" if "header" in label or "title" in label else "text"
-
-        # page number lives on the item's provenance, when docling knows it
-        page = 1
-        prov = getattr(item, "prov", None)
-        if prov:
-            page = getattr(prov[0], "page_no", 1)
-
-        els.append(
-            ExtractedElement(el_type, clean_text(text, is_heading=(el_type == "heading")), page)
-        )
-
-    # record images as placeholders. we do not read what is inside them yet.
-    for pic in getattr(doc, "pictures", []):
-        page = 1
-        prov = getattr(pic, "prov", None)
-        if prov:
-            page = getattr(prov[0], "page_no", 1)
-        els.append(ExtractedElement("image", "[image]", page))
-
+        if label == "title":
+            els.append(ExtractedElement("heading", clean_text(text, is_heading=True), page, 1))
+        elif label == "section_header":
+            level = max(1, int(getattr(item, "level", 1) or 1))
+            els.append(ExtractedElement("heading", clean_text(text, is_heading=True), page, level))
+        elif label == "list_item":
+            els.append(ExtractedElement("text", f"- {clean_text(text)}", page))
+        else:
+            els.append(ExtractedElement("text", clean_text(text), page))
     return els
 
 
@@ -261,6 +291,20 @@ def read_pptx(path: str) -> list[ExtractedElement]:
     return els
 
 
+def _docx_heading_level(style: str) -> int | None:
+    """The outline level of a Word paragraph style, or None for body text.
+
+    "Title" and "Heading 1" are top level, "Heading 2" sits inside a
+    "Heading 1", and so on. A heading style with no number is top level.
+    """
+    if style == "title":
+        return 1
+    if not style.startswith("heading"):
+        return None
+    number = style.removeprefix("heading").strip()
+    return int(number) if number.isdigit() and int(number) > 0 else 1
+
+
 def read_docx(path: str) -> list[ExtractedElement]:
     """DOCX reader. Word styles tell us which paragraphs are headings.
 
@@ -276,10 +320,13 @@ def read_docx(path: str) -> list[ExtractedElement]:
         if not para.text.strip():
             continue
         style = (para.style.name or "").lower()
-        el_type = "heading" if style.startswith("heading") or style == "title" else "text"
-        els.append(
-            ExtractedElement(el_type, clean_text(para.text, is_heading=(el_type == "heading")), 1)
-        )
+        level = _docx_heading_level(style)
+        if level is None:
+            els.append(ExtractedElement("text", clean_text(para.text), 1))
+        else:
+            els.append(
+                ExtractedElement("heading", clean_text(para.text, is_heading=True), 1, level)
+            )
 
     for table in doc.tables:
         for row in table.rows:
@@ -428,6 +475,27 @@ def _tail(text: str, overlap: int) -> str:
     return tail or text[-overlap:]
 
 
+HEADING_SEPARATOR = " > "
+
+
+def _path_prefix(path: tuple[str, ...], limit: int) -> str:
+    """The heading path as a chunk's first line, at most `limit` characters.
+
+    When the whole path does not fit, the outermost headings go first: the
+    innermost one is the chunk's topic. A single heading that is still too
+    long is cut.
+    """
+    parts = list(path)
+    while parts:
+        line = HEADING_SEPARATOR.join(parts) + "\n"
+        if len(line) <= limit:
+            return line
+        if len(parts) == 1:
+            return line[:limit]
+        parts.pop(0)
+    return ""
+
+
 def chunk_elements(
     elements: list[ExtractedElement],
     material_id: uuid.UUID,
@@ -436,9 +504,15 @@ def chunk_elements(
 ) -> list[ContentChunk]:
     """SDD: split_text_into_chunks. 500 chars with 100 overlap.
 
-    Headings are glued onto the front of the text that follows them, so a chunk
-    still says what topic it belongs to once it is on its own in the database.
-    That is what makes retrieval and "see slide 3" work.
+    Each chunk starts with the path of headings it sits under, such as
+    "Chapter 2 > 2.1 Layers", so it still says what topic it belongs to once it
+    is on its own in the database. That is what makes retrieval and "see slide
+    3" work. Text is split at headings first and only then by size, so a chunk
+    never runs from one section into the next.
+
+    A heading with a level stays in force until the next heading at its level
+    or above, across pages: a section of a document runs on. A heading with no
+    level, such as a slide title, applies to its own page only.
     """
     # overlap >= size is not the only blowup: overlap = size - 1 leaves a step
     # of 1, so 10k chars still produce 10,000 chunks. require the step to be a
@@ -452,46 +526,55 @@ def chunk_elements(
 
     chunks: list[ContentChunk] = []
     index = 0
-    current_heading = ""
-    heading_page = None
+    # The leveled headings in force, outermost first, as (level, text).
+    outline: list[tuple[int, str]] = []
+    # A heading with no level, and the page it applies to.
+    page_heading = ""
+    page_heading_page = None
 
     # Group by page first. A PDF page arrives as one large element and a PPTX
     # slide as many small ones; chunking per element made the same content
     # produce completely different chunk sizes depending on the parser.
-    pages: list[tuple[int, str, list[str]]] = []
+    pages: list[tuple[int, tuple[str, ...], list[str]]] = []
     for el in elements:
         if el.el_type == "image":
             continue
-        if el.page != heading_page:
-            current_heading = ""
+        if el.page != page_heading_page:
+            page_heading = ""
         if el.el_type == "heading":
-            current_heading = el.content
-            heading_page = el.page
+            if el.level > 0:
+                # A heading closes every section at its level or deeper.
+                while outline and outline[-1][0] >= el.level:
+                    outline.pop()
+                outline.append((el.level, el.content))
+                page_heading = ""
+            else:
+                page_heading = el.content
+                page_heading_page = el.page
             continue
 
-        if pages and pages[-1][0] == el.page and pages[-1][1] == current_heading:
+        path = tuple(text for _, text in outline) + ((page_heading,) if page_heading else ())
+        if pages and pages[-1][0] == el.page and pages[-1][1] == path:
             pages[-1][2].append(el.content)
         else:
-            # The heading is held per page and prefixed once per chunk below.
+            # The path is held per group and prefixed once per chunk below.
             # Prefixing it per element repeated it for every bullet on a slide,
             # which wastes the chunk budget and skews the embedding.
             # A new heading on the same page starts a new group: grouping by
             # page alone filed a whole DOCX, where every element is page 1,
             # under its first heading.
-            pages.append((el.page, current_heading, [el.content]))
+            pages.append((el.page, path, [el.content]))
 
-    for page, heading, blocks in pages:
+    for page, path, blocks in pages:
         flat: list[str] = []
         for block in blocks:
             for part in re.split(r"\n\s*\n|\n", block):
                 if part.strip():
                     flat.append(part.strip())
 
-        # A heading longer than a whole chunk would leave no room for content
-        # and drive the budget negative, breaking the size invariant.
-        prefix = f"{heading}\n" if heading else ""
-        if len(prefix) > size // 2:
-            prefix = prefix[: size // 2]
+        # A path longer than half a chunk would leave too little room for
+        # content, or drive the budget negative and break the size invariant.
+        prefix = _path_prefix(path, size // 2)
         budget = size - len(prefix)
 
         buffer = ""
