@@ -32,6 +32,7 @@ import asyncio
 import logging
 from collections.abc import Coroutine, Sequence
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
 from uuid import UUID
 
@@ -43,6 +44,7 @@ from app.realtime.hub import hub as default_hub
 from app.schemas.events import MaterialProgressPayload, MaterialStage, ServerEventType
 from app.services.extraction import ContentChunk, process_material
 from app.services.generation import contains_embedded_instruction
+from app.services.image_captioning import ImageCaptioner, add_captions
 from app.services.jobs import (
     INTERNAL_ERROR,
     INTERRUPTED_ERROR,
@@ -96,6 +98,9 @@ class MaterialPipeline:
     generator: QuestionGenerator
     store: MaterialStore | None = None
     hub: SessionHub = field(default=default_hub)
+    # Describes the material's images before it is chunked for good. None
+    # leaves them as placeholders, as before Phase 6.
+    captioner: ImageCaptioner | None = None
 
     def job(self, stored: StoredFile, owner_id: UUID) -> MaterialJob:
         return MaterialJob(self, stored, owner_id)
@@ -187,13 +192,33 @@ class MaterialJob:
             # inline would freeze every live session on this process for that
             # long, which is the exact failure the 202 exists to avoid.
             # Extraction only reads the stored file, so a daemon thread is safe.
+            # With captioning off, the call is exactly as it was before Phase 6.
+            extract = (
+                partial(process_material, with_images=True)
+                if pipeline.captioner is not None
+                else process_material
+            )
             result = await run_in_daemon_thread(
-                process_material,
+                extract,
                 str(path),
                 self.material_id,
                 pipeline.settings.max_upload_bytes,
                 name="material-extraction",
             )
+
+        model_runs: list[ModelRun] = []
+        if pipeline.captioner is not None and any(e.image for e in result.elements):
+            await self._report(MaterialStage.EXTRACTING, "Describing the images.")
+            result, captions = await add_captions(result, pipeline.captioner)
+            if captions.attempted:
+                model_runs.append(
+                    ModelRun(
+                        operation="image_captioning",
+                        model=captions.model,
+                        succeeded=captions.succeeded,
+                        detail=f"{captions.captioned} of {captions.attempted} image(s) described",
+                    )
+                )
 
         # Validation, extraction and chunking are one call in AI 1's module, so
         # this event marks chunking finished rather than started. Splitting it
@@ -242,6 +267,7 @@ class MaterialJob:
                 questions=tuple(questions),
                 warnings=tuple(warnings),
                 model_runs=(
+                    *model_runs,
                     ModelRun(operation="embedding", model=embeddings.model, succeeded=True),
                     generation,
                 ),

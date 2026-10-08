@@ -21,6 +21,7 @@ dependencies = [
     "pypdf>=5.1",                 # PDF extraction
     "python-pptx>=1.0",           # PPTX extraction
     "python-docx>=1.1",           # DOCX extraction
+    "pillow>=10.0",               # resizing images for captioning (python-pptx needs it too)
     "rapidfuzz>=3.10",            # match Teams display names against the admin roster
     "openpyxl>=3.1",              # timetable/roster .xlsx parsing
 ]

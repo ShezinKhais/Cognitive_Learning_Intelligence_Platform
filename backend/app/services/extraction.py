@@ -24,6 +24,7 @@ pages, which is a later phase.
 
 from __future__ import annotations
 
+import io
 import logging
 import re
 import uuid
@@ -48,6 +49,15 @@ CONTENT_TYPES: dict[str, str] = {
 }
 SUPPORTED = tuple(CONTENT_TYPES)
 
+# What an image is recorded as until something describes it. An image still
+# holding one of these says nothing a student could search for, so it is left
+# out of chunks; a captioned image is chunked like text, where it stood.
+IMAGE_ONLY_PAGE = "[image-only page]"
+IMAGE_PLACEHOLDERS = frozenset({"[image]", "[image on slide]", IMAGE_ONLY_PAGE})
+# Images taken from one page of a PDF with text on it, largest first: a slide
+# with more than this is a gallery, not a diagram to explain.
+MAX_IMAGES_PER_PAGE = 3
+
 
 # ---------------------------------------------------------------------------
 # the shapes. these are internal to processing - nothing here is stored as-is.
@@ -66,6 +76,9 @@ class ExtractedElement:
     # where the format says. 0 is a heading with no known level, such as a
     # slide title: it applies to its own page only.
     level: int = 0
+    # Images only, and only when asked for: the image itself, as PNG or JPEG
+    # bytes, for a vision model to caption. Never stored.
+    image: bytes | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass
@@ -143,7 +156,7 @@ def validate_file(path: str, max_bytes: int) -> str:
 # ---------------------------------------------------------------------------
 
 
-def read_pdf_docling(path: str) -> list[ExtractedElement]:
+def read_pdf_docling(path: str, with_images: bool = False) -> list[ExtractedElement]:
     """Primary PDF reader. Layout-aware, OCR disabled."""
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.pipeline_options import PdfPipelineOptions
@@ -151,11 +164,13 @@ def read_pdf_docling(path: str) -> list[ExtractedElement]:
 
     opts = PdfPipelineOptions()
     opts.do_ocr = False  # see module docstring for why
+    # Rendering each picture costs memory and time, so only when asked for.
+    opts.generate_picture_images = with_images
 
     converter = DocumentConverter(
         format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)}
     )
-    return _docling_elements(converter.convert(path).document)
+    return _docling_elements(converter.convert(path).document, with_images=with_images)
 
 
 # Running text docling finds at the top and bottom of every page, such as
@@ -170,13 +185,27 @@ def _docling_page(item) -> int:
     return getattr(prov[0], "page_no", 1) if prov else 1
 
 
-def _docling_elements(doc) -> list[ExtractedElement]:
+def _docling_picture(item, doc) -> bytes | None:
+    """A docling picture as PNG bytes, or None when docling did not render it."""
+    try:
+        picture = item.get_image(doc)
+    except Exception:
+        return None
+    if picture is None:
+        return None
+    buffer = io.BytesIO()
+    picture.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _docling_elements(doc, with_images: bool = False) -> list[ExtractedElement]:
     """A docling document as elements, in reading order, kept as Markdown.
 
     Headings carry their section level, so chunks can say where they sit
     ("Chapter 2 > 2.1 Layers"). List items keep their bullet, and a table is
     its Markdown table: a table item has no text, so reading text alone lost
-    every table. Images stay placeholders.
+    every table. Images stay placeholders, carrying the picture itself when
+    `with_images` asks for it.
     """
     els: list[ExtractedElement] = []
     for item, _depth in doc.iterate_items():
@@ -196,7 +225,8 @@ def _docling_elements(doc) -> list[ExtractedElement]:
                 els.append(ExtractedElement("table", table, page))
             continue
         if label == "picture":
-            els.append(ExtractedElement("image", "[image]", page))
+            image = _docling_picture(item, doc) if with_images else None
+            els.append(ExtractedElement("image", "[image]", page, image=image))
             continue
 
         text = getattr(item, "text", "") or ""
@@ -228,25 +258,53 @@ def looks_letter_spaced(text: str) -> bool:
     return singles / len(words) > 0.4
 
 
-def read_pdf_pypdf(path: str) -> list[ExtractedElement]:
+def read_pdf_pypdf(path: str, with_images: bool = False) -> list[ExtractedElement]:
     """Default PDF reader (Option B). Lightweight, installs everywhere.
 
     Known to mangle designed decks (letter-spacing), so callers should run
     looks_letter_spaced() on the output and upgrade to docling if available.
+
+    With `with_images`, a page's embedded images come too, so they can be
+    captioned: a page with no text is recorded as its largest image, and a
+    page with text gains its largest few after the text.
     """
     from pypdf import PdfReader
 
     els = []
     for i, page in enumerate(PdfReader(path).pages):
         txt = page.extract_text() or ""
+        images = _pypdf_images(page) if with_images else []
         if txt.strip():
             els.append(ExtractedElement("text", clean_text(txt), i + 1))
+            els.extend(
+                ExtractedElement("image", "[image]", i + 1, image=data)
+                for data in images[:MAX_IMAGES_PER_PAGE]
+            )
         else:
-            els.append(ExtractedElement("image", "[image-only page]", i + 1))
+            els.append(
+                ExtractedElement(
+                    "image", IMAGE_ONLY_PAGE, i + 1, image=images[0] if images else None
+                )
+            )
     return els
 
 
-def read_pptx(path: str) -> list[ExtractedElement]:
+def _pypdf_images(page) -> list[bytes]:
+    """A page's embedded images, largest first. An image pypdf cannot decode
+    is left out: it is one image, not a reason to lose the page."""
+    found = []
+    try:
+        for image in page.images:
+            try:
+                found.append(image.data)
+            except Exception:
+                continue
+    except Exception:
+        log.debug("could not list the images on a page", exc_info=True)
+    return sorted(found, key=len, reverse=True)
+
+
+def read_pptx(path: str, with_images: bool = False) -> list[ExtractedElement]:
     """PPTX reader. python-pptx already gives clean, slide-scoped text, so
     docling adds nothing here."""
     from pptx import Presentation
@@ -264,7 +322,8 @@ def read_pptx(path: str) -> list[ExtractedElement]:
             elif shape.has_text_frame and shape.text_frame.text.strip():
                 parts.append(shape.text_frame.text)
             elif shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
-                images.append(ExtractedElement("image", "[image on slide]", page))
+                data = shape.image.blob if with_images else None
+                images.append(ExtractedElement("image", "[image on slide]", page, image=data))
         return parts
 
     els = []
@@ -537,7 +596,7 @@ def chunk_elements(
     # produce completely different chunk sizes depending on the parser.
     pages: list[tuple[int, tuple[str, ...], list[str]]] = []
     for el in elements:
-        if el.el_type == "image":
+        if el.el_type == "image" and el.content in IMAGE_PLACEHOLDERS:
             continue
         if el.page != page_heading_page:
             page_heading = ""
@@ -611,7 +670,7 @@ def chunk_elements(
 # ---------------------------------------------------------------------------
 
 
-def _run_reader(reader, path: str) -> list[ExtractedElement]:
+def _run_reader(reader, path: str, **options) -> list[ExtractedElement]:
     """Run one reader, turning file-level failures into a clean ValidationError.
 
     Only the reader call is wrapped, so bugs in our own routing/chunking logic
@@ -620,7 +679,7 @@ def _run_reader(reader, path: str) -> list[ExtractedElement]:
     no library internals or server paths leak into the API response.
     """
     try:
-        return reader(path)
+        return reader(path, **options)
     except ValidationError:
         raise  # the reader already produced a precise message; keep it
     except Exception as exc:
@@ -631,13 +690,22 @@ def _run_reader(reader, path: str) -> list[ExtractedElement]:
         ) from exc
 
 
-def extract(path: str, ext: str) -> tuple[list[ExtractedElement], str, list[str]]:
-    """Pick a reader for the format. Returns elements, parser name, warnings."""
+def extract(
+    path: str, ext: str, with_images: bool = False
+) -> tuple[list[ExtractedElement], str, list[str]]:
+    """Pick a reader for the format. Returns elements, parser name, warnings.
+
+    `with_images` keeps each image's bytes on its element, for captioning.
+    Word documents do not supply them yet.
+    """
     warnings: list[str] = []
+    # Asked of a reader only when wanted, so the readers are called exactly as
+    # before when images are not.
+    images = {"with_images": True} if with_images else {}
 
     if ext == "pdf":
         # Option B: pypdf is the default (light, installs everywhere).
-        elements = _run_reader(read_pdf_pypdf, path)
+        elements = _run_reader(read_pdf_pypdf, path, **images)
         joined = " ".join(e.content for e in elements if e.el_type != "image")
 
         # quality guard: if pypdf produced letter-spaced garbage, try to
@@ -647,7 +715,11 @@ def extract(path: str, ext: str) -> tuple[list[ExtractedElement], str, list[str]
                 from docling.document_converter import DocumentConverter  # noqa: F401
 
                 log.info("pypdf output looks corrupted on %s, upgrading to docling", path)
-                return _run_reader(read_pdf_docling, path), "docling", warnings
+                return (
+                    _run_reader(read_pdf_docling, path, **images),
+                    "docling",
+                    warnings,
+                )
             except ImportError:
                 warnings.append(
                     "This PDF uses styled text that the default parser reads poorly. "
@@ -658,7 +730,7 @@ def extract(path: str, ext: str) -> tuple[list[ExtractedElement], str, list[str]
         return elements, "pypdf", warnings
 
     if ext == "pptx":
-        return _run_reader(read_pptx, path), "python-pptx", warnings
+        return _run_reader(read_pptx, path, **images), "python-pptx", warnings
     if ext == "docx":
         return _run_reader(read_docx, path), "python-docx", warnings
     if ext == "txt":
@@ -667,16 +739,34 @@ def extract(path: str, ext: str) -> tuple[list[ExtractedElement], str, list[str]
     raise ValidationError(f"Unsupported file format: .{ext}", {"received": ext})
 
 
+def skipped_pages_warning(elements: list[ExtractedElement]) -> str | None:
+    """The warning for PDF pages that gave no text and were not captioned.
+
+    Only those pages are skipped. A PPTX picture sits alongside the slide's
+    text and is not a skipped page, so counting every image element would
+    report "2 pages skipped" on a normal deck.
+    """
+    skipped = sum(1 for e in elements if e.el_type == "image" and e.content == IMAGE_ONLY_PAGE)
+    if not skipped:
+        return None
+    return f"{skipped} page(s) contained no readable text and were skipped."
+
+
 def process_material(
-    path: str, material_id: uuid.UUID, max_bytes: int = 52_428_800
+    path: str,
+    material_id: uuid.UUID,
+    max_bytes: int = 52_428_800,
+    *,
+    with_images: bool = False,
 ) -> ProcessingResult:
     """Entry point. Validate, extract, clean, chunk.
 
     Called by POST /api/v1/materials. Embedding and storage happen after this,
-    in Phase 2.
+    in Phase 2. `with_images` keeps image bytes for captioning, which the
+    pipeline then does and re-chunks (see image_captioning.py).
     """
     ext = validate_file(path, max_bytes)
-    elements, parser, warnings = extract(path, ext)
+    elements, parser, warnings = extract(path, ext, with_images=with_images)
 
     if not any(e.el_type != "image" for e in elements):
         # SDD: no_readable_text_found -> status Failed
@@ -688,14 +778,9 @@ def process_material(
     chunks = chunk_elements(elements, material_id)
     page_count = max((e.page for e in elements), default=0)
 
-    # only PDF pages that yielded NO text are actually skipped. a PPTX picture
-    # sits alongside the slide's text and is not a skipped page, so counting
-    # every image element would report "2 pages skipped" on a normal deck.
-    skipped_pages = sum(
-        1 for e in elements if e.el_type == "image" and e.content == "[image-only page]"
-    )
-    if skipped_pages:
-        warnings.append(f"{skipped_pages} page(s) contained no readable text and were skipped.")
+    skipped = skipped_pages_warning(elements)
+    if skipped:
+        warnings.append(skipped)
 
     log.info(
         "material %s: %s elements, %s chunks, parser=%s",

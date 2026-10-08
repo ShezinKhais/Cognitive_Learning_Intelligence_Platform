@@ -22,6 +22,7 @@ from app.services.ai_gateway import GatewayEmbeddingClient, Priority, get_ai_gat
 from app.services.embeddings import OllamaEmbedder
 from app.services.extraction import SUPPORTED
 from app.services.generation import QuestionGenerator
+from app.services.image_captioning import ImageCaptioner
 from app.services.jobs import BackgroundProcessor
 from app.services.material_store import DatabaseMaterialStore
 from app.services.pipeline import MaterialPipeline
@@ -142,4 +143,15 @@ def get_material_pipeline() -> MaterialPipeline:
             free_text=settings.free_text_questions_enabled,
         ),
         store=DatabaseMaterialStore(),
+        captioner=(
+            ImageCaptioner(
+                gateway,
+                settings.image_caption_model,
+                timeout=settings.image_caption_timeout_seconds,
+                queue_timeout=MATERIAL_QUEUE_TIMEOUT_SECONDS,
+                max_images=settings.image_caption_max_images,
+            )
+            if settings.image_captioning_enabled
+            else None
+        ),
     )
