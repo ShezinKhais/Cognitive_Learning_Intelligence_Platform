@@ -79,6 +79,14 @@ class ConsentRequiredError(ClipError):
     code = "CONSENT_REQUIRED"
 
 
+class RateLimitedError(ClipError):
+    """The caller is asking too often. `detail` says when to try again."""
+
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    code = "RATE_LIMITED"
+    log_traceback = False
+
+
 class ServiceUnavailableError(ClipError):
     """A dependency we do not control is down: Postgres, Ollama, Teams."""
 

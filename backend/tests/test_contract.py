@@ -47,6 +47,9 @@ EXPECTED_PATHS = {
     "/api/v1/meetings/{meeting_id}",
     "/api/v1/meetings/events",
     "/api/v1/teams/messages",
+    # Added in Phase 5 for the tutor (General CS). Additive. The reply is a
+    # stream of NDJSON events, so it has no response model.
+    "/api/v1/sessions/{session_id}/chat",
 }
 
 
