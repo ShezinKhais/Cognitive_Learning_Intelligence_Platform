@@ -739,6 +739,36 @@ def extract(
     raise ValidationError(f"Unsupported file format: .{ext}", {"received": ext})
 
 
+def element_metadata(element: ExtractedElement) -> dict[str, int]:
+    """What is stored beside an element so its chunks can be rebuilt later.
+
+    The uploaded file is deleted once processed (Design Document 4.1), so the
+    stored elements are all a material can ever be chunked again from. A
+    heading's level is the one thing chunking needs that the row has no column
+    for. A caption needs nothing extra: it is the element's content.
+    """
+    if element.el_type == "heading" and element.level > 0:
+        return {"level": element.level}
+    return {}
+
+
+def stored_element(
+    element_type: str, content: str | None, source_page: int | None, metadata: dict | None
+) -> ExtractedElement:
+    """A stored extraction_element row as the element it was saved from.
+
+    Rows saved before levels were kept read back as headings with no level,
+    which chunk as they always did: each applies to its own page.
+    """
+    level = (metadata or {}).get("level", 0)
+    return ExtractedElement(
+        element_type,
+        content or "",
+        source_page or 1,
+        level=level if isinstance(level, int) and level > 0 else 0,
+    )
+
+
 def skipped_pages_warning(elements: list[ExtractedElement]) -> str | None:
     """The warning for PDF pages that gave no text and were not captioned.
 
