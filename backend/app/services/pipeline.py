@@ -44,7 +44,7 @@ from app.realtime.hub import hub as default_hub
 from app.schemas.events import MaterialProgressPayload, MaterialStage, ServerEventType
 from app.services.extraction import ContentChunk, process_material
 from app.services.generation import contains_embedded_instruction
-from app.services.image_captioning import ImageCaptioner, add_captions
+from app.services.image_captioning import CAPTION_PROMPT_VERSION, ImageCaptioner, add_captions
 from app.services.jobs import (
     INTERNAL_ERROR,
     INTERRUPTED_ERROR,
@@ -216,7 +216,10 @@ class MaterialJob:
                         operation="image_captioning",
                         model=captions.model,
                         succeeded=captions.succeeded,
-                        detail=f"{captions.captioned} of {captions.sent} image(s) described",
+                        detail=(
+                            f"{captions.captioned} of {captions.sent} image(s) described, "
+                            f"prompt {CAPTION_PROMPT_VERSION}"
+                        ),
                     )
                 )
 
