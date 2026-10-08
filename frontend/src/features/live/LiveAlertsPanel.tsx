@@ -1,3 +1,7 @@
+import {
+  useState,
+} from 'react'
+
 import ConfidenceIndicator from '../intelligence/ConfidenceIndicator'
 import ExplainabilityPanel from '../intelligence/ExplainabilityPanel'
 
@@ -40,9 +44,36 @@ export default function LiveAlertsPanel({
   sessionNotice,
   onAcknowledge,
 }: LiveAlertsPanelProps) {
+  const [
+    acknowledgingAlertId,
+    setAcknowledgingAlertId,
+  ] = useState<string | null>(null)
+
+  const [
+    acknowledgementError,
+    setAcknowledgementError,
+  ] = useState<string | null>(null)
+
   const hasAnything =
     sessionNotice !== null ||
     alerts.length > 0
+
+  async function handleAcknowledge(
+    alertId: string,
+  ): Promise<void> {
+    setAcknowledgementError(null)
+    setAcknowledgingAlertId(alertId)
+
+    try {
+      await onAcknowledge(alertId)
+    } catch {
+      setAcknowledgementError(
+        'The alert could not be acknowledged. Please try again.',
+      )
+    } finally {
+      setAcknowledgingAlertId(null)
+    }
+  }
 
   return (
     <section className="rounded-xl border border-border bg-card p-6">
@@ -57,6 +88,15 @@ export default function LiveAlertsPanel({
           alerts appear here.
         </p>
       </div>
+
+      {acknowledgementError && (
+        <div
+          role="alert"
+          className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
+          {acknowledgementError}
+        </div>
+      )}
 
       {!hasAnything && (
         <div className="mt-5 rounded-md border border-border p-4">
@@ -105,6 +145,10 @@ export default function LiveAlertsPanel({
                   undefined ||
                 alert.recommendation !==
                   undefined
+
+              const isAcknowledging =
+                acknowledgingAlertId ===
+                alert.alert_id
 
               return (
                 <article
@@ -160,14 +204,20 @@ export default function LiveAlertsPanel({
                   <div className="mt-4 flex justify-end">
                     <button
                       type="button"
+                      disabled={
+                        acknowledgingAlertId !==
+                        null
+                      }
                       onClick={() => {
-                        void onAcknowledge(
+                        void handleAcknowledge(
                           alert.alert_id,
                         )
                       }}
-                      className="rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted"
+                      className="rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      Acknowledge
+                      {isAcknowledging
+                        ? 'Acknowledging...'
+                        : 'Acknowledge'}
                     </button>
                   </div>
                 </article>
