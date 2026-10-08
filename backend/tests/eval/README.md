@@ -32,3 +32,21 @@ worth reporting too, since it shows how clear the labels are.
 
 Note on q2: slide 3 says "greater than 0 will predict 1", which is a typo for
 0.5. The reference answer uses 0.5, as a lecturer would when approving it.
+
+# Retrieval before and after #127
+
+`retrieval_queries.json` holds questions about the sample lecture, each with
+the slides that answer it. `image` questions are answered only by a picture
+(slides 9, 12, 15 and 16); `text` questions by the slide's text, and check
+that captions do not push the right text down.
+
+`python -m scripts.evaluate_retrieval --out tests/eval/RETRIEVAL_RESULTS.md`
+chunks the lecture twice: as before #127 (heading levels dropped, pictures
+left as placeholders) and as now (heading paths and captions). It embeds both
+with the embedding model and scores where the first chunk from a right slide
+ranks: hit@1, hit@5 and MRR. Captions are saved in `caption_cache.json`, so a
+rerun does not wait for the vision model.
+
+The sample PDF and Word document are left out on purpose: the default readers
+find no heading levels and no pictures in them, so both ways chunk them the
+same.
