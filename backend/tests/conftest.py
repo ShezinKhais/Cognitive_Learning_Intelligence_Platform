@@ -16,6 +16,7 @@ from app.main import create_app
 from app.realtime.classroom import classroom
 from app.realtime.consent import ConsentRegistry
 from app.schemas.identity import ConsentType, Role
+from app.services.meeting_directory import InMemoryMeetingDirectory
 
 # Fixtures shared by more than one test module, without importing them.
 pytest_plugins = ["tests.classroom_support", "tests.session_support"]
@@ -24,6 +25,21 @@ pytest_plugins = ["tests.classroom_support", "tests.session_support"]
 @pytest.fixture(scope="session")
 def app() -> FastAPI:
     return create_app()
+
+
+@pytest.fixture(autouse=True, scope="session")
+def no_model_warm_up():
+    """Keep the suite from loading a model.
+
+    A test client used with `with` runs the app's startup, which warms the
+    model up in the background. On a machine with Ollama running that would
+    load several gigabytes of weights for tests that never ask it anything.
+    """
+    settings = get_settings()
+    enabled = settings.ai_warmup_enabled
+    settings.ai_warmup_enabled = False
+    yield
+    settings.ai_warmup_enabled = enabled
 
 
 @pytest.fixture(scope="session")
@@ -65,6 +81,15 @@ def forget_pooled_connections():
     yield
     if get_engine.cache_info().currsize:
         get_engine().sync_engine.dispose(close=False)
+
+
+@pytest.fixture(autouse=True)
+def in_memory_meeting_directory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Startup registers the database-backed meeting directory. Tests keep the
+    in-memory one: a test that reads the directory itself runs on a different
+    event loop from the app's, and a pooled connection made on one fails on the
+    other. test_meetings.py checks that startup registers the database one."""
+    monkeypatch.setattr("app.main.DatabaseMeetingDirectory", InMemoryMeetingDirectory)
 
 
 @pytest.fixture

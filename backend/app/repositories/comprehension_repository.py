@@ -27,6 +27,7 @@ class DatabaseComprehensionSource:
                 select(
                     StudentResponse.student_id,
                     ComprehensionResult.label,
+                    ComprehensionResult.confidence_score,
                 )
                 .join(
                     ComprehensionResult,
@@ -39,8 +40,20 @@ class DatabaseComprehensionSource:
                 .order_by(ComprehensionResult.created_at)
             )
             # A reclassified answer counts once, by its newest label.
-            latest = {student_id: label for student_id, label in rows.all()}
-            topic = await db.scalar(
-                select(Question.topic).where(Question.question_id == question_id)
-            )
-        return QuestionComprehension(labels=list(latest.values()), topic=topic)
+            latest = {
+                student_id: (label, confidence) for student_id, label, confidence in rows.all()
+            }
+            question = (
+                await db.execute(
+                    select(Question.topic, Question.source_slide).where(
+                        Question.question_id == question_id
+                    )
+                )
+            ).one_or_none()
+        topic, source_slide = (question.topic, question.source_slide) if question else (None, None)
+        return QuestionComprehension(
+            labels=[label for label, _ in latest.values()],
+            topic=topic,
+            confidences=[confidence for _, confidence in latest.values()],
+            source_slide=source_slide,
+        )

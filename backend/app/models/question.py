@@ -108,7 +108,17 @@ class Question(Base):
         Text,
         nullable=True,
     )
+    # Free-text questions only (Phase 5): the model answer and the checklist
+    # the classifier grades a student's answer against. Null for MCQs.
+    reference_answer: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
 
+    key_points: Mapped[list[str] | None] = mapped_column(
+        ARRAY(String),
+        nullable=True,
+    )
     reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("user.user_id"),
