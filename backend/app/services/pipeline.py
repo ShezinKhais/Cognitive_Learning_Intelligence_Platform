@@ -210,13 +210,13 @@ class MaterialJob:
         if pipeline.captioner is not None and any(e.image for e in result.elements):
             await self._report(MaterialStage.EXTRACTING, "Describing the images.")
             result, captions = await add_captions(result, pipeline.captioner)
-            if captions.attempted:
+            if captions.sent:
                 model_runs.append(
                     ModelRun(
                         operation="image_captioning",
                         model=captions.model,
                         succeeded=captions.succeeded,
-                        detail=f"{captions.captioned} of {captions.attempted} image(s) described",
+                        detail=f"{captions.captioned} of {captions.sent} image(s) described",
                     )
                 )
 

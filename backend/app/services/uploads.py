@@ -11,6 +11,7 @@ app.main has to reach the same processor the route submitted to.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from functools import lru_cache
 from uuid import UUID, uuid4
@@ -22,12 +23,14 @@ from app.services.ai_gateway import GatewayEmbeddingClient, Priority, get_ai_gat
 from app.services.embeddings import OllamaEmbedder
 from app.services.extraction import SUPPORTED
 from app.services.generation import QuestionGenerator
-from app.services.image_captioning import ImageCaptioner
+from app.services.image_captioning import ImageCaptioner, VectorConverter, find_libreoffice
 from app.services.jobs import BackgroundProcessor
 from app.services.material_store import DatabaseMaterialStore
 from app.services.pipeline import MaterialPipeline
 from app.services.storage import CHUNK_BYTES, LocalDiskStorage, StoredFile
 from app.services.upload_security import validate_uploaded_file
+
+log = logging.getLogger("clip.uploads")
 
 # One model call while processing a material, and how many attempts it gets.
 # These are what the pipeline's own client used before its calls went through
@@ -111,6 +114,14 @@ def get_question_generator() -> QuestionGenerator:
     return get_material_pipeline().generator
 
 
+def _vector_converter(configured: str) -> VectorConverter | None:
+    program = find_libreoffice(configured)
+    if program is None:
+        log.info("LibreOffice not found: WMF and EMF images will not be captioned")
+        return None
+    return VectorConverter(program)
+
+
 @lru_cache
 def get_material_pipeline() -> MaterialPipeline:
     """The pipeline with its collaborators as they stand.
@@ -150,6 +161,7 @@ def get_material_pipeline() -> MaterialPipeline:
                 timeout=settings.image_caption_timeout_seconds,
                 queue_timeout=MATERIAL_QUEUE_TIMEOUT_SECONDS,
                 max_images=settings.image_caption_max_images,
+                converter=_vector_converter(settings.libreoffice_path),
             )
             if settings.image_captioning_enabled
             else None
