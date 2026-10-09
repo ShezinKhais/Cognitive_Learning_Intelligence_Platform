@@ -365,8 +365,11 @@ a lecturer to say they have seen it.
   recorder **before** the lecturer is sent the event, so the alert they can click
   already exists. `alert_store.store_comprehension_alert` writes it through
   `alert_repository.save_alert` under the **same `alert_id`** the lecturer's screen
-  received. The reason, explanation, recommendation and confidence reasons go in the
-  row's `details` beside the figures it rests on, so no schema change was needed.
+  received. The explanation, its source, the confidence reasons and the recommendation
+  go in the columns BBIS added to `ai_alert` for them (#131, migration `d5a2f8c61e47`),
+  and the figures the alert rests on go in `details`. An alert stored by the first
+  version of this branch has the explanation in `details` instead; reading takes the
+  column first, then `details`, then the fallback, so those still read correctly.
   A failure or a hang is bounded by the recorder timeout and logged
   (`could not store an alert`); the alert still reaches the lecturer. Production now
   refuses to start without an `AlertRecorder`, like the others, and `install_live_store`
@@ -411,8 +414,7 @@ safe reason and fallback explanation" when it is read.
 
 ### 8.5 Topic recovery is not here
 
-The topic recovery data is Luna's: PR #132, `GET /sessions/{session_id}/topics`,
-stacked on her #130. It returns the ten fields the dashboard asked for, to the same
+The topic recovery data is Luna's: PR #132 (merged), `GET /sessions/{session_id}/topics`. It returns the ten fields the dashboard asked for, to the same
 lecturer-or-admin audience, from stored labels. This branch does not touch it.
 
 ### 8.6 Residual risks
@@ -423,17 +425,20 @@ lecturer-or-admin audience, from stored labels. This branch does not touch it.
 | R10 | Acknowledging is not announced to other staff screens. A second lecturer's page learns of it on its next read | Cyber 2 |
 | R11 | Alerts raised before this deployed are not stored. Nothing backfills | - |
 | R12 | Only class comprehension alerts are written. A student or room alert needs its own writer, and will be listed and acknowledged by these routes unchanged | - |
+| R13 | Recommendations are stored only inside their alert (the `recommendation` column). Nothing calls `save_recommendation()`, so BBIS's `ai_recommendation` table, which also holds sources, a fallback flag and its own acknowledgement, stays empty. A follow-up; the Phase 5 Cyber 1 issue stays open until it is done | Cyber 1 |
 
 ### 8.7 Verification
 
-- 1320 backend tests pass against Postgres 16 with pgvector: 1275 on `main` with #129 and
-  #131 merged in, and 45 new. `ruff check`, `ruff format --check` and
-  `export_contract.py --check` are clean, and there is one migration head.
-- Each of 35 guards was disabled in turn (the session scoping of an acknowledgement, the
-  commit, each access rule, each fallback on the read side, the keeping of an alert before
-  it is sent, the wiring check and the startup registration), and a test failed every time.
-  A first run caught 34 of 35: a blank stored reason was not tested, since the table's own
-  check stops one being written. That test was added, and all 35 are caught.
+- 1558 backend tests pass against Postgres 16 with pgvector, on this branch with current
+  `main` merged in (which has #124, #125, #126, #129, #130, #131 and #132). `ruff check`,
+  `ruff format --check` and `export_contract.py --check` are clean, and there is one
+  migration head (`d5a2f8c61e47`).
+- Each of 45 guards was disabled in turn, and a test failed every time: the session
+  scoping of an acknowledgement, the commit, each access rule, writing each explanation
+  field to its column, reading each from the column and then from `details`, each fallback
+  on the read side, keeping an alert before it is sent, the wiring check and the startup
+  registration. Earlier runs of this set found two untested cases, a blank stored reason
+  and the legacy shape, and both have tests.
 - Contract: one new path, `POST /sessions/{session_id}/alerts/{alert_id}/acknowledge`, and
   `GET /sessions/{session_id}/alerts` now returns `AlertOut` (a superset of what it returned),
   with an optional `status` query parameter. `events.schema.json` is unchanged by this branch.

@@ -29,30 +29,45 @@ from app.services import alert_store
 
 from .session_support import add_course, add_lecturer, add_question, create_session, sign_in_as
 
+EXPLANATION_FIELDS: dict[str, Any] = {
+    "explanation": "4 of 6 classified answers were partial or struggling.",
+    "explanation_source": "fallback",
+    "confidence_reasons": ["6 of 6 students shown the question have an answer."],
+    "recommendation": "Re-teach Planets: most answers show the idea did not land.",
+}
+
 
 async def keep(factory, session_id: str | UUID, **overrides: Any) -> UUID:
-    """A stored alert, as the live classroom leaves it."""
+    """A stored alert, as the live classroom leaves it: the explanation in its
+    columns and the figures in details."""
     fields: dict[str, Any] = {
         "kind": "topic_difficulty",
         "message": "Much of the class is struggling on Planets.",
         "reason": "4 of 6 classified answers were partial or struggling.",
         "confidence": 0.8,
         "topic": "Planets",
-        "details": {
-            "respondents": 6,
-            "threshold": 0.5,
-            "correct_ratio": 0.33,
-            "explanation": "4 of 6 classified answers were partial or struggling.",
-            "explanation_source": "fallback",
-            "confidence_reasons": ["6 of 6 students shown the question have an answer."],
-            "recommendation": "Re-teach Planets: most answers show the idea did not land.",
-        },
+        **EXPLANATION_FIELDS,
+        "details": {"respondents": 6, "threshold": 0.5, "correct_ratio": 0.33},
     }
     fields.update(overrides)
     async with factory() as db:
         row = await alert_repository.save_alert(db, session_id=UUID(str(session_id)), **fields)
         await db.commit()
     return row.alert_id
+
+
+async def keep_legacy(factory, session_id: str | UUID) -> UUID:
+    """A stored alert as this code first wrote it, before BBIS's explanation
+    columns existed: the columns empty and the explanation in details."""
+    return await keep(
+        factory,
+        session_id,
+        explanation=None,
+        explanation_source=None,
+        confidence_reasons=None,
+        recommendation=None,
+        details={"respondents": 6, "threshold": 0.5, "correct_ratio": 0.33, **EXPLANATION_FIELDS},
+    )
 
 
 def comprehension_alert(session_id: UUID, **overrides: Any) -> ClassComprehensionAlert:
@@ -177,7 +192,7 @@ async def test_an_alert_the_classroom_stored_reads_back_as_it_was_shown(
     assert alert["kind"] == "topic_difficulty" and alert["status"] == "open"
 
 
-async def test_the_stored_row_carries_the_figures_and_explanation_in_its_details(
+async def test_the_stored_row_carries_the_explanation_in_its_columns_and_the_figures_in_details(
     db, lecturer_session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _, factory, _ = db
@@ -190,7 +205,11 @@ async def test_the_stored_row_carries_the_figures_and_explanation_in_its_details
 
     async with factory() as check:
         row = await check.get(AIAlert, live.alert_id)
-    assert row is not None and row.details == alert_store.alert_details(live)
+    assert row is not None
+    assert (row.explanation, row.explanation_source) == (live.explanation, live.explanation_source)
+    assert row.confidence_reasons == live.confidence_reasons
+    assert row.recommendation == live.recommendation
+    assert row.details == {"respondents": 8, "threshold": 0.5, "correct_ratio": 0.25}
     assert row.model_name is None and row.student_id is None
 
 
@@ -498,16 +517,104 @@ def test_a_confidence_outside_zero_to_one_is_held_to_it(stored: float, shown: fl
     assert alert_store.alert_from_row(row(confidence=stored)).confidence == shown
 
 
-def test_good_details_are_shown_exactly() -> None:
-    details = alert_store.alert_details(comprehension_alert(uuid4()))
-    alert = alert_store.alert_from_row(row(details=details, status="acknowledged",
-                                           acknowledged_by=LECTURER_ID,
-                                           acknowledged_at=datetime.now(UTC)))  # fmt: skip
-    assert alert.explanation == details["explanation"]
-    assert alert.recommendation == details["recommendation"]
-    assert alert.confidence_reasons == details["confidence_reasons"]
+COLUMNS: dict[str, Any] = {
+    "explanation": "From the column.",
+    "explanation_source": "ai",
+    "confidence_reasons": ["Column reason one.", "Column reason two."],
+    "recommendation": "Column recommendation.",
+}
+
+
+def test_the_columns_are_shown_exactly() -> None:
+    live = comprehension_alert(uuid4())
+    alert = alert_store.alert_from_row(
+        row(
+            explanation=live.explanation,
+            explanation_source=live.explanation_source,
+            confidence_reasons=list(live.confidence_reasons),
+            recommendation=live.recommendation,
+            details=alert_store.alert_details(live),
+            status="acknowledged",
+            acknowledged_by=LECTURER_ID,
+            acknowledged_at=datetime.now(UTC),
+        )
+    )
+    assert alert.explanation == live.explanation
+    assert alert.recommendation == live.recommendation
+    assert alert.confidence_reasons == live.confidence_reasons
+    assert alert.explanation_source == live.explanation_source
     assert (alert.respondents, alert.threshold, alert.correct_ratio) == (8, 0.5, 0.25)
     assert alert.status == "acknowledged" and alert.acknowledged_by == LECTURER_ID
+
+
+def test_an_alert_stored_before_the_columns_existed_is_read_from_details() -> None:
+    alert = alert_store.alert_from_row(row(details=EXPLANATION_FIELDS))
+    assert alert.explanation == EXPLANATION_FIELDS["explanation"]
+    assert alert.recommendation == EXPLANATION_FIELDS["recommendation"]
+    assert alert.confidence_reasons == EXPLANATION_FIELDS["confidence_reasons"]
+    assert alert.explanation_source == "fallback"
+
+
+def test_the_column_wins_over_details_when_both_are_there() -> None:
+    other = {
+        "explanation": "From details.",
+        "explanation_source": "fallback",
+        "confidence_reasons": ["Details reason."],
+        "recommendation": "Details recommendation.",
+    }
+    alert = alert_store.alert_from_row(row(**COLUMNS, details=other))
+    assert alert.explanation == "From the column."
+    assert alert.recommendation == "Column recommendation."
+    assert alert.confidence_reasons == ["Column reason one.", "Column reason two."]
+    assert alert.explanation_source == "ai"
+
+
+@pytest.mark.parametrize(
+    ("column", "from_details"),
+    [
+        ("explanation", "explanation"),
+        ("recommendation", "recommendation"),
+    ],
+)
+@pytest.mark.parametrize("blank", [None, "", "   "])
+def test_a_blank_column_falls_back_to_details(column: str, from_details: str, blank: Any) -> None:
+    alert = alert_store.alert_from_row(
+        row(**{**COLUMNS, column: blank}, details=EXPLANATION_FIELDS)
+    )
+    assert getattr(alert, column) == EXPLANATION_FIELDS[from_details]
+
+
+@pytest.mark.parametrize("empty", [None, [], ["", "  "]])
+def test_empty_confidence_reasons_in_the_column_fall_back_to_details(empty: Any) -> None:
+    alert = alert_store.alert_from_row(
+        row(**{**COLUMNS, "confidence_reasons": empty}, details=EXPLANATION_FIELDS)
+    )
+    assert alert.confidence_reasons == EXPLANATION_FIELDS["confidence_reasons"]
+
+
+@pytest.mark.parametrize("bad", [None, "", "human"])
+def test_an_unknown_source_in_the_column_falls_back_to_details_then_to_fallback(bad: Any) -> None:
+    from_details = alert_store.alert_from_row(
+        row(**{**COLUMNS, "explanation_source": bad}, details={"explanation_source": "ai"})
+    )
+    assert from_details.explanation_source == "ai"
+    neither = alert_store.alert_from_row(row(**{**COLUMNS, "explanation_source": bad}))
+    assert neither.explanation_source == "fallback"
+
+
+async def test_an_alert_stored_before_the_columns_existed_is_listed_with_its_explanation(
+    db, lecturer_session
+) -> None:
+    client, factory, _ = db
+    session = await lecturer_session()
+    await keep_legacy(factory, session["id"])
+
+    [alert] = client.get(alerts_path(session["id"])).json()
+
+    assert alert["explanation"] == EXPLANATION_FIELDS["explanation"]
+    assert alert["recommendation"] == EXPLANATION_FIELDS["recommendation"]
+    assert alert["confidence_reasons"] == EXPLANATION_FIELDS["confidence_reasons"]
+    assert alert["respondents"] == 6
 
 
 async def test_the_ai_label_survives_storage(

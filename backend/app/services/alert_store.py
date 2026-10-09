@@ -7,9 +7,13 @@ and acknowledge one.
 
 What is kept is the alert the lecturer was shown, under the id they were shown
 it with, so the alert on their screen is the one they acknowledge. The reason,
-explanation, recommendation and confidence reasons (see ai_explainability.py)
-go in the row's details beside the figures, so a page reloaded in the middle of
-a class, or opened after it, shows what was shown live.
+explanation, explanation source, confidence reasons and recommendation (see
+ai_explainability.py) go in the columns BBIS made for them, and the figures the
+alert rests on go in details, so a page reloaded in the middle of a class, or
+opened after it, shows what was shown live.
+
+An alert stored before those columns existed has them in details. Reading takes
+the column first, then details, then the fallback.
 
 Reading never fails on an unexpected row, and never returns one with nothing to
 read: any field missing or blank in a stored alert is replaced with the fallback
@@ -38,19 +42,15 @@ log = logging.getLogger("clip.alerts")
 
 AlertStatus = Literal["open", "acknowledged"]
 _STATUSES = ("open", "acknowledged")
+_SOURCES = ("ai", "fallback")
 
 
 def alert_details(alert: ClassComprehensionAlert) -> dict[str, Any]:
-    """What goes in the stored row's details: the figures the alert rests on,
-    and everything the lecturer was shown beyond the headline and the reason."""
+    """What goes in the stored row's details: the figures the alert rests on."""
     return {
         "respondents": alert.respondents,
         "threshold": alert.threshold,
         "correct_ratio": alert.correct_ratio,
-        "explanation": alert.explanation,
-        "explanation_source": alert.explanation_source,
-        "confidence_reasons": list(alert.confidence_reasons),
-        "recommendation": alert.recommendation,
     }
 
 
@@ -71,6 +71,10 @@ async def store_comprehension_alert(alert: ClassComprehensionAlert) -> None:
             message=alert.message,
             reason=alert.reason,
             confidence=alert.confidence,
+            explanation=alert.explanation,
+            explanation_source=alert.explanation_source,
+            confidence_reasons=list(alert.confidence_reasons),
+            recommendation=alert.recommendation,
             details=alert_details(alert),
         )
         await db.commit()
@@ -81,6 +85,13 @@ def _text(value: object) -> str | None:
     if isinstance(value, str) and value.strip():
         return value.strip()
     return None
+
+
+def _texts(value: object) -> list[str]:
+    """The strings in a stored list that have something in them, trimmed."""
+    if not isinstance(value, list):
+        return []
+    return [t.strip() for t in value if isinstance(t, str) and t.strip()]
 
 
 def _number(value: object, kind: type) -> Any:
@@ -95,9 +106,12 @@ def alert_from_row(row: AIAlert) -> AlertOut:
     details: dict[str, Any] = row.details if isinstance(row.details, dict) else {}
     fallback = fallback_explanation(cast(AlertKind, row.kind))
 
-    reasons = details.get("confidence_reasons")
-    confidence_reasons = [t for t in (reasons if isinstance(reasons, list) else []) if _text(t)]
-    source = details.get("explanation_source")
+    # The column, then details for an alert stored before the columns existed.
+    source = next(
+        (s for s in (row.explanation_source, details.get("explanation_source")) if s in _SOURCES),
+        "fallback",
+    )
+    confidence_reasons = _texts(row.confidence_reasons) or _texts(details.get("confidence_reasons"))
     status = row.status if row.status in _STATUSES else "open"
 
     return AlertOut(
@@ -109,13 +123,14 @@ def alert_from_row(row: AIAlert) -> AlertOut:
         message=_text(row.message) or fallback.message,
         reason=_text(row.reason) or fallback.reason,
         confidence=max(0.0, min(1.0, row.confidence)),
-        explanation=_text(details.get("explanation")) or fallback.explanation,
-        explanation_source=cast(
-            Literal["ai", "fallback"], source if source in ("ai", "fallback") else "fallback"
-        ),
-        confidence_reasons=[t.strip() for t in confidence_reasons]
-        or list(fallback.confidence_reasons),
-        recommendation=_text(details.get("recommendation")) or fallback.recommendation,
+        explanation=_text(row.explanation)
+        or _text(details.get("explanation"))
+        or fallback.explanation,
+        explanation_source=cast(Literal["ai", "fallback"], source),
+        confidence_reasons=confidence_reasons or list(fallback.confidence_reasons),
+        recommendation=_text(row.recommendation)
+        or _text(details.get("recommendation"))
+        or fallback.recommendation,
         status=cast(AlertStatus, status),
         raised_at=row.raised_at,
         acknowledged_by=row.acknowledged_by,
