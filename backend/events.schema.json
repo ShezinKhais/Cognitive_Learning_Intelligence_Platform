@@ -293,6 +293,7 @@
           "type": "string"
         }
       },
+      "description": "An alert for the lecturer, with why it was raised and what to do.\n\nEvery alert carries a reason, an explanation and a recommendation, none of\nthem blank, so the lecturer can see why it was raised and how far to trust\nit. See app/services/ai_explainability.py for how each is built.",
       "properties": {
         "alert_id": {
           "format": "uuid",
@@ -305,16 +306,48 @@
           "title": "Confidence",
           "type": "number"
         },
+        "confidence_reasons": {
+          "description": "Why the confidence is what it is.",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Confidence Reasons",
+          "type": "array"
+        },
+        "explanation": {
+          "description": "A fuller account. A model's, once screened, else the automatic one.",
+          "minLength": 1,
+          "title": "Explanation",
+          "type": "string"
+        },
+        "explanation_source": {
+          "description": "Whether the explanation was written by a model or is the automatic fallback.",
+          "enum": [
+            "ai",
+            "fallback"
+          ],
+          "title": "Explanation Source",
+          "type": "string"
+        },
         "kind": {
           "$ref": "#/$defs/AlertKind"
         },
         "message": {
+          "minLength": 1,
           "title": "Message",
           "type": "string"
         },
         "reason": {
-          "description": "Plain-language justification. Required, never empty.",
+          "description": "Plain-language justification, built from the counts behind the alert.",
+          "minLength": 1,
           "title": "Reason",
+          "type": "string"
+        },
+        "recommendation": {
+          "description": "What the lecturer might do about it.",
+          "minLength": 1,
+          "title": "Recommendation",
           "type": "string"
         }
       },
@@ -323,7 +356,10 @@
         "kind",
         "message",
         "reason",
-        "confidence"
+        "confidence",
+        "explanation",
+        "explanation_source",
+        "recommendation"
       ],
       "title": "AlertRaisedPayload",
       "type": "object"

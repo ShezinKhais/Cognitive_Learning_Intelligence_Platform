@@ -25,6 +25,7 @@ from app.core.errors import NotFoundError, not_implemented
 from app.realtime.classroom import classroom
 from app.repositories.session_repository import SessionRepository
 from app.repositories.student_repository import StudentRepository
+from app.repositories.topic_difficulty_repository import DatabaseTopicAnswers
 from app.schemas.common import Page
 from app.schemas.identity import ConsentType, Role
 from app.schemas.session import (
@@ -36,6 +37,7 @@ from app.schemas.session import (
     SessionOut,
     SessionReadinessOut,
     StudentSessionSummary,
+    TopicDifficultyOut,
 )
 from app.services import session_lifecycle
 from app.services.session_access import may_view_session_analytics
@@ -228,6 +230,20 @@ async def session_alerts(
     """Class comprehension alerts raised so far in a running session."""
     await _analytics_session(db, principal, session_id)
     return classroom.alerts(session_id)
+
+
+@router.get("/{session_id}/topics", response_model=list[TopicDifficultyOut], dependencies=_staff)
+async def session_topics(
+    session_id: UUID,
+    principal: CurrentUser,
+    db: DbSession,
+) -> list[TopicDifficultyOut]:
+    """How hard the class found each topic, hardest first. Read from stored
+    comprehension labels, so it works during and after a session. Topics with
+    too few answers for a level come last."""
+    await _analytics_session(db, principal, session_id)
+    topics = await DatabaseTopicAnswers(db).session_topics(session_id)
+    return [TopicDifficultyOut.model_validate(topic) for topic in topics]
 
 
 async def _analytics_session(db: DbSession, principal: CurrentUser, session_id: UUID) -> None:
