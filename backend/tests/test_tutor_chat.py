@@ -21,7 +21,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, event, select
 
 from app.auth.store import LECTURER_ID, STUDENT_ID, get_consent_repository
 from app.core.config import get_settings
@@ -91,6 +91,9 @@ class FakeTutorModel:
         self.prompts: list[tuple[str, Sequence[Message]]] = []
         self.streaming = 0
         self.closed_streams = 0
+        # Database connections in use each time the model was asked to write.
+        self.connections_held: list[int] = []
+        self.connections_in_use = lambda: 0
 
     async def complete(
         self, model: str, messages: Sequence[Message], *, max_tokens: int | None
@@ -101,6 +104,7 @@ class FakeTutorModel:
         self, model: str, messages: Sequence[Message], *, max_tokens: int | None
     ) -> AsyncIterator[str]:
         self.prompts.append((model, messages))
+        self.connections_held.append(self.connections_in_use())
         self.streaming += 1
         try:
             for piece in self.reply:
@@ -125,6 +129,20 @@ async def tutor(db, monkeypatch: pytest.MonkeyPatch):
     """The route's gateway and limiter, replaced with ones a test can see into."""
     _, factory, created = db
     model = FakeTutorModel()
+    pool = factory.kw["bind"].sync_engine.pool
+    in_use = 0
+
+    def taken(*_: object) -> None:
+        nonlocal in_use
+        in_use += 1
+
+    def returned(*_: object) -> None:
+        nonlocal in_use
+        in_use -= 1
+
+    event.listen(pool, "checkout", taken)
+    event.listen(pool, "checkin", returned)
+    model.connections_in_use = lambda: in_use
     gateway = AiGateway(model, "chat-model", LIMITS, embedding_model=get_settings().embedding_model)
     limiter = ChatLimiter(per_minute=3, longest_exchange=60.0)
     requests: list[AiRequest] = []
@@ -138,6 +156,8 @@ async def tutor(db, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(tutor_chat, "get_ai_gateway", lambda: gateway)
     monkeypatch.setattr(tutor_chat, "get_chat_limiter", lambda: limiter)
     yield SimpleNamespace(model=model, gateway=gateway, limiter=limiter, requests=requests)
+    event.remove(pool, "checkout", taken)
+    event.remove(pool, "checkin", returned)
     # Before the db fixture removes the materials these excerpts belong to.
     async with factory() as cleanup:
         await cleanup.execute(
@@ -426,6 +446,18 @@ async def test_with_no_question_open_the_tutor_is_told_so(
 # -- when the model cannot answer ---------------------------------------------------------
 
 
+async def test_no_database_connection_is_held_while_the_model_writes(db, app, tutor) -> None:
+    """The request's session lasts as long as the response, which here is as
+    long as the reply. A class asking at once would otherwise hold a
+    connection each and leave none for the search or the live session."""
+    client, _, _ = db
+    live = await _running_class(db, app)
+
+    assert _types(_events(_ask(client, live.id)))[-1] == "completed"
+
+    assert tutor.model.connections_held == [0]
+
+
 async def test_a_model_that_cannot_answer_is_a_fixed_error_on_the_stream(db, app, tutor) -> None:
     client, _, _ = db
     live = await _running_class(db, app)
@@ -615,9 +647,12 @@ def test_students_who_stop_asking_are_forgotten() -> None:
 def test_the_longest_exchange_follows_the_gateways_limits() -> None:
     settings = get_settings()
 
+    pauses = settings.ai_retry_pause_seconds * (2 ** (settings.ai_max_attempts - 1) - 1)
+    assert settings.ai_max_attempts > 1 and pauses > 0
     assert tutor_chat.longest_exchange(settings) == (
         2 * settings.ai_queue_timeout_seconds
         + settings.ai_request_timeout_seconds * settings.ai_max_attempts
+        + pauses
         + settings.ai_stream_timeout_seconds
     )
 

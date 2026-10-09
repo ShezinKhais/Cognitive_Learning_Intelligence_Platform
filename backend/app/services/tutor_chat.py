@@ -125,11 +125,15 @@ def get_chat_limiter() -> ChatLimiter:
 
 
 def longest_exchange(settings: Settings) -> float:
-    """The most an exchange can take: a wait for a slot and an attempt to
-    embed the question, then a wait for a slot and the whole streamed reply."""
+    """The most an exchange can take: a wait for a slot and every attempt to
+    embed the question, with the pauses between them, then a wait for a slot
+    and the whole streamed reply, whose limit covers its own retries."""
+    # The gateway doubles its pause after each failed attempt.
+    pauses = settings.ai_retry_pause_seconds * (2 ** (settings.ai_max_attempts - 1) - 1)
     return (
         2 * settings.ai_queue_timeout_seconds
         + settings.ai_request_timeout_seconds * settings.ai_max_attempts
+        + pauses
         + settings.ai_stream_timeout_seconds
     )
 

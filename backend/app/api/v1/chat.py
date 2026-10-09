@@ -78,6 +78,11 @@ async def session_chat(
 
     open_question_id = classroom.state(session_id, SessionStatus(live.status)).active_question_id
     context = await tutor_chat.prepare(db, live, principal.user_id, open_question_id)
+    # The request's session is not closed until the response has been sent,
+    # which here is when the reply ends. Closed now, it gives its connection
+    # back, so a class asking at once does not hold one each while the model
+    # writes. Nothing was written through it, and the context is a copy.
+    await db.close()
     # Last, so a request refused for any other reason costs the student
     # nothing against their limit.
     tutor_chat.get_chat_limiter().admit(principal.user_id)
