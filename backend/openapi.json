@@ -43,6 +43,29 @@
         "title": "Body_upload_material_api_v1_materials_post",
         "type": "object"
       },
+      "ChatRequest": {
+        "properties": {
+          "question": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._-]+$",
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "question"
+        ],
+        "title": "ChatRequest",
+        "type": "object"
+      },
       "ClassComprehensionAlert": {
         "properties": {
           "alert_id": {
@@ -2676,6 +2699,65 @@
         "summary": "Session Alerts",
         "tags": [
           "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/chat": {
+      "post": {
+        "description": "Ask the tutor a question about the session's material.\n\nThe reply streams as it is written. To stop it, close the connection.",
+        "operationId": "session_chat_api_v1_sessions__session_id__chat_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/x-ndjson": {}
+            },
+            "description": "One JSON object per line, each with `type` and `request_id`. `accepted` comes first. Then either `delta` events carrying `text`, `citation` events carrying a `citation` (`id`, `material_title`, `source_page`, `source_slide`, `excerpt`), `follow_up` events carrying a `prompt`, and `completed`; or one of `unsupported` (with a `reason`), `empty_retrieval` and `error` (with a `detail`)."
+          },
+          "404": {
+            "description": "No such session, or the student does not belong to it."
+          },
+          "409": {
+            "description": "The tutor is still answering this student's last question."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "The student is asking too often."
+          }
+        },
+        "summary": "Session Chat",
+        "tags": [
+          "chat"
         ]
       }
     },
