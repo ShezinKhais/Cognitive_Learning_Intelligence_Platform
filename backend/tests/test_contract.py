@@ -43,6 +43,7 @@ EXPECTED_PATHS = {
     "/api/v1/sessions/{session_id}/alerts",
     # Added in Phase 5 so a lecturer can acknowledge an alert (Cyber 1). Additive.
     "/api/v1/sessions/{session_id}/alerts/{alert_id}/acknowledge",
+    "/api/v1/sessions/{session_id}/topics",
     "/api/v1/sessions/{session_id}/summary/{student_id}",
     # Added in Phase 4 for Teams meetings, the bot and the mock adapter. Additive.
     "/api/v1/meetings/{meeting_id}",

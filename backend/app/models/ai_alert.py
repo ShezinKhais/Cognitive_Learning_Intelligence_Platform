@@ -27,6 +27,14 @@ class AIAlert(Base):
             "length(btrim(reason)) > 0",
             name="ck_ai_alert_reason_not_blank",
         ),
+        CheckConstraint(
+            "explanation_source IN ('ai', 'fallback')",
+            name="ck_ai_alert_explanation_source",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(confidence_reasons) = 'array'",
+            name="ck_ai_alert_confidence_reasons_array",
+        ),
         # Acknowledged exactly when it records when.
         CheckConstraint(
             "(status = 'acknowledged') = (acknowledged_at IS NOT NULL)",
@@ -64,6 +72,18 @@ class AIAlert(Base):
     message: Mapped[str] = mapped_column(Text, nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    # Why the lecturer was shown the alert, and what to do about it. Null on
+    # alerts stored before these were kept.
+    explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # "ai" when a model wrote the explanation, "fallback" when a template did.
+    explanation_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    confidence_reasons: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    recommendation: Mapped[str | None] = mapped_column(Text, nullable=True)
     # The model and prompt behind the alert. Null when a plain rule raised it.
     model_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     prompt_version: Mapped[str | None] = mapped_column(String(50), nullable=True)

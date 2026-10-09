@@ -45,9 +45,11 @@ class StandInGenerator:
         self.drafts = drafts if drafts is not None else [replacement()]
         self.fails = fails
         self.seen_chunks = []
+        self.seen_type = None
 
-    async def generate(self, material_id, chunks, count=None):
+    async def generate(self, material_id, chunks, count=None, question_type=None):
         self.seen_chunks = list(chunks)
+        self.seen_type = question_type
         if self.fails:
             raise TimeoutError("model server did not answer")
         return self.drafts
@@ -108,6 +110,41 @@ async def test_a_draft_is_replaced_and_kept_as_rejected(db_client, app, generato
             assert old.reviewed_by == lecturer
             listed = test_client.get(f"/api/v1/materials/{material_id}/questions").json()
             assert {item["status"] for item in listed["items"]} == {"draft", "rejected"}
+    finally:
+        await _tidy(session_factory, material_id, question_id)
+        app.dependency_overrides.pop(get_principal, None)
+
+
+async def test_a_replacement_keeps_the_type_of_the_question_it_replaces(  # noqa: F811
+    db_client,  # noqa: F811
+    app,
+    generator,
+) -> None:
+    test_client, session_factory = db_client
+    lecturer = uuid4()
+    material_id, question_id = await _seed_question(session_factory, uploaded_by=lecturer)
+    await _with_chunk(session_factory, material_id)
+    short_answer = DraftQuestion(
+        type=QuestionType.FREE_TEXT,
+        difficulty=Difficulty.EASY,
+        prompt="Explain why Paris matters to France.",
+        reference_answer="Paris is the capital of France.",
+        key_points=("Paris is the capital", "It is in France"),
+        source_slide=1,
+        source_excerpt="Paris is the capital of France",
+    )
+    stand_in = generator(StandInGenerator(drafts=[short_answer, replacement()]))
+    try:
+        _as(app, lecturer, Role.LECTURER, "lecturer@uni.test")
+
+        response = test_client.post(
+            f"/api/v1/materials/{material_id}/questions/{question_id}:regenerate"
+        )
+
+        assert response.status_code == 201
+        assert stand_in.seen_type == QuestionType.MCQ
+        assert response.json()["type"] == "mcq"
+        assert response.json()["prompt"] == "Which city is the capital of France?"
     finally:
         await _tidy(session_factory, material_id, question_id)
         app.dependency_overrides.pop(get_principal, None)
@@ -211,13 +248,13 @@ async def test_a_question_reviewed_while_the_model_runs_is_not_replaced(
     await _with_chunk(session_factory, material_id)
 
     class ReviewedMeanwhile(StandInGenerator):
-        async def generate(self, material_id, chunks, count=None):
+        async def generate(self, material_id, chunks, count=None, question_type=None):
             async with session_factory() as other, other.begin():
                 await other.execute(
                     text("update question set status = 'approved' where question_id = :q"),
                     {"q": question_id},
                 )
-            return await super().generate(material_id, chunks, count)
+            return await super().generate(material_id, chunks, count, question_type)
 
     generator(ReviewedMeanwhile())
     try:
