@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   Clock3,
+  MessagesSquare,
   RefreshCw,
   Users,
   Wifi,
@@ -19,6 +20,7 @@ import {
 } from 'react-router'
 
 import { useStudentApp } from '../features/student/StudentAppContext'
+import { SocraticChatPanel } from '../features/chat/SocraticChatPanel'
 import { remainingResponseSeconds } from '../features/student/liveSessionState'
 import type {
   CheckpointState,
@@ -26,6 +28,9 @@ import type {
 } from '../features/student/liveSessionTypes'
 import type { StudentSession } from '../features/student/types'
 import { useLiveSession } from '../features/student/useLiveSession'
+
+const SOCRATIC_CHAT_ENABLED =
+  import.meta.env.VITE_SOCRATIC_CHAT_ENABLED === 'true'
 
 export default function StudentLiveSessionPage() {
   const { sessionId } = useParams<{ sessionId: string }>()
@@ -61,6 +66,7 @@ export function LiveSessionPanel({
   session: StudentSession
   compact?: boolean
 }) {
+  const [activeView, setActiveView] = useState<'class' | 'chat'>('class')
   const {
     state,
     selectOption,
@@ -133,6 +139,39 @@ export function LiveSessionPanel({
 
         <ConnectionNotice status={state.connection} />
 
+        {SOCRATIC_CHAT_ENABLED && (
+          <nav
+            aria-label="Student session tools"
+            className="mt-5 flex rounded-xl border border-border bg-card p-1"
+          >
+            <button
+              type="button"
+              aria-current={activeView === 'class' ? 'page' : undefined}
+              onClick={() => setActiveView('class')}
+              className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${
+                activeView === 'class'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              Live class
+            </button>
+            <button
+              type="button"
+              aria-current={activeView === 'chat' ? 'page' : undefined}
+              onClick={() => setActiveView('chat')}
+              className={`inline-flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
+                activeView === 'chat'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              <MessagesSquare aria-hidden="true" size={17} />
+              Learning assistant
+            </button>
+          </nav>
+        )}
+
         {state.error && (
           <div
             role="alert"
@@ -158,7 +197,11 @@ export function LiveSessionPanel({
           </div>
         )}
 
-        <section className="mt-5" aria-live="polite">
+        <section
+          className="mt-5"
+          aria-live="polite"
+          hidden={SOCRATIC_CHAT_ENABLED && activeView !== 'class' && !state.checkpoint}
+        >
           {state.checkpoint ? (
             <CheckpointCard
               checkpoint={state.checkpoint}
@@ -179,6 +222,16 @@ export function LiveSessionPanel({
             />
           )}
         </section>
+
+        {SOCRATIC_CHAT_ENABLED && (
+          <div className="mt-5" hidden={activeView !== 'chat'}>
+            <SocraticChatPanel
+              key={session.id}
+              sessionId={session.id}
+              compact={compact}
+            />
+          </div>
+        )}
       </div>
 
       {state.attentionPrompt &&
