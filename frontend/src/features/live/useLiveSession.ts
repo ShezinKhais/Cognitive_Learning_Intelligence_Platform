@@ -8,6 +8,10 @@ import {
   getAccessToken,
 } from '../../api'
 import { actionForClose } from '../materials/closeCodes'
+import {
+  acknowledgeSessionAlert,
+  getOpenSessionAlerts,
+} from './alertApi'
 
 export type LiveConnectionStatus =
   | 'connecting'
@@ -63,6 +67,16 @@ export interface LiveAlert {
   message: string
   reason: string
   confidence: number
+
+  explanation?: string
+
+  explanation_source?:
+    | 'ai'
+    | 'fallback'
+
+  confidence_reasons?: string[]
+
+  recommendation?: string
 }
 
 export interface LiveSessionNotice {
@@ -88,7 +102,9 @@ interface UseLiveSessionResult {
   closedQuestion: ClosedQuestion | null
   alerts: LiveAlert[]
   sessionNotice: LiveSessionNotice | null
-  acknowledgeAlert: (alertId: string) => void
+  acknowledgeAlert: (
+    alertId: string,
+  ) => Promise<void>
 }
 
 function liveSocketUrl(): string {
@@ -211,6 +227,31 @@ function isLiveAlert(
   const alert =
     value as Record<string, unknown>
 
+  const explanationValid =
+    alert.explanation === undefined ||
+    typeof alert.explanation === 'string'
+
+  const explanationSourceValid =
+    alert.explanation_source === undefined ||
+    alert.explanation_source === 'ai' ||
+    alert.explanation_source === 'fallback'
+
+  const confidenceReasonsValid =
+    alert.confidence_reasons === undefined ||
+    (
+      Array.isArray(
+        alert.confidence_reasons,
+      ) &&
+      alert.confidence_reasons.every(
+        (reason) =>
+          typeof reason === 'string',
+      )
+    )
+
+  const recommendationValid =
+    alert.recommendation === undefined ||
+    typeof alert.recommendation === 'string'
+
   return (
     typeof alert.alert_id === 'string' &&
     isLiveAlertKind(alert.kind) &&
@@ -218,7 +259,11 @@ function isLiveAlert(
     typeof alert.reason === 'string' &&
     typeof alert.confidence === 'number' &&
     alert.confidence >= 0 &&
-    alert.confidence <= 1
+    alert.confidence <= 1 &&
+    explanationValid &&
+    explanationSourceValid &&
+    confidenceReasonsValid &&
+    recommendationValid
   )
 }
 
@@ -312,6 +357,98 @@ export function useLiveSession(
   ] = useState<LiveSessionNotice | null>(
     null,
   )
+
+  useEffect(() => {
+    if (!sessionId) {
+      return
+    }
+
+    const currentSessionId =
+      sessionId
+
+    let active = true
+
+    async function loadStoredAlerts() {
+      try {
+        const storedAlerts =
+          await getOpenSessionAlerts(
+            currentSessionId,
+          )
+
+        if (!active) {
+          return
+        }
+
+        const supportedAlerts =
+          storedAlerts
+            .filter(
+              (alert) =>
+                isLiveAlertKind(
+                  alert.kind,
+                ),
+            )
+            .map(
+              (alert): LiveAlert => ({
+                alert_id:
+                  alert.alert_id,
+                kind:
+                  alert.kind as LiveAlertKind,
+                message:
+                  alert.message,
+                reason:
+                  alert.reason,
+                confidence:
+                  alert.confidence,
+                explanation:
+                  alert.explanation,
+                explanation_source:
+                  alert.explanation_source,
+                confidence_reasons:
+                  alert.confidence_reasons,
+                recommendation:
+                  alert.recommendation,
+              }),
+            )
+
+        const newestStoredAlerts =
+  supportedAlerts.reverse()
+
+setAlerts((current) => {
+  const merged = [
+    ...current,
+  ]
+
+  for (
+    const alert of
+      newestStoredAlerts
+  ) {
+    if (
+      !merged.some(
+        (existing) =>
+          existing.alert_id ===
+          alert.alert_id,
+      )
+    ) {
+      merged.push(alert)
+    }
+  }
+
+  return merged.slice(0, 20)
+})
+      } catch (error) {
+        console.warn(
+          'Stored alerts could not be loaded:',
+          error,
+        )
+      }
+    }
+
+    void loadStoredAlerts()
+
+    return () => {
+      active = false
+    }
+  }, [sessionId])
 
   useEffect(() => {
     setSessionState(null)
@@ -412,8 +549,7 @@ export function useLiveSession(
           }
 
           if (
-            typeof message.seq ===
-              'number' &&
+            typeof message.seq === 'number' &&
             message.seq > lastSeq
           ) {
             lastSeq =
@@ -421,8 +557,7 @@ export function useLiveSession(
           }
 
           if (
-            message.type ===
-              'ready' &&
+            message.type === 'ready' &&
             isReadyPayload(
               message.data,
             )
@@ -431,8 +566,7 @@ export function useLiveSession(
 
             if (
               message.data
-                .resumed_from_seq ===
-              null
+                .resumed_from_seq === null
             ) {
               lastSeq = 0
             }
@@ -448,8 +582,7 @@ export function useLiveSession(
           }
 
           if (
-            message.type ===
-              'session.state' &&
+            message.type === 'session.state' &&
             isLiveSessionState(
               message.data,
             )
@@ -459,10 +592,8 @@ export function useLiveSession(
             )
 
             if (
-              message.data.status ===
-                'ended' ||
-              message.data.status ===
-                'cancelled'
+              message.data.status === 'ended' ||
+              message.data.status === 'cancelled'
             ) {
               setActiveQuestion(null)
             }
@@ -471,8 +602,7 @@ export function useLiveSession(
           }
 
           if (
-            message.type ===
-              'question.delivered' &&
+            message.type === 'question.delivered' &&
             isLiveQuestion(
               message.data,
             )
@@ -487,8 +617,7 @@ export function useLiveSession(
           }
 
           if (
-            message.type ===
-              'question.closed' &&
+            message.type === 'question.closed' &&
             isClosedQuestion(
               message.data,
             )
@@ -512,8 +641,7 @@ export function useLiveSession(
           }
 
           if (
-            message.type ===
-              'alert.raised' &&
+            message.type === 'alert.raised' &&
             isLiveAlert(
               message.data,
             )
@@ -544,8 +672,7 @@ export function useLiveSession(
           }
 
           if (
-            message.type ===
-              'error' &&
+            message.type === 'error' &&
             isLiveSessionNotice(
               message.data,
             )
@@ -637,8 +764,7 @@ export function useLiveSession(
       stopped = true
 
       if (
-        retryTimer !==
-        undefined
+        retryTimer !== undefined
       ) {
         window.clearTimeout(
           retryTimer,
@@ -649,9 +775,18 @@ export function useLiveSession(
     }
   }, [sessionId])
 
-  function acknowledgeAlert(
+  async function acknowledgeAlert(
     alertId: string,
-  ) {
+  ): Promise<void> {
+    if (!sessionId) {
+      return
+    }
+
+    await acknowledgeSessionAlert(
+      sessionId,
+      alertId,
+    )
+
     setAlerts(
       (current) =>
         current.filter(

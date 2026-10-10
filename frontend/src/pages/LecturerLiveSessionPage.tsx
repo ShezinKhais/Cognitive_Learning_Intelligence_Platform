@@ -9,6 +9,13 @@ import {
 
 import { ApiError } from '../api'
 import SignOutButton from '../components/SignOutButton'
+import TopicRecoveryPanel from '../features/intelligence/TopicRecoveryPanel'
+import type {
+  TopicDifficulty,
+} from '../features/intelligence/topicRecovery'
+import {
+  getSessionTopics,
+} from '../features/intelligence/topicRecoveryApi'
 import LiveAlertsPanel from '../features/live/LiveAlertsPanel'
 import ManualQuestionTrigger from '../features/live/ManualQuestionTrigger'
 import {
@@ -176,6 +183,27 @@ export default function LecturerLiveSessionPage() {
       null,
     )
 
+  const [
+    topics,
+    setTopics,
+  ] =
+    useState<TopicDifficulty[]>(
+      [],
+    )
+
+  const [
+    topicsLoading,
+    setTopicsLoading,
+  ] = useState(false)
+
+  const [
+    topicsError,
+    setTopicsError,
+  ] =
+    useState<string | null>(
+      null,
+    )
+
   useEffect(() => {
     setSecondsRemaining(
       secondsUntilClose(
@@ -264,6 +292,63 @@ export default function LecturerLiveSessionPage() {
   }, [
     sessionId,
     sessionState?.status,
+  ])
+
+  useEffect(() => {
+    if (!sessionId) {
+      setTopics([])
+      setTopicsError(null)
+      setTopicsLoading(false)
+      return
+    }
+
+    const currentSessionId =
+      sessionId
+
+    let active = true
+
+    async function loadTopics() {
+      setTopicsLoading(true)
+      setTopicsError(null)
+
+      try {
+        const result =
+          await getSessionTopics(
+            currentSessionId,
+          )
+
+        if (!active) {
+          return
+        }
+
+        setTopics(result)
+      } catch (error: unknown) {
+        if (!active) {
+          return
+        }
+
+        setTopics([])
+
+        setTopicsError(
+          error instanceof ApiError
+            ? error.message
+            : 'Topic recovery data could not be loaded.',
+        )
+      } finally {
+        if (active) {
+          setTopicsLoading(false)
+        }
+      }
+    }
+
+    void loadTopics()
+
+    return () => {
+      active = false
+    }
+  }, [
+    sessionId,
+    closedQuestion,
   ])
 
   async function refreshReadiness() {
@@ -961,6 +1046,30 @@ export default function LecturerLiveSessionPage() {
               </div>
             )}
           </section>
+
+          <div>
+            {topicsLoading && (
+              <p
+                role="status"
+                className="mb-3 text-sm text-muted-foreground"
+              >
+                Loading topic recovery data...
+              </p>
+            )}
+
+            {topicsError && (
+              <div
+                role="alert"
+                className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+              >
+                {topicsError}
+              </div>
+            )}
+
+            <TopicRecoveryPanel
+              topics={topics}
+            />
+          </div>
 
           <LiveAlertsPanel
             alerts={alerts}
