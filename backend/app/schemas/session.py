@@ -178,6 +178,38 @@ class StudentSessionSummary(BaseModel):
     comprehension_by_topic: dict[str, ComprehensionLabel] = Field(default_factory=dict)
 
 
+class AlertOut(BaseModel):
+    """An alert kept for the lecturer: what was raised, why, what to do about it,
+    and whether anyone has seen it.
+
+    Served from the stored alert, so it is there after a refresh and after the
+    session. The three figures at the end are those of a topic difficulty alert,
+    null for any other kind.
+    """
+
+    alert_id: UUID
+    session_id: UUID
+    question_id: UUID | None
+    kind: str
+    topic: str | None
+    message: ShownText
+    reason: ShownText
+    confidence: float = Field(ge=0.0, le=1.0)
+    explanation: ShownText
+    explanation_source: Literal["ai", "fallback"]
+    confidence_reasons: list[ShownText] = Field(default_factory=list)
+    recommendation: ShownText
+    status: Literal["open", "acknowledged"]
+    raised_at: datetime
+    acknowledged_by: UUID | None = Field(
+        default=None, description="Whoever acknowledged it first. The first one is kept."
+    )
+    acknowledged_at: datetime | None = None
+    respondents: int | None = None
+    threshold: float | None = None
+    correct_ratio: float | None = None
+
+
 class ClassComprehensionAlert(BaseModel):
     # The id the lecturer's alert.raised event carried, so a reloaded page and
     # the live stream refer to one alert.
