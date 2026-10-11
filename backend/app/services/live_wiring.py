@@ -2,7 +2,8 @@
 
 AI 1 scores answers and works out reveals (live_recorder.py), BBIS stores
 answers, closes, prompt outcomes and attendance (LiveEventRepository), and
-Cyber 1 reads comprehension (DatabaseComprehensionSource). main.py calls
+Cyber 1 reads comprehension (DatabaseComprehensionSource) and keeps the
+lecturer's alerts (alert_store.py). main.py calls
 install_live_store() in its lifespan, before classroom.check_wiring() reports
 anything still missing.
 
@@ -24,6 +25,8 @@ from app.realtime.recorders import Attendance, ClosedQuestion, PromptOutcome
 from app.repositories.comprehension_repository import DatabaseComprehensionSource
 from app.repositories.live_event_repository import LiveEventRepository
 from app.repositories.question_repository import QuestionRepository
+from app.schemas.session import ClassComprehensionAlert
+from app.services.alert_store import store_comprehension_alert
 from app.services.comprehension_writer import label_response
 from app.services.live_recorder import LiveCloseRecorder, LiveResponseRecorder
 
@@ -95,6 +98,13 @@ class _Engagement:
             )
 
 
+class _Alerts:
+    """The lecturer's alerts, kept so they survive a refresh and the session."""
+
+    async def record_alert(self, alert: ClassComprehensionAlert) -> None:
+        await store_comprehension_alert(alert)
+
+
 def install_live_store(room: Classroom) -> None:
     room.recorder = LiveResponseRecorder(get_question=_get_question, store_response=_store_response)
     room.close_recorder = LiveCloseRecorder(
@@ -102,3 +112,4 @@ def install_live_store(room: Classroom) -> None:
     )
     room.prompt_recorder = room.participant_recorder = _Engagement()
     room.comprehension_source = DatabaseComprehensionSource()
+    room.alert_recorder = _Alerts()

@@ -1,14 +1,18 @@
 """Database model exports."""
 
+from app.models.ai_alert import AIAlert
 from app.models.ai_model_run import AIModelRun
+from app.models.ai_recommendation import AIRecommendation
 from app.models.audit_log import AuditLog
 from app.models.breakout_room import BreakoutRoom
+from app.models.classifier_eval import ClassifierEvalPrediction, ClassifierEvalRun
 from app.models.comprehension_result import ComprehensionResult
 from app.models.consent import Consent
 from app.models.course import Course
 from app.models.delivered_question import DeliveredQuestion
 from app.models.dynamic_prompt import DynamicPrompt
 from app.models.engagement_record import EngagementRecord
+from app.models.eval_answer import EvalAnswer
 from app.models.extraction_element import ExtractionElement
 from app.models.material import Material
 from app.models.material_processing_status import MaterialProcessingStatus
@@ -45,6 +49,11 @@ __all__ = [
     "TeamsRosterSync",
     "TeamsUserMapping",
     "User",
+    "AIAlert",
+    "AIRecommendation",
+    "ClassifierEvalPrediction",
+    "ClassifierEvalRun",
+    "EvalAnswer",
     "AIModelRun",
     "ExtractionElement",
     "MaterialProcessingStatus",
