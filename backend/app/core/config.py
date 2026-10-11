@@ -120,6 +120,14 @@ class Settings(BaseSettings):
     # leaves the model to unload.
     ai_keep_warm_seconds: float = Field(default=240.0, ge=0)
 
+    # The tutor. How many questions one student may ask it in a minute. The
+    # model serves a few requests at a time, so without this one student
+    # sending question after question would hold the queue against the class.
+    chat_questions_per_minute: int = Field(default=6, ge=1)
+    # How many excerpts of the lecture material are put to the model with a
+    # question. More gives it more to draw on and a longer prompt to read.
+    chat_retrieved_chunks: int = Field(default=5, ge=1, le=20)
+
     # Short-answer questions alongside the multiple choice ones, one for every
     # three. Off until the question table stores reference answers and key
     # points: one saved without them has nothing to be marked against.
