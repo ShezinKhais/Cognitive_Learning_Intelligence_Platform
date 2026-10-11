@@ -4,6 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "prepare:attention": "node scripts/prepare-attention.mjs",
+    "predev": "npm run prepare:attention",
+    "prebuild": "npm run prepare:attention",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
@@ -11,11 +14,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "1.1.0",
     "@microsoft/teams-js": "^2.40.0",
+    "@ricky0123/vad-web": "0.0.31",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.27.0",
     "motion": "^12.42.2",
+    "onnxruntime-web": "1.30.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router": "^8.3.0",

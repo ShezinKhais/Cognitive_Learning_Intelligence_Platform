@@ -32,6 +32,7 @@ import {
   isAccessRevocation,
 } from '../materials/closeCodes'
 import type { SessionStatus } from './types'
+import type { AttentionSummary } from '../attention/signals'
 
 interface AnswerSubmission {
   selected_option?: number
@@ -663,6 +664,17 @@ export function useLiveSession(
 
   return {
     state,
+    sendAttention: (value: AttentionSummary) => {
+      const socket = socketRef.current
+      if (!readyRef.current || socket?.readyState !== WebSocket.OPEN || state.sessionStatus !== 'active' || state.paused) return false
+      socket.send(JSON.stringify({ type: 'signal.attention', data: {
+        gaze_on_screen_ratio: value.gaze_on_screen_ratio,
+        face_present: value.face_present,
+        speaking: value.speaking,
+        window_seconds: value.window_seconds,
+      } }))
+      return true
+    },
     selectOption,
     setFreeText,
     submitAnswer,
