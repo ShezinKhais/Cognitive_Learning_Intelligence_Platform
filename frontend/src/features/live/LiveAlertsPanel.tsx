@@ -1,3 +1,10 @@
+import {
+  useState,
+} from 'react'
+
+import ConfidenceIndicator from '../intelligence/ConfidenceIndicator'
+import ExplainabilityPanel from '../intelligence/ExplainabilityPanel'
+
 import type {
   LiveAlert,
   LiveAlertKind,
@@ -7,7 +14,9 @@ import type {
 interface LiveAlertsPanelProps {
   alerts: LiveAlert[]
   sessionNotice: LiveSessionNotice | null
-  onAcknowledge: (alertId: string) => void
+  onAcknowledge: (
+    alertId: string,
+  ) => Promise<void>
 }
 
 function alertKindLabel(
@@ -35,9 +44,36 @@ export default function LiveAlertsPanel({
   sessionNotice,
   onAcknowledge,
 }: LiveAlertsPanelProps) {
+  const [
+    acknowledgingAlertId,
+    setAcknowledgingAlertId,
+  ] = useState<string | null>(null)
+
+  const [
+    acknowledgementError,
+    setAcknowledgementError,
+  ] = useState<string | null>(null)
+
   const hasAnything =
     sessionNotice !== null ||
     alerts.length > 0
+
+  async function handleAcknowledge(
+    alertId: string,
+  ): Promise<void> {
+    setAcknowledgementError(null)
+    setAcknowledgingAlertId(alertId)
+
+    try {
+      await onAcknowledge(alertId)
+    } catch {
+      setAcknowledgementError(
+        'The alert could not be acknowledged. Please try again.',
+      )
+    } finally {
+      setAcknowledgingAlertId(null)
+    }
+  }
 
   return (
     <section className="rounded-xl border border-border bg-card p-6">
@@ -52,6 +88,15 @@ export default function LiveAlertsPanel({
           alerts appear here.
         </p>
       </div>
+
+      {acknowledgementError && (
+        <div
+          role="alert"
+          className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
+          {acknowledgementError}
+        </div>
+      )}
 
       {!hasAnything && (
         <div className="mt-5 rounded-md border border-border p-4">
@@ -90,52 +135,94 @@ export default function LiveAlertsPanel({
       {alerts.length > 0 && (
         <div className="mt-5 space-y-3">
           {alerts.map(
-            (alert) => (
-              <article
-                key={alert.alert_id}
-                className="rounded-md border border-border p-4"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {alertKindLabel(
-                        alert.kind,
-                      )}
-                    </p>
+            (alert) => {
+              const hasIntelligenceDetails =
+                alert.explanation !==
+                  undefined ||
+                alert.explanation_source !==
+                  undefined ||
+                alert.confidence_reasons !==
+                  undefined ||
+                alert.recommendation !==
+                  undefined
 
-                    <p className="mt-1 font-semibold">
-                      {alert.message}
-                    </p>
+              const isAcknowledging =
+                acknowledgingAlertId ===
+                alert.alert_id
+
+              return (
+                <article
+                  key={alert.alert_id}
+                  className="rounded-md border border-border p-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {alertKindLabel(
+                          alert.kind,
+                        )}
+                      </p>
+
+                      <p className="mt-1 font-semibold">
+                        {alert.message}
+                      </p>
+                    </div>
+
+                    <ConfidenceIndicator
+                      confidence={
+                        alert.confidence
+                      }
+                    />
                   </div>
 
-                  <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
-                    {Math.round(
-                      alert.confidence *
-                        100,
-                    )}
-                    % confidence
-                  </span>
-                </div>
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    {alert.reason}
+                  </p>
 
-                <p className="mt-3 text-sm text-muted-foreground">
-                  {alert.reason}
-                </p>
+                  {hasIntelligenceDetails && (
+                    <div className="mt-4">
+                      <ExplainabilityPanel
+                        confidence={
+                          alert.confidence
+                        }
+                        confidenceReasons={
+                          alert.confidence_reasons
+                        }
+                        explanation={
+                          alert.explanation
+                        }
+                        explanationSource={
+                          alert.explanation_source
+                        }
+                        recommendation={
+                          alert.recommendation
+                        }
+                      />
+                    </div>
+                  )}
 
-                <div className="mt-4 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onAcknowledge(
-                        alert.alert_id,
-                      )
-                    }
-                    className="rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted"
-                  >
-                    Acknowledge
-                  </button>
-                </div>
-              </article>
-            ),
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      type="button"
+                      disabled={
+                        acknowledgingAlertId !==
+                        null
+                      }
+                      onClick={() => {
+                        void handleAcknowledge(
+                          alert.alert_id,
+                        )
+                      }}
+                      className="rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isAcknowledging
+                        ? 'Acknowledging...'
+                        : 'Acknowledge'}
+                    </button>
+                  </div>
+                </article>
+              )
+            },
           )}
         </div>
       )}
