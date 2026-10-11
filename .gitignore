@@ -51,3 +51,6 @@ logs/
 
 # Uploaded material, written by LocalDiskStorage
 backend/var/
+
+# Local model load test output (docs/local-model-benchmark.md)
+backend/benchmarks/
