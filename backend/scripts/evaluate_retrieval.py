@@ -14,7 +14,7 @@ to caption that image again.
 
 It prints, for each question, where the first chunk from a page that answers
 it ranks before and after ("-" when the material had no chunk from that page
-at all), then hit@1, hit@5 and MRR for picture and text questions.
+at all), then hit@1, hit@5, MRR and precision@5 for picture and text questions.
 """
 
 from __future__ import annotations
@@ -45,6 +45,7 @@ from app.services.retrieval_evaluation import (
     cosine_ranking,
     first_relevant_rank,
     load_queries,
+    precision_at_k,
     score,
 )
 
@@ -94,18 +95,23 @@ def table(
     return lines
 
 
-def summary(queries: list[RetrievalQuery], ranks: dict[str, list[int | None]]) -> list[str]:
+def summary(
+    queries: list[RetrievalQuery],
+    ranks: dict[str, list[int | None]],
+    precisions: dict[str, list[float]],
+) -> list[str]:
     def row(name: str, before: RetrievalScore, after: RetrievalScore) -> str:
         cells = [
             f"{before.hit_at_1:.2f} → {after.hit_at_1:.2f}",
             f"{before.hit_at_k:.2f} → {after.hit_at_k:.2f}",
             f"{before.mrr:.2f} → {after.mrr:.2f}",
+            f"{before.precision_at_k:.2f} → {after.precision_at_k:.2f}",
         ]
         return f"| {name} ({before.queries}) | " + " | ".join(cells) + " |"
 
     lines = [
-        f"| Questions | hit@1 | hit@{TOP_K} | MRR |",
-        "|---|---|---|---|",
+        f"| Questions | hit@1 | hit@{TOP_K} | MRR | precision@{TOP_K} |",
+        "|---|---|---|---|---|",
     ]
     groups = [
         (kind, [i for i, q in enumerate(queries) if q.kind == kind]) for kind in ("image", "text")
@@ -113,7 +119,13 @@ def summary(queries: list[RetrievalQuery], ranks: dict[str, list[int | None]]) -
     groups.append(("all", list(range(len(queries)))))
     for name, members in groups:
         if members:
-            by = {c: score([ranks[c][i] for i in members]) for c in CONDITIONS}
+            by = {
+                c: score(
+                    [ranks[c][i] for i in members],
+                    precisions=[precisions[c][i] for i in members],
+                )
+                for c in CONDITIONS
+            }
             lines.append(row(name, by["before"], by["after"]))
     return lines
 
@@ -145,6 +157,7 @@ async def main() -> None:
     queries = load_queries(args.queries)
     ranks: dict[str, list[int | None]] = {c: [] for c in CONDITIONS}
     tops: dict[str, list[int]] = {c: [] for c in CONDITIONS}
+    precisions: dict[str, list[float]] = {c: [] for c in CONDITIONS}
     try:
         for material in dict.fromkeys(q.material for q in queries):
             asked = [q for q in queries if q.material == material]
@@ -157,6 +170,7 @@ async def main() -> None:
                 for q, query_vector in zip(asked, query_vectors, strict=True):
                     pages = [found[i].source_page for i in cosine_ranking(query_vector, vectors)]
                     ranks[condition].append(first_relevant_rank(pages, q.pages))
+                    precisions[condition].append(precision_at_k(pages, q.pages))
                     tops[condition].append(pages[0])
     finally:
         await gateway.shutdown()
@@ -172,9 +186,11 @@ async def main() -> None:
         f"Embedding model `{settings.embedding_model}`, captions by "
         f"`{captioner.model}` with prompt `{CAPTION_PROMPT_VERSION}`. "
         "Rank is where the first chunk from a page that answers the question "
-        "comes; `-` means the material had no chunk from that page at all.",
+        "comes; `-` means the material had no chunk from that page at all. "
+        f"precision@{TOP_K} is the share of the top {TOP_K} chunks that come from "
+        "an answering page.",
         "",
-        *summary(ordered, ranks),
+        *summary(ordered, ranks, precisions),
         "",
         *table(ordered, ranks, tops),
     ]

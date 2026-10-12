@@ -145,3 +145,27 @@ def test_every_question_names_a_sample_and_a_page_in_it():
         assert q.kind in {"image", "text"}
         assert q.pages and all(page >= 1 for page in q.pages)
     assert {q.kind for q in queries} == {"image", "text"}
+
+
+def test_precision_at_k_is_the_share_of_top_chunks_on_topic():
+    from app.services.retrieval_evaluation import precision_at_k
+
+    # 2 of the top 5 come from page 4 or 5; the 6th does not count.
+    assert precision_at_k([4, 1, 5, 2, 3, 4], frozenset({4, 5})) == 0.4
+
+
+def test_precision_at_k_counts_out_of_k_when_there_are_fewer_chunks():
+    from app.services.retrieval_evaluation import precision_at_k
+
+    assert precision_at_k([4, 4], frozenset({4}), k=5) == 0.4
+
+
+def test_score_averages_precision_when_given():
+    result = score([1, None], k=5, precisions=[0.6, 0.0])
+    assert result.precision_at_k == 0.3
+    assert score([1]).precision_at_k is None
+
+
+def test_score_needs_one_precision_per_query():
+    with pytest.raises(ValueError):
+        score([1, 2], precisions=[0.4])

@@ -72,23 +72,41 @@ def first_relevant_rank(ranked_pages: Sequence[int], relevant: frozenset[int]) -
     return None
 
 
+def precision_at_k(ranked_pages: Sequence[int], relevant: frozenset[int], k: int = TOP_K) -> float:
+    """Share of the top `k` chunks that come from a page that answers the
+    question: of what the student or the generator is shown, how much is on
+    topic. Out of `k` even when fewer chunks exist, as the retriever is asked
+    for `k`."""
+    return sum(page in relevant for page in ranked_pages[:k]) / k
+
+
 @dataclass(frozen=True)
 class RetrievalScore:
     queries: int
     hit_at_1: float  # share answered by the top chunk
     hit_at_k: float  # share answered within the top TOP_K
     mrr: float  # mean of 1/rank, 0 for a miss
+    # Mean share of the top TOP_K chunks from an answering page; None when
+    # the precisions were not given.
+    precision_at_k: float | None = None
 
 
-def score(ranks: Sequence[int | None], k: int = TOP_K) -> RetrievalScore:
+def score(
+    ranks: Sequence[int | None],
+    k: int = TOP_K,
+    precisions: Sequence[float] | None = None,
+) -> RetrievalScore:
     if not ranks:
         raise ValueError("no queries to score")
+    if precisions is not None and len(precisions) != len(ranks):
+        raise ValueError("one precision per query")
     n = len(ranks)
     return RetrievalScore(
         queries=n,
         hit_at_1=sum(r == 1 for r in ranks) / n,
         hit_at_k=sum(r is not None and r <= k for r in ranks) / n,
         mrr=sum(1 / r for r in ranks if r is not None) / n,
+        precision_at_k=None if precisions is None else sum(precisions) / n,
     )
 
 
