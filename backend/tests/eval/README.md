@@ -30,6 +30,11 @@ When both columns are full, compare them. Where you disagree, talk it
 through and agree a final label. How often you agreed before discussing is
 worth reporting too, since it shows how clear the labels are.
 
+Done: Luna and Nour agreed on 36 of 40 before discussing (Cohen's kappa 0.85).
+They settled the other four together, and `label_final` holds the agreed label
+for every answer: a24 struggling, a29 mastered, a36 partial, a40 struggling.
+`evaluate_classifier` compares against `label_final` unless told otherwise.
+
 Note on q2: slide 3 says "greater than 0 will predict 1", which is a typo for
 0.5. The reference answer uses 0.5, as a lecturer would when approving it.
 

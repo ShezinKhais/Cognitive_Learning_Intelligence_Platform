@@ -4,11 +4,12 @@ Not a test. Needs Ollama running with the chat and embedding models from
 .env, and is the accuracy baseline for #55. Run from backend/:
 
     python -m scripts.evaluate_classifier
-    python -m scripts.evaluate_classifier --labels label_nour
+    python -m scripts.evaluate_classifier --labels label_luna
     python -m scripts.evaluate_classifier --out tests/eval/results.csv
 
-It prints each answer's human and predicted label, then accuracy, macro F1,
-the confusion matrix and per-label precision and recall. With both label
+It compares against label_final by default: the label both labellers agreed
+after settling where they differed. It prints each answer's human and
+predicted label, then accuracy, macro F1, the confusion matrix and per-label precision and recall. With both label
 columns filled it also prints how often the two labellers agreed. The
 similarity range per human label is printed so SIMILARITY_FLOOR and
 SIMILARITY_CEILING can be set from data.
@@ -178,7 +179,7 @@ async def main(label_column: str, limit: int | None, out: Path | None) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--labels", default="label_luna", help="label column to compare against")
+    parser.add_argument("--labels", default="label_final", help="label column to compare against")
     parser.add_argument("--limit", type=int, help="mark only the first N answers")
     parser.add_argument("--out", type=Path, help="also write every result to this CSV")
     args = parser.parse_args()
