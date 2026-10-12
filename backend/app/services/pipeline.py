@@ -206,6 +206,10 @@ class MaterialJob:
                 name="material-extraction",
             )
 
+        # Checked before captioning too, so a file already over the limits is
+        # rejected before it spends minutes of vision model calls.
+        validate_processing_result(result, pipeline.settings)
+
         model_runs: list[ModelRun] = []
         if pipeline.captioner is not None and any(e.image for e in result.elements):
             await self._report(MaterialStage.EXTRACTING, "Describing the images.")

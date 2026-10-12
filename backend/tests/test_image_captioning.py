@@ -397,6 +397,21 @@ def test_an_image_only_file_still_fails_when_images_are_not_read(tmp_path):
         process_material(str(scanned_pdf(tmp_path / "scan.pdf")), uuid4())
 
 
+async def test_a_file_over_the_limits_is_rejected_before_any_image_is_sent(tmp_path):
+    gateway = FakeGateway()
+    store = Store()
+    pipeline, storage, _ = build(tmp_path, store=store, captioner=captioner(gateway))
+    pipeline.settings.max_material_pages = 0
+    deck = deck_with_picture(tmp_path / "upload.pptx").read_bytes()
+    stored = await storage.save(uuid4(), "deck.pptx", feed(deck))
+
+    await pipeline.job(stored, uuid4()).run()
+
+    assert gateway.requests == []
+    [outcome] = store.outcomes
+    assert outcome.stage is MaterialStage.FAILED
+
+
 # --- what is and is not a failure -------------------------------------------
 
 
