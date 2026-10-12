@@ -42,7 +42,7 @@ from app.core.threads import run_in_daemon_thread
 from app.realtime.hub import SessionHub
 from app.realtime.hub import hub as default_hub
 from app.schemas.events import MaterialProgressPayload, MaterialStage, ServerEventType
-from app.services.extraction import ContentChunk, process_material
+from app.services.extraction import ContentChunk, process_material, require_readable_content
 from app.services.generation import contains_embedded_instruction
 from app.services.image_captioning import CAPTION_PROMPT_VERSION, ImageCaptioner, add_captions
 from app.services.jobs import (
@@ -222,6 +222,9 @@ class MaterialJob:
                         ),
                     )
                 )
+        # An image-only file was let through extraction to be captioned. With
+        # no caption written it has nothing to chunk, and fails as before.
+        require_readable_content(result.elements, {"parser": result.parser_used})
 
         # Validation, extraction and chunking are one call in AI 1's module, so
         # this event marks chunking finished rather than started. Splitting it

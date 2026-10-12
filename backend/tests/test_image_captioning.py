@@ -17,6 +17,8 @@ from PIL import Image
 from pptx import Presentation
 from pptx.util import Inches
 
+from app.core.errors import ValidationError
+from app.schemas.events import MaterialStage
 from app.services.ai_gateway import (
     AiInterruptedError,
     AiRequest,
@@ -28,6 +30,7 @@ from app.services.extraction import (
     ExtractedElement,
     ProcessingResult,
     chunk_elements,
+    process_material,
     read_pdf_pypdf,
     read_pptx,
 )
@@ -343,6 +346,46 @@ async def test_without_a_captioner_images_are_not_read_at_all(tmp_path):
     [material] = store.completed
     assert all(e.image is None for e in material.result.elements)
     assert not any(r.operation == "image_captioning" for r in material.model_runs)
+
+
+def scanned_pdf(path: Path) -> Path:
+    page = Image.new("RGB", (300, 200), "white")
+    page.paste(Image.new("RGB", (200, 120), "steelblue"), (50, 40))
+    page.save(path, format="PDF")
+    return path
+
+
+async def test_an_image_only_upload_is_captioned_rather_than_rejected(tmp_path):
+    gateway = FakeGateway("A blue rectangle labelled as the input layer.")
+    store = Store()
+    pipeline, storage, _ = build(tmp_path, store=store, captioner=captioner(gateway))
+    scan = scanned_pdf(tmp_path / "upload.pdf").read_bytes()
+    stored = await storage.save(uuid4(), "scan.pdf", feed(scan))
+
+    await pipeline.job(stored, uuid4()).run()
+
+    [material] = store.completed
+    assert any("input layer" in c.chunk_text for c in material.result.chunks)
+
+
+async def test_an_image_only_upload_with_no_caption_still_fails(tmp_path):
+    store = Store()
+    gateway = FakeGateway(AiUnavailableError("down", {}))
+    pipeline, storage, _ = build(tmp_path, store=store, captioner=captioner(gateway))
+    scan = scanned_pdf(tmp_path / "upload.pdf").read_bytes()
+    stored = await storage.save(uuid4(), "scan.pdf", feed(scan))
+
+    await pipeline.job(stored, uuid4()).run()
+
+    assert not store.completed
+    [outcome] = store.outcomes
+    assert outcome.stage is MaterialStage.FAILED
+    assert "No readable text" in outcome.message
+
+
+def test_an_image_only_file_still_fails_when_images_are_not_read(tmp_path):
+    with pytest.raises(ValidationError):
+        process_material(str(scanned_pdf(tmp_path / "scan.pdf")), uuid4())
 
 
 # --- what is and is not a failure -------------------------------------------

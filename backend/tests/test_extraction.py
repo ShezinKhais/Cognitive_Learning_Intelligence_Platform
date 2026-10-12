@@ -22,6 +22,7 @@ from app.services.extraction import (
     clean_text,
     looks_letter_spaced,
     process_material,
+    read_docx,
     validate_file,
 )
 
@@ -248,6 +249,29 @@ def test_docx_end_to_end():
     result = process_material(str(SAMPLES / "lecture.docx"), material_id=uuid.uuid4())
     assert result.parser_used == "python-docx"
     assert result.chunks
+
+
+def test_a_docx_table_stays_under_the_heading_above_it(tmp_path):
+    from docx import Document
+
+    doc = Document()
+    doc.add_heading("Photosynthesis", level=1)
+    doc.add_table(rows=1, cols=1).cell(0, 0).text = "Chlorophyll captures light energy."
+    doc.add_heading("Respiration", level=1)
+    doc.add_paragraph("Cells release energy from glucose.")
+    path = tmp_path / "biology.docx"
+    doc.save(path)
+
+    assert [e.content for e in read_docx(str(path))] == [
+        "Photosynthesis",
+        "Chlorophyll captures light energy.",
+        "Respiration",
+        "Cells release energy from glucose.",
+    ]
+    chunks = process_material(str(path), material_id=uuid.uuid4()).chunks
+    table = next(c for c in chunks if "Chlorophyll" in c.chunk_text)
+    assert _first_line(table) == "Photosynthesis"
+    assert "glucose" not in table.chunk_text
 
 
 def test_low_quality_pdf_warns_when_docling_missing(monkeypatch):

@@ -368,30 +368,33 @@ def read_docx(path: str) -> list[ExtractedElement]:
     """DOCX reader. Word styles tell us which paragraphs are headings.
 
     Also pulls text out of tables, which python-docx keeps separate from
-    paragraphs (so a plain paragraph loop misses them entirely).
+    paragraphs (so a plain paragraph loop misses them entirely). Paragraphs and
+    tables are read in document order: a table belongs to the heading above it,
+    not to whichever heading comes last.
     """
     from docx import Document
+    from docx.table import Table
 
     doc = Document(path)
     els = []
 
-    for para in doc.paragraphs:
-        if not para.text.strip():
+    for block in doc.iter_inner_content():
+        if isinstance(block, Table):
+            for row in block.rows:
+                cells = [c.text.strip() for c in row.cells if c.text.strip()]
+                if cells:
+                    els.append(ExtractedElement("table", clean_text(" | ".join(cells)), 1))
             continue
-        style = (para.style.name or "").lower()
+        if not block.text.strip():
+            continue
+        style = (block.style.name or "").lower()
         level = _docx_heading_level(style)
         if level is None:
-            els.append(ExtractedElement("text", clean_text(para.text), 1))
+            els.append(ExtractedElement("text", clean_text(block.text), 1))
         else:
             els.append(
-                ExtractedElement("heading", clean_text(para.text, is_heading=True), 1, level)
+                ExtractedElement("heading", clean_text(block.text, is_heading=True), 1, level)
             )
-
-    for table in doc.tables:
-        for row in table.rows:
-            cells = [c.text.strip() for c in row.cells if c.text.strip()]
-            if cells:
-                els.append(ExtractedElement("table", clean_text(" | ".join(cells)), 1))
 
     return els
 
@@ -782,6 +785,16 @@ def skipped_pages_warning(elements: list[ExtractedElement]) -> str | None:
     return f"{skipped} page(s) contained no readable text and were skipped."
 
 
+def require_readable_content(elements: list[ExtractedElement], details: dict) -> None:
+    """Fail a material that has nothing to chunk.
+
+    Text counts, and so does a caption that replaced an image's placeholder.
+    """
+    if not any(e.el_type != "image" or e.content not in IMAGE_PLACEHOLDERS for e in elements):
+        # SDD: no_readable_text_found -> status Failed
+        raise ValidationError("No readable text found in this file", details)
+
+
 def process_material(
     path: str,
     material_id: uuid.UUID,
@@ -798,12 +811,10 @@ def process_material(
     ext = validate_file(path, max_bytes)
     elements, parser, warnings = extract(path, ext, with_images=with_images)
 
-    if not any(e.el_type != "image" for e in elements):
-        # SDD: no_readable_text_found -> status Failed
-        raise ValidationError(
-            "No readable text found in this file",
-            {"filename": Path(path).name, "parser": parser},
-        )
+    # Images that will be captioned may be all there is, as in a scanned PDF:
+    # the pipeline decides once they are described (require_readable_content).
+    if not (with_images and any(e.image for e in elements)):
+        require_readable_content(elements, {"filename": Path(path).name, "parser": parser})
 
     chunks = chunk_elements(elements, material_id)
     page_count = max((e.page for e in elements), default=0)
