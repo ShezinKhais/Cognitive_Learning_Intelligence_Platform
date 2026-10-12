@@ -6,15 +6,21 @@ from app.schemas.content import Difficulty
 from app.services.session_summary import (
     MAX_SENTENCES,
     NO_FACTS,
+    NO_STUDENT_FACTS,
     LecturerSummariser,
+    StudentSummariser,
     TopicFact,
+    build_student_prompt,
     build_summary_prompt,
     fact_line,
     facts_summary,
     lecturer_facts,
+    student_fact_line,
+    student_facts,
+    student_summary_problems,
     summary_problems,
 )
-from app.services.topic_difficulty import TopicDifficulty
+from app.services.topic_difficulty import LabelledAnswer, TopicDifficulty
 
 
 def topic(name, mastered, partial, struggling, *, level, expected=None, uncertain=0):
@@ -267,4 +273,127 @@ async def test_no_facts_means_no_model_call():
     summary = await LecturerSummariser(chat, "m").summarise([topic("Sigmoid", 1, 0, 1, level=None)])
     assert summary.text == NO_FACTS
     assert summary.source == "facts"
+    assert chat.prompts == []
+
+
+# --- the student's summary ----------------------------------------------------
+
+ME, OTHER = "student-1", "student-2"
+
+
+def answer(topic_name, label, *, student=ME, question="q1", slide=None):
+    return LabelledAnswer(
+        student_id=student,
+        question_id=question,
+        topic=topic_name,
+        label=label,
+        confidence=1.0,
+        source_slide=slide,
+    )
+
+
+def my_answers():
+    return [
+        answer("Logit", "mastered", question="q1", slide=2),
+        answer("Logit", "mastered", question="q2", slide=3),
+        answer("Odds ratios", "struggling", question="q3", slide=4),
+        answer("Odds ratios", "struggling", question="q4", slide=5),
+        # Someone else's answers never reach this student's facts.
+        answer("Sigmoid", "struggling", student=OTHER, question="q5", slide=9),
+    ]
+
+
+def test_student_facts_are_only_that_students():
+    facts = student_facts(my_answers(), ME)
+    assert [f.topic for f in facts] == ["Logit", "Odds ratios"]
+
+
+def test_student_facts_put_what_went_well_first():
+    facts = student_facts(my_answers(), ME)
+    assert [f.label for f in facts] == ["mastered", "struggling"]
+
+
+def test_slides_to_review_come_only_from_topics_not_mastered():
+    logit, odds = student_facts(my_answers(), ME)
+    assert logit.slides == ()
+    assert odds.slides == (4, 5)
+    assert odds.questions == 2
+
+
+def test_a_mixed_topic_is_partial_and_reviews_only_the_missed_slide():
+    answers = [
+        answer("Odds ratios", "mastered", question="q1", slide=4),
+        answer("Odds ratios", "struggling", question="q2", slide=5),
+    ]
+    (fact,) = student_facts(answers, ME)
+    assert fact.label == "partial"
+    assert fact.slides == (5,)
+
+
+def test_student_fact_line():
+    _, odds = student_facts(my_answers(), ME)
+    assert student_fact_line(odds) == "Odds ratios: struggling. 2 questions. Review slides 4, 5."
+
+
+def test_student_prompt_forbids_comparisons_and_starts_with_good_news():
+    prompt = build_student_prompt(student_facts(my_answers(), ME))
+    assert "Never mention other students" in prompt
+    assert "Start with what they did well" in prompt
+
+
+STUDENT_GOOD = (
+    "You mastered Logit across 2 questions, well done. "
+    "Odds ratios needs more work, so review slides 4 and 5."
+)
+
+
+def test_a_true_student_summary_passes():
+    assert student_summary_problems(STUDENT_GOOD, student_facts(my_answers(), ME)) == []
+
+
+def test_a_wrong_slide_is_caught():
+    wrong = STUDENT_GOOD.replace("slides 4 and 5", "slides 4 and 9")
+    problems = student_summary_problems(wrong, student_facts(my_answers(), ME))
+    assert any("9 is not in the facts" in p for p in problems)
+
+
+def test_comparing_with_others_is_caught():
+    wrong = STUDENT_GOOD + " Most students found Odds ratios hard too."
+    problems = student_summary_problems(wrong, student_facts(my_answers(), ME))
+    assert "mentions other students or the class" in problems
+
+
+def test_a_wrong_label_is_caught():
+    wrong = "You struggled with Logit. Review Odds ratios on slides 4 and 5."
+    problems = student_summary_problems(wrong, student_facts(my_answers(), ME))
+    assert any("calls Logit struggled" in p for p in problems)
+
+
+def test_leaving_out_a_topic_to_review_is_caught():
+    problems = student_summary_problems("You mastered Logit.", student_facts(my_answers(), ME))
+    assert any("review Odds ratios" in p for p in problems)
+
+
+async def test_student_summary_uses_a_passing_reply():
+    chat = FakeChat(STUDENT_GOOD)
+    summary = await StudentSummariser(chat, "m").summarise(my_answers(), ME)
+    assert summary.source == "model"
+    assert summary.text == STUDENT_GOOD
+    assert "Sigmoid" not in chat.prompts[0]
+
+
+async def test_student_summary_falls_back_to_their_facts():
+    wrong = STUDENT_GOOD + " You beat the class average."
+    chat = FakeChat(wrong, wrong)
+    summary = await StudentSummariser(chat, "m").summarise(my_answers(), ME)
+    assert summary.source == "facts"
+    assert summary.text == (
+        "Logit: mastered. 2 questions.\nOdds ratios: struggling. 2 questions. Review slides 4, 5."
+    )
+
+
+async def test_a_student_with_no_answers_gets_no_model_call():
+    chat = FakeChat()
+    summary = await StudentSummariser(chat, "m").summarise(my_answers(), "nobody")
+    assert summary.text == NO_STUDENT_FACTS
     assert chat.prompts == []
