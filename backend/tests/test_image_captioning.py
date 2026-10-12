@@ -516,3 +516,32 @@ async def test_a_failed_vector_conversion_is_a_failure_not_unsupported():
     described = await captioner(gateway, converter=_BrokenConverter()).describe(sample_wmf_chart())
     assert described.outcome == Outcome.FAILED
     assert gateway.requests == []
+
+
+def test_a_blank_conversion_is_not_an_image_to_caption():
+    # LibreOfficeDev 26.8 drew the sample WMF as an all-white A4 page.
+    page = Image.new("RGB", (794, 1123), "white")
+    buffer = io.BytesIO()
+    page.save(buffer, format="PNG")
+
+    assert trim_to_drawing(buffer.getvalue()) is None
+
+
+class _BlankConverter(VectorConverter):
+    """LibreOffice that converts every image to an empty page."""
+
+    def __init__(self):
+        super().__init__("soffice")
+
+    async def to_png(self, image: bytes, image_format: str) -> bytes | None:
+        page = Image.new("RGB", (794, 1123), "white")
+        buffer = io.BytesIO()
+        page.save(buffer, format="PNG")
+        return trim_to_drawing(buffer.getvalue())
+
+
+async def test_a_blank_vector_render_fails_without_asking_the_model():
+    gateway = FakeGateway("unused")
+    described = await captioner(gateway, converter=_BlankConverter()).describe(sample_wmf_chart())
+    assert described.outcome == Outcome.FAILED
+    assert gateway.requests == []

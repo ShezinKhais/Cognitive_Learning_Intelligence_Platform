@@ -221,11 +221,17 @@ class VectorConverter:
             if process.returncode != 0 or not converted.is_file():
                 log.info("converting a %s image failed", image_format)
                 return None
-            return trim_to_drawing(converted.read_bytes())
+            trimmed = trim_to_drawing(converted.read_bytes())
+            if trimmed is None:
+                # Some LibreOffice builds draw a WMF as an empty page. A blank
+                # image is not worth a caption, and the model might invent one.
+                log.info("converting a %s image gave a blank page", image_format)
+            return trimmed
 
 
-def trim_to_drawing(png: bytes) -> bytes:
-    """The PNG cropped to what is drawn on it, plus a small margin.
+def trim_to_drawing(png: bytes) -> bytes | None:
+    """The PNG cropped to what is drawn on it, plus a small margin, or None
+    when nothing is drawn on it at all.
 
     LibreOffice draws a vector image on a whole page, so the chart arrives in
     the middle of an empty A4 sheet: most of what the model would look at.
@@ -235,7 +241,7 @@ def trim_to_drawing(png: bytes) -> bytes:
         page.paste(opened, mask=opened.getchannel("A") if "A" in opened.getbands() else None)
     box = ImageChops.difference(page, Image.new("RGB", page.size, "white")).getbbox()
     if box is None:
-        return png
+        return None
     left, top, right, bottom = box
     cropped = page.crop(
         (
