@@ -16,6 +16,10 @@ Implemented behind `VITE_LOCAL_ATTENTION_ENABLED=true` in the student live-sessi
 
 No runtime CDN is required. Use HTTPS (localhost is allowed by browsers), and allow same-origin workers/WASM in the deployment CSP. Embedded Teams/browser hosts may block camera/microphone permissions; the unavailable state is an acceptable fallback and must not prevent participation. No automatic permission-policy bypass is attempted.
 
+### Offline build preparation
+
+The `predev` and `prebuild` asset hooks run even when `VITE_LOCAL_ATTENTION_ENABLED=false`. Before an offline build, install the pinned dependencies and run `npm run prepare:attention` while online, then retain `public/attention/` (including the verified face model) in the build workspace/cache. A fresh offline workspace cannot download the model; the disabled feature flag does not bypass asset preparation.
+
 ## Team boundaries
 
 General CS owns transport/aggregation/private prompts; this uses the existing `signal.attention` schema. Cyber 1 owns baseline calibration, signal normalization, accessibility thresholds and privacy verification. BBIS owns persistence. This implementation does not infer engagement scores, issue refocus prompts, penalize missing signals or implement breakout grouping.

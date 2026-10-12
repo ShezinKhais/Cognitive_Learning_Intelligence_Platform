@@ -17,6 +17,7 @@ export function AttentionControls({ enabled, onSignal }: {
   const [message, setMessage] = useState('')
   const [face, setFace] = useState(unknownFace)
   const [speaking, setSpeaking] = useState<boolean | null>(null)
+  const latestSpeaking = useRef<boolean | null>(null)
   const controllers = useRef<Partial<Record<Sensor, AbortController>>>({})
   const samples = useRef<{ face: FaceObservation[]; speech: boolean[]; faceAt: number; speechAt: number }>({ face: [], speech: [], faceAt: 0, speechAt: 0 })
   const emit = useRef(onSignal)
@@ -28,7 +29,8 @@ export function AttentionControls({ enabled, onSignal }: {
     if (sensor === 'camera') {
       samples.current.face = []; samples.current.faceAt = 0; setFace(unknownFace)
     } else {
-      samples.current.speech = []; samples.current.speechAt = 0; setSpeaking(null)
+      samples.current.speech = []; samples.current.speechAt = 0
+      latestSpeaking.current = null; setSpeaking(null)
     }
     setStatus(previous => ({ ...previous, [sensor]: 'off' }))
   }, [])
@@ -54,7 +56,12 @@ export function AttentionControls({ enabled, onSignal }: {
     let checking = false
     let last = performance.now()
     const timer = setInterval(async () => {
-      if (checking || !Object.keys(controllers.current).length) return
+      if (!Object.keys(controllers.current).length) {
+        // Idle time is not part of a sensing window, including after disable/re-enable.
+        last = performance.now()
+        return
+      }
+      if (checking) return
       checking = true
       try {
         const user = await getCurrentUser()
@@ -115,7 +122,10 @@ export function AttentionControls({ enabled, onSignal }: {
           if (value !== null) samples.current.speech.push(value)
           samples.current.speech = samples.current.speech.slice(-200)
           samples.current.speechAt = value === null ? 0 : performance.now()
-          setSpeaking(value)
+          if (latestSpeaking.current !== value) {
+            latestSpeaking.current = value
+            setSpeaking(value)
+          }
         }, failed)
       }
       if (current()) setStatus(previous => ({ ...previous, [sensor]: 'on' }))
