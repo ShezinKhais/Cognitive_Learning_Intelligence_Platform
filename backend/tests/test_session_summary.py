@@ -9,6 +9,7 @@ from app.services.session_summary import (
     NO_STUDENT_FACTS,
     LecturerSummariser,
     StudentSummariser,
+    StudentTopicFact,
     TopicFact,
     build_student_prompt,
     build_summary_prompt,
@@ -420,3 +421,62 @@ async def test_a_student_with_no_answers_gets_no_model_call():
     summary = await StudentSummariser(chat, "m").summarise(my_answers(), "nobody")
     assert summary.text == NO_STUDENT_FACTS
     assert chat.prompts == []
+
+
+# --- claims bound to their field and to every topic named (review of #138) ------
+
+
+def test_a_question_count_is_not_a_slide_to_review():
+    odds = StudentTopicFact("Odds ratios", "struggling", 2, (4, 5))
+    problems = student_summary_problems("Review Odds ratios on slide 2.", [odds])
+    assert "slide 2 is not one to review for Odds ratios" in problems
+
+
+def test_a_slide_is_not_a_question_count():
+    odds = StudentTopicFact("Odds ratios", "struggling", 2, (4, 5))
+    problems = student_summary_problems("You answered 4 questions on Odds ratios.", [odds])
+    assert "4 questions is wrong for Odds ratios" in problems
+
+
+def test_swapped_labels_across_two_topics_are_caught():
+    wrong = "You struggled with Logit and mastered Odds ratios."
+    problems = student_summary_problems(wrong, student_facts(my_answers(), ME))
+    assert "calls Logit struggled, but it is mastered" in problems
+    assert "calls Odds ratios mastered, but it is struggling" in problems
+
+
+def test_swapped_levels_across_two_topics_are_caught():
+    wrong = "Logit was hard and Odds ratios was easy."
+    problems = summary_problems(wrong, two_facts())
+    assert "calls Logit hard, but it is easy" in problems
+
+
+def test_a_number_must_be_true_of_every_topic_named():
+    # 5 is Logit's mastered count, not Odds ratios', so naming both cannot pass.
+    wrong = "Odds ratios and Logit had 5 mastered."
+    assert "5 mastered is wrong for Odds ratios, Logit" in summary_problems(wrong, two_facts())
+
+
+def test_the_expected_level_is_not_the_class_result():
+    wrong = "Odds ratios was easy for the class."
+    assert "calls Odds ratios easy, but it is hard" in summary_problems(wrong, two_facts())
+
+
+def test_the_expected_level_is_allowed_where_it_says_expected():
+    good = "Odds ratios was hard, although it was expected to be easy."
+    assert summary_problems(good, two_facts()) == []
+
+
+def test_a_wrong_expected_level_is_caught():
+    wrong = "Odds ratios was hard, although it was expected to be medium."
+    assert any("expected medium" in p for p in summary_problems(wrong, two_facts()))
+
+
+def test_a_number_that_does_not_say_what_it_counts_is_caught():
+    wrong = "Odds ratios was hard with 4."
+    assert any("without saying what it counts" in p for p in summary_problems(wrong, two_facts()))
+
+
+def test_the_answer_count_is_checked():
+    wrong = "Odds ratios was hard: 4 of 7 answers were struggling."
+    assert "7 answers is wrong for Odds ratios" in summary_problems(wrong, two_facts())
