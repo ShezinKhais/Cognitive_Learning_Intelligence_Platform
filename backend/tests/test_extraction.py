@@ -583,3 +583,68 @@ def test_a_docling_table_that_cannot_be_exported_does_not_lose_the_file():
     )
 
     assert [e.content for e in _docling_elements(doc)] == ["Still read."]
+
+
+# --- bounded PDF image decoding --------------------------------------------------
+
+
+class _FakeRef(dict):
+    def get_object(self):
+        return self
+
+
+class _FakeImage:
+    def __init__(self, name, decoded):
+        self._name, self._decoded = name, decoded
+
+    @property
+    def data(self):
+        self._decoded.append(self._name)
+        return self._name.encode()
+
+
+class _FakePdfPage(dict):
+    """A page whose images record when their data is decoded."""
+
+    def __init__(self, sizes):
+        self.decoded = []
+        xobjects = {
+            name: _FakeRef({"/Subtype": "/Image", "/Width": w, "/Height": h})
+            for name, (w, h) in sizes.items()
+        }
+        super().__init__({"/Resources": {"/XObject": xobjects}})
+        self.images = {name: _FakeImage(name, self.decoded) for name in sizes}
+
+
+def test_only_the_largest_pdf_images_are_decoded():
+    from app.services import extraction
+
+    sizes = {f"/Im{n}": (100 + n, 100) for n in range(extraction.MAX_IMAGES_PER_PAGE + 2)}
+    page = _FakePdfPage(sizes)
+    found = extraction._pypdf_images(page)
+    largest = sorted(sizes, key=lambda n: sizes[n][0], reverse=True)
+    assert found == [n.encode() for n in largest[: extraction.MAX_IMAGES_PER_PAGE]]
+    assert page.decoded == largest[: extraction.MAX_IMAGES_PER_PAGE]
+
+
+def test_an_oversized_pdf_image_is_never_decoded(monkeypatch):
+    from app.services import extraction
+
+    monkeypatch.setattr(extraction, "MAX_IMAGE_PIXELS", 100 * 100)
+    page = _FakePdfPage({"/Huge": (5000, 5000), "/Small": (50, 50)})
+    assert extraction._pypdf_images(page) == [b"/Small"]
+    assert page.decoded == ["/Small"]
+
+
+def test_a_real_pdf_image_is_read_after_its_size_check(tmp_path):
+    from PIL import Image
+
+    from app.services import extraction
+
+    path = tmp_path / "picture.pdf"
+    Image.new("RGB", (120, 80), "red").save(path)
+    from pypdf import PdfReader
+
+    (page,) = PdfReader(str(path)).pages
+    (data,) = extraction._pypdf_images(page)
+    assert data

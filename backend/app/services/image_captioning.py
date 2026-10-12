@@ -52,6 +52,7 @@ from app.services.ai_gateway import (
 )
 from app.services.extraction import (
     IMAGE_PLACEHOLDERS,
+    MAX_IMAGE_PIXELS,
     ExtractedElement,
     ProcessingResult,
     chunk_elements,
@@ -72,9 +73,6 @@ MAX_IMAGE_SIDE = 768
 DECORATIVE_PAGES = 3
 MAX_CAPTION_CHARS = 400
 CAPTION_MAX_TOKENS = 200
-# An image with more pixels than this is not decoded: a small, highly
-# compressed file can expand to hundreds of megabytes. 6000 x 4000 fits.
-MAX_IMAGE_PIXELS = 24_000_000
 # What the model is asked to reply with for an image with nothing to explain.
 DECORATIVE_REPLY = "DECORATIVE"
 
@@ -115,9 +113,10 @@ class Outcome(StrEnum):
     CAPTIONED = "captioned"
     # Nothing to describe: too small, decoration, or an empty reply. Not a fault.
     NOTHING = "nothing"
-    # A vector image with no way to draw it.
+    # A vector image with no converter to draw it: installing LibreOffice helps.
     UNSUPPORTED = "unsupported"
-    # The model could not be asked or its answer could not be used.
+    # The model could not be asked or its answer could not be used, or a
+    # vector image's conversion was tried and failed.
     FAILED = "failed"
 
 
@@ -296,7 +295,8 @@ class ImageCaptioner:
                 return Caption(Outcome.UNSUPPORTED)
             converted = await self._converter.to_png(image, found_format)
             if converted is None:
-                return Caption(Outcome.UNSUPPORTED)
+                # LibreOffice is there and failed: installing it fixes nothing.
+                return Caption(Outcome.FAILED)
             image = converted
 
         # Decoding and scaling are CPU-bound; inline they would hold up every

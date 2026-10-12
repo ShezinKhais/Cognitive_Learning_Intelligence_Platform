@@ -57,6 +57,9 @@ IMAGE_PLACEHOLDERS = frozenset({"[image]", "[image on slide]", IMAGE_ONLY_PAGE})
 # Images taken from one page of a PDF with text on it, largest first: a slide
 # with more than this is a gallery, not a diagram to explain.
 MAX_IMAGES_PER_PAGE = 3
+# An image with more pixels than this is not decoded: a small, highly
+# compressed file can expand to hundreds of megabytes. 6000 x 4000 fits.
+MAX_IMAGE_PIXELS = 24_000_000
 
 
 # ---------------------------------------------------------------------------
@@ -290,18 +293,39 @@ def read_pdf_pypdf(path: str, with_images: bool = False) -> list[ExtractedElemen
 
 
 def _pypdf_images(page) -> list[bytes]:
-    """A page's embedded images, largest first. An image pypdf cannot decode
-    is left out: it is one image, not a reason to lose the page."""
-    found = []
+    """A page's largest embedded images, largest first, at most
+    MAX_IMAGES_PER_PAGE of them.
+
+    Sizes are read from each image's dictionary, which costs nothing, and only
+    the images kept are decoded: pypdf decodes an image in full when its data
+    is read, so reading every one first would let a small PDF with a huge or
+    highly compressed image use unbounded memory. An image over
+    MAX_IMAGE_PIXELS, or one pypdf cannot decode, is left out: it is one image,
+    not a reason to lose the page. Images nested inside form XObjects are not
+    looked for.
+    """
+    sized = []
     try:
-        for image in page.images:
-            try:
-                found.append(image.data)
-            except Exception:
+        xobjects = page["/Resources"]["/XObject"]
+        for name, ref in xobjects.items():
+            xobject = ref.get_object()
+            if xobject.get("/Subtype") != "/Image":
                 continue
+            width, height = int(xobject.get("/Width", 0)), int(xobject.get("/Height", 0))
+            if width <= 0 or height <= 0 or width * height > MAX_IMAGE_PIXELS:
+                continue
+            sized.append((width * height, name))
     except Exception:
         log.debug("could not list the images on a page", exc_info=True)
-    return sorted(found, key=len, reverse=True)
+        return []
+
+    found = []
+    for _, name in sorted(sized, reverse=True)[:MAX_IMAGES_PER_PAGE]:
+        try:
+            found.append(page.images[name].data)
+        except Exception:
+            continue
+    return found
 
 
 def read_pptx(path: str, with_images: bool = False) -> list[ExtractedElement]:

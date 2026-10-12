@@ -502,3 +502,17 @@ async def test_a_vector_chart_is_converted_trimmed_and_described():
     sent = Image.open(io.BytesIO(base64.b64decode(url.split(",", 1)[1])))
     # The chart, not an A4 page around it (794 x 1123).
     assert sent.width < 700 and sent.height < 600
+
+
+class _BrokenConverter:
+    async def to_png(self, image: bytes, image_format: str) -> bytes | None:
+        return None
+
+
+async def test_a_failed_vector_conversion_is_a_failure_not_unsupported():
+    # LibreOffice is there but could not convert it: telling the lecturer to
+    # install LibreOffice would not help.
+    gateway = FakeGateway("unused")
+    described = await captioner(gateway, converter=_BrokenConverter()).describe(sample_wmf_chart())
+    assert described.outcome == Outcome.FAILED
+    assert gateway.requests == []
