@@ -127,6 +127,15 @@ async def test_a_failed_caption_is_not_cached():
     assert cache == {}
 
 
+async def test_an_unsupported_image_is_not_cached():
+    inner = FakeCaptioner(Caption(Outcome.UNSUPPORTED))
+    cache: dict[str, dict] = {}
+
+    await CachedCaptioner(inner, cache).describe(b"image")
+
+    assert cache == {}
+
+
 def test_every_question_names_a_sample_and_a_page_in_it():
     queries = load_queries(EVAL_DIR / "retrieval_queries.json")
 

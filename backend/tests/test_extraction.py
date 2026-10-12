@@ -500,6 +500,18 @@ def test_a_path_too_long_for_its_chunk_drops_the_outermost_headings():
     assert len(chunk.chunk_text) <= 500
 
 
+def test_a_heading_too_long_for_its_chunk_is_cut_and_still_ends_its_line():
+    els = [
+        ExtractedElement("heading", "H" * 400, 1, level=1),
+        ExtractedElement("text", "Body text.", 1),
+    ]
+
+    [chunk] = chunk_elements(els, material_id=uuid.uuid4(), size=500, overlap=100)
+
+    assert _first_line(chunk) == "H" * 249
+    assert "Body text." in chunk.chunk_text.split("\n", 1)[1]
+
+
 @pytest.mark.parametrize(
     ("style", "level"),
     [

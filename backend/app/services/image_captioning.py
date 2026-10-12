@@ -41,6 +41,7 @@ from typing import Protocol, cast
 
 from PIL import Image, ImageChops
 
+from app.core.threads import run_in_daemon_thread
 from app.services.ai_gateway import (
     AiInterruptedError,
     AiRequest,
@@ -71,6 +72,9 @@ MAX_IMAGE_SIDE = 768
 DECORATIVE_PAGES = 3
 MAX_CAPTION_CHARS = 400
 CAPTION_MAX_TOKENS = 200
+# An image with more pixels than this is not decoded: a small, highly
+# compressed file can expand to hundreds of megabytes. 6000 x 4000 fits.
+MAX_IMAGE_PIXELS = 24_000_000
 # What the model is asked to reply with for an image with nothing to explain.
 DECORATIVE_REPLY = "DECORATIVE"
 
@@ -295,7 +299,9 @@ class ImageCaptioner:
                 return Caption(Outcome.UNSUPPORTED)
             image = converted
 
-        prepared = prepare_image(image)
+        # Decoding and scaling are CPU-bound; inline they would hold up every
+        # live session on this process.
+        prepared = await run_in_daemon_thread(prepare_image, image, name="image-preparation")
         if prepared is None:
             return Caption(Outcome.NOTHING)
         message = {
@@ -347,6 +353,8 @@ def prepare_image(image: bytes) -> str | None:
     try:
         with Image.open(io.BytesIO(image)) as opened:
             if min(opened.size) < MIN_IMAGE_SIDE:
+                return None
+            if opened.size[0] * opened.size[1] > MAX_IMAGE_PIXELS:
                 return None
             picture = opened.convert("RGB")
     except Exception:

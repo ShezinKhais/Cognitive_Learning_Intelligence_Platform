@@ -553,7 +553,8 @@ def _path_prefix(path: tuple[str, ...], limit: int) -> str:
         if len(line) <= limit:
             return line
         if len(parts) == 1:
-            return line[:limit]
+            # Cut the heading, not the newline that ends the line.
+            return line[: limit - 1] + "\n" if limit > 1 else ""
         parts.pop(0)
     return ""
 

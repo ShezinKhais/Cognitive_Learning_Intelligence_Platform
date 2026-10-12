@@ -131,6 +131,15 @@ def test_a_large_image_is_sent_scaled_down():
     assert max(sent.size) == MAX_IMAGE_SIDE
 
 
+def test_an_image_too_large_to_decode_safely_is_not_sent(monkeypatch):
+    from app.services import image_captioning
+
+    monkeypatch.setattr(image_captioning, "MAX_IMAGE_PIXELS", 100 * 100)
+
+    assert prepare_image(png(101, 100)) is None
+    assert prepare_image(png(100, 100)) is not None
+
+
 @pytest.mark.parametrize("image", [png(20, 300), b"not an image"])
 def test_icons_and_unreadable_images_are_not_sent(image):
     assert prepare_image(image) is None

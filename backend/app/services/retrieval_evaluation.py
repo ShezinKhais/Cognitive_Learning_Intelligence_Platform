@@ -101,7 +101,8 @@ class CachedCaptioner:
     minute an image for the vision model.
 
     A cached caption is reused only if the same model and prompt wrote it.
-    Failures are not cached, so a rerun tries them again.
+    Failures and unsupported images are not cached, so a rerun tries them
+    again.
     """
 
     def __init__(self, captioner, cache: dict[str, dict]) -> None:
@@ -116,7 +117,8 @@ class CachedCaptioner:
         if found and found["model"] == self.model and found["prompt"] == CAPTION_PROMPT_VERSION:
             return Caption(Outcome(found["outcome"]), found["text"])
         caption = await self._captioner.describe(image)
-        if caption.outcome is not Outcome.FAILED:
+        # Unsupported may only mean LibreOffice is missing for now.
+        if caption.outcome not in (Outcome.FAILED, Outcome.UNSUPPORTED):
             self.cache[key] = {
                 "model": self.model,
                 "prompt": CAPTION_PROMPT_VERSION,
