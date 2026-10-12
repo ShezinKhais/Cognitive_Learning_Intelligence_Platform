@@ -3,6 +3,7 @@
 from app.models.ai_alert import AIAlert
 from app.models.ai_model_run import AIModelRun
 from app.models.ai_recommendation import AIRecommendation
+from app.models.attention_signal_summary import AttentionSignalSummary
 from app.models.audit_log import AuditLog
 from app.models.breakout_room import BreakoutRoom
 from app.models.classifier_eval import ClassifierEvalPrediction, ClassifierEvalRun
@@ -61,4 +62,5 @@ __all__ = [
     "MissedResponse",
     "SessionActivity",
     "SessionParticipant",
+    "AttentionSignalSummary",
 ]
