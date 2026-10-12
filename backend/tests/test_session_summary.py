@@ -180,7 +180,24 @@ def test_a_wrong_level_is_caught():
 
 def test_numbers_with_no_topic_are_caught():
     wrong = "Odds ratios was hard. 2 topics were covered."
-    assert any("no topic" in p for p in summary_problems(wrong, two_facts()))
+    assert "sentence 2 has numbers with no topic to check them against" in summary_problems(
+        wrong, two_facts()
+    )
+
+
+def test_a_number_in_a_topic_name_is_not_a_claim():
+    facts = lecturer_facts([topic("L2 regularization", 0, 1, 5, level=Difficulty.HARD)])
+    good = "L2 regularization was hard: 5 of 6 answers were struggling."
+    assert summary_problems(good, facts) == []
+
+
+async def test_a_failed_summary_is_not_logged(caplog):
+    secret = "Odds ratios was hard. 2 topics were covered by Sam."
+    chat = FakeChat(secret, secret)
+    with caplog.at_level("INFO", logger="clip.session_summary"):
+        await LecturerSummariser(chat, "m").summarise(two_topics())
+    assert "Sam" not in caplog.text
+    assert "covered" not in caplog.text
 
 
 def test_the_score_is_never_allowed():
@@ -371,7 +388,13 @@ def test_a_wrong_label_is_caught():
 
 def test_leaving_out_a_topic_to_review_is_caught():
     problems = student_summary_problems("You mastered Logit.", student_facts(my_answers(), ME))
-    assert any("review Odds ratios" in p for p in problems)
+    assert "does not mention Odds ratios" in problems
+
+
+def test_leaving_out_what_went_well_is_caught():
+    only_review = "Review Odds ratios on slides 4 and 5."
+    problems = student_summary_problems(only_review, student_facts(my_answers(), ME))
+    assert "does not mention Logit" in problems
 
 
 async def test_student_summary_uses_a_passing_reply():

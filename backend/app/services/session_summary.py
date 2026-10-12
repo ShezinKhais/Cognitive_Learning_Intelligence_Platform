@@ -151,12 +151,16 @@ def _sentence_problems(
         problems.append(f"{len(sentences)} sentences, more than {MAX_SENTENCES}")
 
     checked: list[tuple[str, list[int]]] = []
-    for sentence in sentences:
+    for number, sentence in enumerate(sentences, start=1):
         named = [i for i, t in enumerate(topics) if t.casefold() in sentence.casefold()]
-        checked.append((sentence, named))
-        numbers = _NUMBER.findall(sentence)
+        # A topic's own name is not a claim: "L2 regularization" says nothing
+        # about a count of 2.
+        claims = _without_topics(sentence, [topics[i] for i in named])
+        checked.append((claims, named))
+        numbers = _NUMBER.findall(claims)
         if numbers and not named:
-            problems.append(f"numbers with no topic to check them against: {sentence!r}")
+            # The sentence itself is the model's words, so it is not repeated.
+            problems.append(f"sentence {number} has numbers with no topic to check them against")
             continue
         allowed = set().union(*(numbers_of(i) for i in named)) if named else set()
         names = ", ".join(topics[i] for i in named)
@@ -164,6 +168,14 @@ def _sentence_problems(
             if number not in allowed:
                 problems.append(f"{number} is not in the facts for {names}")
     return problems, checked
+
+
+def _without_topics(sentence: str, topics: Sequence[str]) -> str:
+    """The sentence with the named topics blanked out, longest first, so a
+    shorter name inside a longer one is not left behind."""
+    for topic in sorted(topics, key=len, reverse=True):
+        sentence = re.sub(re.escape(topic), " ", sentence, flags=re.IGNORECASE)
+    return sentence
 
 
 def summary_problems(summary: str, facts: Sequence[TopicFact]) -> list[str]:
@@ -232,7 +244,7 @@ class WrittenSummary:
     source: str
     model: str | None
     prompt_version: str
-    # The check's findings on the last attempt that failed, for the log.
+    # The check's findings on the last attempt that failed. Never logged.
     problems: tuple[str, ...] = ()
 
 
@@ -266,7 +278,9 @@ async def _write_and_check(
         problems = check(text)
         if not problems:
             return text, ()
-        log.info("%s summary attempt %d failed: %s", who, attempt + 1, "; ".join(problems))
+        # Only how many: a problem can quote the model's words, which may
+        # carry a student's, and replies are never logged.
+        log.info("%s summary attempt %d failed %d check(s)", who, attempt + 1, len(problems))
         # Told what was wrong, so the second try can fix that rather than
         # guess again.
         current = (
@@ -448,9 +462,10 @@ def student_summary_problems(summary: str, facts: Sequence[StudentTopicFact]) ->
         return problems
     if _OTHERS.search(summary):
         problems.append("mentions other students or the class")
+    # Every topic, so what went well is said as well as what to review.
     for fact in facts:
-        if fact.slides and fact.topic.casefold() not in summary.casefold():
-            problems.append(f"does not say to review {fact.topic}")
+        if fact.topic.casefold() not in summary.casefold():
+            problems.append(f"does not mention {fact.topic}")
     for sentence, indexes in checked:
         if len(indexes) != 1:
             continue
