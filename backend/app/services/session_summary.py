@@ -17,6 +17,7 @@ calling it easy or hard on a handful of answers.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -24,6 +25,8 @@ from dataclasses import dataclass
 from app.schemas.content import Difficulty
 from app.services.generation import contains_embedded_instruction
 from app.services.topic_difficulty import TopicDifficulty
+
+log = logging.getLogger("clip.session_summary")
 
 
 @dataclass(frozen=True)
@@ -176,3 +179,85 @@ def fact_line(fact: TopicFact) -> str:
     if fact.expected is not None:
         line += f" Expected {fact.expected.value}."
     return line
+
+
+# One more try after a summary that fails the check: a small model sometimes
+# slips on one number, and a second try usually fixes it.
+SUMMARY_RETRIES = 1
+NO_FACTS = "No topic has enough answers yet to say how the class found it."
+
+
+@dataclass(frozen=True)
+class LecturerSummary:
+    """The summary and how it was made, so the lecturer can be told which."""
+
+    text: str
+    # "model" when the model's sentences passed the check, "facts" when the
+    # facts are shown as they are: no facts, the model failed, or it was down.
+    source: str
+    model: str | None
+    prompt_version: str
+    # The check's findings on the last attempt that failed, for the log.
+    problems: tuple[str, ...] = ()
+
+
+def facts_summary(facts: Sequence[TopicFact]) -> str:
+    """The fallback: the facts themselves, one line per topic."""
+    if not facts:
+        return NO_FACTS
+    return "\n".join(fact_line(fact) for fact in facts)
+
+
+class LecturerSummariser:
+    def __init__(self, chat_client, model: str) -> None:
+        self._chat = chat_client
+        self.model = model
+
+    async def summarise(self, topics: Iterable[TopicDifficulty]) -> LecturerSummary:
+        """A summary that agrees with the facts, or the facts themselves.
+
+        Never raises for a bad or missing reply: the lecturer gets the facts.
+        """
+        facts = lecturer_facts(topics)
+        if not facts:
+            return self._fallback(facts, ())
+
+        prompt = build_summary_prompt(facts)
+        problems: list[str] = []
+        for attempt in range(SUMMARY_RETRIES + 1):
+            try:
+                response = await self._chat.chat.completions.create(
+                    model=self.model, messages=[{"role": "user", "content": prompt}]
+                )
+                text = (response.choices[0].message.content or "").strip()
+            except Exception:
+                log.exception("lecturer summary: the model could not be reached")
+                return self._fallback(facts, ("the model could not be reached",))
+
+            problems = summary_problems(text, facts)
+            if not problems:
+                return LecturerSummary(
+                    text=text,
+                    source="model",
+                    model=self.model,
+                    prompt_version=SUMMARY_PROMPT_VERSION,
+                )
+            log.info("lecturer summary attempt %d failed: %s", attempt + 1, "; ".join(problems))
+            # Told what was wrong, so the second try can fix that rather than
+            # guess again.
+            prompt = (
+                build_summary_prompt(facts)
+                + "\nYour previous summary disagreed with the facts:\n"
+                + "\n".join(f"- {p}" for p in problems)
+                + "\nWrite it again using only the facts.\n"
+            )
+        return self._fallback(facts, tuple(problems))
+
+    def _fallback(self, facts: Sequence[TopicFact], problems: tuple[str, ...]) -> LecturerSummary:
+        return LecturerSummary(
+            text=facts_summary(facts),
+            source="facts",
+            model=None,
+            prompt_version=SUMMARY_PROMPT_VERSION,
+            problems=problems,
+        )
