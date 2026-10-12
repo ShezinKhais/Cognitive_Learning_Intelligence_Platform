@@ -9,8 +9,9 @@ Not a test. Needs Ollama running with the chat and embedding models from
 
 It compares against label_final by default: the label both labellers agreed
 after settling where they differed. It prints each answer's human and
-predicted label, then accuracy, macro F1, the confusion matrix and per-label precision and recall. With both label
-columns filled it also prints how often the two labellers agreed. The
+predicted label, then accuracy, macro F1, the confusion matrix and per-label
+precision and recall. With both label columns filled it also prints how often
+the two labellers agreed. The
 similarity range per human label is printed so SIMILARITY_FLOOR and
 SIMILARITY_CEILING can be set from data.
 """
