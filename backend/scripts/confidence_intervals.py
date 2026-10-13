@@ -26,6 +26,7 @@ CLASSIFIER_RUNS = {
     "results_qwen7b.csv": "qwen2.5:7b run 1",
     "results_qwen7b_run2.csv": "qwen2.5:7b run 2",
     "results_qwen3b_v4.csv": "qwen2.5:3b, schema replies (v4)",
+    "results_qwen3b_v5.csv": "qwen2.5:3b, temperature 0 (v5)",
 }
 TOP_K = 5
 

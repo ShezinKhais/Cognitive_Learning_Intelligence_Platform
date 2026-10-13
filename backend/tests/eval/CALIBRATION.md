@@ -10,6 +10,7 @@ Read from the classifier results in this folder; unreadable replies are left out
 | qwen2.5:7b v3 run 1 | 34 | 0.73 | 79% | 0.13 | 0.18 | 0.62 |
 | qwen2.5:7b v3 run 2 | 37 | 0.71 | 84% | 0.20 | 0.17 | 0.60 |
 | qwen2.5:3b v4 | 40 | 0.73 | 78% | 0.14 | 0.18 | 0.61 |
+| qwen2.5:3b v5 | 40 | 0.73 | 80% | 0.24 | 0.19 | 0.62 |
 
 How often labels were right at each confidence level:
 
@@ -19,6 +20,7 @@ How often labels were right at each confidence level:
 | qwen2.5:7b v3 run 1 | 7 of 9 right | 9 of 13 right | 11 of 12 right |
 | qwen2.5:7b v3 run 2 | 9 of 11 right | 10 of 13 right | 12 of 13 right |
 | qwen2.5:3b v4 | 9 of 12 right | 8 of 12 right | 14 of 16 right |
+| qwen2.5:3b v5 | 9 of 11 right | 8 of 13 right | 15 of 16 right |
 
 ## Consistency
 

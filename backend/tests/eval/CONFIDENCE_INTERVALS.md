@@ -19,4 +19,6 @@
 | Marking macro F1, qwen2.5:7b run 2 (replies read) | 0.82 | 0.67 to 0.94 | 37 |
 | Marking accuracy, qwen2.5:3b, schema replies (v4) (all 40) | 78% | 65% to 90% | 40 |
 | Marking macro F1, qwen2.5:3b, schema replies (v4) (replies read) | 0.76 | 0.61 to 0.89 | 40 |
+| Marking accuracy, qwen2.5:3b, temperature 0 (v5) (all 40) | 80% | 68% to 92% | 40 |
+| Marking macro F1, qwen2.5:3b, temperature 0 (v5) (replies read) | 0.78 | 0.63 to 0.90 | 40 |
 | Cohen's kappa, Luna vs Nour | 0.85 | 0.70 to 0.96 | 40 |

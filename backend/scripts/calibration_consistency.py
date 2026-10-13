@@ -37,6 +37,7 @@ RUNS = {
     "results_qwen7b.csv": "qwen2.5:7b v3 run 1",
     "results_qwen7b_run2.csv": "qwen2.5:7b v3 run 2",
     "results_qwen3b_v4.csv": "qwen2.5:3b v4",
+    "results_qwen3b_v5.csv": "qwen2.5:3b v5",
 }
 # Runs of the same model and prompt, to compare with each other.
 REPEATS = [("results_qwen7b.csv", "results_qwen7b_run2.csv")]
