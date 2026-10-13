@@ -1,12 +1,12 @@
 # Retrieval before and after #127
 
-Embedding model `nomic-embed-text`, captions by `qwen2.5vl:3b` with prompt `caption-v2`. Rank is where the first chunk from a page that answers the question comes; `-` means the material had no chunk from that page at all.
+Embedding model `nomic-embed-text`, captions by `qwen2.5vl:3b` with prompt `caption-v2`. Rank is where the first chunk from a page that answers the question comes; `-` means the material had no chunk from that page at all. precision@5 is the share of the top 5 chunks that come from an answering page.
 
-| Questions | hit@1 | hit@5 | MRR |
-|---|---|---|---|
-| image (5) | 0.00 → 0.20 | 0.00 → 0.60 | 0.00 → 0.39 |
-| text (6) | 1.00 → 1.00 | 1.00 → 1.00 | 1.00 → 1.00 |
-| all (11) | 0.55 → 0.64 | 0.55 → 0.82 | 0.55 → 0.72 |
+| Questions | hit@1 | hit@5 | MRR | precision@5 |
+|---|---|---|---|---|
+| image (5) | 0.00 → 0.20 | 0.00 → 0.60 | 0.00 → 0.39 | 0.00 → 0.12 |
+| text (6) | 1.00 → 1.00 | 1.00 → 1.00 | 1.00 → 1.00 | 0.43 → 0.43 |
+| all (11) | 0.55 → 0.64 | 0.55 → 0.82 | 0.55 → 0.72 | 0.24 → 0.29 |
 
 | Kind | Question | Answer on | Before: rank (top page) | After: rank (top page) |
 |---|---|---|---|---|
