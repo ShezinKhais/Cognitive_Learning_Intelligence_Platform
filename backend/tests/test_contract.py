@@ -52,6 +52,16 @@ EXPECTED_PATHS = {
     # Added in Phase 5 for the tutor (General CS). Additive. The reply is a
     # stream of NDJSON events, so it has no response model.
     "/api/v1/sessions/{session_id}/chat",
+    # Added in Phase 7 for deletion requests, the audit log and retention (BBIS).
+    # Additive. Admin only.
+    "/api/v1/governance/deletion-requests",
+    "/api/v1/governance/deletion-requests/{request_id}",
+    "/api/v1/governance/deletion-requests/{request_id}/approve",
+    "/api/v1/governance/deletion-requests/{request_id}/reject",
+    "/api/v1/governance/deletion-requests/{request_id}/execute",
+    "/api/v1/governance/audit-log",
+    "/api/v1/governance/retention/preview",
+    "/api/v1/governance/retention/run",
 }
 
 
