@@ -72,9 +72,41 @@ def test_a_signal_counts_for_no_more_time_than_really_passed() -> None:
     second, _ = windows.add(student, signal(window_seconds=3600), at(6))
     honest, _ = windows.add(student, signal(window_seconds=4.0), at(11))
 
-    assert first is not None and first.window_seconds == 60.0
+    # The first is held to the second of the minute that has passed.
+    assert first is not None and first.window_seconds == 1.0
     assert second is not None and second.window_seconds == 5.0
     assert honest is not None and honest.window_seconds == 4.0
+
+
+def test_a_signal_in_a_new_minute_counts_only_the_new_minutes_part() -> None:
+    """Found running the real app: a student's first signal had nothing to be
+    measured from, so it counted for a whole minute and outweighed the rest."""
+    windows, student = AttentionWindows(SESSION), uuid4()
+    windows.add(student, signal(), at(58))
+
+    straddling, _ = windows.add(student, signal(window_seconds=5.0), at(63))
+
+    assert straddling is not None and straddling.window_seconds == 3.0
+
+
+def test_a_minutes_signals_never_add_up_to_more_than_a_minute() -> None:
+    windows, student = AttentionWindows(SESSION), uuid4()
+    windows.add(student, signal(window_seconds=3600), at(-1))
+    for second in range(0, 60, 5):
+        windows.add(student, signal(window_seconds=3600), at(second + 0.5))
+
+    minute = [w for w in windows.drain() if w.window_start == MINUTE][0]
+
+    assert sum(s.window_seconds for s in minute.signals) <= 60.0
+
+
+def test_a_signal_exactly_on_the_minute_still_counts_for_something() -> None:
+    """A summary must cover more than no time: the table refuses zero."""
+    windows, student = AttentionWindows(SESSION), uuid4()
+
+    kept, _ = windows.add(student, signal(), MINUTE)
+
+    assert kept is not None and 0 < kept.window_seconds < 0.01
 
 
 def test_forgetting_a_student_drops_their_unsent_minute() -> None:
@@ -128,7 +160,7 @@ def test_attention_keeps_the_held_signal_for_scoring() -> None:
     attention.observe(student, signal(window_seconds=3600, gaze_on_screen_ratio=0.4), at(5))
 
     held = attention._students[student].current_signal(at(6))  # noqa: SLF001
-    assert held is not None and held.window_seconds == 60.0
+    assert held is not None and held.window_seconds == 5.0
 
 
 def test_a_dropped_signal_does_not_replace_the_last_one_kept() -> None:

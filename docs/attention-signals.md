@@ -35,9 +35,10 @@ Null always means "no reading". It never means zero, and it is stored as null.
 3. **Rate.** A signal less than 2 seconds after the student's last kept one is
    dropped without an error. No error is sent, so a fast client does not get a
    stream of error banners.
-4. **Duration.** `window_seconds` is reduced to the time since the student's
-   previous signal, and to at most 60 seconds. One signal cannot count for more
-   time than really passed.
+4. **Duration.** `window_seconds` is reduced to the part of the current minute
+   since the student's previous signal, or since the minute began for their
+   first signal in it. One signal cannot count for more time than really
+   passed, and a minute's signals never add up to more than a minute.
 5. **Kept twice.**
    - The latest signal is kept for engagement scoring (Cyber 1), as before.
    - Every signal in the current clock minute is kept for storing.
@@ -101,5 +102,8 @@ scoring flags a student at a question close.
   polling. A `consent.changed` event would be a contract addition.
 - **Rejecting unknown fields in `signal.attention`.** They are dropped, not
   stored, but not refused. Tightening the schema changes the frozen contract.
+- **A cap on WebSocket message size.** Uvicorn's default of 16 MiB applies.
+  The deployment should start it with `--ws-max-size 65536`; the largest
+  legitimate message (a free-text answer) is far smaller.
 - **Retention.** Purging summaries older than `DATA_RETENTION_DAYS` belongs to
   the Phase 7 purge runner (#65).

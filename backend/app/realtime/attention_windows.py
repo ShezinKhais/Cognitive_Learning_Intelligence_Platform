@@ -13,9 +13,10 @@ Two things the client says are not taken on trust:
   the student's last kept one is dropped, so a client in a loop cannot flood
   the session or outweigh everyone else's evidence.
 - How long a signal covers. Its window_seconds weighs it in the minute's
-  summary, and the contract allows up to an hour. It is held to the time since
-  the student's previous signal, and to one window, so one signal cannot speak
-  for more time than really passed.
+  summary, and the contract allows up to an hour. It is held to the part of
+  the current minute since the student's previous signal (or since the minute
+  began, for their first in it), so one signal cannot speak for more time than
+  really passed, and a minute's signals never add up to more than a minute.
 
 A minute is handed over once it is over: when any student's next signal
 arrives after it, and when the session ends. A paused session keeps its
@@ -37,7 +38,9 @@ from uuid import UUID
 from app.realtime.recorders import AttentionWindow
 from app.schemas.events import AttentionSignalPayload
 
-WINDOW = timedelta(minutes=1)
+# A signal arriving exactly on the minute still counts for something: a
+# summary must cover more than no time at all.
+LEAST_COVERED = timedelta(milliseconds=1)
 # The client sends every five seconds. Faster than every two is a bug or
 # abuse, and also bounds a minute to 30 signals.
 MIN_SIGNAL_INTERVAL = timedelta(seconds=2)
@@ -76,13 +79,13 @@ class AttentionWindows:
         last = self._last_at.get(user_id)
         if last is not None and now - last < MIN_SIGNAL_INTERVAL:
             return None, []
-        covered = min(WINDOW, now - last) if last is not None else WINDOW
+        start = window_start(now)
+        covered = max(now - (max(last, start) if last is not None else start), LEAST_COVERED)
         kept = signal.model_copy(
             update={"window_seconds": min(signal.window_seconds, covered.total_seconds())}
         )
         self._last_at[user_id] = now
 
-        start = window_start(now)
         finished = self._take(lambda window: window.start < start)
         self._open.setdefault(user_id, _Window(start)).signals.append(kept)
         return kept, finished
