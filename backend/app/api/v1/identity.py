@@ -19,6 +19,7 @@ from app.api.deps import (
     require_roles,
 )
 from app.auth.login_security import PersistentLoginSecurityStore
+from app.auth.service import granted_consents
 from app.auth.store import (
     get_consent_repository,
     get_login_security_store,
@@ -343,11 +344,20 @@ async def record_consent(
         payload.consent_type.value,
     )
 
-    # Live classes stop acting on a withdrawal at once, as promised above. A
-    # grant waits for the user's next join, when it is read back from the
-    # store, so a class never acts on one this request might not commit.
+    # Live classes act on a decision at once, not at the user's next join.
+    # A withdrawal is applied before anything else can happen. A grant is
+    # committed first and then read back from the store, so a class never
+    # acts on one that might not be kept, and a withdrawal made meanwhile wins.
     if not record.granted:
         await classroom.withdraw_consent(principal.user_id, payload.consent_type)
+    else:
+        await db.commit()
+        read_at = classroom.consents.version(principal.user_id)
+        classroom.admit_consents(
+            principal.user_id,
+            await granted_consents(principal.user_id, settings, db),
+            read_at,
+        )
 
     return ConsentOut(
         consent_type=record_consent_type,

@@ -17,10 +17,10 @@ class that means:
   lowers a score.
 
 The classroom reads this registry and the socket fills it from the store when
-a user is admitted. The consent route applies a withdrawal to it at once, so
-collection stops immediately rather than at the next reconnect. A grant is
-picked up at the next join instead, once it is surely stored, since the
-route's transaction could still roll back.
+a user is admitted. The consent route applies a decision to it at once, so
+collection starts or stops immediately rather than at the next reconnect: a
+withdrawal straight away, a grant once it is committed and read back from the
+store, so no class acts on one the database might not keep.
 """
 
 from __future__ import annotations

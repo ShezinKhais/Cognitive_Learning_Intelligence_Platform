@@ -18,6 +18,7 @@ def test_the_live_store_fills_every_seam_the_classroom_checks(monkeypatch):
     assert room.prompt_recorder is not None
     assert room.participant_recorder is not None
     assert room.alert_recorder is not None
+    assert room.attention_recorder is not None
     room.check_wiring()
 
 

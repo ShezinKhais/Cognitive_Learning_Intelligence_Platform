@@ -60,6 +60,8 @@ from app.realtime.recorders import (
     RECORD_TIMEOUT_SECONDS,
     AlertRecorder,
     Attendance,
+    AttentionRecorder,
+    AttentionWindow,
     ClosedQuestion,
     CloseRecorder,
     ComprehensionSource,
@@ -187,6 +189,10 @@ class LiveSession:
         self.cycle: asyncio.Task[None] | None = None
         self.attention = Attention(session_id)
         self.alerts: list[ClassComprehensionAlert] = []
+        # Attention minutes being stored. Not awaited by the socket that ended
+        # the minute, so a slow store never delays that student's next answer;
+        # the end of the session waits for them.
+        self.storing: set[asyncio.Task[None]] = set()
 
 
 class Classroom:
@@ -216,6 +222,7 @@ class Classroom:
         self.participant_recorder: ParticipantRecorder | None = None
         self.comprehension_source: ComprehensionSource | None = None
         self.alert_recorder: AlertRecorder | None = None
+        self.attention_recorder: AttentionRecorder | None = None
 
     def _next_wait(self) -> timedelta | None:
         """A fresh random wait before the next scheduled question, or None
@@ -230,10 +237,11 @@ class Classroom:
     def check_wiring(self) -> None:
         """Say what a live session will not do in this deployment, at startup.
 
-        Answers, closes, prompt outcomes, attendance and alerts are kept nowhere
-        until AI 1, BBIS and Cyber 1 register their recorders, and a second worker would
-        run a second cycle for every session. Development is told; production refuses to
-        start rather than run a class that loses its answers.
+        Answers, closes, prompt outcomes, attendance, alerts and attention
+        summaries are kept nowhere until AI 1, BBIS and Cyber 1 register their
+        recorders, and a second worker would run a second cycle for every
+        session. Development is told; production refuses to start rather than
+        run a class that loses its answers.
         """
         problems = [
             f"no {name} is registered, so {what} not stored"
@@ -243,6 +251,7 @@ class Classroom:
                 (self.close_recorder, "CloseRecorder", "question closes are"),
                 (self.participant_recorder, "ParticipantRecorder", "who attended is"),
                 (self.alert_recorder, "AlertRecorder", "alerts are"),
+                (self.attention_recorder, "AttentionRecorder", "attention summaries are"),
             )
             if recorder is None
         ]
@@ -359,6 +368,7 @@ class Classroom:
             open_ = live.open
             closed = await self._close_locked(live, QuestionCloseReason.SESSION_ENDED)
             withdrawn = live.attention.withdraw_all()
+            windows = live.attention.windows.drain()
             # The last question still counts, but nobody is nudged in a class
             # that has ended.
             if open_ is not None:
@@ -372,6 +382,8 @@ class Classroom:
         # lecturer's request waits on them.
         await asyncio.gather(
             self._after_close(live, closed),
+            self._record_windows(session_id, windows),
+            *live.storing,
             *(self._record_prompt(p.outcome(PromptResult.EXPIRED)) for p in withdrawn),
         )
         self._hub.forget_session(session_id)
@@ -878,10 +890,12 @@ class Classroom:
     async def record_attention(
         self, session_id: UUID, user_id: UUID, signal: AttentionSignalPayload
     ) -> bool:
-        """Keep a student's latest client attention signal for their next
-        engagement score, less whatever their consent does not cover. False
-        when the session is not running here, the sender is not a student
-        connected to it, or they have not consented to engagement monitoring."""
+        """Keep a student's client attention signal for their next engagement
+        score and their current minute, less whatever their consent does not
+        cover, and store the minutes that are now over. False when the session
+        is not running here, the sender is not a student connected to it, or
+        they have not consented to engagement monitoring. A signal sent too
+        soon after the last is dropped quietly, and still returns True."""
         live = self._live.get(session_id)
         if live is None or user_id not in self._hub.student_ids(session_id):
             return False
@@ -889,7 +903,11 @@ class Classroom:
         if kept is None:
             return False
         async with live.lock:
-            live.attention.observe(user_id, kept, _now())
+            finished = live.attention.observe(user_id, kept, _now())
+        if finished:
+            task = asyncio.create_task(self._record_windows(session_id, finished))
+            live.storing.add(task)
+            task.add_done_callback(live.storing.discard)
         return True
 
     def _monitored_in(self, question: _OpenQuestion) -> tuple[set[UUID], set[UUID]]:
@@ -916,9 +934,9 @@ class Classroom:
         microphone: those parts of their stored signal are dropped. Terms:
         their session sockets are closed.
 
-        A grant is not applied here. It takes effect when the user next joins,
-        read from the store, so no class ever acts on a decision the database
-        might not keep.
+        A grant is not applied here. The consent route admits it once it is
+        committed and read back from the store (admit_consents), so no class
+        ever acts on a decision the database might not keep.
         """
         held = self.consents.set(user_id, self.consents.granted(user_id) - {consent})
         withdrawn: list[Prompt] = []
@@ -1032,6 +1050,14 @@ class Classroom:
                 self.prompt_recorder.record_prompt(outcome),
                 "record a prompt outcome",
                 outcome.session_id,
+            )
+
+    async def _record_windows(self, session_id: UUID, windows: list[AttentionWindow]) -> None:
+        if windows and self.attention_recorder is not None:
+            await best_effort(
+                self.attention_recorder.record_windows(windows),
+                "record attention summaries",
+                session_id,
             )
 
     async def _after_close(self, live: LiveSession, closed: ClosedQuestion | None) -> None:
