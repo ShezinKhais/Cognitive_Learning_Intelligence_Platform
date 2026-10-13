@@ -19,6 +19,7 @@ from app.services.extraction import (
     IMAGE_ONLY_PAGE,
     NO_OCR_NOTE,
     extract,
+    extract_material,
     process_material,
 )
 from app.services.ocr import TesseractReader, find_tesseract, has_text
@@ -121,8 +122,8 @@ def test_a_scan_with_no_real_text_and_no_captioning_still_fails(tmp_path):
 
 def test_ocr_text_is_not_also_kept_as_an_image_to_caption(tmp_path):
     path = scanned_pdf(tmp_path / "scan.pdf")
-    result = process_material(path, uuid.uuid4(), with_images=True, ocr=FakeOcr())
-    assert not any(e.image for e in result.elements)
+    extraction = extract_material(path, 52_428_800, with_images=True, ocr=FakeOcr())
+    assert not any(e.image for e in extraction.elements)
 
 
 def test_without_ocr_a_scanned_page_says_how_to_have_it_read(tmp_path):

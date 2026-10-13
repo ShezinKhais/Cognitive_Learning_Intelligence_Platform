@@ -291,7 +291,7 @@ def test_low_quality_pdf_warns_when_docling_missing(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", blocked)
 
     corrupt = [ExtractedElement("text", "T h e G l o b a l E d u c a t i o n C r i s i s " * 3, 1)]
-    monkeypatch.setattr(extraction, "read_pdf_pypdf", lambda path: corrupt)
+    monkeypatch.setattr(extraction, "read_pdf_pypdf", lambda path, with_images=False: corrupt)
 
     elements, parser, warnings = extraction.extract("fake.pdf", "pdf")
     assert parser == "pypdf-low-quality"
@@ -315,8 +315,8 @@ def test_corrupt_pypdf_output_upgrades_to_docling(monkeypatch):
 
     corrupt = [ExtractedElement("text", "T h e G l o b a l E d u c a t i o n C r i s i s " * 3, 1)]
     clean = [ExtractedElement("text", "The Global Education Crisis", 1)]
-    monkeypatch.setattr(extraction, "read_pdf_pypdf", lambda path: corrupt)
-    monkeypatch.setattr(extraction, "read_pdf_docling", lambda path: clean)
+    monkeypatch.setattr(extraction, "read_pdf_pypdf", lambda path, with_images=False: corrupt)
+    monkeypatch.setattr(extraction, "read_pdf_docling", lambda path, with_images=False: clean)
 
     elements, parser, warnings = extraction.extract("fake.pdf", "pdf")
     assert parser == "docling"

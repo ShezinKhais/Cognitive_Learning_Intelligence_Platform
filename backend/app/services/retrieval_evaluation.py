@@ -48,7 +48,7 @@ def load_queries(path: Path) -> list[RetrievalQuery]:
 def baseline_elements(elements: Sequence[ExtractedElement]) -> list[ExtractedElement]:
     """The elements as chunking saw them before #127: every heading applies to
     its own page only, and no image has a caption."""
-    return [replace(e, level=0, image=None) for e in elements]
+    return [replace(e, level=0, image=None, caption=None) for e in elements]
 
 
 def cosine_ranking(query: Sequence[float], vectors: Sequence[Sequence[float]]) -> list[int]:

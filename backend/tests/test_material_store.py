@@ -32,8 +32,6 @@ from app.services.extraction import (
     ContentChunk,
     ExtractedElement,
     ProcessingResult,
-    chunk_elements,
-    stored_element,
 )
 from app.services.jobs import JobStatus
 from app.services.material_pages import page_previews
@@ -277,19 +275,18 @@ async def test_nothing_is_half_written_when_the_completion_fails(sessions, lectu
     assert questions == []
 
 
-async def test_stored_elements_rebuild_the_same_chunks_without_the_file(sessions, lecturer) -> None:
-    """The upload is deleted once processed, so the stored elements are all a
-    material can be chunked again from. They keep each heading's level, and a
-    caption is the image's content."""
+async def test_stored_elements_keep_heading_levels_and_captions(sessions, lecturer) -> None:
+    """The upload is deleted once processed, so the stored elements are all
+    that is kept of it: each heading keeps its level, and a captioned image is
+    stored as its caption."""
     material_id = uuid.uuid4()
     elements = [
         ExtractedElement("heading", "Chapter 2", 1, level=1),
         ExtractedElement("heading", "2.1 Layers", 1, level=2),
         ExtractedElement("text", "A dense layer connects every input.", 1),
-        ExtractedElement("image", "[Image: A diagram of three dense layers.]", 1),
-        ExtractedElement("text", "The section runs on.", 2),
+        ExtractedElement("image", "[image]", 1, caption="A diagram of three dense layers."),
+        ExtractedElement("image", "[image]", 2),
     ]
-    original = chunk_elements(elements, material_id)
     completed = _completed(material_id)
     completed = replace(
         completed,
@@ -302,29 +299,11 @@ async def test_stored_elements_rebuild_the_same_chunks_without_the_file(sessions
 
     async with sessions() as session:
         rows = await MaterialRepository(session).list_elements(material_id)
-    rebuilt = chunk_elements(
-        [
-            stored_element(row.element_type, row.content, row.source_page, row.metadata_json)
-            for row in rows
-        ],
-        material_id,
-    )
     assert [row.metadata_json for row in rows][:2] == [{"level": 1}, {"level": 2}]
-    assert [c.chunk_text for c in rebuilt] == [c.chunk_text for c in original]
-    assert rebuilt[0].chunk_text.startswith("Chapter 2 > 2.1 Layers\n")
-    assert "[Image: A diagram of three dense layers.]" in rebuilt[0].chunk_text
-    assert rebuilt[-1].chunk_text.startswith("Chapter 2 > 2.1 Layers\n")
-
-
-def test_a_row_saved_before_levels_were_kept_reads_back_as_a_page_heading() -> None:
-    element = stored_element("heading", "Overview", 3, {})
-
-    assert (element.el_type, element.content, element.page, element.level) == (
-        "heading",
-        "Overview",
-        3,
-        0,
-    )
+    assert [row.content for row in rows][3:] == [
+        "[Image: A diagram of three dense layers.]",
+        "[image]",
+    ]
 
 
 def test_page_previews_flag_thin_and_image_heavy_pages() -> None:

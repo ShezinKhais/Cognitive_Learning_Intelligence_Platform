@@ -31,7 +31,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Coroutine, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import partial
 from typing import Any
 from uuid import UUID
@@ -42,7 +42,7 @@ from app.core.threads import run_in_daemon_thread
 from app.realtime.hub import SessionHub
 from app.realtime.hub import hub as default_hub
 from app.schemas.events import MaterialProgressPayload, MaterialStage, ServerEventType
-from app.services.extraction import ContentChunk, process_material, require_readable_content
+from app.services.extraction import ContentChunk, extract_material, finish_material
 from app.services.generation import contains_embedded_instruction
 from app.services.image_captioning import CAPTION_PROMPT_VERSION, ImageCaptioner, add_captions
 from app.services.jobs import (
@@ -62,7 +62,7 @@ from app.services.material_seams import (
     QuestionGenerator,
 )
 from app.services.ocr import TesseractReader
-from app.services.processing_security import validate_processing_result
+from app.services.processing_security import validate_extraction, validate_processing_result
 from app.services.storage import MaterialStorage, StoredFile
 
 log = logging.getLogger("clip.pipeline")
@@ -190,35 +190,37 @@ class MaterialJob:
 
         await self._report(MaterialStage.EXTRACTING, "Reading the document.")
         async with pipeline.storage.materialise(self._stored) as path:
-            # process_material is synchronous and CPU-bound: fifteen seconds on
+            # extract_material is synchronous and CPU-bound: fifteen seconds on
             # a normal deck, eighteen when it upgrades to docling. Calling it
             # inline would freeze every live session on this process for that
             # long, which is the exact failure the 202 exists to avoid.
             # Extraction only reads the stored file, so a daemon thread is safe.
-            # With captioning and OCR off, the call is exactly as it was
-            # before Phase 6.
-            options: dict = {}
-            if pipeline.captioner is not None:
-                options["with_images"] = True
-            if pipeline.ocr is not None:
-                options["ocr"] = pipeline.ocr.read
-            extract = partial(process_material, **options) if options else process_material
-            result = await run_in_daemon_thread(
-                extract,
+            extraction = await run_in_daemon_thread(
+                partial(
+                    extract_material,
+                    with_images=pipeline.captioner is not None,
+                    ocr=pipeline.ocr.read if pipeline.ocr is not None else None,
+                ),
                 str(path),
-                self.material_id,
                 pipeline.settings.max_upload_bytes,
                 name="material-extraction",
             )
 
-        # Checked before captioning too, so a file already over the limits is
+        # Checked before captioning, so a file already over the limits is
         # rejected before it spends minutes of vision model calls.
-        validate_processing_result(result, pipeline.settings)
+        validate_extraction(extraction.elements, pipeline.settings)
 
         model_runs: list[ModelRun] = []
-        if pipeline.captioner is not None and any(e.image for e in result.elements):
+        if pipeline.captioner is not None and any(e.image for e in extraction.elements):
             await self._report(MaterialStage.EXTRACTING, "Describing the images.")
-            result, captions = await add_captions(result, pipeline.captioner)
+            elements, captions = await add_captions(
+                extraction.elements, pipeline.captioner, self.material_id
+            )
+            extraction = replace(
+                extraction,
+                elements=elements,
+                warnings=extraction.warnings + captions.warnings(),
+            )
             if captions.sent:
                 model_runs.append(
                     ModelRun(
@@ -231,9 +233,12 @@ class MaterialJob:
                         ),
                     )
                 )
-        # An image-only file was let through extraction to be captioned. With
-        # no caption written it has nothing to chunk, and fails as before.
-        require_readable_content(result.elements, {"parser": result.parser_used})
+        # Chunked once, with the captions in, off the event loop like the
+        # extraction. An image-only file let through extraction to be
+        # captioned fails here when no caption was written.
+        result = await run_in_daemon_thread(
+            finish_material, extraction, self.material_id, name="material-chunking"
+        )
 
         # Validation, extraction and chunking are one call in AI 1's module, so
         # this event marks chunking finished rather than started. Splitting it

@@ -2,9 +2,10 @@
 
 Owner: AI 1, Phase 6 (#127). Extraction records each image as a placeholder
 ("[image]"), which says nothing a student could search for, so chunking leaves
-it out. This asks a local vision model what each image shows, puts the answer
-where the placeholder was, and chunks the material again: the caption then sits
-with the text around it and is embedded like any other text.
+it out. This asks a local vision model what each image shows and sets it as
+the image's caption, between extraction and chunking (extract_material and
+finish_material): the caption is then chunked where the image stood, with the
+text around it, and embedded like any other text.
 
 Calls go through the AI gateway at background priority, so describing a deck
 waits behind anyone in a live class. Off unless image_captioning_enabled.
@@ -33,6 +34,7 @@ import io
 import logging
 import shutil
 import tempfile
+import uuid
 from collections import defaultdict
 from dataclasses import dataclass, replace
 from enum import StrEnum
@@ -50,14 +52,7 @@ from app.services.ai_gateway import (
     Message,
     Priority,
 )
-from app.services.extraction import (
-    IMAGE_PLACEHOLDERS,
-    MAX_IMAGE_PIXELS,
-    ExtractedElement,
-    ProcessingResult,
-    chunk_elements,
-    skipped_pages_warning,
-)
+from app.services.extraction import MAX_IMAGE_PIXELS, ExtractedElement
 from app.services.generation import contains_embedded_instruction
 
 log = logging.getLogger("clip.image_captioning")
@@ -221,11 +216,17 @@ class VectorConverter:
             if process.returncode != 0 or not converted.is_file():
                 log.info("converting a %s image failed", image_format)
                 return None
-            return trim_to_drawing(converted.read_bytes())
+            trimmed = trim_to_drawing(converted.read_bytes())
+            if trimmed is None:
+                # Some LibreOffice builds draw a WMF as an empty page. A blank
+                # image is not worth a caption, and the model might invent one.
+                log.info("converting a %s image gave a blank page", image_format)
+            return trimmed
 
 
-def trim_to_drawing(png: bytes) -> bytes:
-    """The PNG cropped to what is drawn on it, plus a small margin.
+def trim_to_drawing(png: bytes) -> bytes | None:
+    """The PNG cropped to what is drawn on it, plus a small margin, or None
+    when nothing is drawn on it at all.
 
     LibreOffice draws a vector image on a whole page, so the chart arrives in
     the middle of an empty A4 sheet: most of what the model would look at.
@@ -235,7 +236,7 @@ def trim_to_drawing(png: bytes) -> bytes:
         page.paste(opened, mask=opened.getchannel("A") if "A" in opened.getbands() else None)
     box = ImageChops.difference(page, Image.new("RGB", page.size, "white")).getbbox()
     if box is None:
-        return png
+        return None
     left, top, right, bottom = box
     cropped = page.crop(
         (
@@ -278,10 +279,6 @@ class ImageCaptioner:
         self._queue_timeout = queue_timeout
         self.max_images = max_images
         self._converter = converter
-
-    async def caption(self, image: bytes) -> str | None:
-        """What the image shows, or None when there is no caption for it."""
-        return (await self.describe(image)).text
 
     async def describe(self, image: bytes) -> Caption:
         """Caption one image, saying why when there is no caption.
@@ -398,22 +395,24 @@ def _digest(image: bytes) -> str:
 
 
 async def add_captions(
-    result: ProcessingResult, captioner: ImageCaptioner
-) -> tuple[ProcessingResult, CaptionReport]:
-    """The result with its images described and its material chunked again.
+    elements: list[ExtractedElement],
+    captioner: ImageCaptioner,
+    material_id: uuid.UUID | None = None,
+) -> tuple[list[ExtractedElement], CaptionReport]:
+    """The elements with their images described, and what happened.
 
-    Each captioned image's placeholder becomes "[Image: caption]", where the
+    Each captioned image gets its caption; chunking then puts it where the
     image stood. Image bytes are dropped from every element either way: they
-    are only needed for this, and the result is kept until it is stored.
+    are only needed for this, and the elements are kept until they are stored.
     """
-    decorative = _decorative(result.elements)
+    decorative = _decorative(elements)
     captions: dict[str, Caption] = {}
     over_limit: set[str] = set()
 
-    elements: list[ExtractedElement] = []
-    for element in result.elements:
-        if element.image is None or element.content not in IMAGE_PLACEHOLDERS:
-            elements.append(replace(element, image=None))
+    described: list[ExtractedElement] = []
+    for element in elements:
+        if element.image is None or element.caption is not None:
+            described.append(replace(element, image=None))
             continue
         digest = _digest(element.image)
         if digest not in captions and digest not in decorative and digest not in over_limit:
@@ -422,8 +421,7 @@ async def add_captions(
             else:
                 captions[digest] = await captioner.describe(element.image)
         found = captions.get(digest)
-        content = f"[Image: {found.text}]" if found and found.text else element.content
-        elements.append(replace(element, content=content, image=None))
+        described.append(replace(element, image=None, caption=found.text if found else None))
 
     outcomes = [caption.outcome for caption in captions.values()]
     report = CaptionReport(
@@ -435,29 +433,14 @@ async def add_captions(
         unsupported=outcomes.count(Outcome.UNSUPPORTED),
         over_limit=len(over_limit),
     )
-    old_skipped = skipped_pages_warning(result.elements)
-    warnings = [w for w in result.warnings if w != old_skipped]
-    new_skipped = skipped_pages_warning(elements)
-    if new_skipped:
-        warnings.append(new_skipped)
-    warnings.extend(report.warnings())
-
     log.info(
         "material %s: %d image(s) captioned, %d failed, %d unsupported, "
         "%d over the limit, %d decorative",
-        result.material_id,
+        material_id,
         report.captioned,
         report.failed,
         report.unsupported,
         report.over_limit,
         len(decorative),
     )
-    return (
-        replace(
-            result,
-            elements=elements,
-            chunks=chunk_elements(elements, result.material_id),
-            warnings=warnings,
-        ),
-        report,
-    )
+    return described, report
