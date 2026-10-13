@@ -15,6 +15,7 @@ import pytest
 
 from app.realtime import attention as attention_module
 from app.realtime import classroom as classroom_module
+from app.realtime import recorders as recorders_module
 from app.realtime.classroom import Classroom
 from app.realtime.recorders import (
     QuestionComprehension,
@@ -445,6 +446,105 @@ async def test_an_alert_is_never_lost_to_a_failure_in_explaining_it(
         assert data[name].strip()
     assert data["confidence"] == 0.0
     assert len(room.alerts(row.session_id)) == 1
+    await room.shutdown()
+
+
+@dataclass
+class _Keeper:
+    """Stands in for the alert store, noting what the lecturer had been told
+    at the moment each alert was handed over."""
+
+    lecturer_socket: object = None
+    kept: list = field(default_factory=list)
+    told_when_kept: list = field(default_factory=list)
+    fail_with: Exception | None = None
+    hang: bool = False
+
+    async def record_alert(self, alert) -> None:  # noqa: ANN001
+        self.told_when_kept.append(len(self.lecturer_socket.of(ServerEventType.ALERT_RAISED)))  # type: ignore[attr-defined]
+        if self.hang:
+            await asyncio.sleep(30)
+        if self.fail_with is not None:
+            raise self.fail_with
+        self.kept.append(alert)
+
+
+async def _alert_room(keeper: _Keeper, labels: list[str] | None = None):  # noqa: ANN202
+    room, events, row, _, _, _ = await _prompted_room(window=0.05, missed=0)
+    lecturer_socket, _ = await join_as(events, row.session_id, Role.LECTURER)
+    keeper.lecturer_socket = lecturer_socket
+    room.alert_recorder = keeper
+    room.comprehension_source = _Labels(labels or ["struggling"] * 6)
+    return room, row, lecturer_socket
+
+
+async def test_the_alert_is_kept_as_the_lecturer_was_shown_it() -> None:
+    keeper = _Keeper()
+    room, row, lecturer_socket = await _alert_room(keeper)
+
+    await _close(room, row)
+
+    [kept] = keeper.kept
+    [shown] = lecturer_socket.of(ServerEventType.ALERT_RAISED)
+    assert str(kept.alert_id) == shown["data"]["alert_id"]
+    for name in ("message", "reason", "explanation", "recommendation", "explanation_source"):
+        assert getattr(kept, name) == shown["data"][name], name
+    assert kept.confidence_reasons == shown["data"]["confidence_reasons"]
+    assert kept.session_id == row.session_id
+    assert [stored.alert_id for stored in room.alerts(row.session_id)] == [kept.alert_id]
+    await room.shutdown()
+
+
+async def test_the_alert_is_kept_before_the_lecturer_is_told() -> None:
+    keeper = _Keeper()
+    room, row, lecturer_socket = await _alert_room(keeper)
+
+    await _close(room, row)
+
+    # The lecturer can only click an alert that already exists.
+    assert keeper.told_when_kept == [0]
+    assert len(lecturer_socket.of(ServerEventType.ALERT_RAISED)) == 1
+    await room.shutdown()
+
+
+async def test_an_alert_that_cannot_be_kept_still_reaches_the_lecturer(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    keeper = _Keeper(fail_with=RuntimeError("database is down"))
+    room, row, lecturer_socket = await _alert_room(keeper)
+
+    with caplog.at_level("ERROR", logger="clip.classroom"):
+        await _close(room, row)
+
+    [alert] = lecturer_socket.of(ServerEventType.ALERT_RAISED)
+    assert alert["data"]["kind"] == "topic_difficulty"
+    assert "could not store an alert" in caplog.text
+    assert len(room.alerts(row.session_id)) == 1
+    await room.shutdown()
+
+
+async def test_a_store_that_hangs_does_not_hold_the_alert_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(recorders_module, "RECORD_TIMEOUT_SECONDS", 0.05)
+    keeper = _Keeper(hang=True)
+    room, row, lecturer_socket = await _alert_room(keeper)
+
+    await _close(room, row)
+
+    assert len(lecturer_socket.of(ServerEventType.ALERT_RAISED)) == 1
+    assert keeper.kept == []
+    await room.shutdown()
+
+
+async def test_no_alert_is_kept_when_none_is_raised() -> None:
+    keeper = _Keeper()
+    room, row, lecturer_socket = await _alert_room(keeper, ["struggling"] * 4)
+
+    await _close(room, row)
+
+    assert keeper.kept == [] and keeper.told_when_kept == []
+    assert lecturer_socket.of(ServerEventType.ALERT_RAISED) == []
     await room.shutdown()
 
 
