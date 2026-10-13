@@ -9,6 +9,7 @@ took. No model is needed: this measures the parsers alone.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -75,8 +76,12 @@ def summarise(
     )
 
 
-def measure(path: str, max_bytes: int = 52_428_800) -> ParserCoverage:
+def measure(
+    path: str, max_bytes: int = 52_428_800, ocr: Callable[[bytes], str] | None = None
+) -> ParserCoverage:
     """Read one file as an upload would, with images, and measure it.
+
+    With `ocr`, scanned PDF pages are read as an upload with Tesseract would be.
 
     An error is recorded rather than raised, so one unreadable file does not
     stop the report.
@@ -86,7 +91,7 @@ def measure(path: str, max_bytes: int = 52_428_800) -> ParserCoverage:
     start = time.perf_counter()
     try:
         ext = validate_file(path, max_bytes)
-        elements, parser, _ = extract(path, ext, with_images=True)
+        elements, parser, _ = extract(path, ext, with_images=True, ocr=ocr)
         pages = total_pages(path, ext)
     except Exception as exc:
         return ParserCoverage(

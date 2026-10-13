@@ -608,3 +608,23 @@ async def test_the_lecturer_is_told_when_sections_are_held_back(tmp_path: Path) 
     assert len(held_back) == 1
     # Every section was held back, so that is the reason, not thin material.
     assert NO_QUESTIONS_WARNING not in written.warnings
+
+
+async def test_a_scanned_pdf_is_read_when_the_pipeline_has_ocr(tmp_path: Path) -> None:
+    from .test_ocr import PAGE_TEXT, FakeOcr, scanned_pdf
+
+    class Reader:
+        def __init__(self) -> None:
+            self.read = FakeOcr()
+
+    store = Store()
+    pipeline, storage, _ = build(tmp_path, store=store, ocr=Reader())
+    scan = scanned_pdf(tmp_path / "scan.pdf")
+    stored = await storage.save(uuid4(), "Week 4 scan.pdf", feed(read(scan)))
+
+    result = await pipeline.job(stored, uuid4()).run()
+
+    assert result is not None
+    assert result.parser_used == "pypdf+ocr"
+    assert PAGE_TEXT in store.completed[0].result.chunks[0].chunk_text
+    assert any("read with OCR" in w for w in store.completed[0].warnings)

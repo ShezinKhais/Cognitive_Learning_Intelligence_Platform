@@ -26,6 +26,7 @@ from app.services.generation import QuestionGenerator
 from app.services.image_captioning import ImageCaptioner, VectorConverter, find_libreoffice
 from app.services.jobs import BackgroundProcessor
 from app.services.material_store import DatabaseMaterialStore
+from app.services.ocr import TesseractReader, find_tesseract
 from app.services.pipeline import MaterialPipeline
 from app.services.storage import CHUNK_BYTES, LocalDiskStorage, StoredFile
 from app.services.upload_security import validate_uploaded_file
@@ -122,6 +123,16 @@ def _vector_converter(configured: str) -> VectorConverter | None:
     return VectorConverter(program)
 
 
+def _ocr_reader(settings: Settings) -> TesseractReader | None:
+    if not settings.ocr_enabled:
+        return None
+    program = find_tesseract(settings.tesseract_path)
+    if program is None:
+        log.info("Tesseract not found: scanned PDF pages will be skipped")
+        return None
+    return TesseractReader(program, language=settings.ocr_language)
+
+
 @lru_cache
 def get_material_pipeline() -> MaterialPipeline:
     """The pipeline with its collaborators as they stand.
@@ -166,4 +177,5 @@ def get_material_pipeline() -> MaterialPipeline:
             if settings.image_captioning_enabled
             else None
         ),
+        ocr=_ocr_reader(settings),
     )

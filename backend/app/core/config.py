@@ -141,6 +141,13 @@ class Settings(BaseSettings):
     # which can only be described once converted. Empty finds it on the PATH
     # or in /Applications; without it those images are reported, not described.
     libreoffice_path: str = ""
+    # OCR for scanned PDF pages, with Tesseract when it is installed (see
+    # app/services/ocr.py). Empty finds it on the PATH or in /opt/homebrew;
+    # without it scanned pages are skipped with a warning. The language is a
+    # Tesseract language code, such as "eng" or "eng+ara".
+    ocr_enabled: bool = True
+    tesseract_path: str = ""
+    ocr_language: str = "eng"
 
     # Written by `teams app create --env .env`
     client_id: str = ""
