@@ -6,7 +6,17 @@ app.schemas means a v2 router alongside this one, not an edit in place.
 
 from fastapi import APIRouter
 
-from app.api.v1 import chat, content, health, identity, meetings, sessions, teams, ws
+from app.api.v1 import (
+    chat,
+    content,
+    health,
+    identity,
+    meetings,
+    sessions,
+    student_review,
+    teams,
+    ws,
+)
 
 api_router = APIRouter()
 
@@ -14,6 +24,7 @@ api_router.include_router(health.router)
 api_router.include_router(identity.router)
 api_router.include_router(content.router)
 api_router.include_router(sessions.router)
+api_router.include_router(student_review.router)
 api_router.include_router(chat.router)
 api_router.include_router(meetings.router)
 api_router.include_router(teams.router)
