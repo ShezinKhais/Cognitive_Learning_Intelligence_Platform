@@ -58,6 +58,7 @@ from app.realtime.countdown import Countdown
 from app.realtime.hub import SessionHub, hub
 from app.realtime.recorders import (
     RECORD_TIMEOUT_SECONDS,
+    AlertRecorder,
     Attendance,
     ClosedQuestion,
     CloseRecorder,
@@ -214,6 +215,7 @@ class Classroom:
         self.close_recorder: CloseRecorder | None = None
         self.participant_recorder: ParticipantRecorder | None = None
         self.comprehension_source: ComprehensionSource | None = None
+        self.alert_recorder: AlertRecorder | None = None
 
     def _next_wait(self) -> timedelta | None:
         """A fresh random wait before the next scheduled question, or None
@@ -228,8 +230,8 @@ class Classroom:
     def check_wiring(self) -> None:
         """Say what a live session will not do in this deployment, at startup.
 
-        Answers, closes, prompt outcomes and attendance are kept nowhere
-        until AI 1 and BBIS register their recorders, and a second worker would
+        Answers, closes, prompt outcomes, attendance and alerts are kept nowhere
+        until AI 1, BBIS and Cyber 1 register their recorders, and a second worker would
         run a second cycle for every session. Development is told; production refuses to
         start rather than run a class that loses its answers.
         """
@@ -240,6 +242,7 @@ class Classroom:
                 (self.prompt_recorder, "PromptRecorder", "prompt outcomes are"),
                 (self.close_recorder, "CloseRecorder", "question closes are"),
                 (self.participant_recorder, "ParticipantRecorder", "who attended is"),
+                (self.alert_recorder, "AlertRecorder", "alerts are"),
             )
             if recorder is None
         ]
@@ -965,25 +968,31 @@ class Classroom:
             return
         explained = _explain_comprehension_alert(found, closed, settings)
         alert_id = uuid4()
-        live.alerts.append(
-            ClassComprehensionAlert(
-                alert_id=alert_id,
-                session_id=closed.session_id,
-                question_id=closed.question_id,
-                topic=found.topic,
-                correct_ratio=decision.correct_ratio,
-                respondents=decision.respondents,
-                threshold=settings.comprehension_alert_threshold,
-                raised_at=_now(),
-                message=explained.message,
-                reason=explained.reason,
-                confidence=explained.confidence,
-                explanation=explained.explanation,
-                explanation_source=explained.explanation_source,
-                confidence_reasons=list(explained.confidence_reasons),
-                recommendation=explained.recommendation,
-            )
+        stored = ClassComprehensionAlert(
+            alert_id=alert_id,
+            session_id=closed.session_id,
+            question_id=closed.question_id,
+            topic=found.topic,
+            correct_ratio=decision.correct_ratio,
+            respondents=decision.respondents,
+            threshold=settings.comprehension_alert_threshold,
+            raised_at=_now(),
+            message=explained.message,
+            reason=explained.reason,
+            confidence=explained.confidence,
+            explanation=explained.explanation,
+            explanation_source=explained.explanation_source,
+            confidence_reasons=list(explained.confidence_reasons),
+            recommendation=explained.recommendation,
         )
+        live.alerts.append(stored)
+        # Kept before the lecturer is told, so the alert they can click is one
+        # that exists. A failure is logged and the alert still goes out: a
+        # lecturer who is told late, or not at all, helps nobody.
+        if self.alert_recorder is not None:
+            await best_effort(
+                self.alert_recorder.record_alert(stored), "store an alert", closed.session_id
+            )
         payload = AlertRaisedPayload(
             alert_id=alert_id,
             kind=AlertKind.TOPIC_DIFFICULTY,

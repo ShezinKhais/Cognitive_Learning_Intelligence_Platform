@@ -29,6 +29,7 @@ from typing import Protocol, TypeVar
 from uuid import UUID
 
 from app.schemas.events import FeedbackResultPayload, QuestionCloseReason
+from app.schemas.session import ClassComprehensionAlert
 
 log = logging.getLogger("clip.classroom")
 
@@ -179,6 +180,14 @@ class QuestionComprehension:
     confidences: list[float] = field(default_factory=list)
     # The page or slide the question was written from, for the lecturer.
     source_slide: int | None = None
+
+
+class AlertRecorder(Protocol):
+    """Keeps an alert raised to the lecturer, so it is still there after a refresh
+    and once the session is over, and can be acknowledged. Cyber 1 provides this
+    through BBIS's alert store."""
+
+    async def record_alert(self, alert: ClassComprehensionAlert) -> None: ...
 
 
 class ComprehensionSource(Protocol):
