@@ -28,27 +28,40 @@ class WindowSummary:
     speaking_ratio: float | None
 
 
-def _share(values: list[bool]) -> float | None:
-    return sum(values) / len(values) if values else None
+def _weighted_mean(pairs: list[tuple[float, float]]) -> float | None:
+    """The mean of (value, seconds) pairs, each value counting for as long as it
+    lasted. None when no window reported the signal."""
+    seconds = sum(weight for _, weight in pairs)
+    if not seconds:
+        return None
+    # The cap keeps float rounding inside the table's 0 to 1 check.
+    return min(1.0, sum(value * weight for value, weight in pairs) / seconds)
 
 
 def summarise(signals: Sequence[AttentionSignalPayload]) -> WindowSummary:
     """Fold the signals of one window into a single summary.
 
-    A signal a sensor did not report is left out of that ratio. When no signal
-    reported it, the ratio is None, never zero.
+    Each value counts for as long as its signal covered (window_seconds). A
+    signal a sensor did not report is left out of that ratio, along with its
+    seconds. When no signal reported it, the ratio is None, never zero.
     """
     if not signals:
         raise ValueError("A window needs at least one signal")
-    gaze = [s.gaze_on_screen_ratio for s in signals if s.gaze_on_screen_ratio is not None]
-    face = [s.face_present for s in signals if s.face_present is not None]
-    speaking = [s.speaking for s in signals if s.speaking is not None]
+    gaze = [
+        (s.gaze_on_screen_ratio, s.window_seconds)
+        for s in signals
+        if s.gaze_on_screen_ratio is not None
+    ]
+    face = [
+        (float(s.face_present), s.window_seconds) for s in signals if s.face_present is not None
+    ]
+    speaking = [(float(s.speaking), s.window_seconds) for s in signals if s.speaking is not None]
     return WindowSummary(
         window_seconds=sum(s.window_seconds for s in signals),
         sample_count=len(signals),
-        gaze_on_screen_ratio=sum(gaze) / len(gaze) if gaze else None,
-        face_present_ratio=_share(face),
-        speaking_ratio=_share(speaking),
+        gaze_on_screen_ratio=_weighted_mean(gaze),
+        face_present_ratio=_weighted_mean(face),
+        speaking_ratio=_weighted_mean(speaking),
     )
 
 

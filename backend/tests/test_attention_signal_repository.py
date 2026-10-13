@@ -89,6 +89,35 @@ def test_summarise_leaves_unreported_values_out_of_the_average():
     assert summary.gaze_on_screen_ratio == pytest.approx(0.6)
 
 
+def test_summarise_weights_each_value_by_how_long_it_lasted():
+    summary = summarise(
+        [
+            signal(gaze_on_screen_ratio=1.0, face_present=True, speaking=True, window_seconds=1.0),
+            signal(
+                gaze_on_screen_ratio=0.0, face_present=False, speaking=False, window_seconds=59.0
+            ),
+        ]
+    )
+
+    assert summary.window_seconds == 60.0
+    assert summary.gaze_on_screen_ratio == pytest.approx(1 / 60)
+    assert summary.face_present_ratio == pytest.approx(1 / 60)
+    assert summary.speaking_ratio == pytest.approx(1 / 60)
+
+
+def test_summarise_weights_only_the_windows_that_reported():
+    # The 50 s window has no gaze reading, so it must not dilute the 10 s one.
+    summary = summarise(
+        [
+            signal(gaze_on_screen_ratio=0.8, window_seconds=10.0),
+            signal(face_present=True, window_seconds=50.0),
+        ]
+    )
+
+    assert summary.window_seconds == 60.0
+    assert summary.gaze_on_screen_ratio == pytest.approx(0.8)
+
+
 def test_summarise_rejects_an_empty_window():
     with pytest.raises(ValueError):
         summarise([])
