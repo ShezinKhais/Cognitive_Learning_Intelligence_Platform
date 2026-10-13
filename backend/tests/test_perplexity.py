@@ -32,3 +32,24 @@ def test_nothing_scored_is_an_error():
 def test_negative_values_are_an_error():
     with pytest.raises(ValueError):
         perplexity([(-1.0, 5)])
+
+
+def test_bits_per_byte_divides_nats_by_bytes_and_ln2():
+    from app.services.perplexity import bits_per_byte
+
+    # One bit (ln 2 nats) per byte over 10 bytes.
+    assert bits_per_byte([(10 * math.log(2), 10)]) == pytest.approx(1.0)
+
+
+def test_bits_per_byte_pools_by_byte():
+    from app.services.perplexity import bits_per_byte
+
+    pooled = (2 * math.log(2) + 6 * math.log(2)) / (2 + 2) / math.log(2)
+    assert bits_per_byte([(2 * math.log(2), 2), (6 * math.log(2), 2)]) == pytest.approx(pooled)
+
+
+def test_bits_per_byte_needs_some_text():
+    from app.services.perplexity import bits_per_byte
+
+    with pytest.raises(ValueError):
+        bits_per_byte([(0.0, 0)])

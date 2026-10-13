@@ -12,6 +12,14 @@ Run from backend/ (the first run downloads each model):
     python -m scripts.perplexity --models Qwen/Qwen2.5-0.5B Qwen/Qwen2.5-1.5B Qwen/Qwen2.5-3B
     python -m scripts.perplexity --out tests/eval/PERPLEXITY.md
     python -m scripts.perplexity --models Qwen/Qwen2.5-0.5B-Instruct Qwen/Qwen2.5-1.5B-Instruct
+    python -m scripts.perplexity --models Qwen/Qwen2.5-1.5B google/gemma-3-1b-pt \
+        --out tests/eval/PERPLEXITY_QWEN_GEMMA.md
+
+Perplexity is per token, so it only compares models with the same tokenizer:
+the two Qwen sizes, but not Qwen against Gemma. The script also prints bits
+per byte, which divides by the length of the text instead and so compares
+any models. Gemma is gated on Hugging Face: accept its licence on the model
+page, then log in once with `hf auth login`.
 
 The -Instruct models are the chat-tuned versions, the kind the app runs
 through Ollama. The defaults are the 0.5B and 1.5B base models, which fit in 8 GB of memory.
@@ -35,7 +43,7 @@ import uuid
 from pathlib import Path
 
 from app.services.extraction import process_material
-from app.services.perplexity import perplexity
+from app.services.perplexity import bits_per_byte, perplexity
 
 BACKEND = Path(__file__).resolve().parent.parent
 SAMPLES = BACKEND / "tests" / "samples"
@@ -67,7 +75,11 @@ EVERYDAY = [
 
 
 def score_text(model, tokenizer, text: str) -> tuple[float, int]:
-    """(summed negative log-likelihood, tokens predicted) for one text."""
+    """(summed negative log-likelihood, tokens predicted) for one text.
+
+    A tokenizer that adds a beginning-of-text token (Gemma's does, Qwen's does
+    not) has every real token predicted; one that does not leaves the first
+    unscored. Over a chunk of a hundred or so tokens that is about 1%."""
     import torch
 
     ids = tokenizer(text, return_tensors="pt").input_ids
@@ -106,20 +118,32 @@ def main() -> None:
         )
         model.eval()
         for label, items in texts.items():
-            value = perplexity(score_text(model, tokenizer, t) for t in items)
-            print(f"  {label:<18} {value:8.2f}")
-            rows.append((name, label, value))
+            scored = [(score_text(model, tokenizer, t), len(t.encode("utf-8"))) for t in items]
+            value = perplexity(s for s, _ in scored)
+            bpb = bits_per_byte((s[0], size) for s, size in scored)
+            print(f"  {label:<18} perplexity {value:8.2f}   bits per byte {bpb:.3f}")
+            rows.append((name, label, value, bpb))
         del model
         gc.collect()
 
     labels = list(texts)
+
+    def table_of(column: int, digits: int) -> list[str]:
+        lines = ["| Model | " + " | ".join(labels) + " |", "|---|" + "---|" * len(labels)]
+        for name in args.models:
+            cells = [f"{row[column]:.{digits}f}" for row in rows if row[0] == name]
+            lines.append(f"| {name} | " + " | ".join(cells) + " |")
+        return lines
+
     table = [
-        "| Model | " + " | ".join(labels) + " |",
-        "|---|" + "---|" * len(labels),
+        "Perplexity (per token; compare only models with the same tokenizer):",
+        "",
+        *table_of(2, 2),
+        "",
+        "Bits per byte (per byte of text; compares any models):",
+        "",
+        *table_of(3, 3),
     ]
-    for name in args.models:
-        cells = [f"{v:.2f}" for m, label, v in rows if m == name]
-        table.append(f"| {name} | " + " | ".join(cells) + " |")
     print("\n" + "\n".join(table))
     if args.out:
         args.out.write_text(
