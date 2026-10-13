@@ -10,6 +10,7 @@ from app.models.classifier_eval import ClassifierEvalPrediction, ClassifierEvalR
 from app.models.comprehension_result import ComprehensionResult
 from app.models.consent import Consent
 from app.models.course import Course
+from app.models.deletion_request import DeletionRequest
 from app.models.delivered_question import DeliveredQuestion
 from app.models.dynamic_prompt import DynamicPrompt
 from app.models.engagement_record import EngagementRecord
@@ -37,6 +38,7 @@ __all__ = [
     "ComprehensionResult",
     "Consent",
     "Course",
+    "DeletionRequest",
     "DynamicPrompt",
     "EngagementRecord",
     "Material",
