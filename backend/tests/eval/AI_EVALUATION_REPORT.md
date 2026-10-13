@@ -1,28 +1,32 @@
 # AI evaluation report (Phase 8, AI 1, #73)
 
-Baseline metrics for the AI 1 pipeline: reading lecture files, finding the
-right slide for a question, writing grounded questions, and marking free-text
-answers. Every number here comes from a script in `backend/scripts/` run on
-the sample lectures in `backend/tests/samples/`, and can be rerun with the
-command given in each section.
+Baseline metrics for the AI 1 pipeline: reading lecture files (including
+scans), finding the right slide for a question, writing grounded questions,
+and marking free-text answers. Every number comes from a script in
+`backend/scripts/`, run on the sample lectures in `backend/tests/samples/`,
+and can be rerun with the command given in each section. 95% confidence
+intervals are in section 7.
 
-All models run locally through Ollama on an 8 GB laptop: `nomic-embed-text`
-for embeddings, `qwen2.5vl:3b` for image captions, and `qwen2.5:3b` (the app
-default) or `qwen2.5:7b` for text.
+All models run locally on an 8 GB laptop: through Ollama, `nomic-embed-text`
+for embeddings, `qwen2.5vl:3b` for image captions and `qwen2.5:3b` (the app
+default) or `qwen2.5:7b` for text; Tesseract 5 for OCR; the Qwen2.5 base
+models through Hugging Face for perplexity.
 
 ## Summary
 
 | Area | Measure | Result |
 |---|---|---|
-| Parser coverage | Pages or slides with text read | 40 of 41 across 4 formats; scanned PDF 0 of 1; corrupt PDF rejected safely |
-| Retrieval | hit@5, all 11 questions | 0.55 before image captions, **0.82** after |
-| Retrieval | MRR, all 11 questions | 0.55 before, **0.72** after |
-| Retrieval | precision@5, text questions | **0.43** (best possible on these slides: 0.57) |
+| Parser coverage | Pages with text read | 6 lectures in 4 formats read, every page with text found; corrupt PDF rejected safely |
+| OCR | Share of true words found in a scan | **84–96%** clean scans, 42–90% poor scans |
+| Retrieval | hit@5, 32 questions, 3 lectures | 0.81 before image captions, **0.91** after (0.78–1.00) |
+| Retrieval | MRR, 32 questions | 0.82 before, **0.88** after |
+| Retrieval | Text questions on 2 unseen lectures at rank 1 | **20 of 21** |
 | Question grounding | Drafts passing the automatic checks | **36%** (9 of 25, `qwen2.5:3b`) |
 | Question grounding | Accepted questions a human judged correct | **67%** (6 of 9) |
-| Classification | Accuracy, all 40 answers | `qwen2.5:3b` **66%**, `qwen2.5:7b` **72.5%** (mean of 2 runs each) |
-| Classification | Recall on struggling answers | 0.80 to 1.00 (on the replies read) |
-| Human agreement | Cohen's kappa between two labellers | **0.85** (36 of 40 agreed) |
+| Option verifier | Wrong questions rejected / right questions kept | 3B: 1 of 3 / 6 of 6; 7B: 0 of 3 / 6 of 6 |
+| Classification | Accuracy, all 40 answers, `qwen2.5:3b` with schema replies | **77.5%** (65–90%), 0 unreadable replies |
+| Classification | Accuracy before the schema (v3), mean of 2 runs | 3B 66.3%, 7B 72.5% |
+| Human agreement | Cohen's kappa between two labellers | **0.85** (0.70–0.96), 36 of 40 agreed |
 | Perplexity | Qwen2.5 1.5B vs 0.5B | 1.5B lower on all 6 texts |
 
 ## 1. Parser coverage
@@ -31,210 +35,246 @@ Can the pipeline read every kind of file a lecturer uploads?
 
 `python -m scripts.parser_coverage --edge-cases --out tests/eval/PARSER_COVERAGE.md`
 
-| File | Parser | Read | Pages with text | Headings | Images |
-|---|---|---|---|---|---|
-| lecture.pdf | pypdf | yes | 21 of 21 | 0 | 0 |
-| lecture.pptx | python-pptx | yes | 17 of 18 | 17 | 4 |
-| lecture.docx | python-docx | yes | 1 of 1 | 0 | 0 |
-| lecture.txt | plain text | yes | 1 of 1 | 0 | 0 |
-| scanned.pdf | pypdf | yes | 0 of 1 | 0 | 1 |
-| corrupt.pdf | none | rejected with a clear error | - | - | - |
+| File | Parser | Pages with text | Headings | Images |
+|---|---|---|---|---|
+| lecture.pdf | pypdf | 21 of 21 | 0 | 0 |
+| lecture.pptx | python-pptx | 17 of 18 | 17 | 4 |
+| lecture.docx | python-docx | 1 of 1 | 0 | 0 |
+| lecture.txt | plain text | 1 of 1 | 0 | 0 |
+| cnn_lecture.pptx | python-pptx | 12 of 12 | 12 | 0 |
+| linear_regression_notes.pdf | pypdf | 11 of 11 | 0 | 0 |
+| scanned.pdf | pypdf + OCR | 1 of 1 | 0 | 0 |
+| corrupt.pdf | none | rejected with a clear error | - | - |
 
-**Findings**
-
-- Every real document was read. The one PowerPoint slide with no text is a
-  picture-only slide, and its picture is captioned.
+- The one PowerPoint slide with no text (slide 9) is picture-only, and its
+  picture is captioned.
 - PDFs give no headings with pypdf, so their chunks get no heading path.
-  Docling would find them but is much slower, so it is used only for
-  letter-spaced PDFs.
-- A scanned PDF has no text layer, so nothing is read from it. OCR is not in
-  scope; the lecturer gets a warning that the page had no readable text.
-- A corrupt file fails safely with a message, and does not crash the worker.
+- A scanned page is now read with OCR (section 2). Without Tesseract it is
+  skipped, and the lecturer is told how to have it read.
+- `cnn_lecture.pptx` and `linear_regression_notes.pdf` were added in Phase 8,
+  adapted from Dive into Deep Learning (d2l.ai, CC BY-SA 4.0) by
+  `scripts/build_test_lectures.py`, to test a second and third topic and a
+  multi-page PDF.
 
-## 2. Retrieval
+## 2. OCR
+
+How well are scanned pages read?
+
+`python -m scripts.evaluate_ocr --out tests/eval/OCR_RESULTS.md`
+
+A PDF page with no text layer is read from its picture with Tesseract (at
+most 60 pages per upload). Two lectures were saved as image-only scans at 150
+dpi, and again as poor scans (half resolution, blurred, tilted 1.5 degrees,
+low JPEG quality, like a phone photo). Each page is scored against its true
+text from the original PDF.
+
+| Document | Scan | Pages read | Word recall | CER | WER | Seconds per page |
+|---|---|---|---|---|---|---|
+| Computer vision slides (21 pages) | clean | 21 of 21 | **84.2%** | 5.0% | 22.1% | 0.4 |
+| Computer vision slides | poor | 20 of 21 | 41.9% | 30.0% | 62.7% | 0.3 |
+| Logistic regression slides (18 pages) | clean | 18 of 18 | **95.7%** | 15.3% | 21.7% | 0.6 |
+| Logistic regression slides | poor | 16 of 18 | 90.0% | 11.1% | 17.8% | 0.4 |
+
+- **Word recall** is the share of the true words OCR found, in any order:
+  what search needs. **CER / WER** are the character and word edits needed to
+  reach the true text, over its length.
+- CER and WER also count, as errors, text OCR reads that the text layer does
+  not hold: the university logo on every slide and chart labels. That is why
+  the logistic regression clean scan has a higher CER than its poor scan:
+  blurring removes the small logo text.
+- Maths formulas are read worst; poor scans of the formula-heavy computer
+  vision slides lose more than half their words.
+
+## 3. Retrieval
 
 When a student asks a question, does the right slide come back near the top?
 
 `python -m scripts.evaluate_retrieval --out tests/eval/RETRIEVAL_RESULTS.md`
 
-11 questions about `lecture.pptx`, each with the slides that answer it. 5
-are answered only by a picture, 6 by the slide's text. The lecture is chunked
-twice: as before image captioning (#127) and as now.
+32 questions, each with the slides or pages that answer it, written before
+running: 11 about `lecture.pptx` (5 answered only by a picture), 11 about
+`cnn_lecture.pptx` and 10 about `linear_regression_notes.pdf`. Each lecture
+is chunked before and after image captions (Phase 6, #127).
 
 | Questions | hit@1 | hit@5 | MRR | precision@5 |
 |---|---|---|---|---|
-| image (5) | 0.00 → 0.20 | 0.00 → 0.60 | 0.00 → 0.39 | 0.00 → 0.12 |
-| text (6) | 1.00 → 1.00 | 1.00 → 1.00 | 1.00 → 1.00 | 0.43 → 0.43 |
-| all (11) | 0.55 → 0.64 | 0.55 → 0.82 | 0.55 → 0.72 | 0.24 → 0.29 |
+| Picture (5) | 0.00 → 0.20 | 0.00 → 0.60 | 0.00 → 0.39 | 0.00 → 0.12 |
+| Text (27) | 0.96 → 0.96 | 0.96 → 0.96 | 0.97 → 0.97 | 0.31 → 0.31 |
+| lecture.pptx (11) | 0.55 → 0.64 | 0.55 → 0.82 | 0.55 → 0.72 | 0.24 → 0.29 |
+| cnn_lecture.pptx (11) | 0.91 | 0.91 | 0.92 | 0.18 |
+| linear_regression_notes.pdf (10) | 1.00 | 1.00 | 1.00 | 0.38 |
+| All (32) | 0.81 → 0.84 | 0.81 → 0.91 | 0.82 → 0.88 | 0.26 → 0.28 |
 
-- **hit@k**: share of questions where an answering slide is in the top k.
-- **MRR** (mean reciprocal rank): 1 if the answer is first, 0.5 if second,
-  and so on, averaged.
-- **precision@5**: share of the top 5 chunks that come from an answering slide.
+- **hit@k**: share of questions with an answering slide in the top k.
+  **MRR**: mean of 1/rank of the first answering slide. **precision@5**: share
+  of the top 5 chunks from an answering slide.
+- Captions made picture-only slides findable (0 → 3 of 5 in the top 5) and
+  pushed no text answer down. The new lectures have no pictures, so they
+  score the same before and after.
+- On the two lectures added in Phase 8, 20 of 21 questions found the right
+  page first. The miss: "What happens when the convolution window moves more
+  than one pixel at a time?" ranked the stride slide 11th, behind the
+  cross-correlation slide, which also describes the window sliding.
+- precision@5 is capped by the slides: most answer slides make only one or
+  two chunks.
 
-**Findings**
-
-- Before captions, questions about pictures could never be answered: those
-  slides had no searchable text. After, 3 of 5 are found in the top 5.
-- Captions did not push any text answer down: all 6 stay at rank 1.
-- precision@5 looks low but is capped by the slides. Most answering slides
-  have only 1 or 2 chunks, so the best possible precision@5 on the text
-  questions is 0.57. 0.43 is 76% of that.
-- Two picture questions still miss: one needs a value read off a graph
-  (height where the probability is one half), which a 3B vision model does
-  not describe precisely.
-
-## 3. Question grounding
+## 4. Question grounding
 
 Are the questions the AI writes supported by the lecture?
 
 `OLLAMA_MODEL=qwen2.5:3b python -m scripts.evaluate_grounding`, then
 `--precision` after marking `grounded_luna` in `grounding_accepted.csv`.
 
-Every draft question must pass three checks in code before a lecturer sees
-it: the cited slide exists, the quoted excerpt is really on that slide, and
-the excerpt supports the answer. 5 rounds of 5 questions on `lecture.pptx`:
+Each draft must cite a real slide, quote an excerpt that is really on it, and
+have an answer the excerpt supports. 5 rounds of 5 questions on
+`lecture.pptx`:
 
 | Measure | Value |
 |---|---|
 | Drafts | 25 |
-| Accepted | 9 (36%) |
-| Rejected | 16 |
-| Replies that could not be read | 0 |
+| Accepted | 9 (36%), per round 3, 3, 0, 2, 1 |
+| Rejected: answer not supported by the excerpt | 14 |
+| Rejected: excerpt not found on the slide | 8 |
+| Rejected: citation missing or wrong slide | 5 |
+| Accepted and judged correct by hand | **6 of 9 (67%)** |
 
-| Why rejected (a draft can fail more than one check) | Drafts |
-|---|---|
-| Answer not supported by the excerpt | 14 |
-| Excerpt not found on the slide | 8 |
-| Citation missing or wrong slide | 5 |
+The three judged wrong: g04 is circular, g06 has two correct options (slide
+5 gives "three or more outcomes" for both multinomial and ordinal), and g09
+has a wrong answer (it says logistic regression can generate outputs; slide
+6 says it cannot).
 
-Accepted per round: 3, 3, 0, 2, 1.
+**Option verifier.** Added in Phase 8 to catch g06 and g09: after a draft
+passes the checks above, the model is shown the question, its options and the
+cited slide, without the answer key, and asked which options the slide
+supports. Anything but exactly the marked answer rejects the draft
+(`QUESTION_VERIFICATION_ENABLED`, on by default). Tested against the
+hand-judged questions with `--check-accepted`:
 
-**Human check of the accepted questions.** Luna compared each of the 9
-accepted questions with its slide: **6 of 9 (67%) are correct.**
+| Verifier model | Judged wrong, rejected | Judged right, kept | Unreadable replies |
+|---|---|---|---|
+| qwen2.5:3b | 1 of 3 (g09) | 6 of 6 | 0 |
+| qwen2.5:7b | 0 of 3 | 6 of 6 | 0 |
 
-| Question | Problem |
-|---|---|
-| g04 | Circular: asks which method is used for maximum likelihood estimation, answer "Maximum Likelihood". Slide 3 also names gradient descent, a wrong option a student could defend. |
-| g06 | Two correct options: slide 5 says both multinomial and ordinal models have three or more outcomes. |
-| g09 | Wrong answer: says logistic regression can generate outputs; slide 6 says it cannot. Its excerpt is about overfitting, not the question. |
+Both models named exactly the marked answer for 8 or 9 of the 9 questions,
+including the wrong ones. The verifier answers the quiz rather than checking
+the slide, and shares the generator's blind spots; the larger model did no
+better. It costs nothing in good questions, so it stays on, but the
+lecturer's approval remains the real check.
 
-g07 is also a near-duplicate of g03.
-
-**Findings**
-
-- The checks stop the most common failure, answers that claim more than the
-  slide says (14 drafts), and every misquote and wrong citation.
-- They cannot judge whether a question is well formed, has one right answer,
-  or whether the excerpt is about the question. That is why C.L.I.P keeps
-  the lecturer's approval step before students see any question.
-- Acceptance varies a lot between rounds (0 to 3 of 5), so one round is not
-  a reliable measure: 5 rounds were run and pooled.
-
-## 4. Free-text classification
+## 5. Free-text classification
 
 Does the classifier give a student answer the same label as a human?
 
-`OLLAMA_MODEL=qwen2.5:3b python -m scripts.evaluate_classifier --out tests/eval/results_qwen3b_run2.csv`
+`OLLAMA_MODEL=qwen2.5:3b python -m scripts.evaluate_classifier --out tests/eval/results_qwen3b_v4.csv`
 
-40 student answers to 5 questions, each labelled mastered, partial or
-struggling by Luna and Nour separately. They agreed on 36 of 40 before
-discussing (**Cohen's kappa 0.85**, strong agreement) and settled the other 4
-together; the classifier is scored against those final labels. Prompt
-`free-text-v3`.
+40 student answers to 5 questions, labelled mastered, partial or struggling
+by Luna and Nour separately: 36 of 40 agreed (Cohen's kappa 0.85); the other
+4 were settled together.
 
-| Model and run | Replies read | Accuracy (read) | Accuracy (all 40) | Macro F1 |
-|---|---|---|---|---|
-| `qwen2.5:7b` run 1 | 34 | 79.4% | 67.5% | 0.78 |
-| `qwen2.5:7b` run 2 | 37 | 83.8% | 77.5% | 0.82 |
-| `qwen2.5:3b` run 1 | 40 | 65.0% | 65.0% | 0.63 |
-| `qwen2.5:3b` run 2 | 33 | 81.8% | 67.5% | 0.79 |
-
-Mean accuracy over all 40: **7B 72.5%, 3B 66.3%.** Chance is about 33%.
-
-Per label (runs with saved results; precision and recall on the replies read):
-
-| Run | Mastered P / R | Partial P / R | Struggling P / R |
+| Model, prompt | Replies read | Accuracy (all 40) | Macro F1 |
 |---|---|---|---|
-| 7B run 1 | 1.00 / 0.75 | 0.50 / 0.86 | 0.92 / 0.80 |
-| 7B run 2 | 0.89 / 0.73 | 0.67 / 0.80 | 0.94 / 0.94 |
-| 3B run 2 | 0.89 / 0.73 | 0.71 / 0.62 | 0.82 / 1.00 |
+| qwen2.5:3b, v3, run 1 | 40 | 65.0% | 0.63 |
+| qwen2.5:3b, v3, run 2 | 33 | 67.5% | 0.79 |
+| qwen2.5:7b, v3, run 1 | 34 | 67.5% | 0.78 |
+| qwen2.5:7b, v3, run 2 | 37 | 77.5% | 0.82 |
+| **qwen2.5:3b, v4 (schema replies)** | **40** | **77.5%** | 0.76 |
 
-**Findings**
+Chance is about 33%.
 
-- The 7B model is more accurate, but needs more than twice the memory (4.7 GB
-  against 1.9 GB); the 3B stays the default so it runs on a lecturer's laptop.
-- **Struggling** is the label that matters most to a lecturer, and it is the
-  most reliable: recall 0.80 to 1.00. **Partial** is the hardest, as it was
-  for the two human labellers.
-- Results vary between runs of the same model (3B: 65.0% then 81.8% on the
-  replies read), so each model was run twice and the mean is reported.
-- Every unreadable reply had the same cause: the model left out the
-  `wrong_claim` field. A stricter output format (JSON schema) should remove
-  these; until then they count as wrong in the "all 40" column.
+- In v3 every unreadable reply was missing its `wrong_claim` field. v4 holds
+  the reply to a JSON schema (Ollama structured output): no reply was
+  unreadable, and the small 3B model matched the 7B's best run.
+- v4 per label (precision / recall): mastered 0.79 / 0.85, partial
+  0.70 / 0.64, struggling 0.81 / 0.81. Partial is the hardest label, for the
+  model and for the two labellers.
+- Two struggling answers were marked mastered (a12, and a40, one of the four
+  the labellers disagreed on).
 
-## 5. Perplexity
+## 6. Perplexity
 
 How predictable is lecture text to a language model?
 
 `python -m scripts.perplexity --out tests/eval/PERPLEXITY.md`
 
-Perplexity is exp(mean negative log-likelihood per token): roughly how many
-equally likely next tokens the model is choosing between. Lower is more
-predictable. Ollama does not return token probabilities for a given text, so
-this uses the Hugging Face Qwen2.5 base models directly.
+Perplexity = exp(mean negative log-likelihood per token); lower is more
+predictable. Ollama does not return token probabilities, so the Qwen2.5 base
+models are used through Hugging Face. Measured before the two Phase 8
+lectures were added.
 
-| Model | everyday English | lecture.txt | lecture.pptx | pptx as PDF | lecture.docx | lecture.pdf |
-|---|---|---|---|---|---|---|
-| Qwen2.5-0.5B | 18.21 | 7.82 | 11.62 | 13.16 | 20.25 | 33.62 |
-| Qwen2.5-1.5B | 14.12 | 5.52 | 9.89 | 10.97 | 13.48 | 20.11 |
+| Text | Qwen2.5-0.5B | Qwen2.5-1.5B |
+|---|---|---|
+| Plain-text lecture | 7.82 | 5.52 |
+| PowerPoint lecture | 11.62 | 9.89 |
+| Same PowerPoint as PDF | 13.16 | 10.97 |
+| Everyday English (control, 5 paragraphs) | 18.21 | 14.12 |
+| Word lecture | 20.25 | 13.48 |
+| PDF lecture (computer vision) | 33.62 | 20.11 |
 
-Two controls: five paragraphs of everyday English written for this test, and
-`lecture.pptx` exported to PDF, the same words in another format.
+- The 1.5B model is lower on every text, in line with the larger classifier
+  doing better.
+- The same slides as a PDF score only 11 to 13% higher, so the PDF lecture's
+  high score comes mostly from its symbols and page numbers, not the format.
+- Perplexity measures fluency, not correctness, so it sits beside the task
+  metrics, not in place of them.
 
-**Findings**
+## 7. Confidence intervals
 
-- The 1.5B model has lower perplexity than the 0.5B on every text, in line
-  with the 7B classifying better than the 3B.
-- The same slides as a PDF score only 11 to 13% higher, so the PDF format
-  itself costs little. The computer-vision PDF's much higher score comes
-  mostly from its content: symbols, formulas and page numbers like "2 / 21".
-- Lecture slides are more predictable than everyday English: teaching text
-  repeats the same terms. lecture.txt is lowest but is a short, plain test
-  file written for this project, so it says little about real lectures.
-- Perplexity measures fluency, not correctness, and was measured on the base
-  models rather than the chat models the app runs. It is reported alongside
-  the task metrics above, not instead of them.
+`python -m scripts.confidence_intervals --out tests/eval/CONFIDENCE_INTERVALS.md`
 
-## 6. How the evaluation methods were chosen
+95% percentile bootstrap intervals, 10,000 resamples, items resampled whole
+so paired measures stay paired. No model is needed.
+
+| Measure | Value | 95% interval | n |
+|---|---|---|---|
+| Retrieval hit@5, after captions | 0.91 | 0.78 to 1.00 | 32 |
+| Retrieval hit@5, gain from captions | 0.09 | 0.00 to 0.22 | 32 |
+| Retrieval MRR, after captions | 0.88 | 0.77 to 0.97 | 32 |
+| Retrieval MRR, gain from captions | 0.06 | 0.01 to 0.14 | 32 |
+| Grounding: drafts passing the checks | 36% | 20% to 56% | 25 |
+| Grounding precision | 67% | 33% to 100% | 9 |
+| Marking accuracy, qwen2.5:3b v4 | 78% | 65% to 90% | 40 |
+| Marking accuracy, qwen2.5:7b v3 run 2 | 78% | 65% to 90% | 40 |
+| Cohen's kappa, Luna vs Nour | 0.85 | 0.70 to 0.96 | 40 |
+
+- The MRR gain from captions stays above 0, so it is unlikely to be chance;
+  the hit@5 gain's interval reaches 0, since only 5 of 32 questions are about
+  pictures.
+- Grounding precision on 9 questions could be anywhere from 33% to 100%: the
+  set is too small to pin it down.
+
+## 8. How the evaluation methods were chosen
 
 | Technique | Used | Where | Why |
 |---|---|---|---|
-| Task metrics against human labels (accuracy, precision, recall, F1) | yes | Classification | The classifier's job is to match a teacher's judgement |
+| Accuracy, precision, recall, F1 against human labels | yes | Classification | The classifier's job is to match a teacher's judgement |
 | Inter-annotator agreement (Cohen's kappa) | yes | Classification | Shows the human labels are reliable enough to test against |
-| Retrieval metrics (hit@k, MRR, precision@k) | yes | Retrieval | Standard for ranking; measures whether the right slide comes back |
-| Rule-based checks | yes | Grounding | Each check is exact and cheap, and runs on every question in the app too |
+| hit@k, MRR, precision@k | yes | Retrieval | Standard ranking measures |
+| CER, WER, word recall | yes | OCR | Standard OCR measures, plus one that ignores reading order |
+| Rule-based checks | yes | Grounding | Exact and cheap; the app runs them on every question |
 | Human evaluation | yes | Grounding precision | Only a person can judge whether a question is fair and correct |
-| Perplexity | yes | Language model | Intrinsic measure of how well each model fits lecture text |
+| LLM as verifier | yes, tested | Grounding | Measured against human judgements; shares the generator's blind spots |
+| Perplexity | yes | Language model | Intrinsic measure of how well a model fits lecture text |
+| Bootstrap confidence intervals | yes | All | The test sets are small |
 | Repeated runs | yes | Grounding, classification | Model outputs vary between runs |
-| BLEU / ROUGE | no | | Need one reference text to compare against; generated questions have many correct wordings |
-| LLM as judge | no | | Would need a stronger model than the one being judged, and can share its mistakes; human review was feasible at this size |
-| Standard benchmarks (e.g. MMLU) | no | | Measure general knowledge, not this task |
+| BLEU / ROUGE | no | | Need one reference text; a good question has many correct wordings |
+| General benchmarks (e.g. MMLU) | no | | Measure general knowledge, not this task |
 
 ## Limits
 
-- **Small test sets:** 40 answers, 11 retrieval questions, 25 drafts, one
-  sample lecture per format. The numbers are a baseline, not a final verdict.
-- **One labeller for grounding:** Luna judged the 9 accepted questions alone.
-- **Different topics per sample file:** only the pptx and pptx-as-PDF pair
-  isolates the effect of format.
-- **Lost run:** the CSV for `qwen2.5:3b` run 1 was overwritten; its summary
-  numbers were recorded before that.
+- Small test sets: 40 answers, 32 retrieval questions, 25 drafts, 9 judged
+  questions. The intervals in section 7 show how much the numbers could move.
+- One person judged the accepted questions.
+- The Phase 8 lectures were written for testing from an open textbook; real
+  course lectures from lecturers would be a stronger test.
+- Perplexity was measured before the Phase 8 lectures were added.
+- The CSV of the first `qwen2.5:3b` v3 run was overwritten; its summary
+  numbers were recorded first.
 
 ## Next steps
 
-1. Use a JSON schema for classifier replies to remove the unreadable replies.
-2. Add a check that the excerpt is about the question, and a duplicate check,
-   to catch g09- and g07-style questions.
-3. Grow the labelled sets, and have a second person judge grounding.
-4. Caption images in Word documents, and use Docling for PDF headings.
+1. Test with real course lectures, and grow the labelled answer and question
+   sets, with a second person judging grounding.
+2. A verifier that must quote the slide for each option it accepts, checked
+   in code, to catch questions with two right answers.
+3. OCR for formulas, and Docling for PDF headings.
+4. Captions for images in Word files.
