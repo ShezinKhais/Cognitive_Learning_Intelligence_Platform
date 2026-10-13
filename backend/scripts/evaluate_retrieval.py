@@ -85,13 +85,14 @@ def table(
         return "-" if rank is None else str(rank)
 
     lines = [
-        "| Kind | Question | Answer on | Before: rank (top page) | After: rank (top page) |",
-        "|---|---|---|---|---|",
+        "| Material | Kind | Question | Answer on | Before: rank (top page) "
+        "| After: rank (top page) |",
+        "|---|---|---|---|---|---|",
     ]
     for i, q in enumerate(queries):
         pages = ", ".join(str(p) for p in sorted(q.pages))
         cells = [f"{shown(ranks[c][i])} ({tops[c][i]})" for c in CONDITIONS]
-        lines.append(f"| {q.kind} | {q.query} | {pages} | {cells[0]} | {cells[1]} |")
+        lines.append(f"| {q.material} | {q.kind} | {q.query} | {pages} | {cells[0]} | {cells[1]} |")
     return lines
 
 
@@ -116,6 +117,12 @@ def summary(
     groups = [
         (kind, [i for i, q in enumerate(queries) if q.kind == kind]) for kind in ("image", "text")
     ]
+    materials = list(dict.fromkeys(q.material for q in queries))
+    if len(materials) > 1:
+        groups += [
+            (material, [i for i, q in enumerate(queries) if q.material == material])
+            for material in materials
+        ]
     groups.append(("all", list(range(len(queries)))))
     for name, members in groups:
         if members:

@@ -40,10 +40,13 @@ Note on q2: slide 3 says "greater than 0 will predict 1", which is a typo for
 
 # Retrieval before and after #127
 
-`retrieval_queries.json` holds questions about the sample lecture, each with
-the slides that answer it. `image` questions are answered only by a picture
-(slides 9, 12, 15 and 16); `text` questions by the slide's text, and check
-that captions do not push the right text down.
+`retrieval_queries.json` holds questions about the sample lectures, each with
+the slides or pages that answer it. For `lecture.pptx`, `image` questions are
+answered only by a picture (slides 9, 12, 15 and 16); `text` questions by the
+slide's text, and check that captions do not push the right text down. 21 more
+text questions cover two lectures added in Phase 8, `cnn_lecture.pptx` and
+`linear_regression_notes.pdf`, which have no pictures, so both ways score
+them the same: they measure retrieval on a second topic and a PDF layout.
 
 `python -m scripts.evaluate_retrieval --out tests/eval/RETRIEVAL_RESULTS.md`
 chunks the lecture twice: as before #127 (heading levels dropped, pictures
@@ -55,3 +58,29 @@ rerun does not wait for the vision model.
 The sample PDF and Word document are left out on purpose: the default readers
 find no heading levels and no pictures in them, so both ways chunk them the
 same.
+
+# Phase 8 additions
+
+**More lectures.** `scripts/build_test_lectures.py` builds `cnn_lecture.pptx`
+(12 slides on convolutions, padding, stride and pooling) and
+`linear_regression_notes.pdf` (11 pages of notes, a section to a page) from
+Dive into Deep Learning (d2l.ai, CC BY-SA 4.0). The built files are committed.
+
+**OCR.** `python -m scripts.evaluate_ocr --out tests/eval/OCR_RESULTS.md` reads
+two lectures saved as scans (`ocr/`), clean and poor, with Tesseract and scores
+word recall, CER and WER against each page's true text. Needs
+`brew install tesseract`.
+
+**Option verifier.** `python -m scripts.evaluate_grounding --verify` runs the
+check that each multiple choice question has exactly one right option, as
+uploads do. `--check-accepted` runs only the verifier on the questions already
+judged in `grounding_accepted.csv` and reports how many judged wrong it
+rejects and how many judged right it keeps.
+
+**Structured marking.** Prompt `free-text-v4` holds the classifier's reply to
+a JSON schema. Rerun `evaluate_classifier` to compare unreadable replies with
+v3.
+
+**Confidence intervals.** `python -m scripts.confidence_intervals --out
+tests/eval/CONFIDENCE_INTERVALS.md` bootstraps a 95% interval for every saved
+result. It needs no model, so rerun it after any other script.

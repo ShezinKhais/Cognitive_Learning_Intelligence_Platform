@@ -40,6 +40,9 @@ def retrieval_ranks(path: Path) -> list[tuple[int | None, int | None]]:
     ranks = []
     for line in path.read_text().splitlines():
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        # Results from before the Material column have one cell fewer.
+        if len(cells) == 6:
+            cells = cells[1:]
         if len(cells) == 5 and cells[0] in {"image", "text"}:
             ranks.append((rank(cells[3]), rank(cells[4])))
     return ranks

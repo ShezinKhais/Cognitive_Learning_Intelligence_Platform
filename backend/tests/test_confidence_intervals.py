@@ -67,3 +67,14 @@ def test_grounding_counts_are_read_from_the_summary(tmp_path):
     summary = tmp_path / "GROUNDING_RESULTS.md"
     summary.write_text("| Drafts | 25 |\n| Accepted | 9 |\n")
     assert grounding_counts(summary) == (9, 25)
+
+
+def test_ranks_are_read_with_the_material_column_too(tmp_path):
+    results = tmp_path / "RETRIEVAL_RESULTS.md"
+    results.write_text(
+        "| Material | Kind | Question | Answer on | Before: rank (top page) "
+        "| After: rank (top page) |\n"
+        "|---|---|---|---|---|---|\n"
+        "| cnn_lecture.pptx | text | What is stride? | 9 | 2 (8) | 1 (9) |\n"
+    )
+    assert retrieval_ranks(results) == [(2, 1)]
