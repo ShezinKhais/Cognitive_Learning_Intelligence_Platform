@@ -1,5 +1,6 @@
 """The lecturer's session summary (Phase 7, AI 1, #67)."""
 
+import json
 from types import SimpleNamespace
 
 from app.schemas.content import Difficulty
@@ -16,10 +17,13 @@ from app.services.session_summary import (
     fact_line,
     facts_summary,
     lecturer_facts,
+    parse_sentences,
+    sentences_schema,
     student_fact_line,
     student_facts,
     student_summary_problems,
     summary_problems,
+    with_topic_named,
 )
 from app.services.topic_difficulty import LabelledAnswer, TopicDifficulty
 
@@ -138,9 +142,10 @@ def test_prompt_asks_for_exact_digits_and_names():
     assert "name exactly as written" in prompt
 
 
-def test_prompt_limits_the_length():
+def test_prompt_asks_for_one_sentence_per_topic_as_json():
     prompt = build_summary_prompt(two_facts())
-    assert f"At most {MAX_SENTENCES} sentences" in prompt
+    assert "exactly one sentence for each topic" in prompt
+    assert '{"sentences": [{"topic": "...", "sentence": "..."}]}' in prompt
 
 
 # --- step 3: the check --------------------------------------------------------
@@ -233,10 +238,12 @@ class FakeChat:
     def __init__(self, *replies):
         self.replies = list(replies)
         self.prompts = []
+        self.options = []
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
 
-    async def _create(self, *, model, messages):
+    async def _create(self, *, model, messages, **options):
         self.prompts.append(messages[0]["content"])
+        self.options.append(options)
         reply = self.replies.pop(0)
         if isinstance(reply, Exception):
             raise reply
@@ -250,33 +257,121 @@ def two_topics():
     ]
 
 
+def reply(**sentences):
+    """The model's JSON reply: a sentence per topic, topic names with spaces
+    written with underscores."""
+    return json.dumps(
+        {
+            "sentences": [
+                {"topic": topic.replace("_", " "), "sentence": sentence}
+                for topic, sentence in sentences.items()
+            ]
+        }
+    )
+
+
+ODDS_GOOD = "Odds ratios was hard: 4 of 6 answers were struggling, so revisit it."
+LOGIT_GOOD = "Logit was easy, with 5 mastered."
+
+
 async def test_a_good_summary_is_used_first_time():
-    chat = FakeChat(GOOD)
+    chat = FakeChat(reply(Odds_ratios=ODDS_GOOD, Logit=LOGIT_GOOD))
     summary = await LecturerSummariser(chat, "qwen2.5:3b").summarise(two_topics())
-    assert summary.text == GOOD
+    assert summary.text == f"{ODDS_GOOD} {LOGIT_GOOD}"
     assert summary.source == "model"
     assert summary.model == "qwen2.5:3b"
     assert len(chat.prompts) == 1
 
 
-async def test_a_wrong_summary_is_retried_with_its_problems():
-    wrong = GOOD.replace("4 of 6", "5 of 6")
-    chat = FakeChat(wrong, GOOD)
+async def test_each_request_is_held_to_one_sentence_per_topic_at_temperature_0():
+    chat = FakeChat(reply(Odds_ratios=ODDS_GOOD, Logit=LOGIT_GOOD))
+    await LecturerSummariser(chat, "m").summarise(two_topics())
+    options = chat.options[0]
+    schema = options["response_format"]["json_schema"]["schema"]
+    assert schema == sentences_schema(["Odds ratios", "Logit"])
+    assert options["temperature"] == 0
+
+
+async def test_only_the_wrong_topic_is_asked_for_again():
+    wrong = ODDS_GOOD.replace("4 of 6", "5 of 6")
+    chat = FakeChat(reply(Odds_ratios=wrong, Logit=LOGIT_GOOD), reply(Odds_ratios=ODDS_GOOD))
     summary = await LecturerSummariser(chat, "m").summarise(two_topics())
     assert summary.source == "model"
-    assert len(chat.prompts) == 2
+    assert summary.text == f"{ODDS_GOOD} {LOGIT_GOOD}"
     assert "disagreed with the facts" in chat.prompts[1]
+    # The second request is for Odds ratios alone.
+    assert "Logit" not in chat.prompts[1]
+    assert chat.options[1]["response_format"]["json_schema"]["schema"] == sentences_schema(
+        ["Odds ratios"]
+    )
 
 
-async def test_two_wrong_summaries_fall_back_to_the_facts():
-    wrong = GOOD.replace("4 of 6", "5 of 6")
+async def test_a_topic_wrong_twice_shows_its_facts_and_keeps_the_rest():
+    wrong = ODDS_GOOD.replace("4 of 6", "5 of 6")
+    chat = FakeChat(reply(Odds_ratios=wrong, Logit=LOGIT_GOOD), reply(Odds_ratios=wrong))
+    summary = await LecturerSummariser(chat, "m").summarise(two_topics())
+    assert summary.source == "mixed"
+    assert summary.model == "m"
+    facts = lecturer_facts(two_topics())
+    assert summary.text == f"{fact_line(facts[0])} {LOGIT_GOOD}"
+    assert summary.problems
+    assert all(p.startswith("Odds ratios: ") for p in summary.problems)
+
+
+async def test_every_topic_wrong_twice_falls_back_to_the_facts():
+    wrong = reply(Odds_ratios=ODDS_GOOD.replace("4 of 6", "5 of 6"), Logit="Logit was hard.")
     chat = FakeChat(wrong, wrong)
     summary = await LecturerSummariser(chat, "m").summarise(two_topics())
     assert summary.source == "facts"
     assert summary.model is None
     assert summary.text == facts_summary(lecturer_facts(two_topics()))
-    assert summary.problems
     assert len(chat.prompts) == 2
+
+
+async def test_an_unreadable_reply_counts_as_no_sentences():
+    chat = FakeChat("Here is your summary!", "still not json")
+    summary = await LecturerSummariser(chat, "m").summarise(two_topics())
+    assert summary.source == "facts"
+    assert "Odds ratios: no sentence was written for this topic" in summary.problems
+
+
+def test_a_sentence_without_its_topic_name_is_led_by_it():
+    chat_reply = reply(Odds_ratios="4 of 6 answers were struggling.")
+    assert parse_sentences(chat_reply, ["Odds ratios"]) == {
+        "Odds ratios": "4 of 6 answers were struggling."
+    }
+    assert with_topic_named("Odds ratios", "4 of 6 answers were struggling.") == (
+        "Odds ratios: 4 of 6 answers were struggling."
+    )
+    assert with_topic_named("Odds ratios", ODDS_GOOD) == ODDS_GOOD
+
+
+async def test_two_sentences_for_one_topic_are_caught():
+    two = ODDS_GOOD + " The class should practise more."
+    chat = FakeChat(reply(Odds_ratios=two, Logit=LOGIT_GOOD), reply(Odds_ratios=two))
+    summary = await LecturerSummariser(chat, "m").summarise(two_topics())
+    assert "Odds ratios: 2 sentences, not 1" in summary.problems
+
+
+def test_a_topic_given_twice_or_not_in_the_facts_has_no_sentence():
+    twice = json.dumps(
+        {
+            "sentences": [
+                {"topic": "Logit", "sentence": "a"},
+                {"topic": "Logit", "sentence": "b"},
+                {"topic": "Sigmoid", "sentence": "c"},
+            ]
+        }
+    )
+    assert parse_sentences(twice, ["Logit"]) == {}
+
+
+async def test_the_lecturer_summary_covers_the_hardest_topics_only():
+    many = [topic(f"Topic {n}", 1, 1, 4, level=Difficulty.HARD) for n in range(7)]
+    chat = FakeChat("{}", "{}")
+    await LecturerSummariser(chat, "m").summarise(many)
+    schema = chat.options[0]["response_format"]["json_schema"]["schema"]
+    assert schema["properties"]["sentences"]["maxItems"] == MAX_SENTENCES
 
 
 async def test_a_model_that_is_down_falls_back_to_the_facts():
@@ -353,10 +448,10 @@ def test_student_fact_line():
     assert student_fact_line(odds) == "Odds ratios: struggling. 2 questions. Review slides 4, 5."
 
 
-def test_student_prompt_forbids_comparisons_and_starts_with_good_news():
+def test_student_prompt_forbids_comparisons_and_speaks_to_the_student():
     prompt = build_student_prompt(student_facts(my_answers(), ME))
     assert "Never mention other students" in prompt
-    assert "Start with what they did well" in prompt
+    assert 'Speak to the student as "you"' in prompt
 
 
 STUDENT_GOOD = (
@@ -398,8 +493,13 @@ def test_leaving_out_what_went_well_is_caught():
     assert "does not mention Logit" in problems
 
 
-async def test_student_summary_uses_a_passing_reply():
-    chat = FakeChat(STUDENT_GOOD)
+LOGIT_STUDENT = "You mastered Logit across 2 questions, well done."
+ODDS_STUDENT = "Odds ratios needs more work, so review slides 4 and 5."
+
+
+async def test_student_summary_uses_a_passing_reply_good_news_first():
+    # The reply's order does not matter: what went well comes first.
+    chat = FakeChat(reply(Odds_ratios=ODDS_STUDENT, Logit=LOGIT_STUDENT))
     summary = await StudentSummariser(chat, "m").summarise(my_answers(), ME)
     assert summary.source == "model"
     assert summary.text == STUDENT_GOOD
@@ -407,7 +507,10 @@ async def test_student_summary_uses_a_passing_reply():
 
 
 async def test_student_summary_falls_back_to_their_facts():
-    wrong = STUDENT_GOOD + " You beat the class average."
+    wrong = reply(
+        Logit=LOGIT_STUDENT + " You beat the class average",
+        Odds_ratios="You beat the class average on Odds ratios",
+    )
     chat = FakeChat(wrong, wrong)
     summary = await StudentSummariser(chat, "m").summarise(my_answers(), ME)
     assert summary.source == "facts"
@@ -494,8 +597,6 @@ def test_a_made_up_topic_is_caught_in_the_student_summary():
     assert "sentence 3 names none of the topics in the facts" in problems
 
 
-def test_every_prompt_asks_for_a_topic_in_every_sentence():
-    assert "name a topic from the facts in every" in build_summary_prompt(two_facts())
-    assert "name a topic from the facts in every" in build_student_prompt(
-        student_facts(my_answers(), ME)
-    )
+def test_every_prompt_asks_for_each_sentence_to_keep_to_its_topic():
+    assert "about that topic alone" in build_summary_prompt(two_facts())
+    assert "about that topic alone" in build_student_prompt(student_facts(my_answers(), ME))

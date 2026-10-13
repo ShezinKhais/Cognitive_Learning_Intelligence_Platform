@@ -84,3 +84,23 @@ v3.
 **Confidence intervals.** `python -m scripts.confidence_intervals --out
 tests/eval/CONFIDENCE_INTERVALS.md` bootstraps a 95% interval for every saved
 result. It needs no model, so rerun it after any other script.
+
+**Robustness.** `python -m scripts.evaluate_robustness --out
+tests/eval/ROBUSTNESS.md` marks the 13 mastered answers rewritten with typos
+and in simpler English, and 30 cheating attempts: the 20 in
+`robustness_answers.csv`, which the screening rules were written against, and
+10 in `robustness_holdout.csv`, written afterwards and never used to change
+them. Report the two separately: only the hold-out says how well the rules
+carry over to attempts nobody has seen.
+
+**Marking v5.** Prompt `free-text-v5` asks at temperature 0, says simple
+English and typos cost nothing, and stops a bare list of keywords and more
+instructions to the marker before the model. Rerun `evaluate_classifier` and
+`evaluate_robustness` to compare with v4.
+
+**Summaries v4.** `python -m scripts.evaluate_summaries --out
+tests/eval/SUMMARIES.md` counts how summaries end. From
+`lecturer-summary-v4` and `student-summary-v4` the model writes one sentence
+per topic as JSON, each checked against its own topic, and only a sentence
+that fails twice shows its topic's facts instead, so the table also gives the
+share of sentences that are the model's.
