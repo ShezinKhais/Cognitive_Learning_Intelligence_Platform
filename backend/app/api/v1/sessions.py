@@ -200,7 +200,7 @@ async def session_engagement(
     """Engagement only. Comprehension is served separately and the two are never
     combined into one figure. Scores live with the running session, so a
     session this process is not running reports none."""
-    await _analytics_session(db, principal, session_id)
+    await require_analytics_access(db, principal, session_id)
     scored = classroom.engagement(session_id)
     # The classroom knows students by user id; the contract speaks in
     # student.student_id, the id ResponseOut and the student table use.
@@ -235,7 +235,7 @@ async def session_alerts(
 
     Read from the stored alerts, so it works during and after a session and
     after a refresh."""
-    await _analytics_session(db, principal, session_id)
+    await require_analytics_access(db, principal, session_id)
     return await alert_store.list_session_alerts(db, session_id, status=status_filter)
 
 
@@ -255,7 +255,7 @@ async def acknowledge_session_alert(
     The first acknowledgement is kept: acknowledging an alert again, as
     anyone, returns it unchanged. An alert from another session is reported as
     missing."""
-    await _analytics_session(db, principal, session_id)
+    await require_analytics_access(db, principal, session_id)
     return await alert_store.acknowledge_session_alert(db, session_id, alert_id, principal.user_id)
 
 
@@ -268,12 +268,12 @@ async def session_topics(
     """How hard the class found each topic, hardest first. Read from stored
     comprehension labels, so it works during and after a session. Topics with
     too few answers for a level come last."""
-    await _analytics_session(db, principal, session_id)
+    await require_analytics_access(db, principal, session_id)
     topics = await DatabaseTopicAnswers(db).session_topics(session_id)
     return [TopicDifficultyOut.model_validate(topic) for topic in topics]
 
 
-async def _analytics_session(db: DbSession, principal: CurrentUser, session_id: UUID) -> None:
+async def require_analytics_access(db: DbSession, principal: CurrentUser, session_id: UUID) -> None:
     """Another lecturer's session is reported as missing, as it is for the
     lifecycle routes, so a session id cannot be probed for existence."""
     row = await SessionRepository(db).get(session_id)
