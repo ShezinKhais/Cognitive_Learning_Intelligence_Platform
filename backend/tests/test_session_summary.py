@@ -181,7 +181,7 @@ def test_a_wrong_level_is_caught():
 
 def test_numbers_with_no_topic_are_caught():
     wrong = "Odds ratios was hard. 2 topics were covered."
-    assert "sentence 2 has numbers with no topic to check them against" in summary_problems(
+    assert "sentence 2 names none of the topics in the facts" in summary_problems(
         wrong, two_facts()
     )
 
@@ -480,3 +480,22 @@ def test_a_number_that_does_not_say_what_it_counts_is_caught():
 def test_the_answer_count_is_checked():
     wrong = "Odds ratios was hard: 4 of 7 answers were struggling."
     assert "7 answers is wrong for Odds ratios" in summary_problems(wrong, two_facts())
+
+
+def test_a_made_up_topic_is_caught_in_the_lecturer_summary():
+    odds = lecturer_facts([topic("Odds ratios", 1, 1, 4, level=Difficulty.HARD)])
+    problems = summary_problems("Odds ratios was hard. Photosynthesis was easy.", odds)
+    assert "sentence 2 names none of the topics in the facts" in problems
+
+
+def test_a_made_up_topic_is_caught_in_the_student_summary():
+    wrong = "You mastered Logit. Review Odds ratios on slides 4 and 5. You mastered Photosynthesis."
+    problems = student_summary_problems(wrong, student_facts(my_answers(), ME))
+    assert "sentence 3 names none of the topics in the facts" in problems
+
+
+def test_every_prompt_asks_for_a_topic_in_every_sentence():
+    assert "name a topic from the facts in every" in build_summary_prompt(two_facts())
+    assert "name a topic from the facts in every" in build_student_prompt(
+        student_facts(my_answers(), ME)
+    )

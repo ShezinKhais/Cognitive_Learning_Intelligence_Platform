@@ -83,7 +83,7 @@ def lecturer_facts(topics: Iterable[TopicDifficulty]) -> list[TopicFact]:
     ]
 
 
-SUMMARY_PROMPT_VERSION = "lecturer-summary-v2"
+SUMMARY_PROMPT_VERSION = "lecturer-summary-v3"
 
 # A few sentences: the lecturer reads it between classes, and every extra
 # sentence is another place a wrong number can hide.
@@ -101,7 +101,8 @@ Rules:
 - Write every number as digits, exactly as it appears in the facts, and say
   what it counts, e.g. "4 of 6 answers were struggling".
 - Call each topic by its name exactly as written in the facts.
-- Give each topic its own sentence.
+- Give each topic its own sentence, and name a topic from the facts in every
+  sentence.
 - Start with the hardest topic. Say which topics the lecturer should revisit.
 - At most {max_sentences} sentences of plain text. No headings, no lists.
 
@@ -162,9 +163,12 @@ def _sentence_problems(
         claims = _without_topics(sentence, [topics[i] for i in named])
         checked.append((claims, named))
         numbers = _NUMBER.findall(claims)
-        if numbers and not named:
-            # The sentence itself is the model's words, so it is not repeated.
-            problems.append(f"sentence {number} has numbers with no topic to check them against")
+        if not named:
+            # Nothing to check it against, so nothing it says can be
+            # verified: "Photosynthesis was easy" names a topic that is not
+            # in the facts. The sentence itself is the model's words, so it
+            # is not repeated.
+            problems.append(f"sentence {number} names none of the topics in the facts")
             continue
         allowed = set.intersection(*(numbers_of(i) for i in named)) if named else set()
         names = ", ".join(topics[i] for i in named)
@@ -348,7 +352,7 @@ class LecturerSummariser:
 
 # --- the student's summary ---------------------------------------------------
 
-STUDENT_PROMPT_VERSION = "student-summary-v2"
+STUDENT_PROMPT_VERSION = "student-summary-v3"
 NO_STUDENT_FACTS = "You have no marked answers in this session yet."
 
 # Good news first: the summary starts with what the student did well.
@@ -452,7 +456,8 @@ Rules:
 - Write every number as digits, exactly as it appears in the facts, and say
   what it counts, e.g. "2 questions" or "slides 4 and 5".
 - Call each topic by its name exactly as written in the facts.
-- Give each topic its own sentence.
+- Give each topic its own sentence, and name a topic from the facts in every
+  sentence.
 - At most {max_sentences} sentences of plain text. No headings, no lists.
 
 FACTS:
