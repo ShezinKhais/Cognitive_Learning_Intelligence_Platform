@@ -28,8 +28,9 @@ from app.services.ai_gateway import (
 )
 from app.services.extraction import (
     ExtractedElement,
+    Extraction,
     ProcessingResult,
-    chunk_elements,
+    finish_material,
     process_material,
     read_pdf_pypdf,
     read_pptx,
@@ -37,6 +38,7 @@ from app.services.extraction import (
 from app.services.image_captioning import (
     MAX_CAPTION_CHARS,
     MAX_IMAGE_SIDE,
+    CaptionReport,
     ImageCaptioner,
     Outcome,
     VectorConverter,
@@ -81,16 +83,17 @@ def captioner(
     return ImageCaptioner(gateway, VISION, timeout=5, max_images=max_images, converter=converter)
 
 
-def result_of(elements: list[ExtractedElement], warnings=()) -> ProcessingResult:
-    material_id = uuid.uuid4()
-    return ProcessingResult(
-        material_id=material_id,
-        elements=elements,
-        chunks=chunk_elements(elements, material_id),
-        page_count=max(e.page for e in elements),
-        parser_used="test",
-        warnings=list(warnings),
-    )
+def result_of(elements: list[ExtractedElement]) -> list[ExtractedElement]:
+    return elements
+
+
+async def caption_all(
+    elements: list[ExtractedElement], captioner: ImageCaptioner
+) -> tuple[ProcessingResult, CaptionReport]:
+    """Caption the elements and chunk them, as the pipeline does."""
+    described, report = await add_captions(elements, captioner)
+    extraction = Extraction(described, "test", report.warnings())
+    return finish_material(extraction, uuid.uuid4()), report
 
 
 # --- cleaning the model's reply ---------------------------------------------
@@ -151,7 +154,7 @@ def test_icons_and_unreadable_images_are_not_sent(image):
 async def test_the_vision_model_is_asked_once_at_background_priority():
     gateway = FakeGateway("A diagram of a convolution over a 3x3 grid.")
 
-    caption = await captioner(gateway).caption(png())
+    caption = (await captioner(gateway).describe(png())).text
 
     assert caption == "A diagram of a convolution over a 3x3 grid."
     [request] = gateway.requests
@@ -167,20 +170,20 @@ async def test_a_caption_from_the_fallback_model_is_dropped():
     says was not read from the picture."""
     gateway = FakeGateway("Looks like a nice chart.", model="qwen2.5")
 
-    assert await captioner(gateway).caption(png()) is None
+    assert (await captioner(gateway).describe(png())).text is None
 
 
 async def test_an_unavailable_model_leaves_the_image_uncaptioned():
     gateway = FakeGateway(AiUnavailableError("down", {}))
 
-    assert await captioner(gateway).caption(png()) is None
+    assert (await captioner(gateway).describe(png())).text is None
 
 
 async def test_a_gateway_shutting_down_stops_captioning():
     gateway = FakeGateway(AiInterruptedError("stopping", {}))
 
     with pytest.raises(AiInterruptedError):
-        await captioner(gateway).caption(png())
+        await captioner(gateway).describe(png())
 
 
 # --- captioning a material --------------------------------------------------
@@ -196,7 +199,7 @@ async def test_a_caption_is_chunked_where_the_image_was_under_its_heading():
         ]
     )
 
-    captioned, report = await add_captions(
+    captioned, report = await caption_all(
         result, captioner(FakeGateway("A diagram of three dense layers."))
     )
 
@@ -219,7 +222,7 @@ async def test_the_same_image_twice_is_captioned_once():
         ]
     )
 
-    captioned, _ = await add_captions(result, captioner(gateway))
+    captioned, _ = await caption_all(result, captioner(gateway))
 
     assert len(gateway.requests) == 1
     assert sum("[Image: A flow chart.]" in c.chunk_text for c in captioned.chunks) == 2
@@ -239,7 +242,7 @@ async def test_an_image_on_every_page_is_decoration_and_not_captioned():
         ]
     )
 
-    captioned, report = await add_captions(result, captioner(gateway))
+    captioned, report = await caption_all(result, captioner(gateway))
 
     assert gateway.requests == []
     assert report.attempted == 0
@@ -253,7 +256,7 @@ async def test_images_past_the_limit_keep_their_placeholder_and_say_so():
         + [ExtractedElement("image", "[image]", 1, image=png(100 + n, 100)) for n in range(3)]
     )
 
-    captioned, report = await add_captions(result, captioner(gateway, max_images=2))
+    captioned, report = await caption_all(result, captioner(gateway, max_images=2))
 
     assert len(gateway.requests) == 2
     assert report.over_limit == 1
@@ -264,12 +267,11 @@ async def test_a_captioned_image_only_page_is_no_longer_reported_as_skipped():
     result = result_of(
         [
             ExtractedElement("text", "Introduction.", 1),
-            ExtractedElement("image", "[image-only page]", 2, image=png()),
-        ],
-        warnings=["1 page(s) contained no readable text and were skipped."],
+            ExtractedElement("image", "[image-only page]", 2, image=png(), whole_page=True),
+        ]
     )
 
-    captioned, _ = await add_captions(result, captioner(FakeGateway("A scanned graph.")))
+    captioned, _ = await caption_all(result, captioner(FakeGateway("A scanned graph.")))
 
     assert not any("skipped" in w for w in captioned.warnings)
     assert any(c.source_page == 2 for c in captioned.chunks)
@@ -283,7 +285,7 @@ async def test_an_image_that_could_not_be_described_is_reported():
         ]
     )
 
-    captioned, report = await add_captions(
+    captioned, report = await caption_all(
         result, captioner(FakeGateway(AiUnavailableError("down", {})))
     )
 
@@ -424,7 +426,7 @@ async def test_a_tiny_image_is_nothing_to_describe_not_a_failure():
     )
     gateway = FakeGateway()
 
-    captioned, report = await add_captions(result, captioner(gateway))
+    captioned, report = await caption_all(result, captioner(gateway))
 
     assert gateway.requests == []
     assert (report.failed, report.sent) == (0, 0)
@@ -467,7 +469,7 @@ async def test_a_vector_chart_without_libreoffice_is_reported_not_failed():
         ]
     )
 
-    captioned, report = await add_captions(result, captioner(gateway))
+    captioned, report = await caption_all(result, captioner(gateway))
 
     assert gateway.requests == []
     assert (report.unsupported, report.failed) == (1, 0)

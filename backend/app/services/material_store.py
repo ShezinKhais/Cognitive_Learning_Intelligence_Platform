@@ -28,7 +28,7 @@ from app.models.extraction_element import ExtractionElement
 from app.models.question import Question
 from app.models.rag_chunk import RagChunk
 from app.repositories.material_repository import MaterialRepository
-from app.services.extraction import CONTENT_TYPES, element_metadata
+from app.services.extraction import CONTENT_TYPES, element_metadata, stored_content
 from app.services.jobs import JobStatus
 from app.services.material_seams import CompletedMaterial, DraftQuestion
 from app.services.storage import StoredFile
@@ -124,7 +124,7 @@ class DatabaseMaterialStore:
                     source_material_id=material_id,
                     element_index=index,
                     element_type=element.el_type,
-                    content=element.content,
+                    content=stored_content(element),
                     source_page=element.page if element.page >= 1 else None,
                     metadata_json=element_metadata(element),
                 )

@@ -10,28 +10,35 @@ processing resources.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from app.core.config import Settings
 from app.core.errors import ValidationError
-from app.services.extraction import ProcessingResult
+from app.services.extraction import ExtractedElement, ProcessingResult
 
 
-def validate_processing_result(
-    result: ProcessingResult,
+def validate_extraction(
+    elements: Sequence[ExtractedElement],
     settings: Settings,
+    page_count: int | None = None,
 ) -> None:
-    """Reject extracted material that exceeds safe processing limits."""
+    """Reject extracted elements over the page or character limits. Checked
+    before captioning too, so a file already over them is rejected before it
+    spends minutes of vision model calls."""
 
-    if result.page_count > settings.max_material_pages:
+    if page_count is None:
+        page_count = max((element.page for element in elements), default=0)
+    if page_count > settings.max_material_pages:
         raise ValidationError(
             "Material contains too many pages or slides",
             {
-                "page_count": result.page_count,
+                "page_count": page_count,
                 "max_pages": settings.max_material_pages,
             },
         )
 
     extracted_characters = sum(
-        len(element.content) for element in result.elements if element.el_type != "image"
+        len(element.content) for element in elements if element.el_type != "image"
     )
 
     if extracted_characters > settings.max_extracted_characters:
@@ -42,6 +49,15 @@ def validate_processing_result(
                 "max_characters": settings.max_extracted_characters,
             },
         )
+
+
+def validate_processing_result(
+    result: ProcessingResult,
+    settings: Settings,
+) -> None:
+    """Reject extracted material that exceeds safe processing limits."""
+
+    validate_extraction(result.elements, settings, result.page_count)
 
     if len(result.chunks) > settings.max_material_chunks:
         raise ValidationError(

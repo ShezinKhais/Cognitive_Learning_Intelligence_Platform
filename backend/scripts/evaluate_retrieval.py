@@ -28,7 +28,13 @@ from pathlib import Path
 from app.core.config import get_settings
 from app.services.ai_gateway import GatewayEmbeddingClient, Priority, get_ai_gateway
 from app.services.embeddings import BATCH_SIZE
-from app.services.extraction import ContentChunk, chunk_elements, process_material
+from app.services.extraction import (
+    ContentChunk,
+    Extraction,
+    chunk_elements,
+    extract_material,
+    finish_material,
+)
 from app.services.image_captioning import (
     CAPTION_PROMPT_VERSION,
     ImageCaptioner,
@@ -51,6 +57,8 @@ from app.services.retrieval_evaluation import (
 BACKEND = Path(__file__).resolve().parent.parent
 EVAL_DIR = BACKEND / "tests" / "eval"
 SAMPLES = BACKEND / "tests" / "samples"
+# The upload limit's default: the sample lectures are well under it.
+MAX_BYTES = 52_428_800
 CONDITIONS = ("before", "after")
 
 
@@ -65,14 +73,15 @@ async def chunk_both_ways(
     material: str, captioner: CachedCaptioner
 ) -> dict[str, list[ContentChunk]]:
     material_id = uuid.uuid4()
-    result = process_material(str(SAMPLES / material), material_id, with_images=True)
-    captioned, report = await add_captions(result, captioner)
+    extraction = extract_material(str(SAMPLES / material), MAX_BYTES, with_images=True)
+    elements, report = await add_captions(extraction.elements, captioner, material_id)
+    captioned = finish_material(Extraction(elements, extraction.parser_used), material_id)
     print(
-        f"{material}: {result.parser_used}, {report.captioned} image(s) captioned, "
+        f"{material}: {extraction.parser_used}, {report.captioned} image(s) captioned, "
         f"{report.failed} failed, {report.unsupported} unsupported"
     )
     return {
-        "before": chunk_elements(baseline_elements(result.elements), material_id),
+        "before": chunk_elements(baseline_elements(extraction.elements), material_id),
         "after": captioned.chunks,
     }
 
