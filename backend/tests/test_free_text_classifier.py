@@ -23,6 +23,7 @@ from app.services.free_text_classifier import (
     contains_grading_directive,
     coverage_score,
     label_for,
+    marking_schema,
     parse_marking,
 )
 
@@ -50,14 +51,16 @@ class FakeChat:
         replies = reply if isinstance(reply, list) else [reply]
         self.replies = [r if isinstance(r, str) else json.dumps(r) for r in replies]
         self.prompts: list[str] = []
+        self.formats: list[dict | None] = []
         self.chat = self
 
     @property
     def completions(self):
         return self
 
-    async def create(self, model, messages):
+    async def create(self, model, messages, response_format=None):
         self.prompts.append(messages[0]["content"])
+        self.formats.append(response_format)
         reply = self.replies[min(len(self.prompts), len(self.replies)) - 1]
 
         class M:
@@ -325,7 +328,7 @@ def test_the_prompt_asks_for_quotes_and_its_example_is_not_from_the_labelled_set
     assert '"evidence"' in prompt
     assert "logistic" not in example.lower()
     assert '"verdict": "covered", "evidence": "keep the early layers fixed"' in example
-    assert PROMPT_VERSION == "free-text-v3"
+    assert PROMPT_VERSION == "free-text-v4"
 
 
 # -- free-text-v3 ---------------------------------------------------------------
@@ -487,3 +490,48 @@ def test_answers_about_the_topic_are_not_taken_for_grading_directives():
     ]
 
     assert [a for a in answers if contains_grading_directive(a)] == []
+
+
+# -- structured output (free-text-v4) ----------------------------------------
+
+ANSWER = "A full answer: many predictors overfit; regularization penalises coefficients."
+
+
+async def test_each_request_asks_for_a_reply_that_follows_the_schema():
+    chat = FakeChat(marking(C, C, C))
+    await FreeTextClassifier(chat, FakeEmbed(), "test-model").classify(QUESTION, ANSWER)
+    (fmt,) = chat.formats
+    assert fmt["type"] == "json_schema"
+    assert fmt["json_schema"]["schema"] == marking_schema(len(QUESTION.key_points))
+
+
+async def test_a_client_that_cannot_take_a_schema_is_asked_without_one():
+    chat = FakeChat(marking(C, C, C))
+    classifier = FreeTextClassifier(chat, FakeEmbed(), "test-model", structured_output=False)
+    result = await classifier.classify(QUESTION, ANSWER)
+    assert chat.formats == [None]
+    assert result.label == ComprehensionLabel.MASTERED
+
+
+def test_the_schema_requires_one_verdict_per_point_and_a_wrong_claim():
+    schema = marking_schema(3)
+    points = schema["properties"]["key_points"]
+    assert (points["minItems"], points["maxItems"]) == (3, 3)
+    assert points["items"]["properties"]["verdict"]["enum"] == ["covered", "partly", "missed"]
+    assert set(points["items"]["required"]) == {"verdict", "evidence"}
+    assert set(schema["required"]) == {"key_points", "wrong_claim"}
+    assert "null" in schema["properties"]["wrong_claim"]["type"]
+
+
+def test_a_reply_that_follows_the_schema_is_always_readable():
+    reply = {
+        "key_points": [
+            {"verdict": "covered", "evidence": "many predictors overfit"},
+            {"verdict": "missed", "evidence": ""},
+            {"verdict": "partly", "evidence": "regularization"},
+        ],
+        "wrong_claim": None,
+    }
+    marks, wrong = parse_marking(json.dumps(reply), 3)
+    assert [m[0] for m in marks] == [C, M, P]
+    assert wrong is None

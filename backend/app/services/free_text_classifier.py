@@ -48,8 +48,9 @@ from app.services.generation import (
 log = logging.getLogger("clip.free_text_classifier")
 
 # Stored with every result, so a label can be traced to the prompt that made
-# it. Change it whenever CLASSIFIER_PROMPT changes.
-PROMPT_VERSION = "free-text-v3"
+# it. Change it whenever CLASSIFIER_PROMPT or the reply format changes.
+# v4 is v3's prompt with the reply held to MARKING_SCHEMA (see marking_schema).
+PROMPT_VERSION = "free-text-v4"
 
 # What a student writes when they have nothing to say. Compared after
 # lowercasing and dropping punctuation.
@@ -288,6 +289,35 @@ def _json_object(raw: str) -> dict:
     raise ClassificationError("model did not return a JSON object")
 
 
+def marking_schema(point_count: int) -> dict:
+    """The JSON schema a reply must follow, for structured output.
+
+    Ollama turns it into a grammar the model is held to while it writes, so
+    the reply always has exactly one verdict and quote per key point and a
+    wrong_claim. In v3 every unreadable reply was a missing wrong_claim.
+    """
+    return {
+        "type": "object",
+        "properties": {
+            "key_points": {
+                "type": "array",
+                "minItems": point_count,
+                "maxItems": point_count,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "verdict": {"type": "string", "enum": [c.value for c in Coverage]},
+                        "evidence": {"type": "string"},
+                    },
+                    "required": ["verdict", "evidence"],
+                },
+            },
+            "wrong_claim": {"type": ["string", "null"]},
+        },
+        "required": ["key_points", "wrong_claim"],
+    }
+
+
 def parse_marking(raw: str, point_count: int) -> tuple[tuple[Mark, ...], str | None]:
     """The model's reply as one verdict and quote per key point, and the wrong
     claim, if any. A verdict given without a quote has None as its quote."""
@@ -468,10 +498,21 @@ def reasons_for(
 
 
 class FreeTextClassifier:
-    def __init__(self, chat_client, embed_client, model: str) -> None:
+    """Marks free-text answers.
+
+    With `structured_output` (the default) each request asks for a reply that
+    follows marking_schema, through the OpenAI `response_format` that Ollama
+    0.5 and later serve. A chat client that cannot pass it on takes False, and
+    replies are then read as before; parse_marking checks them either way.
+    """
+
+    def __init__(
+        self, chat_client, embed_client, model: str, *, structured_output: bool = True
+    ) -> None:
         self._chat = chat_client
         self._embed = embed_client
         self.model = model
+        self._structured = structured_output
 
     async def classify(self, question: FreeTextQuestion, answer: str) -> Classification:
         """Mark one answer. Raises ClassificationError when the model's reply
@@ -529,9 +570,19 @@ class FreeTextClassifier:
         be read: a small model sometimes drops a point or misspells a key."""
         prompt = build_classifier_prompt(question, answer)
         count = len(question.key_points)
+        schema = (
+            {
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {"name": "marking", "schema": marking_schema(count)},
+                }
+            }
+            if self._structured
+            else {}
+        )
         for attempt in range(MARKING_RETRIES + 1):
             response = await self._chat.chat.completions.create(
-                model=self.model, messages=[{"role": "user", "content": prompt}]
+                model=self.model, messages=[{"role": "user", "content": prompt}], **schema
             )
             try:
                 return parse_marking(response.choices[0].message.content or "", count)
