@@ -7,7 +7,7 @@ Cyber 1 can supply that contract later without conflating it with comprehension.
 
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
@@ -145,23 +145,30 @@ async def read_sources(db: AsyncSession, user_id: UUID, session_id: UUID, respon
     ).scalar_one_or_none()
     if question is None:
         raise NotFoundError("Answer was not found.")
+    excerpt = (question.source_excerpt or "").strip()
+    if question.source_slide is None and not excerpt:
+        return ReviewSources(items=[])
     # Never search all materials or trust a client-supplied chunk/material id.
-    # Only the question's material, still belonging to this course, is eligible.
+    # Only the question's material is eligible. Session delivery also permits
+    # course-less materials uploaded by this session's lecturer.
     query = (
         select(RagChunk, Material.filename)
         .join(Material, Material.id == RagChunk.source_material_id)
         .where(
             RagChunk.source_material_id == question.source_material_id,
-            Material.course_id == session.course_id,
+            or_(
+                Material.course_id == session.course_id,
+                and_(
+                    Material.course_id.is_(None),
+                    Material.uploaded_by_user_id == session.instructor_id,
+                ),
+            ),
         )
     )
-    excerpt = (question.source_excerpt or "").strip()
     if question.source_slide is not None:
         query = query.where(RagChunk.source_page == question.source_slide)
-    elif excerpt:
-        query = query.where(RagChunk.chunk_text.contains(excerpt, autoescape=True))
     else:
-        return ReviewSources(items=[])
+        query = query.where(RagChunk.chunk_text.contains(excerpt, autoescape=True))
     rows = (
         await db.execute(query.order_by(RagChunk.chunk_index, RagChunk.chunk_id).limit(6))
     ).all()

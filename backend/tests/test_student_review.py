@@ -11,6 +11,7 @@ from sqlalchemy import select
 from app.auth.store import STUDENT_ID
 from app.core.database import get_db
 from app.core.errors import NotFoundError
+from app.models.material import Material
 from app.models.question import Question
 from app.models.rag_chunk import RagChunk
 from app.models.session import Session
@@ -89,15 +90,15 @@ def test_anonymous_cannot_read_student_review(client):
 
 
 async def test_source_lookup_is_scoped_and_bounded(monkeypatch):
-    user_id, session_id, student_id, response_id, material_id, course_id = [
-        uuid4() for _ in range(6)
+    user_id, session_id, student_id, response_id, material_id, course_id, instructor_id = [
+        uuid4() for _ in range(7)
     ]
     monkeypatch.setattr(
         service,
         "own_session",
         AsyncMock(
             return_value=(
-                SimpleNamespace(course_id=course_id),
+                SimpleNamespace(course_id=course_id, instructor_id=instructor_id),
                 "CS101",
                 student_id,
             )
@@ -125,8 +126,10 @@ async def test_source_lookup_is_scoped_and_bounded(monkeypatch):
     answer_query, source_query = [call.args[0].compile() for call in db.execute.call_args_list]
     assert {student_id, session_id, response_id} <= set(answer_query.params.values())
     assert "student_response.student_id =" in str(answer_query)
-    assert {material_id, course_id, 4, 6} <= set(source_query.params.values())
+    assert {material_id, course_id, instructor_id, 4, 6} <= set(source_query.params.values())
     assert "source_material.course_id =" in str(source_query)
+    assert "source_material.course_id IS NULL" in str(source_query)
+    assert "source_material.uploaded_by_user_id =" in str(source_query)
     assert "rag_chunk.source_material_id =" in str(source_query)
 
 
@@ -253,4 +256,19 @@ async def test_database_review_is_own_ended_session_only(database, question):  #
         )
         assert [s.text for s in sources.items] == ["Relevant source"]
         assert sources.items[0].match == "page"
+        # A delivered question from a lecturer-owned general material remains
+        # source-linked after the session, but a different owner's does not.
+        material = await db.get(Material, question.material)
+        material.course_id = None
+        await db.flush()
+        general_sources = await service.read_sources(
+            db, question.user, question.session, response.response_id
+        )
+        assert [s.text for s in general_sources.items] == ["Relevant source"]
+        material.uploaded_by_user_id = other_user.user_id
+        await db.flush()
+        unrelated_sources = await service.read_sources(
+            db, question.user, question.session, response.response_id
+        )
+        assert unrelated_sources.items == []
         await db.rollback()
