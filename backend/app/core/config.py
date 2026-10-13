@@ -124,6 +124,10 @@ class Settings(BaseSettings):
     # three. Off until the question table stores reference answers and key
     # points: one saved without them has nothing to be marked against.
     free_text_questions_enabled: bool = False
+    # A second model call per multiple choice question that passes the
+    # grounding checks, rejecting one whose cited slide makes another option
+    # right too or contradicts the answer (generation.verify_draft).
+    question_verification_enabled: bool = True
 
     # Describing the pictures in uploaded material with a local vision model,
     # so diagrams can be searched and asked about. Off by default: on a laptop

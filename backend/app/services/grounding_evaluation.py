@@ -22,6 +22,7 @@ from app.services.material_seams import DraftQuestion
 # A rejection reason's kind, matched on the words rejection_reasons writes.
 # Checked in order, most specific first; the first that matches names it.
 REASON_KINDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("verifier: not exactly one right option", ("verifier:",)),
     ("safety: instructions or links", ("instructions", "links to")),
     ("citation: missing or wrong page", ("citation", "cites page")),
     # The MCQ answer, or a free-text reference answer or key point.
