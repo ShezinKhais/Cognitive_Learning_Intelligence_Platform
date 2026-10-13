@@ -37,10 +37,12 @@ from app.core.config import get_settings
 from app.schemas.content import Difficulty, QuestionType
 from app.services.extraction import process_material
 from app.services.generation import (
+    ask_verifier,
     build_prompt,
     parse_drafts,
     rejection_reasons,
     screened,
+    verification_reason,
     verify_draft,
 )
 from app.services.grounding_evaluation import (
@@ -129,10 +131,19 @@ def accepted_drafts(path: Path) -> list[tuple[str, str, DraftQuestion]]:
 
 async def check_accepted(client, model: str, chunks, path: Path) -> None:
     """The verifier's verdict on questions a person has already judged."""
-    caught = missed = kept = dropped = 0
+    caught = missed = kept = dropped = unreadable = 0
     for question_id, mark, draft in accepted_drafts(path):
-        reason = await verify_draft(client, model, draft, chunks)
-        print(f"{question_id} (judged {mark or '-'}): {reason or 'keeps it'}")
+        raw, supported = await ask_verifier(client, model, draft, chunks)
+        if supported is None:
+            unreadable += 1
+            reason = None
+            verdict = f"reply could not be read, so it keeps it: {raw.strip()[:200]!r}"
+        else:
+            reason = verification_reason(draft, supported)
+            letters = ", ".join("ABCD"[i] for i in sorted(supported)) or "none"
+            marked = "ABCD"[draft.correct_option]
+            verdict = f"slide supports {letters}, marked {marked}: {reason or 'keeps it'}"
+        print(f"{question_id} (judged {mark or '-'}): {verdict}")
         if mark == "no":
             caught += reason is not None
             missed += reason is None
@@ -142,6 +153,7 @@ async def check_accepted(client, model: str, chunks, path: Path) -> None:
     print(
         f"\nquestions judged wrong: verifier rejected {caught} of {caught + missed}"
         f"\nquestions judged right: verifier kept {kept} of {kept + dropped}"
+        f"\nreplies that could not be read: {unreadable}"
     )
 
 

@@ -491,13 +491,11 @@ def verification_reason(draft: DraftQuestion, supported: set[int]) -> str | None
     return f"verifier: the cited slide supports more than one option ({named})"
 
 
-async def verify_draft(client, model: str, draft: DraftQuestion, chunks) -> str | None:
-    """Ask the model which options the cited page supports. Returns a reason
-    to reject the draft, or None to keep it.
-
-    A reply that cannot be read keeps the draft: it has passed every other
-    check, and a lecturer approves it before students see it.
-    """
+async def ask_verifier(
+    client, model: str, draft: DraftQuestion, chunks
+) -> tuple[str, set[int] | None]:
+    """The verifier's raw reply, and the options it says the cited page
+    supports, or None when the reply cannot be read."""
     response = await client.chat.completions.create(
         model=model,
         messages=[
@@ -507,14 +505,23 @@ async def verify_draft(client, model: str, draft: DraftQuestion, chunks) -> str 
             }
         ],
     )
+    raw = response.choices[0].message.content or ""
     try:
-        supported = parse_verification(
-            response.choices[0].message.content or "", len(draft.options or ())
-        )
+        return raw, parse_verification(raw, len(draft.options or ()))
     except ValueError as exc:
-        logger.info("verification could not be read, keeping the draft: %s", exc)
-        return None
-    return verification_reason(draft, supported)
+        logger.warning("verification could not be read: %s", exc)
+        return raw, None
+
+
+async def verify_draft(client, model: str, draft: DraftQuestion, chunks) -> str | None:
+    """Ask the model which options the cited page supports. Returns a reason
+    to reject the draft, or None to keep it.
+
+    A reply that cannot be read keeps the draft: it has passed every other
+    check, and a lecturer approves it before students see it.
+    """
+    _, supported = await ask_verifier(client, model, draft, chunks)
+    return None if supported is None else verification_reason(draft, supported)
 
 
 @dataclass(frozen=True)

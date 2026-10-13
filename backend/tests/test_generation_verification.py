@@ -187,3 +187,12 @@ async def test_free_text_questions_are_not_verified():
     generator = QuestionGenerator(chat, "test-model", verify=True)
     await generator._draft(chunks(), 1, question_type=QuestionType.FREE_TEXT)
     assert len(chat.prompts) == 1
+
+
+async def test_the_raw_reply_comes_back_when_it_cannot_be_read():
+    from app.services.generation import ask_verifier
+
+    chat = TurnTakingChat('{"correct": [1]}')
+    raw, supported = await ask_verifier(chat, "test-model", draft(), chunks())
+    assert raw == '{"correct": [1]}'
+    assert supported is None
