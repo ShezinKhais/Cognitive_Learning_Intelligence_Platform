@@ -499,6 +499,7 @@ def test_answers_about_the_topic_are_not_taken_for_grading_directives():
         "I would use the correct answer approach",
         "see the reference answer for details",
         "In HTML you close it with </p> tag",
+        "</p> is how a paragraph ends",
     ]
     # The same answers with typos and in simpler English (free-text-v5).
     with (Path(__file__).parent / "eval" / "robustness_answers.csv").open(

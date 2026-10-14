@@ -154,11 +154,10 @@ _GRADING_DIRECTIVE = re.compile(
             r"\byou\s+are\s+now\b|\bpretend\s+(?:you\s+are|to\s+be)\b|\bnew\s+instructions?\b",
             r"\bignor\w*\b(?:\W+\w+){0,3}?\W+instructions?\b",
             # The marker's own reply format, or a tag closing the answer's block:
-            # one naming a prompt's part, or at the very start. "</p>" in an
-            # answer about HTML is neither.
+            # one naming a prompt's part. "</p>" in an answer about HTML is not,
+            # even at the start: "</p> is how a paragraph ends".
             r"\"verdict\"\s*:",
             r"</\s*(?:student_?answer|answer|input|prompt|system|user|instructions?)\s*>",
-            r"^\s*</\s*\w+\s*>",
         )
     ),
     flags=re.IGNORECASE,
