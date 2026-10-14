@@ -408,7 +408,7 @@
             "type": "string"
           },
           "confidence": {
-            "description": "Low confidence renders as 'insufficient data', never as 'disengaged'.",
+            "description": "Whether participation evidence backs the score: 1 when it does, 0 when it does not, worked out the same way for every student. It is not a probability. No evidence renders as 'insufficient data', never as 'disengaged'.",
             "maximum": 1.0,
             "minimum": 0.0,
             "title": "Confidence",
@@ -433,7 +433,7 @@
             "type": "string"
           },
           "signals_available": {
-            "description": "Which signals contributed. Missing signals are renormalised, not zeroed.",
+            "description": "['participation'] when questions attempted, answer timing or attention prompt responses backed the score, otherwise empty. The same view for every student; camera and microphone detail is not reported.",
             "items": {
               "type": "string"
             },

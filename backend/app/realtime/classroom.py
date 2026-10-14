@@ -52,6 +52,7 @@ from app.core.config import Settings, get_settings
 from app.core.database import get_session_factory
 from app.core.errors import ConflictError
 from app.models.session import Session
+from app.realtime.accommodations import Accommodations
 from app.realtime.attention import Attention, Prompt, ScoredStudent, checked_message
 from app.realtime.consent import CLOSE_CONSENT, ConsentRegistry, permitted_signal
 from app.realtime.countdown import Countdown
@@ -211,6 +212,7 @@ class Classroom:
         # What each student has consented to be monitored for. Cyber 1's
         # rules for it are in consent.py.
         self.consents = consents if consents is not None else ConsentRegistry()
+        self.accommodations = Accommodations()
         self._random = rng or random.Random()
         self._sessions = sessions
         self._settings = settings
@@ -959,6 +961,8 @@ class Classroom:
                     live.attention.restrict_signal(
                         user_id, lambda signal: permitted_signal(signal, held)
                     )
+                    if ConsentType.CAMERA not in held:
+                        live.attention.purge_visual(user_id)
         for prompt in withdrawn:
             _cancel(prompt.expiry)
         if consent is ConsentType.TERMS:
@@ -969,7 +973,9 @@ class Classroom:
         nudge those engagement scoring says need it. prompt_student's limits
         (cap, pause, one at a time, connected) still apply."""
         shown, answered = self._monitored_in(closed)
-        for scored in live.attention.score(shown, answered, closed.timing, _now()):
+        for scored in live.attention.score(
+            shown, answered, closed.timing, _now(), self.accommodations.members()
+        ):
             if should_send_dynamic_prompt(scored.engagement):
                 await self._prompt_locked(live, scored.user_id, ENGAGEMENT_PROMPT_MESSAGE)
 

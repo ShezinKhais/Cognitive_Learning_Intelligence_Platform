@@ -140,7 +140,8 @@
       "type": "object"
     },
     "signal.attention": {
-      "description": "Derived indicators only. Computed on the student's device.",
+      "additionalProperties": false,
+      "description": "Derived indicators only. Computed on the student's device.\n\nClosed to anything else: a client that sends a field this does not name\n(a frame, a landmark list, an identifier) is refused, not quietly ignored,\nso nothing outside the allowlist can ride in on a valid event.",
       "properties": {
         "face_present": {
           "anyOf": [
