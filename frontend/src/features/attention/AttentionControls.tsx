@@ -1,40 +1,48 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { getCurrentUser, recordConsent } from '../../api'
 import { startCamera, startMicrophone } from './localSensors'
-import { summary } from './signals'
+import { useAttentionReporter } from './useAttentionReporter'
+import { useLocalSensor } from './useLocalSensor'
 import type { AttentionSummary, FaceObservation } from './signals'
 
 type Sensor = 'camera' | 'microphone'
-type Status = 'off' | 'starting' | 'on' | 'unavailable'
 const unknownFace: FaceObservation = { face: null, forward: null, head: 'unavailable' }
 
-export function AttentionControls({ enabled, onSignal }: {
+export function AttentionControls({ enabled, onSignal, consentRejected }: {
   enabled: boolean
   onSignal: (value: AttentionSummary) => boolean
+  consentRejected: number
 }) {
   const [choice, setChoice] = useState({ camera: false, microphone: false })
-  const [status, setStatus] = useState<Record<Sensor, Status>>({ camera: 'off', microphone: 'off' })
+  const [savedConsent, setSavedConsent] = useState({ monitoring: false, camera: false, microphone: false })
+  const [savingConsent, setSavingConsent] = useState(false)
   const [message, setMessage] = useState('')
-  const [face, setFace] = useState(unknownFace)
-  const [speaking, setSpeaking] = useState<boolean | null>(null)
-  const latestSpeaking = useRef<boolean | null>(null)
-  const controllers = useRef<Partial<Record<Sensor, AbortController>>>({})
-  const samples = useRef<{ face: FaceObservation[]; speech: boolean[]; faceAt: number; speechAt: number }>({ face: [], speech: [], faceAt: 0, speechAt: 0 })
-  const emit = useRef(onSignal)
-  emit.current = onSignal
+  const {
+    status: cameraStatus, latest: face, start: enableCamera, stop: stopCamera,
+    drain: drainCamera, isActive: cameraActive, isStartingOrActive: cameraStartingOrActive,
+    startedAt: cameraStartedAt,
+  } = useLocalSensor('Camera', startCamera, unknownFace, 40, setMessage)
+  const {
+    status: microphoneStatus, latest: speaking, start: enableMicrophone, stop: stopMicrophone,
+    drain: drainMicrophone, isActive: microphoneActive, isStartingOrActive: microphoneStartingOrActive,
+    startedAt: microphoneStartedAt,
+  } = useLocalSensor<boolean | null>('Microphone', startMicrophone, null, 200, setMessage)
+  const stopAll = useCallback(() => { stopCamera(); stopMicrophone() }, [stopCamera, stopMicrophone])
+  const refuseSignal = useCallback(() => {
+    stopAll()
+    setMessage('This session is not accepting indicators. Local sensing has stopped.')
+  }, [stopAll])
+  useAttentionReporter(
+    enabled, cameraActive, cameraStartedAt, drainCamera,
+    microphoneActive, microphoneStartedAt, drainMicrophone, onSignal, refuseSignal,
+  )
 
-  const stop = useCallback((sensor: Sensor) => {
-    controllers.current[sensor]?.abort()
-    delete controllers.current[sensor]
-    if (sensor === 'camera') {
-      samples.current.face = []; samples.current.faceAt = 0; setFace(unknownFace)
-    } else {
-      samples.current.speech = []; samples.current.speechAt = 0
-      latestSpeaking.current = null; setSpeaking(null)
-    }
-    setStatus(previous => ({ ...previous, [sensor]: 'off' }))
-  }, [])
-  const stopAll = useCallback(() => { stop('camera'); stop('microphone') }, [stop])
+  useEffect(() => {
+    if (!consentRejected) return
+    stopAll()
+    setSavedConsent(previous => ({ ...previous, monitoring: false }))
+    setMessage('The session did not accept monitoring consent. Local sensing has stopped. Save your opt-in again before retrying.')
+  }, [consentRejected, stopAll])
 
   useEffect(() => {
     if (!enabled) stopAll()
@@ -44,9 +52,6 @@ export function AttentionControls({ enabled, onSignal }: {
     return () => {
       document.removeEventListener('visibilitychange', hide)
       window.removeEventListener('pagehide', stopAll)
-      // Abort even pending permission/model requests. Never auto-resume.
-      Object.values(controllers.current).forEach(controller => controller?.abort())
-      controllers.current = {}
     }
   }, [enabled, stopAll])
 
@@ -54,86 +59,67 @@ export function AttentionControls({ enabled, onSignal }: {
     if (!enabled) return
     let disposed = false
     let checking = false
-    let last = performance.now()
     const timer = setInterval(async () => {
-      if (!Object.keys(controllers.current).length) {
-        // Idle time is not part of a sensing window, including after disable/re-enable.
-        last = performance.now()
-        return
-      }
-      if (checking) return
+      if (checking || (!cameraStartingOrActive() && !microphoneStartingOrActive())) return
       checking = true
       try {
         const user = await getCurrentUser()
         if (disposed) return
         if (!user.consents.includes('engagement_monitoring')) {
+          setSavedConsent(previous => ({ ...previous, monitoring: false }))
           stopAll(); setMessage('Monitoring consent is unavailable. Sensors have stopped.'); return
         }
         for (const sensor of ['camera', 'microphone'] as const) {
-          if (!user.consents.includes(sensor)) stop(sensor)
+          if (!user.consents.includes(sensor)) {
+            setSavedConsent(previous => ({ ...previous, [sensor]: false }))
+            if (sensor === 'camera') stopCamera()
+            else stopMicrophone()
+          }
         }
-        const now = performance.now()
-        const current = samples.current
-        const payload = summary(
-          controllers.current.camera && now - current.faceAt < 2000 ? current.face : [],
-          controllers.current.microphone && now - current.speechAt < 2000 ? current.speech : [],
-          (now - last) / 1000,
-        )
-        last = now
-        current.face = []; current.speech = []
-        if (Object.keys(controllers.current).length && !document.hidden) emit.current(payload)
       } catch {
-        if (!disposed) { stopAll(); setMessage('Consent could not be verified. Sensors have stopped; you can try again.') }
+        if (!disposed) {
+          stopAll()
+          setSavedConsent(previous => ({ ...previous, monitoring: false }))
+          setMessage('Consent could not be verified. Sensors have stopped; save your opt-in again before retrying.')
+        }
       } finally { checking = false }
     }, 5000)
     return () => { disposed = true; clearInterval(timer) }
-  }, [enabled, stop, stopAll])
+  }, [enabled, cameraStartingOrActive, microphoneStartingOrActive, stopCamera, stopMicrophone, stopAll])
 
-  async function enable(sensor: Sensor) {
-    if (!enabled || document.hidden || controllers.current[sensor]) return
-    const controller = new AbortController()
-    controllers.current[sensor] = controller
-    const current = () => controllers.current[sensor] === controller && !controller.signal.aborted
-    const failed = () => {
-      if (!current()) return
-      stop(sensor)
-      setStatus(previous => ({ ...previous, [sensor]: 'unavailable' }))
-      setMessage(`${sensor === 'camera' ? 'Camera' : 'Microphone'} unavailable. Check browser permission or device use in another app. You can continue without it.`)
-    }
-    setStatus(previous => ({ ...previous, [sensor]: 'starting' }))
+  async function saveOptIn() {
+    if (!enabled || savingConsent || (!choice.camera && !choice.microphone)) return
+    setSavingConsent(true)
     setMessage('')
     try {
-      if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) throw new Error('Unavailable')
       await recordConsent('engagement_monitoring', true)
-      if (!current()) return
-      await recordConsent(sensor, true)
-      if (!current()) return
-      if (sensor === 'camera') {
-        await startCamera(controller.signal, value => {
-          if (!current()) return
-          samples.current.face.push(value)
-          samples.current.face = samples.current.face.slice(-40)
-          samples.current.faceAt = performance.now()
-          setFace(value)
-        }, failed)
-      } else {
-        await startMicrophone(controller.signal, value => {
-          if (!current()) return
-          if (value !== null) samples.current.speech.push(value)
-          samples.current.speech = samples.current.speech.slice(-200)
-          samples.current.speechAt = value === null ? 0 : performance.now()
-          if (latestSpeaking.current !== value) {
-            latestSpeaking.current = value
-            setSpeaking(value)
-          }
-        }, failed)
-      }
-      if (current()) setStatus(previous => ({ ...previous, [sensor]: 'on' }))
-    } catch { failed() }
+      if (choice.camera) await recordConsent('camera', true)
+      if (choice.microphone) await recordConsent('microphone', true)
+      setSavedConsent(previous => ({
+        monitoring: true,
+        camera: previous.camera || choice.camera,
+        microphone: previous.microphone || choice.microphone,
+      }))
+      setMessage('Opt-in saved. Enable selected to start local sensing.')
+    } catch {
+      setMessage('Opt-in could not be saved. No device was started.')
+    } finally {
+      setSavingConsent(false)
+    }
   }
 
-  const running = status.camera === 'on' || status.microphone === 'on'
-  const pending = status.camera === 'starting' || status.microphone === 'starting'
+  async function enable(sensor: Sensor) {
+    if (!enabled || !savedConsent.monitoring || !savedConsent[sensor]) return
+    setMessage('')
+    if (sensor === 'camera') await enableCamera()
+    else await enableMicrophone()
+  }
+
+  const running = cameraStatus === 'on' || microphoneStatus === 'on'
+  const pending = cameraStatus === 'starting' || microphoneStatus === 'starting'
+  const selectedConsented = savedConsent.monitoring &&
+    (!choice.camera || savedConsent.camera) &&
+    (!choice.microphone || savedConsent.microphone)
   return (
     <section aria-label="Optional local indicators" className="mt-5 rounded-xl border border-border bg-card p-5">
       <h2 className="text-lg font-semibold">Optional local indicators</h2>
@@ -148,24 +134,29 @@ export function AttentionControls({ enabled, onSignal }: {
       <div className="mt-3 flex flex-wrap gap-4">
         {(['camera', 'microphone'] as const).map(sensor => (
           <label key={sensor} className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={choice[sensor]} disabled={status[sensor] === 'on' || status[sensor] === 'starting'}
+            <input type="checkbox" checked={choice[sensor]} disabled={savingConsent || (sensor === 'camera' ? cameraStatus : microphoneStatus) === 'on' || (sensor === 'camera' ? cameraStatus : microphoneStatus) === 'starting'}
               onChange={event => setChoice(previous => ({ ...previous, [sensor]: event.target.checked }))} />
             I opt in to {sensor} indicators
           </label>
         ))}
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
-        <button type="button" disabled={!enabled || pending || (!choice.camera && !choice.microphone)}
+        <button type="button" disabled={!enabled || savingConsent || pending || running || (!choice.camera && !choice.microphone)}
+          onClick={() => { void saveOptIn() }}
+          className="rounded-lg border border-border px-4 py-2 text-sm font-semibold disabled:opacity-50">
+          {savingConsent ? 'Saving opt-in…' : 'Save monitoring and selected device opt-in'}
+        </button>
+        <button type="button" disabled={!enabled || savingConsent || !selectedConsented || pending || (!choice.camera && !choice.microphone)}
           onClick={() => { if (choice.camera) void enable('camera'); if (choice.microphone) void enable('microphone') }}
           className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50">Enable selected</button>
         <button type="button" onClick={stopAll} className="rounded-lg border border-border px-4 py-2 text-sm font-semibold">Disable all now</button>
-        {running && (['camera', 'microphone'] as const).filter(sensor => status[sensor] === 'on').map(sensor => (
-          <button key={sensor} type="button" onClick={() => stop(sensor)} className="rounded-lg border border-border px-3 py-2 text-sm">Stop {sensor}</button>
+        {running && (['camera', 'microphone'] as const).filter(sensor => (sensor === 'camera' ? cameraStatus : microphoneStatus) === 'on').map(sensor => (
+          <button key={sensor} type="button" onClick={() => sensor === 'camera' ? stopCamera() : stopMicrophone()} className="rounded-lg border border-border px-3 py-2 text-sm">Stop {sensor}</button>
         ))}
       </div>
-      <p className="mt-3 text-sm">Camera: {status.camera}. Microphone: {status.microphone}.</p>
-      {status.camera === 'on' && <p className="text-sm">Face: {face.face === null ? 'unavailable' : face.face ? 'detected' : 'not detected'}. Head direction: {face.head}. Gaze estimate: {face.forward === null ? 'unavailable' : face.forward ? 'camera-facing' : 'away from camera'}.</p>}
-      {status.microphone === 'on' && <p className="text-sm">Voice activity: {speaking === null ? 'unavailable' : speaking ? 'detected' : 'not detected'}.</p>}
+      <p className="mt-3 text-sm">Camera: {cameraStatus}. Microphone: {microphoneStatus}.</p>
+      {cameraStatus === 'on' && <p className="text-sm">Face: {face.face === null ? 'unavailable' : face.face ? 'detected' : 'not detected'}. Head direction: {face.head}. Gaze estimate: {face.forward === null ? 'unavailable' : face.forward ? 'camera-facing' : 'away from camera'}.</p>}
+      {microphoneStatus === 'on' && <p className="text-sm">Voice activity: {speaking === null ? 'unavailable' : speaking ? 'detected' : 'not detected'}.</p>}
       {!enabled && <p className="mt-2 text-sm text-muted-foreground">Available while connected to an active, unpaused session.</p>}
       <p className="mt-2 text-xs text-muted-foreground">Sensing stops when you leave, hide this page, or disconnect. It never resumes automatically. Disable stops sensing without changing saved consent.</p>
       {message && <p role="alert" className="mt-3 text-sm">{message}</p>}

@@ -4,11 +4,11 @@ Implemented behind `VITE_LOCAL_ATTENTION_ENABLED=true` in the student live-sessi
 
 ## Scope and privacy
 
-- Camera and microphone are separately optional and unchecked initially. Enabling records monitoring/device consent before requesting browser permission. No device starts automatically, including after reconnecting.
+- Camera and microphone are separately optional and unchecked initially. The student explicitly saves monitoring and selected-device opt-in before the separate **Enable selected** action requests browser permission. No device starts automatically, including after reconnecting.
 - MediaPipe Face Landmarker runs in a dedicated worker. Only coarse face/head/iris-derived observations return to the UI; these are camera-facing proxies, not calibrated eye tracking or evidence of learning/attention. Blinks, malformed landmarks and multiple faces produce unavailable gaze.
 - Silero VAD runs through ONNX WASM locally. Only voice-presence booleans enter application state; no transcription, recording, upload or persistent media storage is implemented. The VAD library temporarily buffers audio internally for speech segmentation.
 - Every five seconds the existing authenticated socket receives only `gaze_on_screen_ratio`, `face_present`, `speaking`, and `window_seconds` in `signal.attention`. Missing/stale sensors are null, not zero. No media, landmarks or device identifiers are sent. Samples are bounded and cleared after each window; disconnected windows are not queued.
-- Disable immediately stops owned tracks and camera worker, including tracks granted after cancellation. Leaving/hiding the page, session pause/end/disconnect, device failure and failed/revoked consent checks stop sensing. Returning never restarts it. Saved consent and an active device are distinct; disabling does not revoke stored consent. Consent is rechecked before each summary.
+- Disable immediately stops owned tracks and camera worker, including tracks granted after cancellation. Leaving/hiding the page, session pause/end/disconnect, device failure, failed/revoked consent checks, and a WebSocket `CONSENT_REQUIRED` rejection stop sensing. Returning never restarts it. Saved consent and an active device are distinct; disabling does not revoke stored consent. Consent is checked on its own five-second timer, separate from summary delivery; a failed check or server rejection requires an explicit new opt-in before retrying. The backend must apply mid-session grants before rollout (General CS #59).
 
 ## Self-hosted assets
 
@@ -34,6 +34,6 @@ Before enabling production, perform a consented browser/device test (not complet
 2. Inspect Network: models/worklets/WASM must be same-origin; WebSocket frames must contain only the four derived fields. Exercise missing models/offline loading and confirm safe unavailability.
 3. Disable while a permission dialog or model load is pending, then grant permission: tracks must immediately end. Test individual stop, disable-all, hide tab, navigate away, pause/end session and disconnect. Confirm browser device indicators turn off and no automatic restart occurs.
 4. Test normal and Teams views, keyboard controls, multiple faces, dark rooms, glasses, camera off-centre, prolonged speech, and low-power devices. Validate gaze heuristics with Cyber 1 before interpreting them as engagement.
-5. Revoke consent elsewhere and verify the next consent check stops sensing. Verify backend consent enforcement independently and confirm no negative inference when readings are unavailable.
+5. Revoke consent elsewhere and verify the next consent check stops sensing. Before General CS #59 is deployed, try saving consent after joining and verify a `CONSENT_REQUIRED` response stops sensors with one clear local message, not a repeating live-session banner. After #59 is deployed, verify mid-session grants work without reconnecting. Confirm no negative inference when readings are unavailable.
 
 Reference implementations: [MediaPipe Face Landmarker](https://developers.google.com/edge/mediapipe/solutions/vision/face_landmarker/web_js), [VAD browser API](https://docs.vad.ricky0123.com/user-guide/api/).

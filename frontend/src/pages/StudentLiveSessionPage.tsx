@@ -32,6 +32,8 @@ import { AttentionControls } from '../features/attention/AttentionControls'
 
 const SOCRATIC_CHAT_ENABLED =
   import.meta.env.VITE_SOCRATIC_CHAT_ENABLED === 'true'
+const LOCAL_ATTENTION_ENABLED =
+  import.meta.env.VITE_LOCAL_ATTENTION_ENABLED === 'true'
 
 export default function StudentLiveSessionPage() {
   const { sessionId } = useParams<{ sessionId: string }>()
@@ -76,6 +78,7 @@ export function LiveSessionPanel({
     acknowledgePrompt,
     clearError,
     sendAttention,
+    attentionConsentRejected,
   } = useLiveSession(session.id, session.status, session.paused ?? false)
 
   const now = useCurrentTime(
@@ -141,8 +144,9 @@ export function LiveSessionPanel({
 
         <ConnectionNotice status={state.connection} />
 
-        {import.meta.env.VITE_LOCAL_ATTENTION_ENABLED === 'true' && (
+        {LOCAL_ATTENTION_ENABLED && (
           <AttentionControls key={session.id} onSignal={sendAttention}
+            consentRejected={attentionConsentRejected}
             enabled={state.connection === 'connected' && state.sessionStatus === 'active' && !state.paused} />
         )}
 

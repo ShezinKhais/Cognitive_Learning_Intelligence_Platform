@@ -327,6 +327,14 @@ export function useLiveSession(
               break
             }
 
+            // The server can reject a signal if consent was withdrawn or its
+            // live consent registry has not observed a mid-session grant yet.
+            // Stop local capture instead of repeating this error every window.
+            if (payload?.code === 'CONSENT_REQUIRED') {
+              dispatch({ type: 'attention-consent-rejected' })
+              break
+            }
+
             if (payload) {
               dispatch({
                 type: 'error',
@@ -664,6 +672,7 @@ export function useLiveSession(
 
   return {
     state,
+    attentionConsentRejected: state.attentionConsentRejected,
     sendAttention: (value: AttentionSummary) => {
       const socket = socketRef.current
       if (!readyRef.current || socket?.readyState !== WebSocket.OPEN || state.sessionStatus !== 'active' || state.paused) return false

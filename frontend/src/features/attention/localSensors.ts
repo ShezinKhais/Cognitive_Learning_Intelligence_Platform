@@ -1,12 +1,22 @@
 import type { FaceObservation } from './signals'
 
-export type Stop = () => void
 const assets = new URL(`${import.meta.env.BASE_URL}attention/`, location.origin).href
 export function stopTracks(stream: MediaStream): void {
   stream.getTracks().forEach(track => track.stop())
 }
 
-export async function startCamera(signal: AbortSignal, report: (value: FaceObservation) => void, failed: () => void): Promise<Stop> {
+async function openStream(signal: AbortSignal, constraints: MediaStreamConstraints, failed: () => void): Promise<MediaStream> {
+  signal.throwIfAborted()
+  const stream = await navigator.mediaDevices.getUserMedia(constraints)
+  if (signal.aborted) {
+    stopTracks(stream)
+    signal.throwIfAborted()
+  }
+  stream.getTracks().forEach(track => { track.onended = failed })
+  return stream
+}
+
+export async function startCamera(signal: AbortSignal, report: (value: FaceObservation) => void, failed: () => void): Promise<void> {
   let stream: MediaStream | undefined
   let worker: Worker | undefined
   let timer: ReturnType<typeof setInterval> | undefined
@@ -26,11 +36,8 @@ export async function startCamera(signal: AbortSignal, report: (value: FaceObser
   }
   signal.addEventListener('abort', stop, { once: true })
   try {
-    signal.throwIfAborted()
-    stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 5, max: 10 } }, audio: false })
-    signal.throwIfAborted()
+    stream = await openStream(signal, { video: { width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 5, max: 10 } }, audio: false }, () => { stop(); failed() })
     stream.getTracks().forEach(track => {
-      track.onended = () => { stop(); failed() }
       track.onmute = () => report({ face: null, forward: null, head: 'unavailable' })
     })
     video.srcObject = stream
@@ -66,11 +73,10 @@ export async function startCamera(signal: AbortSignal, report: (value: FaceObser
         worker!.postMessage({ type: 'frame', frame, timestamp: performance.now() }, [frame])
       } catch { busy = false; stop(); failed() }
     }, 250)
-    return stop
   } catch (error) { stop(); throw error }
 }
 
-export async function startMicrophone(signal: AbortSignal, report: (speaking: boolean | null) => void, failed: () => void): Promise<Stop> {
+export async function startMicrophone(signal: AbortSignal, report: (speaking: boolean | null) => void, failed: () => void): Promise<void> {
   let stream: MediaStream | undefined
   let vad: import('@ricky0123/vad-web').MicVAD | undefined
   let poll: ReturnType<typeof setInterval> | undefined
@@ -82,11 +88,8 @@ export async function startMicrophone(signal: AbortSignal, report: (speaking: bo
   }
   signal.addEventListener('abort', stop, { once: true })
   try {
-    signal.throwIfAborted()
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }, video: false })
-    signal.throwIfAborted()
+    stream = await openStream(signal, { audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }, video: false }, () => { stop(); failed() })
     stream.getTracks().forEach(track => {
-      track.onended = () => { stop(); failed() }
       track.onmute = () => report(null)
     })
     const { MicVAD } = await import('@ricky0123/vad-web')
@@ -107,6 +110,5 @@ export async function startMicrophone(signal: AbortSignal, report: (speaking: bo
     await vad.start()
     signal.throwIfAborted()
     poll = setInterval(() => { if (vad?.errored) { stop(); failed() } }, 1000)
-    return stop
   } catch (error) { stop(); throw error }
 }

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { observeFace, summary } from '../src/features/attention/signals.ts'
+import { coveredWindowSeconds, observeFace, summary } from '../src/features/attention/signals.ts'
 
 function face() {
   const p = Array.from({ length: 478 }, () => ({ x: .5, y: .5, z: 0 }))
@@ -35,4 +35,19 @@ test('summary omits raw data and does not turn missing readings into negatives',
   ], [false, true], 5), { gaze_on_screen_ratio: .5, face_present: true, speaking: true, window_seconds: 5 })
   assert.equal(summary([], [false], 5).speaking, false)
   assert.equal(summary([], [], 99999).window_seconds, 3600)
+})
+
+test('stale sensor samples are unavailable rather than negative', () => {
+  const observed = { face: true, forward: true, head: 'forward' } as const
+  assert.deepEqual(summary([observed], [false], 5, { now: 5000, faceAt: 2999, speechAt: 4000 }), {
+    gaze_on_screen_ratio: null,
+    face_present: null,
+    speaking: false,
+    window_seconds: 5,
+  })
+})
+
+test('the first summary covers only time since local sensing began', () => {
+  assert.equal(coveredWindowSeconds(605000, 600000, [604900]), 0.1)
+  assert.equal(coveredWindowSeconds(610000, 605000, [604900]), 5)
 })
