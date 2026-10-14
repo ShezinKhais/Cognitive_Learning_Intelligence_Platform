@@ -11,6 +11,9 @@ text and those readings, and a phrase found in any of them counts as found.
 
 from __future__ import annotations
 
+import base64
+import binascii
+import codecs
 import re
 import unicodedata
 
@@ -48,6 +51,25 @@ _LEET = str.maketrans(
 )
 
 
+# The orders never found in lecture content, in the other languages the tutor is
+# likely to be asked in, and the markers that open a new system turn.
+SET_ASIDE = re.compile(
+    r"ignora(?:r|d)?\s+(?:todas\s+)?(?:las\s+)?instrucciones\s+(?:anteriores|previas)"
+    r"|ignor(?:e|ez|er)\s+(?:toutes\s+)?(?:les\s+)?instructions\s+(?:pr[eé]c[eé]dentes|ci-dessus)"
+    r"|ignorier(?:e|en)?\s+(?:alle\s+)?(?:vorherigen|bisherigen|obigen)\s+(?:anweisungen|instruktionen)"
+    r"|忽略(?:之前|以上|上面|先前|前面)的?(?:所有)?(?:指令|指示|说明|提示|规则)"
+    r"|تجاهل\s+(?:جميع\s+|كل\s+)?(?:التعليمات|الأوامر|القواعد)\s+(?:السابقة|أعلاه)"
+    r"|игнорир\w+\s+(?:все\s+)?(?:предыдущие|прежние|выше)\s+(?:инструкции|указания)"
+    r"|<\|(?:im_start|im_end|system|endoftext)\|>|</?s>\s*<s>"
+    r"|\b(?:forget|ignore|disregard)\s+(?:everything|all)\s+(?:above|before|previously"
+    r"|you\s+(?:know|were\s+told))\b"
+    r"|\b(?:ignore|disregard|forget)\s+(?:all|any)\s+(?:previous|prior|earlier|preceding|above)\b"
+    r"|\b(?:ignore|disregard)\s+the\s+above\b"
+    r"|\bfrom\s+now\s+on\s+you\s+(?:will|must|are|shall)\b",
+    flags=re.IGNORECASE,
+)
+
+
 def fold_confusables(text: str) -> str:
     """Lookalike Cyrillic and Greek letters replaced by the Latin ones they mimic."""
     return text.translate(_CONFUSABLES)
@@ -70,6 +92,28 @@ def _despace(text: str) -> str:
     return " ".join(out)
 
 
+# "i.g.n.o.r.e": single characters joined by dots, dashes, underscores or stars.
+_JOINED_LETTERS = re.compile(r"(?<![A-Za-z0-9])(?:[A-Za-z0-9][._*-]){2,}[A-Za-z0-9](?![A-Za-z0-9])")
+_BASE64_RUN = re.compile(r"[A-Za-z0-9+/]{24,}={0,2}")
+
+
+def _joined(text: str) -> str:
+    return _JOINED_LETTERS.sub(lambda m: re.sub(r"[._*-]", "", m.group(0)), text)
+
+
+def _decoded_base64(text: str) -> list[str]:
+    """Every long base64 run in the text that decodes to readable text."""
+    found = []
+    for run in _BASE64_RUN.findall(text):
+        try:
+            raw = base64.b64decode(run + "=" * (-len(run) % 4), validate=True).decode("utf-8")
+        except (binascii.Error, ValueError):
+            continue
+        if raw.isprintable():
+            found.append(raw)
+    return found
+
+
 def screening_variants(text: str) -> list[str]:
     """The text as written, and the ways of reading it an attacker may rely on.
 
@@ -81,4 +125,7 @@ def screening_variants(text: str) -> list[str]:
     base = normalise_for_screening(text)
     folded = fold_confusables(base)
     variants = [base, folded, _despace(folded), _despace(folded).translate(_LEET)]
+    # A payload the model may be able to read although a person would not: dotted
+    # letters, rot13, base64. Each is read plain and matched like the rest.
+    variants += [_joined(base), codecs.decode(base, "rot13"), *_decoded_base64(base)]
     return list(dict.fromkeys(variants))

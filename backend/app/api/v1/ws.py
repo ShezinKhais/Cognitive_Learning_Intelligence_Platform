@@ -49,6 +49,7 @@ from app.api.deps import AppSettings, DbSession
 from app.auth.service import granted_consents, user_from_token
 from app.core.security import TokenValidationError
 from app.realtime.classroom import classroom
+from app.realtime.event_limit import MAX_SOCKETS_PER_USER, EventLimit
 from app.realtime.hub import CLOSE_TRY_AGAIN_LATER, Connection, hub
 from app.schemas.events import (
     AnswerSubmitPayload,
@@ -70,6 +71,8 @@ router = APIRouter()
 
 CLOSE_UNAUTHENTICATED = 4001
 CLOSE_FORBIDDEN = 4003
+# The socket is sending too much, or too many sockets are open for one user.
+CLOSE_RATE_LIMITED = 4429
 CLOSE_BAD_EVENT = 4400
 CLOSE_AUTH_TIMEOUT = 4408
 
@@ -292,6 +295,15 @@ async def session_socket(
             )
             return
         recorded = SessionStatus(row.status)
+        if hub.connection_count(session_id, user_id) >= MAX_SOCKETS_PER_USER:
+            log.warning(
+                "security_event=ACCESS_DENIED transport=websocket user_id=%s "
+                "session_id=%s reason=too_many_sockets",
+                user_id,
+                session_id,
+            )
+            await websocket.close(code=CLOSE_RATE_LIMITED, reason="too many connections")
+            return
 
         async def welcome() -> list[tuple[ServerEventType, dict]]:
             return classroom.welcome(session_id, recorded, user_id, role)
@@ -324,8 +336,14 @@ async def session_socket(
             seat = (session_id, recorded)
             await classroom.arrived(session_id, user_id, role, recorded)
 
+        limit = EventLimit()
         while True:
             raw = await _receive_event(websocket)
+
+            if not limit.allow():
+                log.warning("security_event=RATE_LIMITED transport=websocket user_id=%s", user_id)
+                await websocket.close(code=CLOSE_RATE_LIMITED, reason="too many events")
+                return
 
             if raw is None:
                 await _send(

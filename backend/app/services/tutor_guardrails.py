@@ -185,6 +185,19 @@ _OVERRIDE_PATTERNS = (
     r"\bnew\s+(?:rules|persona|role)\s*:",
     r"(?:^|[.!?]\s)\s*(?:system|assistant|developer)\s*:",
     r"\[/?(?:inst|sys)\]|<<\s*/?sys\s*>>",
+    # Phase 8: paraphrases of the same moves.
+    r"\b(?:pretend|imagine|suppose)\s+(?:that\s+)?(?:you\s+)?(?:have|had|are|were)\s+no\s+"
+    r"(?:\w+\s+)?(?:guidelines|rules|restrictions|limits|limitations|instructions)\b",
+    r"\b(?:override|bypass|circumvent|disobey)\s+(?:your|the)\s+(?:\w+\s+){0,2}"
+    r"(?:safety|rules|guidelines|instructions|settings|restrictions|prompt|programming)\b",
+    r"\b(?:do\s+not|don'?t|stop|no\s+longer)\s+(?:follow|following|obey|obeying)\s+"
+    r"(?:\w+\s+){0,2}(?:system|rules|guidelines|instructions|prompt)\b",
+    r"\bstop\s+being\s+(?:a|an|the|my)\s+\w+",
+    r"\bact(?:ing)?\s+as\s+(?:if|though)\s+(?:the|your|there)\b(?:\W+\w+){0,2}?\W+"
+    r"(?:rules|guidelines|restrictions|limits)\b",
+    r"\b(?:ignore|disregard|forget)\s+(?:all\s+|any\s+|the\s+)?"
+    r"(?:previous|prior|above|earlier|preceding)\b",
+    r"(?:^|\n)\s*#{2,}\s*(?:system|instructions?|assistant)\b",
 )
 _OVERRIDE = re.compile("|".join(_OVERRIDE_PATTERNS), flags=re.IGNORECASE)
 
@@ -201,6 +214,11 @@ _LEAK_PATTERNS = (
     r"\bwhat\s+(?:are|were|is)\s+your\s+(?:system\s+)?(?:prompt|instructions?|rules|guidelines)\b",
     r"\b(?:repeat|print|output)\s+(?:everything|all|the\s+text)\s+(?:above|before)\b",
     r"\bwhat\s+(?:did|were)\s+you\s+(?:told|instructed)\b",
+    # Phase 8: asking for it in pieces or in other words.
+    r"\b(?:first|last|initial|opening)\s+\d*\s*(?:words?|lines?|sentences?|characters?)\s+of\s+"
+    r"(?:your|the)\s+(?:\w+\s+)?(?:instructions?|prompt|rules|message)\b",
+    r"\b(?:rules|instructions|guidelines)\s+(?:you\s+(?:were|have\s+been)\s+"
+    r"(?:told|given|instructed)|given\s+to\s+you)\b",
 )
 _LEAK = re.compile("|".join(_LEAK_PATTERNS), flags=re.IGNORECASE)
 
