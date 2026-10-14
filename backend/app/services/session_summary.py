@@ -158,12 +158,14 @@ _LABEL_WORD = re.compile(r"\b(?:mastered|partial|struggling|uncertain)\b", flags
 _SHARED_WORDS = frozenset(
     """a an and the it its this that these those both each also only as so then
     with of on in at for from by to was were is are be been has had have topic
-    topics answer answers mastered partial partly struggling uncertain label
-    labels""".split()
+    topics answer answers mastered partial struggling""".split()
 )
+# "uncertain" is a lecturer's count only: a student's topic is never labelled
+# uncertain, so the word could only be a claim the facts do not make. "partly"
+# is allowed to no one: it softens a label without being one.
 LECTURER_WORDS = _SHARED_WORDS | frozenset(
     """class students found easy medium hard expected although but while whereas
-    however overall out""".split()
+    however overall out uncertain label labels""".split()
 )
 # Allowed only about a topic that is not easy: it is advice to go back to it.
 LECTURER_REVISIT_WORDS = frozenset(
