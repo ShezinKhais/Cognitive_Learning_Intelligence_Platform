@@ -2,12 +2,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
-  engagementConfidenceLabel,
   engagementCounts,
-  engagementScoreLabel,
   engagementStatusLabel,
+  evidenceCoverageLabel,
   shortStudentId,
-  signalLabel,
 } from '../src/features/attention/lecturerAttention.ts'
 
 import type {
@@ -15,14 +13,17 @@ import type {
 } from '../src/features/attention/lecturerAttention.ts'
 
 function student(
-  status: LecturerEngagement['status'],
+  status:
+    LecturerEngagement['status'],
 ): LecturerEngagement {
   return {
     student_id:
       '12345678-1234-1234-1234-123456789abc',
-    session_id: 'session',
+    session_id:
+      'session',
     score:
-      status === 'insufficient_data'
+      status ===
+      'insufficient_data'
         ? null
         : 0.5,
     status,
@@ -34,7 +35,7 @@ function student(
 }
 
 test(
-  'engagement status labels preserve backend meaning',
+  'engaged status keeps its backend meaning',
   () => {
     assert.equal(
       engagementStatusLabel(
@@ -42,21 +43,36 @@ test(
       ),
       'Engaged',
     )
+  },
+)
 
+test(
+  'at-risk status keeps its backend meaning',
+  () => {
     assert.equal(
       engagementStatusLabel(
         'at_risk',
       ),
       'At risk',
     )
+  },
+)
 
+test(
+  'disengaged backend status uses non-judgemental lecturer wording',
+  () => {
     assert.equal(
       engagementStatusLabel(
         'disengaged',
       ),
-      'Disengaged',
+      'Needs attention',
     )
+  },
+)
 
+test(
+  'insufficient data remains explicit',
+  () => {
     assert.equal(
       engagementStatusLabel(
         'insufficient_data',
@@ -67,113 +83,62 @@ test(
 )
 
 test(
-  'engagement score formats an authoritative zero-to-one value',
+  'evidence coverage preserves the authoritative confidence value',
   () => {
     assert.equal(
-      engagementScoreLabel(0),
-      '0%',
+      evidenceCoverageLabel(0),
+      '0% coverage',
     )
 
     assert.equal(
-      engagementScoreLabel(0.674),
-      '67%',
+      evidenceCoverageLabel(
+        0.4,
+      ),
+      '40% coverage',
     )
 
     assert.equal(
-      engagementScoreLabel(1),
-      '100%',
+      evidenceCoverageLabel(1),
+      '100% coverage',
     )
   },
 )
 
 test(
-  'missing or invalid score remains unavailable',
+  'missing or invalid evidence coverage remains unavailable',
   () => {
     assert.equal(
-      engagementScoreLabel(null),
-      'Unavailable',
+      evidenceCoverageLabel(
+        null,
+      ),
+      'Coverage unavailable',
     )
 
     assert.equal(
-      engagementScoreLabel(
+      evidenceCoverageLabel(
         Number.NaN,
       ),
-      'Unavailable',
+      'Coverage unavailable',
     )
 
     assert.equal(
-      engagementScoreLabel(-0.1),
-      'Unavailable',
-    )
-
-    assert.equal(
-      engagementScoreLabel(1.1),
-      'Unavailable',
-    )
-  },
-)
-
-test(
-  'confidence is shown as evidence coverage without changing the status',
-  () => {
-    assert.equal(
-      engagementConfidenceLabel(0.4),
-      '40% confidence',
-    )
-
-    assert.equal(
-      engagementConfidenceLabel(null),
-      'Confidence unavailable',
-    )
-  },
-)
-
-test(
-  'signal names receive privacy-safe lecturer labels',
-  () => {
-    assert.equal(
-      signalLabel('attempt_rate'),
-      'Checkpoint participation',
-    )
-
-    assert.equal(
-      signalLabel('response_timing'),
-      'Response timing',
-    )
-
-    assert.equal(
-      signalLabel('prompt_response'),
-      'Attention check response',
-    )
-
-    assert.equal(
-      signalLabel('gaze'),
-      'Camera-facing estimate',
-    )
-
-    assert.equal(
-      signalLabel(
-        'face_presence',
+      evidenceCoverageLabel(
+        -0.1,
       ),
-      'Face presence',
+      'Coverage unavailable',
     )
-  },
-)
 
-test(
-  'unknown signals are not given invented meaning',
-  () => {
     assert.equal(
-      signalLabel(
-        'future_signal',
+      evidenceCoverageLabel(
+        1.1,
       ),
-      'Other available signal',
+      'Coverage unavailable',
     )
   },
 )
 
 test(
-  'class counts preserve each authoritative backend status',
+  'class counts preserve backend states while using privacy-safe presentation groups',
   () => {
     assert.deepEqual(
       engagementCounts([
@@ -191,7 +156,7 @@ test(
         total: 5,
         engaged: 2,
         atRisk: 1,
-        disengaged: 1,
+        needsAttention: 1,
         insufficientData: 1,
       },
     )
@@ -209,12 +174,16 @@ test(
     )
 
     assert.equal(
-      shortStudentId('abc'),
+      shortStudentId(
+        'abc',
+      ),
       'abc',
     )
 
     assert.equal(
-      shortStudentId('   '),
+      shortStudentId(
+        '   ',
+      ),
       'Unavailable',
     )
   },

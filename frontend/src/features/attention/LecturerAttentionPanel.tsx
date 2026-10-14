@@ -1,10 +1,8 @@
 import {
-  engagementConfidenceLabel,
   engagementCounts,
-  engagementScoreLabel,
   engagementStatusLabel,
+  evidenceCoverageLabel,
   shortStudentId,
-  signalLabel,
 } from './lecturerAttention'
 
 import type {
@@ -26,12 +24,11 @@ function statusClass(
     return 'bg-success/10 text-success'
   }
 
-  if (status === 'at_risk') {
+  if (
+    status === 'at_risk' ||
+    status === 'disengaged'
+  ) {
     return 'bg-warning/10 text-warning'
-  }
-
-  if (status === 'disengaged') {
-    return 'bg-critical/10 text-critical'
   }
 
   return 'bg-muted text-muted-foreground'
@@ -53,21 +50,20 @@ export default function LecturerAttentionPanel({
     <section className="rounded-xl border border-border bg-card p-6 lg:col-span-2">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-info">
-            Phase 6
-          </p>
-
-          <h2 className="mt-1 text-lg font-semibold">
+          <h2 className="text-lg font-semibold">
             Attention and engagement indicators
           </h2>
 
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-            These are privacy-preserving engagement
-            estimates from the signals currently
-            available to C.L.I.P. Missing camera or
-            microphone signals are not counted as
-            zero. These indicators do not measure
-            comprehension.
+            These are privacy-preserving
+            engagement estimates from the
+            signals currently available to
+            C.L.I.P. They are estimates only
+            and are not proof of attention or
+            understanding. Missing camera or
+            microphone signals are not counted
+            as zero, and engagement remains
+            separate from comprehension.
           </p>
         </div>
 
@@ -128,7 +124,7 @@ export default function LecturerAttentionPanel({
           <dl className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <div className="rounded-md border border-border bg-background p-3">
               <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Students
+                Students with indicators
               </dt>
 
               <dd className="mt-1 text-xl font-semibold">
@@ -158,11 +154,11 @@ export default function LecturerAttentionPanel({
 
             <div className="rounded-md border border-border bg-background p-3">
               <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Disengaged
+                Needs attention
               </dt>
 
               <dd className="mt-1 text-xl font-semibold">
-                {counts.disengaged}
+                {counts.needsAttention}
               </dd>
             </div>
 
@@ -178,17 +174,22 @@ export default function LecturerAttentionPanel({
           </dl>
 
           <p className="mt-4 text-xs leading-5 text-muted-foreground">
-            For privacy and contract safety, the current
-            engagement API provides student IDs rather than
-            display names. Shortened IDs are shown here
-            instead of adding an unapproved identity lookup.
+            For privacy and contract safety, the
+            current engagement API provides student
+            IDs rather than display names. Shortened
+            IDs are shown here instead of adding an
+            unapproved identity lookup. Per-student
+            contributing signal details are not
+            displayed.
           </p>
 
           <div className="mt-5 grid gap-3 md:grid-cols-2">
             {students.map(
               (student) => (
                 <article
-                  key={student.student_id}
+                  key={
+                    student.student_id
+                  }
                   className="rounded-xl border border-border bg-background p-4"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -220,63 +221,19 @@ export default function LecturerAttentionPanel({
                     </span>
                   </div>
 
-                  <dl className="mt-4 grid grid-cols-2 gap-3">
-                    <div>
-                      <dt className="text-xs text-muted-foreground">
-                        Engagement score
-                      </dt>
-
-                      <dd className="mt-1 font-semibold">
-                        {engagementScoreLabel(
-                          student.score,
-                        )}
-                      </dd>
-                    </div>
-
+                  <dl className="mt-4">
                     <div>
                       <dt className="text-xs text-muted-foreground">
                         Evidence coverage
                       </dt>
 
                       <dd className="mt-1 font-semibold">
-                        {engagementConfidenceLabel(
+                        {evidenceCoverageLabel(
                           student.confidence,
                         )}
                       </dd>
                     </div>
                   </dl>
-
-                  <div className="mt-4">
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Signals contributing
-                    </p>
-
-                    {student.signals_available
-                      .length > 0 ? (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {student.signals_available.map(
-                          (
-                            signal,
-                            index,
-                          ) => (
-                            <span
-                              key={`${student.student_id}-${signal}-${index}`}
-                              className="rounded-full border border-border px-2.5 py-1 text-xs"
-                            >
-                              {signalLabel(
-                                signal,
-                              )}
-                            </span>
-                          ),
-                        )}
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-sm text-muted-foreground">
-                        No contributing signals
-                        are available yet.
-                      </p>
-                    )}
-                  </div>
 
                   <p className="mt-4 text-xs text-muted-foreground">
                     Last computed:{' '}

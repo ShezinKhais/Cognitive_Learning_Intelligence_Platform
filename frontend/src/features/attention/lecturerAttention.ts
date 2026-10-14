@@ -18,7 +18,7 @@ export interface EngagementCounts {
   total: number
   engaged: number
   atRisk: number
-  disengaged: number
+  needsAttention: number
   insufficientData: number
 }
 
@@ -34,74 +34,33 @@ export function engagementStatusLabel(
   }
 
   if (status === 'disengaged') {
-    return 'Disengaged'
+    return 'Needs attention'
   }
 
   return 'Insufficient data'
 }
 
-export function engagementScoreLabel(
-  score: number | null | undefined,
-): string {
-  if (
-    score === null ||
-    score === undefined ||
-    !Number.isFinite(score) ||
-    score < 0 ||
-    score > 1
-  ) {
-    return 'Unavailable'
-  }
-
-  return `${Math.round(score * 100)}%`
-}
-
-export function engagementConfidenceLabel(
-  confidence: number | null | undefined,
+export function evidenceCoverageLabel(
+  confidence:
+    | number
+    | null
+    | undefined,
 ): string {
   if (
     confidence === null ||
     confidence === undefined ||
-    !Number.isFinite(confidence) ||
+    !Number.isFinite(
+      confidence,
+    ) ||
     confidence < 0 ||
     confidence > 1
   ) {
-    return 'Confidence unavailable'
+    return 'Coverage unavailable'
   }
 
   return `${Math.round(
     confidence * 100,
-  )}% confidence`
-}
-
-export function signalLabel(
-  signal: string,
-): string {
-  if (signal === 'attempt_rate') {
-    return 'Checkpoint participation'
-  }
-
-  if (signal === 'response_timing') {
-    return 'Response timing'
-  }
-
-  if (signal === 'prompt_response') {
-    return 'Attention check response'
-  }
-
-  if (signal === 'gaze') {
-    return 'Camera-facing estimate'
-  }
-
-  if (signal === 'face_presence') {
-    return 'Face presence'
-  }
-
-  if (signal === 'speaking') {
-    return 'Voice activity'
-  }
-
-  return 'Other available signal'
+  )}% coverage`
 }
 
 export function engagementCounts(
@@ -111,22 +70,26 @@ export function engagementCounts(
     total: students.length,
     engaged: 0,
     atRisk: 0,
-    disengaged: 0,
+    needsAttention: 0,
     insufficientData: 0,
   }
 
   for (const student of students) {
-    if (student.status === 'engaged') {
+    if (
+      student.status ===
+      'engaged'
+    ) {
       counts.engaged += 1
     } else if (
-      student.status === 'at_risk'
+      student.status ===
+      'at_risk'
     ) {
       counts.atRisk += 1
     } else if (
       student.status ===
       'disengaged'
     ) {
-      counts.disengaged += 1
+      counts.needsAttention += 1
     } else {
       counts.insufficientData += 1
     }
@@ -138,11 +101,18 @@ export function engagementCounts(
 export function shortStudentId(
   studentId: string,
 ): string {
-  const clean = studentId.trim()
+  const clean =
+    studentId.trim()
 
   if (clean.length <= 8) {
-    return clean || 'Unavailable'
+    return (
+      clean ||
+      'Unavailable'
+    )
   }
 
-  return `${clean.slice(0, 8)}…`
+  return `${clean.slice(
+    0,
+    8,
+  )}…`
 }
