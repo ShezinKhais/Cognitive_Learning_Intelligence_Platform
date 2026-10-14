@@ -390,8 +390,13 @@ class Classroom:
 
     async def shutdown(self) -> None:
         """Stop every timer this process owns. Sessions stay active in the
-        database and resume in whichever process next touches them."""
+        database and resume in whichever process next touches them.
+
+        Attention minutes already being stored are waited for, not cancelled:
+        each is bounded by the recorder timeout, and cancelling one would lose
+        a minute that was handed over before its commit."""
         tasks = []
+        storing = [task for live in self._live.values() for task in live.storing]
         for live in self._live.values():
             tasks.append(live.cycle)
             if live.open is not None:
@@ -404,6 +409,7 @@ class Classroom:
             if task is not None:
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await task
+        await asyncio.gather(*storing, return_exceptions=True)
 
     def _start_cycle(self, live: LiveSession) -> None:
         # With the interval at 0 the lecturer sends every question.

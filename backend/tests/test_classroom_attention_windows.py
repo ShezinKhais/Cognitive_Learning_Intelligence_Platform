@@ -185,9 +185,11 @@ async def test_a_store_that_fails_changes_nothing_for_the_class(
 
 async def test_the_student_whose_signal_ends_a_minute_does_not_wait_for_it_to_be_stored(
     clock,  # noqa: ANN001
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Their next answer is read from the same socket, and must not be held
     past its window by a slow store."""
+    monkeypatch.setattr(recorders_module, "RECORD_TIMEOUT_SECONDS", 0.05)
     room, row, student, summaries = await _room()
     summaries.hang = True
     assert await room.record_attention(row.session_id, student, _signal())
@@ -212,6 +214,36 @@ async def test_ending_the_session_waits_for_minutes_still_being_stored(clock) ->
     # Stored concurrently, so in either order: compared by minute.
     stored = sorted(summaries.stored, key=lambda w: w.window_start)
     assert [w.signals[0].speaking for w in stored] == [True, False]
+
+
+async def test_shutting_down_waits_for_minutes_still_being_stored(clock) -> None:  # noqa: ANN001
+    """A minute handed over before an app shutdown is still committed."""
+    room, row, student, summaries = await _room()
+    summaries.delays = [0.1]
+    assert await room.record_attention(row.session_id, student, _signal(speaking=True))
+    clock(60)
+    assert await room.record_attention(row.session_id, student, _signal(speaking=False))
+
+    await room.shutdown()
+
+    [minute] = summaries.stored
+    assert minute.signals[0].speaking is True
+
+
+async def test_a_store_that_hangs_does_not_hold_up_shutdown(
+    clock,  # noqa: ANN001
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(recorders_module, "RECORD_TIMEOUT_SECONDS", 0.05)
+    room, row, student, summaries = await _room()
+    summaries.hang = True
+    assert await room.record_attention(row.session_id, student, _signal())
+    clock(60)
+    assert await room.record_attention(row.session_id, student, _signal())
+
+    async with asyncio.timeout(1):
+        await room.shutdown()
+    assert summaries.stored == []
 
 
 async def test_a_store_that_hangs_is_given_up_on_at_the_end(

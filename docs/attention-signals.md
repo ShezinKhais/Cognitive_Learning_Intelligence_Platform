@@ -55,7 +55,7 @@ background timer.
   (#139).
 - The write runs in the background. The student whose signal ended the minute
   is never held up by it, so their next answer is never delayed. Ending a
-  session waits for writes still in progress.
+  session, or shutting the app down, waits for writes still in progress.
 - A failed or slow write (more than 5 seconds) is logged and dropped. The class
   is not affected.
 - A minute that is already stored is skipped, and only that minute is lost.
