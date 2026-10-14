@@ -45,12 +45,14 @@ Branch `hunain-phase-6`, built on `main`.
 5. Confidence is weight contributed over weight that could apply, so an accommodated student
    is not shown as low-confidence for signals that never applied to them.
 
-## 4. Contract changes (additive/stricter, flagged)
+## 4. Contract changes (stricter/clarified, flagged)
 
 `events.schema.json`: `signal.attention` now has `additionalProperties: false`. The
 frontend's `signals.ts` (ai2-phase-6) sends exactly the four allowed fields. No REST change.
-`confidence` values are now weight-based (e.g. 0.375 where v1 gave 0.4); the field and its
-range are unchanged.
+On `GET /sessions/{id}/engagement`, `signals_available` now holds `['participation']` or nothing, and
+`confidence` is 0 or 1 (participation evidence present or not), for every student. Field names and
+types are unchanged; the descriptions say so. The Cyber 2 panel shows unknown names as "Other
+available signal", so it should map `participation` to a label.
 
 ## 5. Verification
 
@@ -63,7 +65,7 @@ face-rate threshold, baseline wiring, error-text logging, join-time lookup).
 
 | # | Risk |
 |---|---|
-| R14 | `signals_available` is shown to lecturers and omits `response_timing` for an accommodated student who has answered, from which an accommodation could be inferred. Hiding it would misreport what contributed; left truthful and flagged for the dashboard owner (Cyber 2) |
+| R14 | **Resolved after review (Aliyeh, Luna).** `signals_available` and `confidence` per student would have let a lecturer tell who has an accommodation, because answer speed, gaze and face presence are never scored for them. Staff now see one view computed the same way for every student, from whether any participation signal backed the score (`engagement_view.py`): `signals_available` is `['participation']` or empty, `confidence` is 0 or 1, camera detail is never named. The scorer keeps the detail internally. What remains: `score` and `status` are still shown, and an accommodated student cannot be `disengaged` or prompted, so a lecturer who watches one student's status over a whole class could still form a suspicion; that is the price of not penalising them |
 | R15 | Accommodation is read at join; a change mid-class applies at the next join |
 | R16 | The baseline learns one reading per closed question (the latest signal), not every signal |
 | R17 | Engagement scores are still in memory only (no `engagement_record` writer); a restart loses them |
