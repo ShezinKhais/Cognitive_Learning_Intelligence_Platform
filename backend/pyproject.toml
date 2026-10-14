@@ -24,6 +24,7 @@ dependencies = [
     "pillow>=10.0",               # resizing images for captioning (python-pptx needs it too)
     "rapidfuzz>=3.10",            # match Teams display names against the admin roster
     "openpyxl>=3.1",              # timetable/roster .xlsx parsing
+    "reportlab>=4.2",             # session report PDFs
 ]
 
 [project.optional-dependencies]

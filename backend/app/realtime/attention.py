@@ -6,7 +6,8 @@ Which attention prompt is waiting on each student, how many each has been
 sent, how far each has escalated and how many questions in a row each has let
 pass; and the evidence engagement scoring reads: questions shown and
 answered, how quickly, how prompts were answered, and the latest signal from
-the student's own device. The classroom decides whether now is a fair time to
+the student's own device, with every signal of the current minute gathered
+for storing (attention_windows.py). The classroom decides whether now is a fair time to
 prompt, sends the prompt, runs its expiry timer and records its outcome, all
 under the session's lock. This keeps the counts and applies the per-student
 rules.
@@ -20,7 +21,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
-from app.realtime.recorders import PromptOutcome, PromptResult
+from app.realtime.attention_windows import AttentionWindows
+from app.realtime.recorders import AttentionWindow, PromptOutcome, PromptResult
 from app.schemas.events import AttentionPromptPayload, AttentionSignalPayload
 from app.services.engagement import (
     ATTENTION_SIGNAL_MAX_AGE_SECONDS,
@@ -31,6 +33,7 @@ from app.services.engagement import (
     EngagementInputs,
     compute_engagement,
 )
+from app.services.engagement_baseline import PersonalBaseline
 
 MAX_PROMPT_MESSAGE_LENGTH = 280
 
@@ -91,6 +94,10 @@ class _Student:
     signal: AttentionSignalPayload | None = None
     signal_at: datetime | None = None
     score: ScoredStudent | None = None
+    # The student's own normal for this session, and the signal it last learned
+    # from, so one reading is never counted twice.
+    baseline: PersonalBaseline = field(default_factory=PersonalBaseline)
+    baseline_from: datetime | None = None
 
     def current_signal(self, now: datetime) -> AttentionSignalPayload | None:
         """The latest signal, unless it is too old to describe the student
@@ -106,6 +113,7 @@ class Attention:
     def __init__(self, session_id: UUID) -> None:
         self.session_id = session_id
         self._students: dict[UUID, _Student] = {}
+        self.windows = AttentionWindows(session_id)
 
     def _student(self, user_id: UUID) -> _Student:
         return self._students.setdefault(user_id, _Student())
@@ -200,11 +208,19 @@ class Attention:
 
     # -- engagement -------------------------------------------------------------
 
-    def observe(self, user_id: UUID, signal: AttentionSignalPayload, now: datetime) -> None:
-        """Keep the student's latest attention signal for their next score."""
-        student = self._student(user_id)
-        student.signal = signal
-        student.signal_at = now
+    def observe(
+        self, user_id: UUID, signal: AttentionSignalPayload, now: datetime
+    ) -> list[AttentionWindow]:
+        """Keep the student's latest attention signal for their next score,
+        and in their current minute. A signal sent too soon after their last
+        one is dropped (see attention_windows.py). Returns the minutes now
+        over and ready to store."""
+        kept, finished = self.windows.add(user_id, signal, now)
+        if kept is not None:
+            student = self._student(user_id)
+            student.signal = kept
+            student.signal_at = now
+        return finished
 
     def forget(self, user_id: UUID) -> Prompt | None:
         """Drop all engagement evidence and the score kept for a student whose
@@ -213,6 +229,7 @@ class Attention:
         since the student did not ignore it. How many prompts they have been
         sent is kept, so the per-student cap still holds if they consent again.
         """
+        self.windows.forget(user_id)
         student = self._students.pop(user_id, None)
         if student is None:
             return None
@@ -224,8 +241,9 @@ class Attention:
         user_id: UUID,
         keep: Callable[[AttentionSignalPayload], AttentionSignalPayload | None],
     ) -> None:
-        """Narrow the student's stored signal to what keep allows, as when
-        camera or microphone consent is withdrawn."""
+        """Narrow the student's stored signal, and their unsent minute, to what
+        keep allows, as when camera or microphone consent is withdrawn."""
+        self.windows.restrict(user_id, keep)
         student = self._students.get(user_id)
         if student is None or student.signal is None:
             return
@@ -239,10 +257,13 @@ class Attention:
         answered: Set[UUID],
         timing: Mapping[UUID, float],
         now: datetime,
+        accommodated: Set[UUID] = frozenset(),
     ) -> list[ScoredStudent]:
         """Count a closed question towards everyone who was shown it, and
         rescore them. timing is the share of the window that had passed when
-        each answer arrived."""
+        each answer arrived. accommodated is who has a recorded accommodation:
+        their scoring leaves out the signals that assume one way of
+        interacting (see engagement.py)."""
         scored = []
         for user_id in shown | answered:
             student = self._student(user_id)
@@ -251,13 +272,19 @@ class Attention:
                 student.answered += 1
                 if user_id in timing:
                     student.response_times.append(timing[user_id])
+            signal = student.current_signal(now)
+            if signal is not None and student.signal_at != student.baseline_from:
+                student.baseline.record(signal.gaze_on_screen_ratio, signal.face_present)
+                student.baseline_from = student.signal_at
             engagement = compute_engagement(
                 EngagementInputs(
                     questions_shown=student.shown,
                     questions_answered=student.answered,
                     response_times=tuple(student.response_times),
                     prompt_responses=tuple(student.prompt_responses),
-                    attention=student.current_signal(now),
+                    attention=signal,
+                    baseline=student.baseline,
+                    accommodated=user_id in accommodated,
                 )
             )
             student.score = ScoredStudent(user_id, engagement, now)
@@ -267,3 +294,10 @@ class Attention:
     def scores(self) -> list[ScoredStudent]:
         """The latest score of every student scored so far."""
         return [s.score for s in self._students.values() if s.score is not None]
+
+    def purge_visual(self, user_id: UUID) -> None:
+        """Forget what was learned from the student's camera, as their camera
+        consent is withdrawn. Their participation evidence stays."""
+        student = self._students.get(user_id)
+        if student is not None:
+            student.baseline.purge_visual()

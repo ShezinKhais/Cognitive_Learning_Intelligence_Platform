@@ -449,10 +449,16 @@ class _AlertKeeper:
         return None
 
 
+class _Summaries:
+    async def record_windows(self, windows) -> None:  # noqa: ANN001
+        return None
+
+
 def _wired(room: Classroom) -> None:
     room.recorder = room.prompt_recorder = room.close_recorder = _Recorder()  # type: ignore[assignment]
     room.participant_recorder = _Recorder()  # type: ignore[assignment]
     room.alert_recorder = _AlertKeeper()  # type: ignore[assignment]
+    room.attention_recorder = _Summaries()  # type: ignore[assignment]
 
 
 def test_development_is_told_what_live_sessions_will_not_store(
@@ -469,6 +475,7 @@ def test_development_is_told_what_live_sessions_will_not_store(
     assert "question closes are not stored" in caplog.text
     assert "who attended is not stored" in caplog.text
     assert "alerts are not stored" in caplog.text
+    assert "attention summaries are not stored" in caplog.text
 
 
 def test_production_will_not_start_without_somewhere_to_store_answers(
@@ -493,8 +500,10 @@ def test_live_sessions_refuse_more_than_one_worker(
     room, _ = make_room(production=True)
     _wired(room)
 
-    with pytest.raises(RuntimeError, match="single worker"):
+    with pytest.raises(RuntimeError, match="single worker") as refused:
         room.check_wiring()
+    # Reports are held in one worker's memory too.
+    assert "reports" in str(refused.value)
 
 
 def test_one_worker_is_fine(monkeypatch: pytest.MonkeyPatch) -> None:
