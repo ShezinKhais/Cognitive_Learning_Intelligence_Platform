@@ -13,15 +13,17 @@ from __future__ import annotations
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.api.deps import (
+    AppSettings,
     CurrentUser,
     DbSession,
     Paginated,
     require_consents,
     require_roles,
 )
+from app.auth.service import granted_consents
 from app.core.errors import NotFoundError, not_implemented
 from app.realtime.classroom import classroom
 from app.repositories.session_repository import SessionRepository
@@ -40,7 +42,7 @@ from app.schemas.session import (
     StudentSessionSummary,
     TopicDifficultyOut,
 )
-from app.services import alert_store, session_lifecycle
+from app.services import alert_store, session_lifecycle, student_report
 from app.services.session_access import may_view_session_analytics
 
 # Running a session is staff work. Students reach a session over the socket.
@@ -292,5 +294,43 @@ async def student_summary(
     student_id: UUID,
     principal: CurrentUser,
     db: DbSession,
+    settings: AppSettings,
+    request: Request,
 ) -> StudentSessionSummary:
-    raise not_implemented("Cyber 1", "Phase 7")
+    """One student's results for one session: what they attempted and missed,
+    where their answers were strong or weak, and what to do next. Engagement
+    and comprehension are separate fields and never combined.
+
+    A student reads only their own; staff read those of a session they run
+    (and leave an audit trace when it is not their own). A session, a student
+    or a pairing the caller may not see are all the same 404."""
+    row = await SessionRepository(db).get(session_id)
+    student = await StudentRepository(db).get_by_id(student_id)
+    own = student is not None and student.user_id == principal.user_id
+    allowed = (
+        row is not None
+        and student is not None
+        and student.course_id == row.course_id
+        and (
+            own
+            if principal.role == Role.STUDENT
+            else may_view_session_analytics(row, user_id=principal.user_id, role=principal.role)
+        )
+    )
+    if not allowed or student is None:
+        raise NotFoundError("Summary was not found.", {"session_id": str(session_id)})
+    consented = ConsentType.ENGAGEMENT_MONITORING in await granted_consents(
+        student.user_id, settings, db
+    )
+    summary = await student_report.build_student_summary(
+        db, session_id, student_id, student.user_id, engagement_consented=consented
+    )
+    if not own:
+        await student_report.record_staff_view(
+            db,
+            viewer=principal.user_id,
+            student_id=student_id,
+            session_id=session_id,
+            ip_address=request.client.host if request.client is not None else "unknown",
+        )
+    return summary
