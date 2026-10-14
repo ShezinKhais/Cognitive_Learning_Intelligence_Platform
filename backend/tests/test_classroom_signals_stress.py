@@ -26,10 +26,12 @@ from __future__ import annotations
 import asyncio
 import random
 from collections.abc import Sequence
+from datetime import timedelta
 from uuid import UUID
 
 import pytest
 
+from app.realtime import attention_windows
 from app.realtime.classroom import Classroom
 from app.realtime.hub import Connection
 from app.realtime.recorders import AttentionWindow, RoomAlert
@@ -54,6 +56,16 @@ from .classroom_support import (
 )
 
 pytestmark = pytest.mark.usefixtures("fake_session_repository")
+
+
+@pytest.fixture(autouse=True)
+def _no_signal_spacing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The run takes about a second, so with the server's spacing between a
+    student's signals (attention_windows.py) each would be heard once and the
+    rooms would pass through their statuses only by luck of timing. That
+    rule has its own tests."""
+    monkeypatch.setattr(attention_windows, "MIN_SIGNAL_INTERVAL", timedelta(0))
+
 
 STUDENTS = 12
 PROMPT_CAP = 2

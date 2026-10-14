@@ -58,6 +58,7 @@ from app.core.config import Settings, get_settings
 from app.core.database import get_session_factory
 from app.core.errors import ConflictError
 from app.models.session import Session
+from app.realtime.accommodations import Accommodations
 from app.realtime.attention import Attention, Prompt, ScoredStudent, checked_message
 from app.realtime.consent import CLOSE_CONSENT, ConsentRegistry, permitted_signal
 from app.realtime.countdown import Countdown
@@ -112,8 +113,6 @@ from app.services.ai_explainability import (
 )
 from app.services.engagement import (
     ENGAGED_THRESHOLD,
-    EngagementInputs,
-    compute_engagement,
     evaluate_comprehension_alert,
     should_send_dynamic_prompt,
 )
@@ -243,6 +242,7 @@ class Classroom:
         # What each student has consented to be monitored for. Cyber 1's
         # rules for it are in consent.py.
         self.consents = consents if consents is not None else ConsentRegistry()
+        self.accommodations = Accommodations()
         self._random = rng or random.Random()
         self._sessions = sessions
         self._settings = settings
@@ -1045,7 +1045,7 @@ class Classroom:
             try:
                 await self.watch_once(live)
             except Exception:
-                log.exception("signal watch failed for session %s", live.session_id)
+                log.exception("attention watch failed for session %s", live.session_id)
 
     async def watch_once(self, live: LiveSession) -> None:
         """One pass of the watch: rescore, prompt, and tell the lecturer about
@@ -1075,13 +1075,14 @@ class Classroom:
         connected = self._hub.student_ids(live.session_id)
         needed = settings.refocus_min_signal_seconds
         cooldown = timedelta(seconds=settings.refocus_cooldown_seconds)
+        accommodated = self.accommodations.members()
         for user_id in live.attention.observed():
             # Withdrawing monitoring already drops the student's signals
             # (Attention.forget), so they are not observed; this is the
             # second lock on that door.
             if user_id not in connected or not self.consents.monitored(user_id):
                 continue
-            scored = live.attention.rescore(user_id, now)
+            scored = live.attention.rescore(user_id, now, user_id in accommodated)
             signal = live.attention.signal(user_id, now)
             if (
                 needed > 0
@@ -1203,6 +1204,8 @@ class Classroom:
                     live.attention.restrict_signal(
                         user_id, lambda signal: permitted_signal(signal, held)
                     )
+                    if ConsentType.CAMERA not in held:
+                        live.attention.purge_visual(user_id)
                 # A room's voice activity comes from the same signals, so
                 # what was heard from this student goes with the consent.
                 # They stay in the room they confirmed.
@@ -1218,7 +1221,9 @@ class Classroom:
         nudge those engagement scoring says need it. prompt_student's limits
         (cap, pause, one at a time, connected) still apply."""
         shown, answered = self._monitored_in(closed)
-        for scored in live.attention.score(shown, answered, closed.timing, _now()):
+        for scored in live.attention.score(
+            shown, answered, closed.timing, _now(), self.accommodations.members()
+        ):
             if should_send_dynamic_prompt(scored.engagement):
                 await self._prompt_locked(live, scored.user_id, ENGAGEMENT_PROMPT_MESSAGE)
 
@@ -1381,12 +1386,19 @@ def _explain_comprehension_alert(
 
 
 def _signals_low(signal: AttentionSignalPayload) -> bool:
-    """Whether a student's own signals, taken alone, fall short of engaged.
-    Scored by the same rule as everything else, so there is one definition of
-    low. A window that reported neither gaze nor a face is not low: it says
-    nothing."""
-    score = compute_engagement(EngagementInputs(attention=signal)).score
-    return score is not None and score < ENGAGED_THRESHOLD
+    """Whether a student's own signals, taken alone, fall short of engaged:
+    the mean of the gaze ratio and face presence, the two weighed equally as
+    engagement scoring weighs them, against its threshold. Scoring itself
+    will not score the camera alone, so this is worked out here; it only ever
+    narrows what scoring already asks for. A window that reported neither
+    gaze nor a face is not low: it says nothing."""
+    face = signal.face_present
+    readings = [
+        value
+        for value in (signal.gaze_on_screen_ratio, None if face is None else float(face))
+        if value is not None
+    ]
+    return bool(readings) and sum(readings) / len(readings) < ENGAGED_THRESHOLD
 
 
 ROOM_ALERT_EXPLANATION = (

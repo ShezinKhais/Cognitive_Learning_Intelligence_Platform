@@ -153,6 +153,17 @@ async def _confirm(room: Classroom, row, student: UUID, label: str = "Room 1") -
     return await room.confirm_room(row.session_id, student, RoomConfirmPayload(room_label=label))
 
 
+def _missed_two(room: Classroom, row, student: UUID) -> None:  # noqa: ANN001
+    """Count two questions the student was shown and did not answer, so
+    scoring has participation evidence. Cyber 1's rule never judges a student
+    on the camera alone, so without it the signals could not prompt anyone."""
+    live = room.get_running(row.session_id)
+    assert live is not None
+    now = classroom_module._now()  # noqa: SLF001
+    live.attention.score({student}, set(), {}, now)
+    live.attention.score({student}, set(), {}, now)
+
+
 def _prompts(socket: FakeSocket) -> list[dict]:
     return socket.of(ServerEventType.PROMPT_ATTENTION)
 
@@ -173,27 +184,32 @@ async def test_a_score_rests_on_the_average_of_the_signals_not_the_last() -> Non
     _, student = await join_as(events, row.session_id, Role.STUDENT)
     await _record(room, row, student, *[_signal(gaze=1.0)] * 4, _signal(gaze=0.0))
 
-    await _close(room, row)
+    live = room.get_running(row.session_id)
+    assert live is not None
 
-    [scored] = room.engagement(row.session_id)
+    signal = live.attention.signal(student, classroom_module._now())  # noqa: SLF001
     # Four summaries at 1.0 and one at 0.0, each five seconds: 20 / 25.
-    assert scored.engagement.signals_available == ["gaze"]
-    assert scored.engagement.score == 0.8
+    assert signal is not None
+    assert signal.gaze_on_screen_ratio == 0.8
+    assert signal.window_seconds == 25.0
     await room.shutdown()
 
 
 async def test_the_watch_rescores_between_questions_from_the_signals_alone() -> None:
     room, events, row = await _class()
     _, student = await join_as(events, row.session_id, Role.STUDENT)
+    _missed_two(room, row, student)
+    [before] = room.engagement(row.session_id)
+    assert before.engagement.signals_available == ["attempt_rate"]
     await _record(room, row, student, ATTENTIVE)
-    assert room.engagement(row.session_id) == []
 
     await _watch(room, row)
 
     [scored] = room.engagement(row.session_id)
     assert scored.user_id == student
-    assert scored.engagement.signals_available == ["gaze", "face_presence"]
-    assert scored.engagement.score == pytest.approx(0.95)
+    assert scored.engagement.signals_available == ["attempt_rate", "gaze", "face_presence"]
+    # Attempt rate 0 at weight 1, gaze 0.9 and a face at 0.5 each: 0.95 / 2.
+    assert scored.engagement.score == pytest.approx(0.475)
     await room.shutdown()
 
 
@@ -218,6 +234,7 @@ async def test_a_student_who_has_left_is_not_rescored_by_the_watch() -> None:
 async def test_a_student_looking_away_with_no_face_in_view_is_prompted_once_and_privately() -> None:
     room, events, row = await _class(refocus_after=10.0)
     socket, student = await join_as(events, row.session_id, Role.STUDENT)
+    _missed_two(room, row, student)
     classmate, _ = await join_as(events, row.session_id, Role.STUDENT)
     lecturer, _ = await join_as(events, row.session_id, Role.LECTURER)
     await _record(room, row, student, AWAY, AWAY)
@@ -236,6 +253,7 @@ async def test_a_student_looking_away_with_no_face_in_view_is_prompted_once_and_
 async def test_no_second_prompt_from_the_signals_inside_the_cooldown() -> None:
     room, events, row = await _class(refocus_after=10.0, refocus_cooldown=300.0)
     socket, student = await join_as(events, row.session_id, Role.STUDENT)
+    _missed_two(room, row, student)
     await _record(room, row, student, AWAY, AWAY)
     await _watch(room, row)
     [first] = _prompts(socket)
@@ -252,6 +270,7 @@ async def test_no_second_prompt_from_the_signals_inside_the_cooldown() -> None:
 async def test_another_prompt_follows_once_there_is_no_cooldown_to_wait_out() -> None:
     room, events, row = await _class(refocus_after=10.0, refocus_cooldown=0.0)
     socket, student = await join_as(events, row.session_id, Role.STUDENT)
+    _missed_two(room, row, student)
     await _record(room, row, student, AWAY, AWAY)
     await _watch(room, row)
     [first] = _prompts(socket)
@@ -267,6 +286,7 @@ async def test_another_prompt_follows_once_there_is_no_cooldown_to_wait_out() ->
 async def test_no_prompt_while_the_window_covers_too_little_of_the_minute() -> None:
     room, events, row = await _class(refocus_after=45.0)
     socket, student = await join_as(events, row.session_id, Role.STUDENT)
+    _missed_two(room, row, student)
     await _record(room, row, student, AWAY, AWAY)
 
     await _watch(room, row)
@@ -278,7 +298,8 @@ async def test_no_prompt_while_the_window_covers_too_little_of_the_minute() -> N
 
 
 async def test_low_gaze_alone_is_not_enough_for_a_prompt() -> None:
-    """Gaze is one kind of evidence; Cyber 1's rule asks for two."""
+    """Gaze is one kind of evidence; Cyber 1's rule asks for two, one of them
+    participation, and never judges a student on the camera alone."""
     room, events, row = await _class(refocus_after=10.0)
     socket, student = await join_as(events, row.session_id, Role.STUDENT)
     await _record(room, row, student, _signal(gaze=0.0), _signal(gaze=0.0))
@@ -287,13 +308,14 @@ async def test_low_gaze_alone_is_not_enough_for_a_prompt() -> None:
 
     assert _prompts(socket) == []
     [scored] = room.engagement(row.session_id)
-    assert (scored.engagement.score, scored.engagement.signals_available) == (0.0, ["gaze"])
+    assert (scored.engagement.score, scored.engagement.signals_available) == (None, ["gaze"])
     await room.shutdown()
 
 
 async def test_no_prompt_from_the_signals_when_the_threshold_is_zero() -> None:
     room, events, row = await _class(refocus_after=0.0)
     socket, student = await join_as(events, row.session_id, Role.STUDENT)
+    _missed_two(room, row, student)
     await _record(room, row, student, AWAY, AWAY)
 
     await _watch(room, row)
@@ -307,6 +329,7 @@ async def test_no_prompt_while_the_session_is_paused() -> None:
     row = make_row()
     room.activate(row.session_id, paused=True)
     socket, student = await join_as(events, row.session_id, Role.STUDENT)
+    _missed_two(room, row, student)
     await _record(room, row, student, AWAY, AWAY)
 
     await _watch(room, row)
@@ -318,6 +341,7 @@ async def test_no_prompt_while_the_session_is_paused() -> None:
 async def test_no_prompt_over_a_question_the_student_has_still_to_answer() -> None:
     room, events, row = await _class(refocus_after=10.0, window=30.0)
     socket, student = await join_as(events, row.session_id, Role.STUDENT)
+    _missed_two(room, row, student)
     await _record(room, row, student, AWAY, AWAY)
     question = await deliver_next(room, row)
 
@@ -334,6 +358,7 @@ async def test_no_prompt_over_a_question_the_student_has_still_to_answer() -> No
 async def test_a_student_who_declined_monitoring_is_never_prompted_from_signals() -> None:
     room, events, row = await _class(refocus_after=10.0)
     socket, student = await join_as(events, row.session_id, Role.STUDENT)
+    _missed_two(room, row, student)
     await _record(room, row, student, AWAY, AWAY)
     # Declined on another device since: the registry is told, the window is not.
     room.consents.set(student, {TERMS, CAMERA, MICROPHONE})
@@ -348,6 +373,7 @@ async def test_a_student_who_declined_monitoring_is_never_prompted_from_signals(
 async def test_a_student_who_never_consented_has_no_signals_to_prompt_on() -> None:
     room, events, row = await _class(refocus_after=10.0)
     socket, student = await join_as(events, row.session_id, Role.STUDENT)
+    _missed_two(room, row, student)
     room.consents.set(student, {TERMS})
 
     assert not await room.record_attention(row.session_id, student, AWAY)
@@ -360,6 +386,7 @@ async def test_a_student_who_never_consented_has_no_signals_to_prompt_on() -> No
 async def test_a_student_who_is_looking_at_the_screen_is_never_prompted() -> None:
     room, events, row = await _class(refocus_after=10.0)
     socket, student = await join_as(events, row.session_id, Role.STUDENT)
+    _missed_two(room, row, student)
     await _record(room, row, student, ATTENTIVE, ATTENTIVE, ATTENTIVE)
 
     await _watch(room, row)
@@ -379,6 +406,7 @@ async def test_the_signals_must_be_low_themselves_not_only_the_score(
     are watching is not sent one."""
     room, events, row = await _class(refocus_after=10.0)
     socket, student = await join_as(events, row.session_id, Role.STUDENT)
+    _missed_two(room, row, student)
     live = room.get_running(row.session_id)
     assert live is not None
     now = classroom_module._now()  # noqa: SLF001
@@ -399,6 +427,7 @@ async def test_the_signals_must_be_low_themselves_not_only_the_score(
 async def test_ending_the_session_nudges_nobody() -> None:
     room, events, row = await _class(window=30.0, refocus_after=10.0)
     socket, student = await join_as(events, row.session_id, Role.STUDENT)
+    _missed_two(room, row, student)
     await _record(room, row, student, AWAY, AWAY)
     question = await deliver_next(room, row)
     await room.submit(row.session_id, student, Role.STUDENT, answer_to(question.question_id))

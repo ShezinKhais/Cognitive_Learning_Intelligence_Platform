@@ -26,7 +26,7 @@ from enum import StrEnum
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.content import MaterialStatus
 from app.schemas.session import EngagementStatus, SessionStatus, ShownText
@@ -163,7 +163,14 @@ class PromptAckPayload(BaseModel):
 
 
 class AttentionSignalPayload(BaseModel):
-    """Derived indicators only. Computed on the student's device."""
+    """Derived indicators only. Computed on the student's device.
+
+    Closed to anything else: a client that sends a field this does not name
+    (a frame, a landmark list, an identifier) is refused, not quietly ignored,
+    so nothing outside the allowlist can ride in on a valid event.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     gaze_on_screen_ratio: float | None = Field(default=None, ge=0.0, le=1.0)
     face_present: bool | None = None

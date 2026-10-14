@@ -49,6 +49,7 @@ from starlette.websockets import WebSocketState
 from app.api.deps import AppSettings, DbSession
 from app.auth.service import granted_consents, user_from_token
 from app.core.security import TokenValidationError
+from app.realtime.accommodations import has_accommodation
 from app.realtime.classroom import (
     ROOM_LABEL_INVALID,
     ROOM_LIMIT,
@@ -100,6 +101,13 @@ ROOM_REFUSALS = {
     ROOM_LABEL_INVALID: "that room label has nothing in it to show",
 }
 
+# The largest frame a client may send, text or binary. The biggest legitimate
+# event is a free-text answer (MAX_FREE_TEXT_LENGTH characters) in its envelope.
+# Anything larger is not a client of ours -- in particular, not a frame of video
+# or audio, which this server never accepts -- and the socket is closed.
+MAX_FRAME_BYTES = 64 * 1024
+CLOSE_TOO_BIG = 1009
+
 
 async def _send(
     websocket: WebSocket,
@@ -150,6 +158,13 @@ async def _receive_event(
         )
 
     text = message.get("text")
+    binary = message.get("bytes")
+
+    if (text is not None and len(text.encode("utf-8", errors="ignore")) > MAX_FRAME_BYTES) or (
+        binary is not None and len(binary) > MAX_FRAME_BYTES
+    ):
+        await websocket.close(code=CLOSE_TOO_BIG, reason="frame too large")
+        raise WebSocketDisconnect(CLOSE_TOO_BIG, "frame too large")
 
     if text is None:
         return None
@@ -285,6 +300,8 @@ async def session_socket(
                 refused = "not_a_session_member"
                 if row is not None:
                     await classroom.restore(db, row)
+                    if role is Role.STUDENT:
+                        classroom.accommodations.set(user_id, await has_accommodation(db, user_id))
         except Exception:
             log.exception("could not check membership of session %s", session_id)
             await websocket.close(

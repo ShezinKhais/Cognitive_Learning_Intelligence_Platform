@@ -94,6 +94,10 @@ class SignalWindow:
     def __len__(self) -> int:
         return len(self._samples)
 
+    def newest_at(self) -> datetime | None:
+        """When the newest summary held was received, or None with none."""
+        return self._samples[-1].at if self._samples else None
+
     def add(self, signal: AttentionSignalPayload, at: datetime, longest: float) -> None:
         """Keep a summary. `longest` caps the time one summary may claim to
         cover, so a client cannot outweigh a minute of honest summaries by

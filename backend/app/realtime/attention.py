@@ -34,6 +34,7 @@ from app.services.engagement import (
     EngagementInputs,
     compute_engagement,
 )
+from app.services.engagement_baseline import PersonalBaseline
 
 MAX_PROMPT_MESSAGE_LENGTH = 280
 
@@ -99,6 +100,10 @@ class _Student:
     score: ScoredStudent | None = None
     # When a prompt was last sent on the strength of the signals alone.
     refocused_at: datetime | None = None
+    # The student's own normal for this session, and the newest signal it
+    # learned from, so one reading is never counted twice.
+    baseline: PersonalBaseline = field(default_factory=PersonalBaseline)
+    baseline_from: datetime | None = None
 
     def current_signal(self, now: datetime) -> AttentionSignalPayload | None:
         """The student's recent signals as one, leaving out any too old to
@@ -106,7 +111,16 @@ class _Student:
         counting."""
         return self.signals.summary(now, timedelta(seconds=ATTENTION_SIGNAL_MAX_AGE_SECONDS))
 
-    def engagement(self, now: datetime) -> EngagementComputation:
+    def learn_baseline(self, now: datetime) -> None:
+        """Teach the baseline the student's recent signals, once per new
+        signal: a question closing with nothing new received adds nothing."""
+        signal = self.current_signal(now)
+        newest = self.signals.newest_at()
+        if signal is not None and newest != self.baseline_from:
+            self.baseline.record(signal.gaze_on_screen_ratio, signal.face_present)
+            self.baseline_from = newest
+
+    def engagement(self, now: datetime, accommodated: bool = False) -> EngagementComputation:
         return compute_engagement(
             EngagementInputs(
                 questions_shown=self.shown,
@@ -114,6 +128,8 @@ class _Student:
                 response_times=tuple(self.response_times),
                 prompt_responses=tuple(self.prompt_responses),
                 attention=self.current_signal(now),
+                baseline=self.baseline,
+                accommodated=accommodated,
             )
         )
 
@@ -239,11 +255,12 @@ class Attention:
         """Every student a signal is held for, recent or not."""
         return [user_id for user_id, s in self._students.items() if len(s.signals)]
 
-    def rescore(self, user_id: UUID, now: datetime) -> ScoredStudent:
+    def rescore(self, user_id: UUID, now: datetime, accommodated: bool = False) -> ScoredStudent:
         """Score the student again on what is known now, between questions.
-        Nothing is counted: only the signals have changed."""
+        Nothing is counted and the baseline learns nothing: only the signals
+        have changed, and the baseline learns once per question."""
         student = self._student(user_id)
-        student.score = ScoredStudent(user_id, student.engagement(now), now)
+        student.score = ScoredStudent(user_id, student.engagement(now, accommodated), now)
         return student.score
 
     def refocus_due(self, user_id: UUID, now: datetime, cooldown: timedelta) -> bool:
@@ -288,10 +305,13 @@ class Attention:
         answered: Set[UUID],
         timing: Mapping[UUID, float],
         now: datetime,
+        accommodated: Set[UUID] = frozenset(),
     ) -> list[ScoredStudent]:
         """Count a closed question towards everyone who was shown it, and
         rescore them. timing is the share of the window that had passed when
-        each answer arrived."""
+        each answer arrived. accommodated is who has a recorded accommodation:
+        their scoring leaves out the signals that assume one way of
+        interacting (see engagement.py)."""
         scored = []
         for user_id in shown | answered:
             student = self._student(user_id)
@@ -300,10 +320,20 @@ class Attention:
                 student.answered += 1
                 if user_id in timing:
                     student.response_times.append(timing[user_id])
-            student.score = ScoredStudent(user_id, student.engagement(now), now)
+            student.learn_baseline(now)
+            student.score = ScoredStudent(
+                user_id, student.engagement(now, user_id in accommodated), now
+            )
             scored.append(student.score)
         return scored
 
     def scores(self) -> list[ScoredStudent]:
         """The latest score of every student scored so far."""
         return [s.score for s in self._students.values() if s.score is not None]
+
+    def purge_visual(self, user_id: UUID) -> None:
+        """Forget what was learned from the student's camera, as their camera
+        consent is withdrawn. Their participation evidence stays."""
+        student = self._students.get(user_id)
+        if student is not None:
+            student.baseline.purge_visual()

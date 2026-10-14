@@ -133,6 +133,23 @@ class Settings(BaseSettings):
     # points: one saved without them has nothing to be marked against.
     free_text_questions_enabled: bool = False
 
+    # Describing the pictures in uploaded material with a local vision model,
+    # so diagrams can be searched and asked about. Off by default: on a laptop
+    # without a GPU each image takes seconds, and CI has no model at all.
+    image_captioning_enabled: bool = False
+    image_caption_model: str = "qwen2.5vl:3b"
+    # One image's caption, the whole of it. A slow image is left uncaptioned.
+    # Generous, because the first image of an upload also waits for the vision
+    # model to load: measured at 55 seconds on an M-series Mac.
+    image_caption_timeout_seconds: float = Field(default=120.0, gt=0)
+    # Images captioned per material, in reading order. A deck rarely has more
+    # diagrams worth describing, and the rest keep their placeholder.
+    image_caption_max_images: int = Field(default=40, ge=0)
+    # LibreOffice, for charts in WMF or EMF (often pasted from R or Excel),
+    # which can only be described once converted. Empty finds it on the PATH
+    # or in /Applications; without it those images are reported, not described.
+    libreoffice_path: str = ""
+
     # Written by `teams app create --env .env`
     client_id: str = ""
     client_secret: str = ""

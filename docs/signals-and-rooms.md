@@ -279,17 +279,21 @@ voice (`speaking` null) changes nothing.
 
 Every `SIGNAL_WATCH_SECONDS` a running session that has had a signal or a room
 looks at its signals. For each connected student who has consented to
-monitoring it rescores them from the signals alone, and sends them
+monitoring it rescores them on what is known now, and sends them
 `prompt.attention` only when all of these hold:
 
 - Their signals cover at least `REFOCUS_MIN_SIGNAL_SECONDS` of the window
   (below). 0 turns prompting from signals off.
-- The signals alone, scored by the engagement rule, fall short of engaged
-  (below 0.6). A window with neither gaze nor a face is not low.
+- The signals alone fall short of engaged: the mean of the gaze ratio and
+  face presence, weighed equally, is below 0.6. A window with neither gaze nor
+  a face is not low.
 - Engagement scoring, on everything it knows, says at risk or disengaged and
-  rests on at least two kinds of evidence. That is Cyber 1's rule
-  (`should_send_dynamic_prompt` in `services/engagement.py`): gaze alone is
-  never enough.
+  rests on at least two kinds of evidence, one of them participation (attempt
+  rate, answer timing or prompt responses). That is Cyber 1's rule
+  (`should_send_dynamic_prompt` in `services/engagement.py`): the camera alone
+  is never enough, so a student who is answering is not prompted for looking
+  away, and a student with a recorded accommodation is never prompted
+  automatically.
 - No prompt has been sent on the signals within `REFOCUS_COOLDOWN_SECONDS`.
 - The limits every prompt obeys: the session is not paused, the student has no
   open question left to answer, no earlier prompt is waiting on them, and they
@@ -320,8 +324,11 @@ moment. Scoring reads a rolling window instead:
 
 Scoring (`compute_engagement`, Cyber 1) is unchanged: the score is the mean of
 the evidence available, a signal with no evidence is dropped and not counted as
-zero, and the status is `engaged` from 0.6, `at_risk` from 0.3 and
-`disengaged` below that, `disengaged` needing two kinds of evidence.
+zero, a student with only camera evidence is not scored, and the status is
+`engaged` from 0.6, `at_risk` from 0.3 and `disengaged` below that,
+`disengaged` needing two kinds of evidence. Gaze is read against the student's
+own baseline, which learns from the window once per question close and once
+per new signal, never from the watch.
 
 The watch rescores between questions as well as at each question close, so
 `GET /sessions/{session_id}/engagement` reflects the signals as they stand. As
@@ -433,8 +440,10 @@ for it is not sent again: read the alerts route for it.
 **Cyber 1.** The prompt gate calls your `compute_engagement` and
 `should_send_dynamic_prompt`; the thresholds (0.6, 0.3), `MIN_SIGNALS_FOR_PROMPT`
 and `ATTENTION_SIGNAL_MAX_AGE_SECONDS` (the window) are yours. The watch adds
-only the minimum signal time and the cooldown. Nothing here compares a student
-with their own earlier readings; a baseline would be a change to your rule.
+only the minimum signal time, the cooldown and the check that the signals
+themselves are low. Your personal baseline is fed the window's summary rather
+than a single reading, and the watch passes your accommodation flag to the
+scorer as a question close does.
 
 **BBIS.** Attention reaches your layer as the per-minute summaries in
 `attention_signal_summary`, through the `AttentionRecorder` seam described in
