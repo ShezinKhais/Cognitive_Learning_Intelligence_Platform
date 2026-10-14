@@ -225,15 +225,17 @@ and the correct answer is revealed when the window closes.
 |   |   +-- schemas/         request, response and event contracts
 |   |   +-- services/        extraction, storage, jobs, pipeline, lifecycle, Teams bot
 |   +-- migrations/          Alembic migrations
-|   +-- scripts/             contract export, Teams packaging, mock meeting driver
+|   +-- scripts/             contract export, Teams packaging, mock meeting driver,
+|   |                        load test (scripts/loadtest/), deployment smoke test
 |   +-- tests/               pytest, mirroring the app layout
 |   +-- openapi.json         REST contract, generated
 |   +-- events.schema.json   WebSocket contract, generated
 +-- frontend/                React app: student, lecturer and admin interfaces
 +-- teams-app/               Teams manifest, icons and packaging notes
 +-- samples/                 example timetable and roster CSVs
-+-- docs/images/             architecture and design diagrams
++-- docs/                    reference documents; docs/images/ has the diagrams
 +-- docker-compose.yml       PostgreSQL with pgvector
++-- docker-compose.demo.yml  database, backend and web on one machine, see docs/deployment.md
 ```
 
 ## Features
@@ -244,6 +246,10 @@ and the correct answer is revealed when the window closes.
 - Answer live checkpoints in the Teams meeting side panel
 - Private feedback on each answer, and the correct answer when the question closes
 - Private attention prompts, answered with "I'm here" or dismissed
+- Attention signals, worked out on the device and sent as numbers, each kind only with
+  its own consent (accepted by the backend; the student app does not send them yet)
+- A private prompt when those signals stay low, and a way to say which breakout room
+  they are in (backend only)
 - Classes resume where they left off after a dropped connection
 - Personal performance summary after the session (planned, Phase 7)
 - Socratic chatbot that gives hints rather than answers (planned, Phase 5)
@@ -257,14 +263,20 @@ and the correct answer is revealed when the window closes.
 - Live view of who is present, who answered and how the class is doing
 - Class comprehension alerts with the reason for each
 - Link a session to a Teams meeting so the meeting starts and ends it (Phase 4)
-- Breakout room facilitation (planned, Phase 6)
+- Breakout room status, and an alert when a room has been silent too long, sent over
+  the live socket (no lecturer screen for them yet)
+- A session report, built in the background and downloaded as a PDF (backend only, no
+  report screen yet)
 
 ### Administrator
 
 - Import the timetable and student rosters from CSV, which create courses, users and
   enrolments
 - System status: database and model availability
-- Audit logs and data retention governance (planned, Phase 7)
+- Data retention: a scheduled purge deletes stored upload files older than
+  `DATA_RETENTION_DAYS`. Database tables are purged once BBIS registers their tasks.
+  There is no admin screen for it yet.
+- Audit logs (planned, Phase 7)
 
 ## API Endpoints
 
@@ -299,7 +311,10 @@ will implement them.
 | POST | `/sessions/{session_id}/questions/{question_id}:deliver` | lecturer, admin | Send a question now |
 | GET | `/sessions/{session_id}/responses` | lecturer, admin | Answers received (**501**, BBIS, Phase 3) |
 | GET | `/sessions/{session_id}/engagement` | lecturer, admin | Engagement score per student |
-| GET | `/sessions/{session_id}/alerts` | lecturer, admin | Class comprehension alerts |
+| GET | `/sessions/{session_id}/alerts` | lecturer, admin | Class comprehension alerts, and breakout room alerts |
+| POST | `/sessions/{session_id}/reports` | lecturer, admin | Ask for a session report (202) |
+| GET | `/reports/{report_id}` | lecturer, admin | Where a report has got to, and the report once ready |
+| GET | `/reports/{report_id}/pdf` | lecturer, admin | The finished report as a PDF |
 | GET | `/sessions/{session_id}/summary/{student_id}` | student, staff | Performance summary (**501**, Cyber 1, Phase 7) |
 | WS | `/ws/session` | token | Live classroom events, see `events.schema.json` |
 
@@ -478,9 +493,9 @@ rather than a component, so every phase ends with something that runs end to end
 | 3 | Live session core: WebSocket hub, question cycle, session lifecycle | In progress |
 | 4 | Microsoft Teams integration | In progress |
 | 5 | AI intelligence layer: free-text classification, Socratic chatbot | Planned |
-| 6 | Attention signals and breakout groups | Planned |
-| 7 | Reporting, retention and governance | Planned |
-| 8 | Hardening, load testing and delivery | Planned |
+| 6 | Attention signals and breakout groups | In progress |
+| 7 | Reporting, retention and governance | In progress |
+| 8 | Hardening, load testing and delivery | In progress |
 
 ![Project timeline](docs/images/gantt.png)
 
@@ -497,6 +512,21 @@ rather than a component, so every phase ends with something that runs end to end
 | Test Plan | `TBD` |
 | Final Report | `TBD` |
 | Poster | `TBD` |
+
+### Reference documents
+
+Written alongside the code, in `docs/`:
+
+| Document | Covers |
+|---|---|
+| [AI gateway](docs/ai-gateway.md) | The one route every model call takes: queue, deadlines, retries, fallback |
+| [Tutor chat](docs/tutor-chat.md) | `POST /sessions/{session_id}/chat` and what the tutor may be told |
+| [Attention signals](docs/attention-signals.md) | How `signal.attention` becomes per-minute summaries for the analytics layer |
+| [Attention signals and breakout rooms](docs/signals-and-rooms.md) | `signal.attention`, `room.confirm`, `room.status`, private refocus prompts and room alerts |
+| [Reports and scheduled jobs](docs/reports.md) | The session report and its PDF, the scheduler and the retention purge |
+| [Deployment](docs/deployment.md) | Running the stack outside development |
+| [Load and recovery](docs/load-and-recovery.md) | The load-test harness and how the system behaves under failure |
+| [Teams frontend security](docs/teams-frontend-security.md) | Deployment security requirements for the Teams tab |
 
 ## Team
 
