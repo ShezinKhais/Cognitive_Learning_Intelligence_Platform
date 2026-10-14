@@ -21,6 +21,7 @@ from app.models.comprehension_result import ComprehensionResult
 from app.models.delivered_question import DeliveredQuestion
 from app.models.missed_response import MissedResponse
 from app.models.question import Question
+from app.models.session import Session as SessionModel
 from app.models.student import Student
 from app.models.student_response import StudentResponse
 from app.models.user import User
@@ -120,7 +121,15 @@ class World:
         await missed(self.factory, self.session_id, self.q3, self.student_a)
         # B answered one thing.
         await answered(self.factory, self.session_id, self.student_b, self.q2, "partial")
+        await self.set_status("ended")
         return self
+
+    async def set_status(self, status: str, session_id: UUID | None = None) -> None:
+        async with self.factory() as seed:
+            row = await seed.get(SessionModel, session_id or self.session_id)
+            row.status = status
+            row.ended_at = datetime.now(UTC) if status == "ended" else None
+            await seed.commit()
 
     def path(self, student_id: UUID | None = None, session_id: UUID | None = None) -> str:
         session = session_id or self.session_id
@@ -264,11 +273,17 @@ async def test_a_failure_to_write_the_audit_row_does_not_block_the_read(
 # -- engagement ------------------------------------------------------------------------------
 
 
-def _live_score(user_id: UUID, status: EngagementStatus, score: float, signals: list[str]):  # noqa: ANN202
+def _live_score(
+    user_id: UUID,
+    status: EngagementStatus,
+    score: float,
+    signals: list[str],
+    confidence: float = 0.5,
+):  # noqa: ANN202
     return ScoredStudent(
         user_id,
         EngagementComputation(
-            score=score, status=status, confidence=0.5, signals_available=signals
+            score=score, status=status, confidence=confidence, signals_available=signals
         ),
         datetime.now(UTC),
     )
@@ -277,7 +292,7 @@ def _live_score(user_id: UUID, status: EngagementStatus, score: float, signals: 
 async def test_engagement_is_reported_only_to_a_student_who_consented(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    live = _live_score(world.user_a, EngagementStatus.ENGAGED, 0.9, ["attempt_rate"])
+    live = _live_score(world.user_a, EngagementStatus.ENGAGED, 0.9, ["attempt_rate", "gaze"], 0.9)
     monkeypatch.setattr(classroom_module.classroom, "engagement", lambda sid: [live])
     world.as_(LECTURER_ID, Role.LECTURER)
     repo = get_consent_repository(get_settings())
@@ -293,6 +308,10 @@ async def test_engagement_is_reported_only_to_a_student_who_consented(
     repo.record(world.user_a, ConsentType.ENGAGEMENT_MONITORING, True)
     with_consent = world.get().json()["engagement"]
     assert (with_consent["status"], with_consent["score"]) == ("engaged", 0.9)
+    # The same view staff get on /engagement: no per-signal detail, no camera,
+    # so an accommodation cannot be read from it.
+    assert with_consent["signals_available"] == ["participation"]
+    assert with_consent["confidence"] == 0.5
     repo.record(world.user_a, ConsentType.ENGAGEMENT_MONITORING, False)
 
 
@@ -344,19 +363,21 @@ async def test_a_topic_name_that_is_an_attack_never_reaches_the_summary(world: W
     assert "ignore" not in str(body).lower()
 
 
-async def test_a_topic_with_only_uncertain_labels_is_not_reported(world: World) -> None:
+async def test_a_topic_with_only_uncertain_labels_is_reported_but_not_suggested(
+    world: World,
+) -> None:
     q = await add_question(
-        world.client and (world.client, world.factory, world.created),
-        world.course,
-        LECTURER_ID,
-        status="delivered",
+        (world.client, world.factory, world.created), world.course, LECTURER_ID, status="delivered"
     )
     await set_topic(world.factory, q, "Trees")
     await answered(world.factory, world.session_id, world.student_a, q, "struggling", 0.2)
     world.as_(world.user_a, Role.STUDENT)
     body = world.get().json()
-    assert "Trees" not in body["comprehension_by_topic"]
-    assert body["questions_attempted"] == 3  # still counted as attempted
+    # Counted as in the class view and the written summary...
+    assert body["comprehension_by_topic"]["Trees"] == "struggling"
+    assert body["questions_attempted"] == 3
+    # ...but the classifier was not sure, so nothing is suggested about it.
+    assert "Trees" not in [i["topic"] for i in body["action_items"]]
 
 
 async def test_the_response_has_no_field_that_merges_engagement_and_comprehension(
@@ -380,7 +401,7 @@ async def test_a_summary_that_fails_its_checks_is_reduced_not_served(
 ) -> None:
     from app.services import student_report
 
-    def hostile(labels, missed):  # noqa: ANN001, ANN202
+    def hostile(labels, missed, confident=None):  # noqa: ANN001, ANN202
         from app.schemas.session import ActionItem
 
         return [ActionItem(kind="review_missed", text="You are lazy and unmotivated.")]
@@ -404,3 +425,26 @@ async def test_a_partial_topic_is_suggested_for_practice(world: World) -> None:
     world.as_(world.user_b, Role.STUDENT)
     [item] = [i for i in world.get(student_id=world.student_b).json()["action_items"]]
     assert item["text"].startswith("Practise Loops")
+
+
+@pytest.mark.parametrize("status", ["prepared", "active", "ending", "cancelled"])
+async def test_no_summary_is_served_until_the_session_has_ended(world: World, status: str) -> None:
+    await world.set_status(status)
+    missing = world.get(student_id=uuid4())
+    for user, role in (
+        (world.user_a, Role.STUDENT),
+        (LECTURER_ID, Role.LECTURER),
+        (ADMIN_ID, Role.ADMIN),
+    ):
+        world.as_(user, role)
+        response = world.get()
+        assert response.status_code == 404, (status, role)
+        assert response.json()["error"]["message"] == missing.json()["error"]["message"]
+
+
+async def test_the_summary_appears_once_the_session_ends(world: World) -> None:
+    await world.set_status("active")
+    world.as_(world.user_a, Role.STUDENT)
+    assert world.get().status_code == 404
+    await world.set_status("ended")
+    assert world.get().status_code == 200

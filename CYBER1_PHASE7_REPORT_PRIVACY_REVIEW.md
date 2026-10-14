@@ -27,14 +27,22 @@ Branch `hunain-phase-7`, built on `main`. Location named by the issue:
 * **Action items** (additive `action_items` field): fixed templates filled with a counted
   number or a screened topic name. Struggling topics first, then partial, then missed
   questions, capped at 5.
-* **Fair labels**: a student's topic label is their own average on the same thirds as the
-  class topic difficulty; uncertain classifications (< 0.6) are ignored and a topic with
-  only uncertain labels is left out rather than shown as a weakness.
+* **Same labels everywhere**: a student's topic label is their own average on the same thirds as the
+  class topic difficulty, counting every classified answer exactly as `topic_difficulty` and AI 1's
+  student summary do, so one student never reads two different labels. How sure the classifier was
+  decides only what is *suggested*: a topic is turned into an action item only when at least one of
+  its answers was classified with confidence >= 0.6.
+* **Post-session only (REQ-1.10)**: nothing is served until the session has ended. A prepared,
+  active, ending or cancelled session answers with the same 404 as a session that does not exist.
 * **Access and privacy**: a student reads only their own summary; the lecturer who runs the
   session or an admin read any student on its course; every other case (other lecturer,
   other student, other course, unknown ids) is the same 404. Engagement is included only
   if the student currently consents to engagement monitoring, and only from the running
   class's own score; otherwise it reads `insufficient_data` with no signals.
+* **No per-signal engagement detail**: the engagement block uses the same staff view as
+  `/engagement` (`engagement_view.py`, identical to #143's): `signals_available` is
+  `['participation']` or empty and `confidence` is 0, 0.5 or 1, the same for every student,
+  so a summary cannot reveal that an accommodation rule applied.
 * **Audit**: staff reading a student's summary leave a `security_event=STUDENT_SUMMARY_VIEWED`
   log line (viewer, student, session) and an `audit_log` row (viewer, action, IP). Reading
   your own leaves none. A failed audit write never blocks the read.

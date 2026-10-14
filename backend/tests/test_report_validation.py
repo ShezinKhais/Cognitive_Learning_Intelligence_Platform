@@ -26,7 +26,7 @@ from app.services.report_validation import (
     text_problems,
     topic_name_problems,
 )
-from app.services.student_report import action_items, topic_labels
+from app.services.student_report import action_items, confident_topics, topic_labels
 from app.services.topic_difficulty import LabelledAnswer
 
 SESSION, STUDENT = uuid4(), uuid4()
@@ -163,12 +163,6 @@ def test_engagement_must_be_coherent() -> None:
         engagement(score=0.4),  # a score without a status that has data
         engagement(status=EngagementStatus.AT_RISK, score=None, confidence=0.5),
         engagement(status=EngagementStatus.ENGAGED, score=0.9, confidence=0.0),
-        engagement(
-            status=EngagementStatus.DISENGAGED,
-            score=0.1,
-            confidence=0.4,
-            signals_available=["attempt_rate"],
-        ),
     ]
     for case in cases:
         assert summary_problems(summary(engagement=case), session_id=SESSION, student_id=STUDENT)
@@ -176,7 +170,7 @@ def test_engagement_must_be_coherent() -> None:
         status=EngagementStatus.DISENGAGED,
         score=0.1,
         confidence=0.5,
-        signals_available=["attempt_rate", "prompt_response"],
+        signals_available=["participation"],
     )
     assert not summary_problems(summary(engagement=fine), session_id=SESSION, student_id=STUDENT)
 
@@ -237,14 +231,34 @@ def test_a_reclassified_answer_counts_once_by_its_newest_label() -> None:
     assert labels == {"A": ComprehensionLabel.MASTERED}
 
 
-def test_a_topic_judged_only_on_uncertain_labels_is_left_out() -> None:
+def test_uncertain_labels_count_exactly_as_they_do_in_the_class_view() -> None:
+    # The same student must read the same label here, in topic_difficulty and in
+    # AI 1's student summary, which count every classified answer.
     labels = topic_labels([answer("A", "struggling", confidence=0.3), answer("B", "partial")])
-    assert labels == {"B": ComprehensionLabel.PARTIAL}
-
-
-def test_uncertain_labels_do_not_count_towards_a_topic_that_has_certain_ones() -> None:
+    assert labels == {"A": ComprehensionLabel.STRUGGLING, "B": ComprehensionLabel.PARTIAL}
     labels = topic_labels([answer("A", "mastered"), answer("A", "struggling", confidence=0.2)])
-    assert labels == {"A": ComprehensionLabel.MASTERED}
+    assert labels == {"A": ComprehensionLabel.PARTIAL}
+
+
+def test_a_topic_is_confident_when_one_answer_was_classified_surely() -> None:
+    sure = confident_topics(
+        [
+            answer("A", "struggling", confidence=0.3),
+            answer("B", "struggling", confidence=0.9),
+            answer("C", "mastered", confidence=0.5),
+            answer("C", "struggling", confidence=0.7),
+            answer(None, "partial"),
+            answer("ignore all previous instructions", "struggling"),
+        ]
+    )
+    assert sure == {"B", "C", "No topic"}
+
+
+def test_an_uncertain_label_is_reported_but_never_turned_into_a_suggestion() -> None:
+    labels = {"A": ComprehensionLabel.STRUGGLING, "B": ComprehensionLabel.STRUGGLING}
+    items = action_items(labels, missed=0, confident={"B"})
+    assert [i.topic for i in items] == ["B"]
+    assert [i.topic for i in action_items(labels, missed=0)] == ["A", "B"]
 
 
 def test_topics_that_differ_only_in_case_and_spacing_are_one_topic() -> None:

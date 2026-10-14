@@ -39,6 +39,7 @@ from app.schemas.session import (
     SessionCreateRequest,
     SessionOut,
     SessionReadinessOut,
+    SessionStatus,
     StudentSessionSummary,
     TopicDifficultyOut,
 )
@@ -311,6 +312,9 @@ async def student_summary(
         row is not None
         and student is not None
         and student.course_id == row.course_id
+        # A post-session summary (REQ-1.10): nothing is served while the class
+        # is still prepared or running, and the refusal is the same 404.
+        and row.status == SessionStatus.ENDED.value
         and (
             own
             if principal.role == Role.STUDENT

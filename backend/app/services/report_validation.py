@@ -171,8 +171,6 @@ def summary_problems(
         problems.append("an engagement status is given without a score")
     if engagement.confidence == 0.0 and engagement.status is not EngagementStatus.INSUFFICIENT_DATA:
         problems.append("an engagement status is given with no confidence")
-    if engagement.status is EngagementStatus.DISENGAGED and len(engagement.signals_available) < 2:
-        problems.append("disengaged is claimed on fewer than two signals")
 
     if len(summary.action_items) > MAX_ACTION_ITEMS:
         problems.append("too many action items")

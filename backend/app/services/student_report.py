@@ -41,6 +41,7 @@ from app.schemas.session import (
     EngagementStatus,
     StudentSessionSummary,
 )
+from app.services.engagement_view import staff_confidence, staff_signals
 from app.services.report_validation import MAX_ACTION_ITEMS, summary_problems, topic_name_problems
 from app.services.text_screening import safe_display_text
 from app.services.topic_difficulty import (
@@ -61,12 +62,15 @@ MAX_TOPIC_NAME_LENGTH = 80
 
 def topic_labels(answers: list[LabelledAnswer]) -> dict[str, ComprehensionLabel]:
     """One label per topic from a student's own answers: their average, read on
-    the same thirds as the class's topic difficulty. Uncertain labels are
-    ignored, and a topic with nothing else is left out."""
+    the same thirds as the class's topic difficulty. Every classified answer
+    counts, uncertain or not, exactly as topic_difficulty and AI 1's student
+    summary count them, so the same student reads the same label everywhere.
+    How sure the classifier was is kept apart (confident_topics) and decides
+    only what the report *suggests*, not what it says happened."""
     names: dict[str, str] = {}
     weights: dict[str, list[float]] = defaultdict(list)
     for answer in latest_answers(answers):
-        if answer.label not in LABEL_WEIGHT or answer.confidence < UNCERTAIN_BELOW:
+        if answer.label not in LABEL_WEIGHT:
             continue
         key = topic_key(answer.topic)
         if key not in names:
@@ -92,11 +96,34 @@ def topic_labels(answers: list[LabelledAnswer]) -> dict[str, ComprehensionLabel]
     return labels
 
 
-def action_items(labels: dict[str, ComprehensionLabel], missed: int) -> list[ActionItem]:
+def confident_topics(answers: list[LabelledAnswer]) -> set[str]:
+    """The (safely shown) topics where at least one of the student's answers was
+    classified with enough confidence to act on."""
+    found: set[str] = set()
+    for answer in latest_answers(answers):
+        if answer.label in LABEL_WEIGHT and answer.confidence >= UNCERTAIN_BELOW:
+            key = topic_key(answer.topic)
+            shown = (
+                NO_TOPIC
+                if not key
+                else safe_display_text(answer.topic, limit=MAX_TOPIC_NAME_LENGTH)
+            )
+            if shown is not None:
+                found.add(shown)
+    return found
+
+
+def action_items(
+    labels: dict[str, ComprehensionLabel],
+    missed: int,
+    confident: set[str] | None = None,
+) -> list[ActionItem]:
     """Next steps from comprehension and missed questions, and nothing else.
 
     Topics the student is struggling with first, then partial ones, then missed
-    questions; at most MAX_ACTION_ITEMS.
+    questions; at most MAX_ACTION_ITEMS. A topic is only suggested for review
+    when the classifier was sure of at least one answer on it (confident=None
+    means every topic): an uncertain label is reported, not acted on.
     """
     items: list[ActionItem] = []
     for wanted, text in (
@@ -110,7 +137,7 @@ def action_items(labels: dict[str, ComprehensionLabel], missed: int) -> list[Act
         ),
     ):
         for topic, label in sorted(labels.items()):
-            if label is wanted:
+            if label is wanted and (confident is None or topic in confident):
                 items.append(
                     ActionItem(kind="revisit_topic", text=text.format(topic=topic), topic=topic)
                 )
@@ -164,8 +191,10 @@ def engagement_of(
                     session_id=session_id,
                     score=scored.engagement.score,
                     status=scored.engagement.status,
-                    confidence=scored.engagement.confidence,
-                    signals_available=scored.engagement.signals_available,
+                    # The same view staff get on /engagement, for every student:
+                    # see engagement_view.py.
+                    confidence=staff_confidence(scored.engagement.signals_available),
+                    signals_available=staff_signals(scored.engagement.signals_available),
                     computed_at=scored.scored_at,
                 )
     return no_engagement(session_id, student_id)
@@ -224,7 +253,7 @@ async def build_student_summary(
         questions_missed=missed,
         engagement=engagement_of(session_id, student_id, user_id, may_report=engagement_consented),
         comprehension_by_topic=labels,
-        action_items=action_items(labels, missed),
+        action_items=action_items(labels, missed, confident_topics(answers)),
     )
     problems = summary_problems(summary, session_id=session_id, student_id=student_id)
     if problems:
