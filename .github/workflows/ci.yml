@@ -75,7 +75,38 @@ jobs:
       # blatant type error, so the typecheck has to go through the references.
       - run: npx tsc -b
       - run: npm run lint
+      - run: npm test
       - run: npm run build
+
+  student-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chrome, edge]
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Install browser
+        run: npx playwright install --with-deps ${{ matrix.browser == 'edge' && 'msedge' || 'chrome' }}
+      - run: npm run test:browser -- --project=${{ matrix.browser }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: student-browser-${{ matrix.browser }}
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          retention-days: 14
 
   manifest:
     runs-on: ubuntu-latest

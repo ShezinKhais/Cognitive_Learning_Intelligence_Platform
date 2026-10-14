@@ -40,7 +40,8 @@ export function SocraticChatPanel({
   const active = Boolean(state.activeId)
 
   useEffect(() => {
-    end.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    end.current?.scrollIntoView({ behavior: reducedMotion ? 'instant' : 'smooth', block: 'nearest' })
   }, [state.exchanges])
 
   function onSubmit(event: FormEvent) {
@@ -115,7 +116,7 @@ export function SocraticChatPanel({
           value={state.draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
+            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault()
               event.currentTarget.form?.requestSubmit()
             }
