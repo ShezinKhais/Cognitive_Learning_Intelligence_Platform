@@ -217,6 +217,14 @@ attempts, so phrase rules do not carry over; the model stopped 6 more. The 3
 attempts that still work are keyword lists dressed as sentences
 ("Regularisation. Overfitting. Penalty.").
 
+Since review (v6): marking a bare keyword list struggling without the model
+also failed short correct sentences ("Dropout prevents co adaptation"), so
+such an answer now goes to the model with its confidence capped at 0.6 and a
+note, and two broad screening rules ("see the reference answer", any closing
+tag such as `</p>`) were narrowed. The two keyword-list attempts (x04, x18) are
+therefore no longer stopped before the model; the table above is v5 and is
+to be rerun on v6.
+
 ## 6. Summaries
 
 Are the lecturer and student summaries true to the data? Code counts the

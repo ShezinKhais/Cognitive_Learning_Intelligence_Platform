@@ -7,6 +7,7 @@ last few run the real program and are skipped where it is not installed.
 from __future__ import annotations
 
 import io
+import os
 import subprocess
 import uuid
 
@@ -18,6 +19,7 @@ from app.services import ocr
 from app.services.extraction import (
     IMAGE_ONLY_PAGE,
     NO_OCR_NOTE,
+    OcrBudget,
     extract,
     extract_material,
     process_material,
@@ -215,7 +217,11 @@ def test_an_oversized_or_broken_image_is_never_sent(monkeypatch):
 
 # --- the real program, where installed --------------------------------------
 
-needs_tesseract = pytest.mark.skipif(find_tesseract() is None, reason="Tesseract not installed")
+# CI installs Tesseract, so there a missing program fails the test rather
+# than skipping it: the real OCR path is always run somewhere.
+needs_tesseract = pytest.mark.skipif(
+    find_tesseract() is None and not os.environ.get("CI"), reason="Tesseract not installed"
+)
 
 
 @needs_tesseract
@@ -225,3 +231,30 @@ def test_real_tesseract_reads_a_scanned_page(tmp_path):
     text = result.chunks[0].chunk_text.lower()
     assert "logistic regression" in text
     assert "binary outcome" in text
+
+
+# --- review of #148: failures are reported, and time is bounded --------------
+
+
+def test_ocr_that_finds_nothing_on_every_page_is_reported():
+    budget = OcrBudget(lambda image: "")
+    for _ in range(3):
+        budget(b"page")
+    assert budget.read_pages == 0
+    assert any("3 scanned page(s) were tried with OCR but no text" in n for n in budget.notes())
+
+
+def test_ocr_stops_at_the_per_material_deadline():
+    now = [0.0]
+
+    def slow_read(image):
+        now[0] += 120.0
+        return "Logistic regression predicts a binary outcome from predictors."
+
+    budget = OcrBudget(slow_read, clock=lambda: now[0])
+    texts = [budget(b"page") for _ in range(5)]
+    # 0 s, 120 s and 240 s start a page; at 360 s the 300 s deadline has passed.
+    assert budget.read_pages == 3
+    assert texts[3:] == ["", ""]
+    assert budget.over_time == 2
+    assert any("stops after 300 seconds" in n for n in budget.notes())

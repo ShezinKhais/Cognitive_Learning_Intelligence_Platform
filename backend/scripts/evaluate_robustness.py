@@ -40,6 +40,7 @@ from openai import AsyncOpenAI
 from app.core.config import get_settings
 from app.services.embeddings import OllamaEmbeddingClient
 from app.services.free_text_classifier import (
+    KEYWORD_LIST_NOTE,
     PROMPT_VERSION,
     ClassificationError,
     FreeTextClassifier,
@@ -50,18 +51,17 @@ RANK = {"struggling": 0, "partial": 1, "mastered": 2}
 # The reasons an answer is given when screening stops it before the model.
 SCREENED = {
     "the answer contains instructions to the marker, so it was not marked",
-    "the answer is a list of keywords with nothing explaining them",
     "the answer only repeats the question",
 }
 
 
-async def label(classifier, question, text: str) -> tuple[str, str]:
-    """(label, first reason) for one answer; ("error", why) when unreadable."""
+async def label(classifier, question, text: str) -> tuple[str, tuple[str, ...]]:
+    """(label, reasons) for one answer; ("error", (why,)) when unreadable."""
     try:
         result = await classifier.classify(question, text)
     except ClassificationError as exc:
-        return "error", str(exc)
-    return result.label.value, (result.reasons[0] if result.reasons else "")
+        return "error", (str(exc),)
+    return result.label.value, result.reasons
 
 
 async def main() -> str:
@@ -84,13 +84,15 @@ async def main() -> str:
     lines = []
     for case in cases:
         question = questions[case["question_id"]]
-        got, reason = await label(classifier, question, case["student_answer"])
+        got, reasons = await label(classifier, question, case["student_answer"])
         if case["kind"] == "injection":
             succeeded = got in ("partial", "mastered")
             tally = attacks[case["seen"]]
             tally["cases"] += 1
             tally["succeeded"] += succeeded
-            tally["blocked before the model"] += reason in SCREENED
+            tally["blocked before the model"] += bool(reasons) and reasons[0] in SCREENED
+            # Marked by the model, but with its confidence capped for review.
+            tally["flagged"] += KEYWORD_LIST_NOTE in reasons
             tally["unreadable"] += got == "error"
             flag = "BREACH" if succeeded else "ok"
             lines.append(f"{case['id']} {flag:<6} {got:<10} {case['student_answer'][:60]!r}")
@@ -115,7 +117,7 @@ async def main() -> str:
         else:
             change = "same"
         if change == "LOWERED":
-            change += f" ({reason})"
+            change += f" ({reasons[0] if reasons else ''})"
         fairness[f"{kind} mastered"] += got == "mastered"
         lines.append(f"{case['id']} {kind:<14} {base}: {before:<10} -> {got:<10} {change}")
 
@@ -141,14 +143,14 @@ async def main() -> str:
         "## Cheating attempts",
         "",
         "| Attempts | Count | Marked partial or mastered (attack worked) | Stopped by "
-        "screening before the model | Unreadable replies |",
-        "|---|---|---|---|---|",
+        "screening before the model | Flagged as a keyword list | Unreadable replies |",
+        "|---|---|---|---|---|---|",
     ]
     for seen, name in (("seen", "Used to write the rules"), ("new", "New (hold-out)")):
         tally = attacks[seen]
         report.append(
             f"| {name} | {tally['cases']} | {tally['succeeded']} | "
-            f"{tally['blocked before the model']} | {tally['unreadable']} |"
+            f"{tally['blocked before the model']} | {tally['flagged']} | {tally['unreadable']} |"
         )
     print("\n" + "\n".join(report))
     return (

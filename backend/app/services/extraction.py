@@ -28,6 +28,7 @@ from __future__ import annotations
 import io
 import logging
 import re
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -765,21 +766,36 @@ def _run_reader(reader, path: str, **options) -> list[ExtractedElement]:
 
 
 class OcrBudget:
-    """Reads at most MAX_OCR_PAGES pages with OCR, and counts what it did."""
+    """Reads at most MAX_OCR_PAGES pages with OCR, within MAX_OCR_SECONDS per
+    material, and counts what it did."""
 
-    def __init__(self, read: Callable[[bytes], str]) -> None:
-        from app.services.ocr import MAX_OCR_PAGES, has_text
+    def __init__(
+        self,
+        read: Callable[[bytes], str],
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        from app.services.ocr import MAX_OCR_PAGES, MAX_OCR_SECONDS, has_text
 
         self._read = read
         self._has_text = has_text
         self._limit = MAX_OCR_PAGES
+        self._seconds = MAX_OCR_SECONDS
+        self._clock = clock
+        self._deadline: float | None = None
         self.read_pages = 0
         self.attempted = 0
         self.over_limit = 0
+        self.over_time = 0
 
     def __call__(self, image: bytes) -> str:
         if self.attempted >= self._limit:
             self.over_limit += 1
+            return ""
+        now = self._clock()
+        if self._deadline is None:
+            self._deadline = now + self._seconds
+        elif now >= self._deadline:
+            self.over_time += 1
             return ""
         self.attempted += 1
         text = self._read(image)
@@ -794,10 +810,23 @@ class OcrBudget:
                 f"{self.read_pages} scanned page(s) were read with OCR; "
                 "check them for misread words."
             )
+        unread = self.attempted - self.read_pages
+        if unread:
+            # OCR failed or timed out, or the page is a picture with no text:
+            # either way the lecturer should know it was tried.
+            notes.append(
+                f"{unread} scanned page(s) were tried with OCR but no text was found; "
+                "check that they are readable."
+            )
         if self.over_limit:
             notes.append(
                 f"{self.over_limit} scanned page(s) were not read: only the first "
                 f"{self._limit} are, per material."
+            )
+        if self.over_time:
+            notes.append(
+                f"{self.over_time} scanned page(s) were not read: OCR stops after "
+                f"{self._seconds:.0f} seconds per material."
             )
         return notes
 

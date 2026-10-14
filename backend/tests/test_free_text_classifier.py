@@ -11,6 +11,8 @@ import pytest
 
 from app.schemas.session import ComprehensionLabel
 from app.services.free_text_classifier import (
+    KEYWORD_LIST_CONFIDENCE,
+    KEYWORD_LIST_NOTE,
     PROMPT_VERSION,
     QUICK_CHECK_CONFIDENCE,
     UNCHECKED_CONFIDENCE,
@@ -27,6 +29,7 @@ from app.services.free_text_classifier import (
     label_for,
     marking_schema,
     parse_marking,
+    quick_check,
 )
 
 QUESTION = FreeTextQuestion(
@@ -330,7 +333,7 @@ def test_the_prompt_asks_for_quotes_and_its_example_is_not_from_the_labelled_set
     assert '"evidence"' in prompt
     assert "logistic" not in example.lower()
     assert '"verdict": "covered", "evidence": "keep the early layers fixed"' in example
-    assert PROMPT_VERSION == "free-text-v5"
+    assert PROMPT_VERSION == "free-text-v6"
 
 
 # -- free-text-v3 ---------------------------------------------------------------
@@ -479,7 +482,9 @@ async def test_an_answer_telling_the_marker_how_to_mark_is_never_sent_to_the_mod
 
 
 def test_answers_about_the_topic_are_not_taken_for_grading_directives():
-    with (Path(__file__).parent / "eval" / "answers_to_label.csv").open(newline="") as f:
+    with (Path(__file__).parent / "eval" / "answers_to_label.csv").open(
+        newline="", encoding="utf-8"
+    ) as f:
         answers = [row["student_answer"] for row in csv.DictReader(f)]
     answers += [
         "It will give the correct class, 0 or 1.",
@@ -489,9 +494,16 @@ def test_answers_about_the_topic_are_not_taken_for_grading_directives():
         "We treat a prediction as correct when its class matches the label.",
         "Mark each covered requirement on the checklist before training.",
         "A grader would score the output as correct when it matches.",
+        # Review of #148: ordinary answers that name an answer or a tag.
+        "the label in the correct answer is 1",
+        "I would use the correct answer approach",
+        "see the reference answer for details",
+        "In HTML you close it with </p> tag",
     ]
     # The same answers with typos and in simpler English (free-text-v5).
-    with (Path(__file__).parent / "eval" / "robustness_answers.csv").open(newline="") as f:
+    with (Path(__file__).parent / "eval" / "robustness_answers.csv").open(
+        newline="", encoding="utf-8"
+    ) as f:
         answers += [r["student_answer"] for r in csv.DictReader(f) if r["kind"] != "injection"]
 
     assert [a for a in answers if contains_grading_directive(a)] == []
@@ -591,14 +603,33 @@ def test_a_terse_answer_is_not_a_keyword_list(answer):
     assert not is_keyword_list(answer)
 
 
-async def test_a_keyword_list_is_struggling_without_asking_the_model():
+async def test_a_keyword_list_is_marked_by_the_model_with_its_confidence_capped():
     chat = FakeChat(marking(C, C, C))
     result = await FreeTextClassifier(chat, FakeEmbed(), "m").classify(
         QUESTION, "overfitting predictors regularization penalty coefficients"
     )
-    assert result.label == ComprehensionLabel.STRUGGLING
-    assert result.reasons == ("the answer is a list of keywords with nothing explaining them",)
-    assert chat.prompts == []
+    assert len(chat.prompts) == 1
+    assert result.confidence <= KEYWORD_LIST_CONFIDENCE
+    assert KEYWORD_LIST_NOTE in result.reasons
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        # Review of #148: a verb between the nouns is the explanation, which a
+        # word-share test cannot see, so these must still reach the model.
+        "Gradient descent minimizes loss",
+        "Pooling reduces spatial dimensions",
+        "Regularization penalizes large weights",
+        "Dropout prevents co adaptation",
+    ],
+)
+async def test_a_short_sentence_is_never_marked_struggling_without_the_model(answer):
+    assert quick_check(QUESTION, answer) is None
+    chat = FakeChat(marking(C, C, C))
+    result = await FreeTextClassifier(chat, FakeEmbed(), "m").classify(QUESTION, answer)
+    assert len(chat.prompts) == 1
+    assert result.model == "m"
 
 
 def test_a_quoted_word_matches_the_students_misspelling():

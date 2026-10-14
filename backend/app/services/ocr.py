@@ -33,6 +33,10 @@ OCR_TIMEOUT_SECONDS = 60.0
 # Pages read per material. At a few seconds a page this bounds the work a
 # long scanned file can cause; the pages after it are skipped and reported.
 MAX_OCR_PAGES = 60
+# Time spent on OCR per material. Without it the worst case is MAX_OCR_PAGES
+# pages at OCR_TIMEOUT_SECONDS each, an hour; with it a material's OCR stops
+# within this plus one page's timeout, and the pages after it are reported.
+MAX_OCR_SECONDS = 300.0
 # Fewer letters and digits than this is a page with no real text, such as a
 # photo or a diagram, where Tesseract returns a few stray characters.
 MIN_OCR_CHARACTERS = 20

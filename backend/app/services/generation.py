@@ -491,20 +491,35 @@ def verification_reason(draft: DraftQuestion, supported: set[int]) -> str | None
     return f"verifier: the cited slide supports more than one option ({named})"
 
 
+# The same draft is checked the same way on every run, as the marker's
+# answers are (free_text_classifier.SAMPLING).
+VERIFIER_SAMPLING = {"temperature": 0, "seed": 0}
+
+
 async def ask_verifier(
     client, model: str, draft: DraftQuestion, chunks
 ) -> tuple[str, set[int] | None]:
     """The verifier's raw reply, and the options it says the cited page
-    supports, or None when the reply cannot be read."""
-    response = await client.chat.completions.create(
-        model=model,
-        messages=[
-            {
-                "role": "user",
-                "content": build_verification_prompt(draft, cited_text(draft, chunks)),
-            }
-        ],
-    )
+    supports, or None when there is no reply that can be read.
+
+    A failed call (a timeout, a lost connection) is treated like an unreadable
+    reply, so one verification costs only its own draft's check, never the
+    batch.
+    """
+    try:
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": build_verification_prompt(draft, cited_text(draft, chunks)),
+                }
+            ],
+            **VERIFIER_SAMPLING,
+        )
+    except Exception:
+        logger.warning("verification call failed; keeping the draft unverified", exc_info=True)
+        return "", None
     raw = response.choices[0].message.content or ""
     try:
         return raw, parse_verification(raw, len(draft.options or ()))

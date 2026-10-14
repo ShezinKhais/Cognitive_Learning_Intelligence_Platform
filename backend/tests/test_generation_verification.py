@@ -24,14 +24,16 @@ class TurnTakingChat:
     def __init__(self, *replies: str) -> None:
         self.replies = list(replies)
         self.prompts: list[str] = []
+        self.options: list[dict] = []
         self.chat = self
 
     @property
     def completions(self):
         return self
 
-    async def create(self, model, messages):
+    async def create(self, model, messages, **options):
         self.prompts.append(messages[0]["content"])
+        self.options.append(options)
         content = self.replies[min(len(self.prompts), len(self.replies)) - 1]
 
         class M:
@@ -196,3 +198,31 @@ async def test_the_raw_reply_comes_back_when_it_cannot_be_read():
     raw, supported = await ask_verifier(chat, "test-model", draft(), chunks())
     assert raw == '{"correct": [1]}'
     assert supported is None
+
+
+# -- review of #148 -------------------------------------------------------------
+
+
+class VerifierDown(TurnTakingChat):
+    """Drafts on the first call; every verification call after it fails."""
+
+    async def create(self, model, messages, **options):
+        if self.prompts:
+            self.prompts.append(messages[0]["content"])
+            raise TimeoutError("the verifier timed out")
+        return await super().create(model, messages, **options)
+
+
+async def test_a_failed_verifier_call_keeps_the_draft_and_the_batch():
+    chat = VerifierDown(drafts_reply(draft(), draft(prompt="Which layers are retrained?")))
+    outcome = await QuestionGenerator(chat, "test-model", verify=True)._draft(chunks(), 2)
+    assert len(outcome.accepted) == 2
+    assert len(chat.prompts) == 3
+
+
+async def test_the_verifier_asks_the_same_way_every_run():
+    from app.services.generation import VERIFIER_SAMPLING
+
+    chat = TurnTakingChat(drafts_reply(draft()), '{"correct": ["A"]}')
+    await QuestionGenerator(chat, "test-model", verify=True)._draft(chunks(), 1)
+    assert chat.options[1] == VERIFIER_SAMPLING == {"temperature": 0, "seed": 0}

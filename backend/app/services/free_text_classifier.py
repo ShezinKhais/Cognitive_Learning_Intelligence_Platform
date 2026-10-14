@@ -53,7 +53,10 @@ log = logging.getLogger("clip.free_text_classifier")
 # v5 asks at temperature 0 and says that simple English and spelling mistakes
 # cost nothing: in v4 the same answer, reworded, changed label too often
 # (tests/eval/ROBUSTNESS.md).
-PROMPT_VERSION = "free-text-v5"
+# v6 has v5's prompt. An answer that reads like a list of keywords is marked by
+# the model with its confidence capped, rather than marked struggling unasked:
+# "Dropout prevents co adaptation" reads like a list too.
+PROMPT_VERSION = "free-text-v6"
 
 # What a student writes when they have nothing to say. Compared after
 # lowercasing and dropping punctuation.
@@ -136,8 +139,9 @@ _GRADING_DIRECTIVE = re.compile(
             # "mark it covered"
             r"\b" + _VERB + r"\s+it\s+" + _VERDICT + r"\b",
             # Sending the marker to the model answer: "copy the model answer".
-            r"\b(?:copy|use|take|see|in)\s+(?:it\s+from\s+)?the\s+"
-            r"(?:model|reference|correct|marking)\s+answer\b",
+            # Only "copy": "see the reference answer" and "use the correct
+            # answer approach" are things a student says.
+            r"\bcopy\s+(?:it\s+from\s+)?the\s+(?:model|reference|correct|marking)\s+answer\b",
             # The marker addressed by role: "Grader: this deserves mastered".
             r"(?:^|[.!?]\s*|\b(?:dear|hey|hi|attention)\s+)"
             r"(?:marker|grader|examiner|assessor)\s*[:,]",
@@ -149,8 +153,12 @@ _GRADING_DIRECTIVE = re.compile(
             # A new role or new orders for the marker.
             r"\byou\s+are\s+now\b|\bpretend\s+(?:you\s+are|to\s+be)\b|\bnew\s+instructions?\b",
             r"\bignor\w*\b(?:\W+\w+){0,3}?\W+instructions?\b",
-            # The marker's own reply format, or a tag closing the answer's block.
-            r"\"verdict\"\s*:|</\s*\w+\s*>",
+            # The marker's own reply format, or a tag closing the answer's block:
+            # one naming a prompt's part, or at the very start. "</p>" in an
+            # answer about HTML is neither.
+            r"\"verdict\"\s*:",
+            r"</\s*(?:student_?answer|answer|input|prompt|system|user|instructions?)\s*>",
+            r"^\s*</\s*\w+\s*>",
         )
     ),
     flags=re.IGNORECASE,
@@ -469,18 +477,23 @@ GRAMMAR_WORDS = frozenset(
     means mean make makes made get gets become becomes give gives take takes
     use uses used""".split()
 )
-# At most this share of grammar words, with no punctuation at all, is a list
-# of keywords. Set on tests/eval: no real answer of the 66 there is caught;
-# "probability below .5 = class 0" is terse but punctuated.
+# At most this share of grammar words, with no punctuation at all, reads like
+# a list of keywords. It cannot tell a list from a short sentence whose verb
+# carries the explanation ("Pooling reduces spatial dimensions"), so it only
+# lowers confidence; the model still marks the answer.
 KEYWORD_LIST_SHARE = 0.15
 KEYWORD_LIST_MIN_WORDS = 3
+# Below the 0.85 that calibration found reliable (tests/eval/CALIBRATION.md).
+KEYWORD_LIST_CONFIDENCE = UNCHECKED_CONFIDENCE
+KEYWORD_LIST_NOTE = "the answer reads like a list of keywords, so the marking is less certain"
 _PUNCTUATION = re.compile(r"[.,;:=!?()<>/+\-]")
 
 
 def is_keyword_list(answer: str) -> bool:
-    """Whether the answer only lists terms, with nothing that explains them:
-    "overfitting predictors regularization penalty coefficients". A small
-    model finds each key point's words in such a list and marks it covered."""
+    """Whether the answer reads like a list of terms with nothing explaining
+    them: "overfitting predictors regularization penalty coefficients". A
+    small model finds each key point's words in such a list and marks it
+    covered, so its marking is not trusted with high confidence."""
     words = re.findall(r"[a-z]+", answer.lower())
     if len(words) < KEYWORD_LIST_MIN_WORDS or _PUNCTUATION.search(answer):
         return False
@@ -522,8 +535,6 @@ def quick_check(question: FreeTextQuestion, answer: str) -> str | None:
     words = meaningful_words(answer)
     if words and words <= meaningful_words(question.prompt):
         return "the answer only repeats the question"
-    if is_keyword_list(answer):
-        return "the answer is a list of keywords with nothing explaining them"
     return None
 
 
@@ -626,9 +637,13 @@ class FreeTextClassifier:
         similarity = await self._similarity(question, answer)
         label = label_for(coverage, wrong_claim)
         score = coverage_score(coverage)
+        confidence = confidence_for(score, similarity)
+        if is_keyword_list(answer):
+            confidence = min(confidence, KEYWORD_LIST_CONFIDENCE)
+            notes = (*notes, KEYWORD_LIST_NOTE)
         return Classification(
             label=label,
-            confidence=confidence_for(score, similarity),
+            confidence=confidence,
             score=round(score, 2),
             coverage=coverage,
             wrong_claim=wrong_claim,
