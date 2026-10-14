@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import secrets
 import signal
 import socket
@@ -233,6 +234,8 @@ class Server:
         }
         self._process: subprocess.Popen[bytes] | None = None
         self.starts = 0
+        # When the test stopped the database, in the log's local time.
+        self.outages: list[tuple[datetime, datetime]] = []
 
     def settings(self) -> Settings:
         """The settings the server process has, for signing tokens it accepts."""
@@ -317,12 +320,52 @@ class Server:
         lines = self.log_path.read_text(encoding="utf-8", errors="replace").splitlines()
         return [line for line in lines if "retention_purge " in line]
 
-    def log_problems(self) -> list[str]:
-        """Lines of the server log that report an error or an unhandled exception."""
+    def log_errors(self) -> tuple[list[str], list[str]]:
+        """Every error the server logged, as its first line, split into those
+        nothing explains and those a database outage the test caused does.
+
+        An entry is a timestamped line and the lines after it up to the next
+        one, so a traceback belongs to the error it follows. One is excused
+        only when it was logged inside an outage window and comes from not
+        reaching the database; anything else in that window still counts.
+        """
         if not self.log_path.exists():
-            return []
-        lines = self.log_path.read_text(encoding="utf-8", errors="replace").splitlines()
-        return [line for line in lines if " ERROR " in line or line.startswith("Traceback")]
+            return [], []
+        entries: list[list[str]] = []
+        for line in self.log_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if _LOGGED_AT.match(line) or not entries:
+                entries.append([line])
+            else:
+                entries[-1].append(line)
+        problems, excused = [], []
+        for entry in entries:
+            head, text = entry[0], "\n".join(entry)
+            if " ERROR " not in head and "Traceback" not in text:
+                continue
+            stamp = _LOGGED_AT.match(head)
+            at = datetime.strptime(stamp.group(1), "%Y-%m-%d %H:%M:%S,%f") if stamp else None
+            during = at is not None and any(start <= at <= end for start, end in self.outages)
+            if during and any(marker in text for marker in _DATABASE_UNREACHABLE):
+                excused.append(head)
+            else:
+                problems.append(head)
+        return problems, excused
+
+    def log_problems(self) -> list[str]:
+        """Errors in the server log that nothing the test did explains."""
+        return self.log_errors()[0]
+
+
+# A log line's timestamp, as logging writes it in local time.
+_LOGGED_AT = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) ")
+# How not reaching Postgres shows up in a traceback.
+_DATABASE_UNREACHABLE = (
+    "ConnectionRefusedError",
+    "ConnectionResetError",
+    "CannotConnectNowError",
+    "ConnectionDoesNotExistError",
+    "InterfaceError",
+)
 
 
 def now() -> datetime:

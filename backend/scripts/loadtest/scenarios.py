@@ -16,6 +16,7 @@ import subprocess
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -401,7 +402,10 @@ async def signals_and_rooms(room: Classroom, seconds: float, every: float) -> Re
                 {
                     "gaze_on_screen_ratio": 0.05 if away else 0.95,
                     "face_present": not away,
-                    "speaking": talking and room.rng.random() < 0.5,
+                    # One member of a talking room always is, so the room is
+                    # never silent by chance: only one reading per student
+                    # every two seconds is kept.
+                    "speaking": talking and (index < rooms or room.rng.random() < 0.5),
                     "window_seconds": 5.0,
                 },
             )
@@ -415,6 +419,9 @@ async def signals_and_rooms(room: Classroom, seconds: float, every: float) -> Re
     await room.answer_all(question_id)
     await room.closed(question_id)
     sent = sum(await reporting)
+    # How the rooms stood as the signals stopped. After that every room falls
+    # silent, so a talking room is judged here and not a moment later.
+    while_talking = len(room.panel.events)
     await asyncio.sleep(1.5)
 
     result.figures["signals_sent"] = sent
@@ -432,14 +439,18 @@ async def signals_and_rooms(room: Classroom, seconds: float, every: float) -> Re
     statuses: dict[str, str] = {}
     for event in room.panel.of("room.status"):
         statuses[event.data["room_label"]] = event.data["status"]
+    talked: dict[str, str] = {}
+    for event in room.panel.events[:while_talking]:
+        if event.type == "room.status":
+            talked[event.data["room_label"]] = event.data["status"]
     quiet = [f"Room {n}" for n in range(rooms // 2 + 1, rooms + 1)]
     talking = [f"Room {n}" for n in range(1, rooms // 2 + 1)]
     result.figures["room_status_events"] = len([e for e in panel if e.type == "room.status"])
     result.check("the panel was told about every room", len(statuses) == rooms, sorted(statuses))
     result.check(
         "the rooms that talked are active",
-        all(statuses.get(r) == "active" for r in talking),
-        statuses,
+        all(talked.get(r) == "active" for r in talking),
+        talked,
     )
     result.check(
         "the rooms that never talked came to need attention",
@@ -841,6 +852,7 @@ async def database_outage(room: Classroom, container: str, seconds: float) -> Re
     def docker(*args: str) -> None:
         subprocess.run(["docker", *args], check=True, capture_output=True, timeout=120)
 
+    stopped_at = datetime.now()
     await asyncio.to_thread(docker, "stop", container)
     try:
         began = time.perf_counter()
@@ -898,6 +910,10 @@ async def database_outage(room: Classroom, container: str, seconds: float) -> Re
                 pass
             await asyncio.sleep(0.25)
     result.figures["ready_again_after_seconds"] = round(time.perf_counter() - began, 2)
+    # Requests that reached the server while it could not reach the database
+    # failed as they should, and logged why. Only those are excused.
+    server.outages.append((stopped_at, datetime.now()))
+    result.figures["errors_logged_during_outage"] = len(server.log_errors()[1])
     question_id, arrivals, _ = await room.deliver()
     took = await room.answer_all(question_id)
     closed = await room.closed(question_id)
