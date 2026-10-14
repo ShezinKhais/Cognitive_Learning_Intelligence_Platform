@@ -50,9 +50,16 @@ is named.
   is still being built, the request gets 503 and should be retried shortly.
 - On a restart, a report still being built is marked `INTERRUPTED`.
   Finished reports are lost and are simply asked for again.
+- Reports live in one worker's memory, so a second worker would answer
+  `GET /reports/{id}` with 404 for a report the first one holds. Production
+  already refuses more than one worker (`Classroom.check_wiring`), and its
+  message names reports.
 
 The PDF uses the built-in fonts, so nothing is shipped with the app. A
 character they cannot draw, such as text in a non-Latin script, shows as a box.
+Arabic titles and topics are therefore unreadable in the PDF for now (the JSON
+report is unaffected). The report screen (#68) should say so until a Unicode
+font, with Arabic shaping and right-to-left layout, is added.
 All text is escaped before rendering, so a topic that looks like markup is
 printed as written.
 

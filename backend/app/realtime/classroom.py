@@ -259,7 +259,9 @@ class Classroom:
         if not workers.isdigit() or int(workers) > 1:
             problems.append(
                 f"{WORKERS_ENV}={workers}: live sessions need a single worker, or each "
-                "worker runs its own question cycle for the same session"
+                "worker runs its own question cycle for the same session, and reports, "
+                "live consent and scores held in one worker's memory are missing from "
+                "the others"
             )
         if not problems:
             return

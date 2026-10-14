@@ -500,8 +500,10 @@ def test_live_sessions_refuse_more_than_one_worker(
     room, _ = make_room(production=True)
     _wired(room)
 
-    with pytest.raises(RuntimeError, match="single worker"):
+    with pytest.raises(RuntimeError, match="single worker") as refused:
         room.check_wiring()
+    # Reports are held in one worker's memory too.
+    assert "reports" in str(refused.value)
 
 
 def test_one_worker_is_fine(monkeypatch: pytest.MonkeyPatch) -> None:

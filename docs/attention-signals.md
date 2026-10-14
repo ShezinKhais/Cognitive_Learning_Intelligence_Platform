@@ -80,7 +80,10 @@ recorders, and `install_live_store` registers one.
   next joined. Until then, every signal from a student who opted in during class
   was refused with `CONSENT_REQUIRED`.
 - **Monitoring withdrawn:** the minute in progress is dropped and never stored,
-  along with all other engagement evidence.
+  along with all other engagement evidence. One narrow gap remains: a finished
+  minute already handed to the recorder (its write takes at most 5 seconds) is
+  still stored if the withdrawal arrives during that write. It holds only
+  signals sent while consent was given.
 - **Camera or microphone withdrawn:** those fields are removed from the minute
   in progress, as well as from the latest signal.
 
