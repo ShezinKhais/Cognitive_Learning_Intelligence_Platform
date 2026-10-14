@@ -307,7 +307,10 @@ async def test_engagement_is_reported_only_to_a_student_who_consented(
 
     repo.record(world.user_a, ConsentType.ENGAGEMENT_MONITORING, True)
     with_consent = world.get().json()["engagement"]
-    assert (with_consent["status"], with_consent["score"]) == ("engaged", 0.9)
+    assert (with_consent["status"], with_consent["score"]) == (
+        "engaged",
+        1.0,
+    )  # 0.9, in quarter steps
     # The same view staff get on /engagement: no per-signal detail, no camera,
     # so an accommodation cannot be read from it.
     assert with_consent["signals_available"] == ["participation"]

@@ -41,7 +41,7 @@ from app.schemas.session import (
     EngagementStatus,
     StudentSessionSummary,
 )
-from app.services.engagement_view import staff_confidence, staff_signals
+from app.services.engagement_view import staff_confidence, staff_score, staff_signals
 from app.services.report_validation import MAX_ACTION_ITEMS, summary_problems, topic_name_problems
 from app.services.text_screening import safe_display_text
 from app.services.topic_difficulty import (
@@ -189,7 +189,7 @@ def engagement_of(
                 return EngagementOut(
                     student_id=student_id,
                     session_id=session_id,
-                    score=scored.engagement.score,
+                    score=staff_score(scored.engagement.score),
                     status=scored.engagement.status,
                     # The same view staff get on /engagement, for every student:
                     # see engagement_view.py.

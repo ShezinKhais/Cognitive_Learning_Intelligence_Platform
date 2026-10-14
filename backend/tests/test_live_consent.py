@@ -343,11 +343,10 @@ async def test_a_signal_from_a_student_who_declined_monitoring_is_refused_with_a
     assert (refused["type"], refused["data"]["code"]) == ("error", "CONSENT_REQUIRED")
 
 
-async def test_the_consent_route_applies_a_withdrawal_now_and_a_grant_at_the_next_join(
-    db, app
-) -> None:
-    """A grant waits to be read back from the store at the next join, so no
-    class acts on one the request might not commit."""
+async def test_the_consent_route_applies_a_withdrawal_and_a_grant_at_once(db, app) -> None:
+    """A student who opts in during a class is monitored from then on, not
+    from their next join. The grant is read back from the store, so the class
+    acts only on what was kept."""
     client, _, _ = db
     sign_in_as(app, STUDENT_ID, Role.STUDENT)
     classroom.admit_consents(
@@ -362,4 +361,4 @@ async def test_the_consent_route_applies_a_withdrawal_now_and_a_grant_at_the_nex
     client.post(
         "/api/v1/auth/consent", json={"consent_type": "engagement_monitoring", "granted": True}
     )
-    assert not classroom.consents.monitored(STUDENT_ID)
+    assert classroom.consents.monitored(STUDENT_ID)

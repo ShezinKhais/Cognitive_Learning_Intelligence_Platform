@@ -20,8 +20,17 @@ log = logging.getLogger("clip.audit")
 
 def audit_action(
     action_type: str,
+    *,
+    commit: bool = False,
 ) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
-    """Audit a successful state-changing endpoint."""
+    """Audit a successful state-changing endpoint.
+
+    The audit record joins the endpoint's transaction, so the change and its
+    record are kept or lost together. With commit=True that transaction is
+    committed here, before the response, for an endpoint that must act on
+    the change only once it is durable (it does so from an after-commit
+    hook, which never runs if the change or its audit record fails).
+    """
 
     if not action_type or len(action_type) > 100:
         raise ValueError("action_type must contain between 1 and 100 characters")
@@ -71,6 +80,8 @@ def audit_action(
                 )
 
                 await db.flush()
+                if commit:
+                    await db.commit()
             else:
                 log.info(
                     "audit_event=%s user_id=%s ip_address=%s",

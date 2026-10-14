@@ -24,6 +24,7 @@ pages, which is a later phase.
 
 from __future__ import annotations
 
+import io
 import logging
 import re
 import uuid
@@ -48,6 +49,17 @@ CONTENT_TYPES: dict[str, str] = {
 }
 SUPPORTED = tuple(CONTENT_TYPES)
 
+# What an image's content says. It says nothing a student could search for,
+# so an image is left out of chunks until it has a caption; a captioned image
+# is chunked like text, where it stood (see element_text).
+IMAGE_ONLY_PAGE = "[image-only page]"
+# Images taken from one page of a PDF with text on it, largest first: a slide
+# with more than this is a gallery, not a diagram to explain.
+MAX_IMAGES_PER_PAGE = 3
+# An image with more pixels than this is not decoded: a small, highly
+# compressed file can expand to hundreds of megabytes. 6000 x 4000 fits.
+MAX_IMAGE_PIXELS = 24_000_000
+
 
 # ---------------------------------------------------------------------------
 # the shapes. these are internal to processing - nothing here is stored as-is.
@@ -62,6 +74,35 @@ class ExtractedElement:
     el_type: str  # "text" | "heading" | "image" | "table"
     content: str  # the text, or a placeholder note for images
     page: int  # page number (PDF) or slide number (PPTX). 1 for docx/txt.
+    # Headings only: 1 for a top-level section, 2 for one inside it, and so on,
+    # where the format says. 0 is a heading with no known level, such as a
+    # slide title: it applies to its own page only.
+    level: int = 0
+    # Images only, and only when asked for: the image itself, as PNG or JPEG
+    # bytes, for a vision model to caption. Never stored.
+    image: bytes | None = field(default=None, repr=False, compare=False)
+    # Images only: what the image shows, once a vision model has said.
+    caption: str | None = None
+    # Images only: a PDF page with no text, recorded as its picture. Until it
+    # has a caption the page has nothing to read, and is reported skipped.
+    whole_page: bool = False
+
+
+def element_text(element: ExtractedElement) -> str | None:
+    """What an element adds to the material's text: an image only once it
+    has a caption, and nothing until then."""
+    if element.el_type != "image":
+        return element.content
+    return f"[Image: {element.caption}]" if element.caption else None
+
+
+@dataclass
+class Extraction:
+    """A file's elements, before captioning and chunking (extract_material)."""
+
+    elements: list[ExtractedElement]
+    parser_used: str
+    warnings: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -139,7 +180,7 @@ def validate_file(path: str, max_bytes: int) -> str:
 # ---------------------------------------------------------------------------
 
 
-def read_pdf_docling(path: str) -> list[ExtractedElement]:
+def read_pdf_docling(path: str, with_images: bool = False) -> list[ExtractedElement]:
     """Primary PDF reader. Layout-aware, OCR disabled."""
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.pipeline_options import PdfPipelineOptions
@@ -147,40 +188,83 @@ def read_pdf_docling(path: str) -> list[ExtractedElement]:
 
     opts = PdfPipelineOptions()
     opts.do_ocr = False  # see module docstring for why
+    # Rendering each picture costs memory and time, so only when asked for.
+    opts.generate_picture_images = with_images
 
     converter = DocumentConverter(
         format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)}
     )
-    doc = converter.convert(path).document
+    return _docling_elements(converter.convert(path).document, with_images=with_images)
 
+
+# Running text docling finds at the top and bottom of every page, such as
+# "CS101 - Lecture 3" or a page number. Not content, and taken for headings
+# they would head every page's chunks.
+_DOCLING_SKIPPED = {"page_header", "page_footer"}
+
+
+def _docling_page(item) -> int:
+    """The page an item is on, from its provenance, when docling knows it."""
+    prov = getattr(item, "prov", None)
+    return getattr(prov[0], "page_no", 1) if prov else 1
+
+
+def _docling_picture(item, doc) -> bytes | None:
+    """A docling picture as PNG bytes, or None when docling did not render it."""
+    try:
+        picture = item.get_image(doc)
+    except Exception:
+        return None
+    if picture is None:
+        return None
+    buffer = io.BytesIO()
+    picture.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _docling_elements(doc, with_images: bool = False) -> list[ExtractedElement]:
+    """A docling document as elements, in reading order, kept as Markdown.
+
+    Headings carry their section level, so chunks can say where they sit
+    ("Chapter 2 > 2.1 Layers"). List items keep their bullet, and a table is
+    its Markdown table: a table item has no text, so reading text alone lost
+    every table. Images stay placeholders, carrying the picture itself when
+    `with_images` asks for it.
+    """
     els: list[ExtractedElement] = []
-    for item, _level in doc.iterate_items():
+    for item, _depth in doc.iterate_items():
+        label = str(getattr(item, "label", "")).lower().rsplit(".", 1)[-1]
+        if label in _DOCLING_SKIPPED:
+            continue
+        page = _docling_page(item)
+
+        if label == "table":
+            try:
+                table = (item.export_to_markdown(doc=doc) or "").strip()
+            except Exception:
+                # One unreadable table is not a reason to lose the file.
+                log.warning("could not export a table on page %s", page)
+                continue
+            if table:
+                els.append(ExtractedElement("table", table, page))
+            continue
+        if label == "picture":
+            image = _docling_picture(item, doc) if with_images else None
+            els.append(ExtractedElement("image", "[image]", page, image=image))
+            continue
+
         text = getattr(item, "text", "") or ""
         if not text.strip():
             continue
-
-        # docling tags every item with its layout role, e.g. section_header
-        label = str(getattr(item, "label", "")).lower()
-        el_type = "heading" if "header" in label or "title" in label else "text"
-
-        # page number lives on the item's provenance, when docling knows it
-        page = 1
-        prov = getattr(item, "prov", None)
-        if prov:
-            page = getattr(prov[0], "page_no", 1)
-
-        els.append(
-            ExtractedElement(el_type, clean_text(text, is_heading=(el_type == "heading")), page)
-        )
-
-    # record images as placeholders. we do not read what is inside them yet.
-    for pic in getattr(doc, "pictures", []):
-        page = 1
-        prov = getattr(pic, "prov", None)
-        if prov:
-            page = getattr(prov[0], "page_no", 1)
-        els.append(ExtractedElement("image", "[image]", page))
-
+        if label == "title":
+            els.append(ExtractedElement("heading", clean_text(text, is_heading=True), page, 1))
+        elif label == "section_header":
+            level = max(1, int(getattr(item, "level", 1) or 1))
+            els.append(ExtractedElement("heading", clean_text(text, is_heading=True), page, level))
+        elif label == "list_item":
+            els.append(ExtractedElement("text", f"- {clean_text(text)}", page))
+        else:
+            els.append(ExtractedElement("text", clean_text(text), page))
     return els
 
 
@@ -198,25 +282,78 @@ def looks_letter_spaced(text: str) -> bool:
     return singles / len(words) > 0.4
 
 
-def read_pdf_pypdf(path: str) -> list[ExtractedElement]:
+def read_pdf_pypdf(path: str, with_images: bool = False) -> list[ExtractedElement]:
     """Default PDF reader (Option B). Lightweight, installs everywhere.
 
     Known to mangle designed decks (letter-spacing), so callers should run
     looks_letter_spaced() on the output and upgrade to docling if available.
+
+    With `with_images`, a page's embedded images come too, so they can be
+    captioned: a page with no text is recorded as its largest image, and a
+    page with text gains its largest few after the text.
     """
     from pypdf import PdfReader
 
     els = []
     for i, page in enumerate(PdfReader(path).pages):
         txt = page.extract_text() or ""
+        images = _pypdf_images(page) if with_images else []
         if txt.strip():
             els.append(ExtractedElement("text", clean_text(txt), i + 1))
+            els.extend(
+                ExtractedElement("image", "[image]", i + 1, image=data)
+                for data in images[:MAX_IMAGES_PER_PAGE]
+            )
         else:
-            els.append(ExtractedElement("image", "[image-only page]", i + 1))
+            els.append(
+                ExtractedElement(
+                    "image",
+                    IMAGE_ONLY_PAGE,
+                    i + 1,
+                    image=images[0] if images else None,
+                    whole_page=True,
+                )
+            )
     return els
 
 
-def read_pptx(path: str) -> list[ExtractedElement]:
+def _pypdf_images(page) -> list[bytes]:
+    """A page's largest embedded images, largest first, at most
+    MAX_IMAGES_PER_PAGE of them.
+
+    Sizes are read from each image's dictionary, which costs nothing, and only
+    the images kept are decoded: pypdf decodes an image in full when its data
+    is read, so reading every one first would let a small PDF with a huge or
+    highly compressed image use unbounded memory. An image over
+    MAX_IMAGE_PIXELS, or one pypdf cannot decode, is left out: it is one image,
+    not a reason to lose the page. Images nested inside form XObjects are not
+    looked for.
+    """
+    sized = []
+    try:
+        xobjects = page["/Resources"]["/XObject"]
+        for name, ref in xobjects.items():
+            xobject = ref.get_object()
+            if xobject.get("/Subtype") != "/Image":
+                continue
+            width, height = int(xobject.get("/Width", 0)), int(xobject.get("/Height", 0))
+            if width <= 0 or height <= 0 or width * height > MAX_IMAGE_PIXELS:
+                continue
+            sized.append((width * height, name))
+    except Exception:
+        log.debug("could not list the images on a page", exc_info=True)
+        return []
+
+    found = []
+    for _, name in sorted(sized, reverse=True)[:MAX_IMAGES_PER_PAGE]:
+        try:
+            found.append(page.images[name].data)
+        except Exception:
+            continue
+    return found
+
+
+def read_pptx(path: str, with_images: bool = False) -> list[ExtractedElement]:
     """PPTX reader. python-pptx already gives clean, slide-scoped text, so
     docling adds nothing here."""
     from pptx import Presentation
@@ -234,7 +371,8 @@ def read_pptx(path: str) -> list[ExtractedElement]:
             elif shape.has_text_frame and shape.text_frame.text.strip():
                 parts.append(shape.text_frame.text)
             elif shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
-                images.append(ExtractedElement("image", "[image on slide]", page))
+                data = shape.image.blob if with_images else None
+                images.append(ExtractedElement("image", "[image on slide]", page, image=data))
         return parts
 
     els = []
@@ -261,37 +399,62 @@ def read_pptx(path: str) -> list[ExtractedElement]:
     return els
 
 
-def read_docx(path: str) -> list[ExtractedElement]:
+def _docx_heading_level(style: str) -> int | None:
+    """The outline level of a Word paragraph style, or None for body text.
+
+    "Title" and "Heading 1" are top level, "Heading 2" sits inside a
+    "Heading 1", and so on. A heading style with no number is top level.
+    """
+    if style == "title":
+        return 1
+    if not style.startswith("heading"):
+        return None
+    number = style.removeprefix("heading").strip()
+    return int(number) if number.isdigit() and int(number) > 0 else 1
+
+
+def read_docx(path: str, with_images: bool = False) -> list[ExtractedElement]:
     """DOCX reader. Word styles tell us which paragraphs are headings.
 
+    Pictures in a Word document are not read yet, so `with_images` changes
+    nothing; it is taken so every reader is called the same way.
+
     Also pulls text out of tables, which python-docx keeps separate from
-    paragraphs (so a plain paragraph loop misses them entirely).
+    paragraphs (so a plain paragraph loop misses them entirely). Paragraphs and
+    tables are read in document order: a table belongs to the heading above it,
+    not to whichever heading comes last.
     """
     from docx import Document
+    from docx.table import Table
 
     doc = Document(path)
     els = []
 
-    for para in doc.paragraphs:
-        if not para.text.strip():
+    for block in doc.iter_inner_content():
+        if isinstance(block, Table):
+            for row in block.rows:
+                cells = [c.text.strip() for c in row.cells if c.text.strip()]
+                if cells:
+                    els.append(ExtractedElement("table", clean_text(" | ".join(cells)), 1))
             continue
-        style = (para.style.name or "").lower()
-        el_type = "heading" if style.startswith("heading") or style == "title" else "text"
-        els.append(
-            ExtractedElement(el_type, clean_text(para.text, is_heading=(el_type == "heading")), 1)
-        )
-
-    for table in doc.tables:
-        for row in table.rows:
-            cells = [c.text.strip() for c in row.cells if c.text.strip()]
-            if cells:
-                els.append(ExtractedElement("table", clean_text(" | ".join(cells)), 1))
+        if not block.text.strip():
+            continue
+        style = (block.style.name or "").lower()
+        level = _docx_heading_level(style)
+        if level is None:
+            els.append(ExtractedElement("text", clean_text(block.text), 1))
+        else:
+            els.append(
+                ExtractedElement("heading", clean_text(block.text, is_heading=True), 1, level)
+            )
 
     return els
 
 
-def read_txt(path: str) -> list[ExtractedElement]:
-    """TXT reader. No structure to recover, so it is one block.
+def read_txt(path: str, with_images: bool = False) -> list[ExtractedElement]:
+    """TXT reader. No structure to recover, so it is one block. A text file
+    has no pictures: `with_images` is taken so every reader is called the
+    same way.
 
     utf-8-sig first (strips Word/Notepad's BOM), then a cp1252 retry for
     Windows files. errors="replace" would silently turn dashes and accents
@@ -428,6 +591,28 @@ def _tail(text: str, overlap: int) -> str:
     return tail or text[-overlap:]
 
 
+HEADING_SEPARATOR = " > "
+
+
+def _path_prefix(path: tuple[str, ...], limit: int) -> str:
+    """The heading path as a chunk's first line, at most `limit` characters.
+
+    When the whole path does not fit, the outermost headings go first: the
+    innermost one is the chunk's topic. A single heading that is still too
+    long is cut.
+    """
+    parts = list(path)
+    while parts:
+        line = HEADING_SEPARATOR.join(parts) + "\n"
+        if len(line) <= limit:
+            return line
+        if len(parts) == 1:
+            # Cut the heading, not the newline that ends the line.
+            return line[: limit - 1] + "\n" if limit > 1 else ""
+        parts.pop(0)
+    return ""
+
+
 def chunk_elements(
     elements: list[ExtractedElement],
     material_id: uuid.UUID,
@@ -436,9 +621,15 @@ def chunk_elements(
 ) -> list[ContentChunk]:
     """SDD: split_text_into_chunks. 500 chars with 100 overlap.
 
-    Headings are glued onto the front of the text that follows them, so a chunk
-    still says what topic it belongs to once it is on its own in the database.
-    That is what makes retrieval and "see slide 3" work.
+    Each chunk starts with the path of headings it sits under, such as
+    "Chapter 2 > 2.1 Layers", so it still says what topic it belongs to once it
+    is on its own in the database. That is what makes retrieval and "see slide
+    3" work. Text is split at headings first and only then by size, so a chunk
+    never runs from one section into the next.
+
+    A heading with a level stays in force until the next heading at its level
+    or above, across pages: a section of a document runs on. A heading with no
+    level, such as a slide title, applies to its own page only.
     """
     # overlap >= size is not the only blowup: overlap = size - 1 leaves a step
     # of 1, so 10k chars still produce 10,000 chunks. require the step to be a
@@ -452,46 +643,56 @@ def chunk_elements(
 
     chunks: list[ContentChunk] = []
     index = 0
-    current_heading = ""
-    heading_page = None
+    # The leveled headings in force, outermost first, as (level, text).
+    outline: list[tuple[int, str]] = []
+    # A heading with no level, and the page it applies to.
+    page_heading = ""
+    page_heading_page = None
 
     # Group by page first. A PDF page arrives as one large element and a PPTX
     # slide as many small ones; chunking per element made the same content
     # produce completely different chunk sizes depending on the parser.
-    pages: list[tuple[int, str, list[str]]] = []
+    pages: list[tuple[int, tuple[str, ...], list[str]]] = []
     for el in elements:
-        if el.el_type == "image":
+        text = element_text(el)
+        if text is None:
             continue
-        if el.page != heading_page:
-            current_heading = ""
+        if el.page != page_heading_page:
+            page_heading = ""
         if el.el_type == "heading":
-            current_heading = el.content
-            heading_page = el.page
+            if el.level > 0:
+                # A heading closes every section at its level or deeper.
+                while outline and outline[-1][0] >= el.level:
+                    outline.pop()
+                outline.append((el.level, el.content))
+                page_heading = ""
+            else:
+                page_heading = el.content
+                page_heading_page = el.page
             continue
 
-        if pages and pages[-1][0] == el.page and pages[-1][1] == current_heading:
-            pages[-1][2].append(el.content)
+        path = tuple(text for _, text in outline) + ((page_heading,) if page_heading else ())
+        if pages and pages[-1][0] == el.page and pages[-1][1] == path:
+            pages[-1][2].append(text)
         else:
-            # The heading is held per page and prefixed once per chunk below.
+            # The path is held per group and prefixed once per chunk below.
             # Prefixing it per element repeated it for every bullet on a slide,
             # which wastes the chunk budget and skews the embedding.
             # A new heading on the same page starts a new group: grouping by
             # page alone filed a whole DOCX, where every element is page 1,
             # under its first heading.
-            pages.append((el.page, current_heading, [el.content]))
+            pages.append((el.page, path, [text]))
 
-    for page, heading, blocks in pages:
+    for page, path, blocks in pages:
         flat: list[str] = []
         for block in blocks:
             for part in re.split(r"\n\s*\n|\n", block):
                 if part.strip():
                     flat.append(part.strip())
 
-        # A heading longer than a whole chunk would leave no room for content
-        # and drive the budget negative, breaking the size invariant.
-        prefix = f"{heading}\n" if heading else ""
-        if len(prefix) > size // 2:
-            prefix = prefix[: size // 2]
+        # A path longer than half a chunk would leave too little room for
+        # content, or drive the budget negative and break the size invariant.
+        prefix = _path_prefix(path, size // 2)
         budget = size - len(prefix)
 
         buffer = ""
@@ -528,7 +729,7 @@ def chunk_elements(
 # ---------------------------------------------------------------------------
 
 
-def _run_reader(reader, path: str) -> list[ExtractedElement]:
+def _run_reader(reader, path: str, **options) -> list[ExtractedElement]:
     """Run one reader, turning file-level failures into a clean ValidationError.
 
     Only the reader call is wrapped, so bugs in our own routing/chunking logic
@@ -537,7 +738,7 @@ def _run_reader(reader, path: str) -> list[ExtractedElement]:
     no library internals or server paths leak into the API response.
     """
     try:
-        return reader(path)
+        return reader(path, **options)
     except ValidationError:
         raise  # the reader already produced a precise message; keep it
     except Exception as exc:
@@ -548,13 +749,20 @@ def _run_reader(reader, path: str) -> list[ExtractedElement]:
         ) from exc
 
 
-def extract(path: str, ext: str) -> tuple[list[ExtractedElement], str, list[str]]:
-    """Pick a reader for the format. Returns elements, parser name, warnings."""
+def extract(
+    path: str, ext: str, with_images: bool = False
+) -> tuple[list[ExtractedElement], str, list[str]]:
+    """Pick a reader for the format. Returns elements, parser name, warnings.
+
+    `with_images` keeps each image's bytes on its element, for captioning.
+    Word documents do not supply them yet.
+    """
     warnings: list[str] = []
+    images = {"with_images": with_images}
 
     if ext == "pdf":
         # Option B: pypdf is the default (light, installs everywhere).
-        elements = _run_reader(read_pdf_pypdf, path)
+        elements = _run_reader(read_pdf_pypdf, path, **images)
         joined = " ".join(e.content for e in elements if e.el_type != "image")
 
         # quality guard: if pypdf produced letter-spaced garbage, try to
@@ -564,7 +772,11 @@ def extract(path: str, ext: str) -> tuple[list[ExtractedElement], str, list[str]
                 from docling.document_converter import DocumentConverter  # noqa: F401
 
                 log.info("pypdf output looks corrupted on %s, upgrading to docling", path)
-                return _run_reader(read_pdf_docling, path), "docling", warnings
+                return (
+                    _run_reader(read_pdf_docling, path, **images),
+                    "docling",
+                    warnings,
+                )
             except ImportError:
                 warnings.append(
                     "This PDF uses styled text that the default parser reads poorly. "
@@ -575,58 +787,106 @@ def extract(path: str, ext: str) -> tuple[list[ExtractedElement], str, list[str]
         return elements, "pypdf", warnings
 
     if ext == "pptx":
-        return _run_reader(read_pptx, path), "python-pptx", warnings
+        return _run_reader(read_pptx, path, **images), "python-pptx", warnings
     if ext == "docx":
-        return _run_reader(read_docx, path), "python-docx", warnings
+        return _run_reader(read_docx, path, **images), "python-docx", warnings
     if ext == "txt":
-        return _run_reader(read_txt, path), "plain-text", warnings
+        return _run_reader(read_txt, path, **images), "plain-text", warnings
 
     raise ValidationError(f"Unsupported file format: .{ext}", {"received": ext})
 
 
-def process_material(
-    path: str, material_id: uuid.UUID, max_bytes: int = 52_428_800
-) -> ProcessingResult:
-    """Entry point. Validate, extract, clean, chunk.
+def element_metadata(element: ExtractedElement) -> dict[str, int]:
+    """What is stored beside an element so its chunks can be rebuilt later.
 
-    Called by POST /api/v1/materials. Embedding and storage happen after this,
-    in Phase 2.
+    The uploaded file is deleted once processed (Design Document 4.1), so the
+    stored elements are all a material can ever be chunked again from. A
+    heading's level is the one thing chunking needs that the row has no column
+    for. A caption is stored as the element's content (stored_content).
+    """
+    if element.el_type == "heading" and element.level > 0:
+        return {"level": element.level}
+    return {}
+
+
+def stored_content(element: ExtractedElement) -> str:
+    """An element's content as stored: a captioned image as its caption, so
+    the description is kept with the material."""
+    return element_text(element) or element.content
+
+
+def skipped_pages_warning(elements: list[ExtractedElement]) -> str | None:
+    """The warning for PDF pages that gave no text and were not captioned.
+
+    Only those pages are skipped. A PPTX picture sits alongside the slide's
+    text and is not a skipped page, so counting every image element would
+    report "2 pages skipped" on a normal deck.
+    """
+    skipped = sum(1 for e in elements if e.whole_page and e.caption is None)
+    if not skipped:
+        return None
+    return f"{skipped} page(s) contained no readable text and were skipped."
+
+
+def require_readable_content(elements: list[ExtractedElement], details: dict) -> None:
+    """Fail a material that has nothing to chunk.
+
+    Text counts, and so does a caption that replaced an image's placeholder.
+    """
+    if not any(element_text(e) for e in elements):
+        # SDD: no_readable_text_found -> status Failed
+        raise ValidationError("No readable text found in this file", details)
+
+
+def extract_material(path: str, max_bytes: int, *, with_images: bool = False) -> Extraction:
+    """Validate the file and read it into elements. The slow part: run it off
+    the event loop.
+
+    `with_images` keeps image bytes on the elements for captioning
+    (image_captioning.add_captions), which runs between this and
+    finish_material.
     """
     ext = validate_file(path, max_bytes)
-    elements, parser, warnings = extract(path, ext)
+    elements, parser, warnings = extract(path, ext, with_images=with_images)
+    # Images that will be captioned may be all there is, as in a scanned PDF:
+    # finish_material decides once they are described.
+    if not any(e.image for e in elements):
+        require_readable_content(elements, {"filename": Path(path).name, "parser": parser})
+    return Extraction(elements, parser, warnings)
 
-    if not any(e.el_type != "image" for e in elements):
-        # SDD: no_readable_text_found -> status Failed
-        raise ValidationError(
-            "No readable text found in this file",
-            {"filename": Path(path).name, "parser": parser},
-        )
 
+def finish_material(extraction: Extraction, material_id: uuid.UUID) -> ProcessingResult:
+    """Chunk the elements, once any captions are in, and add the warnings
+    that depend on them."""
+    elements = extraction.elements
+    require_readable_content(elements, {"parser": extraction.parser_used})
     chunks = chunk_elements(elements, material_id)
-    page_count = max((e.page for e in elements), default=0)
-
-    # only PDF pages that yielded NO text are actually skipped. a PPTX picture
-    # sits alongside the slide's text and is not a skipped page, so counting
-    # every image element would report "2 pages skipped" on a normal deck.
-    skipped_pages = sum(
-        1 for e in elements if e.el_type == "image" and e.content == "[image-only page]"
-    )
-    if skipped_pages:
-        warnings.append(f"{skipped_pages} page(s) contained no readable text and were skipped.")
+    warnings = list(extraction.warnings)
+    skipped = skipped_pages_warning(elements)
+    if skipped:
+        warnings.append(skipped)
 
     log.info(
         "material %s: %s elements, %s chunks, parser=%s",
         material_id,
         len(elements),
         len(chunks),
-        parser,
+        extraction.parser_used,
     )
-
     return ProcessingResult(
         material_id=material_id,
         elements=elements,
         chunks=chunks,
-        page_count=page_count,
-        parser_used=parser,
+        page_count=max((e.page for e in elements), default=0),
+        parser_used=extraction.parser_used,
         warnings=warnings,
     )
+
+
+def process_material(
+    path: str, material_id: uuid.UUID, max_bytes: int = 52_428_800
+) -> ProcessingResult:
+    """Entry point when images are not captioned: validate, extract, clean,
+    chunk. The pipeline calls extract_material and finish_material itself, so
+    it can caption in between."""
+    return finish_material(extract_material(path, max_bytes), material_id)

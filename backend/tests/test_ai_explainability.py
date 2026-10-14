@@ -21,7 +21,6 @@ from app.services.ai_explainability import (
     LOW_CLASSIFIER_CONFIDENCE,
     MAX_EXPLANATION_CHARS,
     MAX_TOPIC_CHARS,
-    SIGNAL_LABELS,
     AlertExplanation,
     TopicEvidence,
     explain_student_engagement,
@@ -247,33 +246,42 @@ def computation(
 
 
 class TestStudentEngagement:
-    def test_the_signal_names_are_the_ones_engagement_scores(self) -> None:
-        assert set(SIGNAL_LABELS) == set(engagement_module._SIGNAL_NAMES)
-
-    def test_only_the_signals_that_scored_the_student_are_named(self) -> None:
+    def test_the_explanation_says_how_much_evidence_and_nothing_finer(self) -> None:
         explained = explain_student_engagement(
             computation(["attempt_rate", "response_timing"], 0.2, EngagementStatus.DISENGAGED, 0.4)
         )
-        text = " ".join(fields(explained))
-        assert "questions attempted" in text and "how quickly answers arrived" in text
-        assert "2 of 5 engagement signals" in text
-        assert explained.confidence == 0.4
+        text = " ".join(fields(explained)).lower()
+        assert "some participation evidence" in text
+        for named in ("gaze", "face", "timing", "quickly", "attempted", "camera", "prompt"):
+            assert named not in " ".join(explained.confidence_reasons).lower(), named
+        assert explained.confidence == 1.0
 
-    def test_a_signal_the_student_withheld_consent_for_is_not_mentioned_as_used(self) -> None:
-        # The classroom drops gaze and face presence without monitoring consent.
+    def test_an_accommodated_and_an_unaccommodated_student_read_the_same(self) -> None:
+        # Same participation evidence, different signals underneath.
+        plain = explain_student_engagement(
+            computation(
+                ["attempt_rate", "response_timing", "gaze"], 0.4, EngagementStatus.AT_RISK, 0.7
+            )
+        )
+        accommodated = explain_student_engagement(
+            EngagementComputation(
+                score=0.4,
+                status=EngagementStatus.AT_RISK,
+                confidence=1.0,
+                signals_available=["attempt_rate", "prompt_response"],
+                accommodated=True,
+            )
+        )
+        assert plain == accommodated
+
+    def test_camera_readings_are_never_named(self) -> None:
         explained = explain_student_engagement(
             computation(
-                ["attempt_rate", "response_timing", "prompt_response"],
-                0.2,
-                EngagementStatus.DISENGAGED,
-                0.6,
-            )  # fmt: skip
+                ["attempt_rate", "gaze", "face_presence"], 0.2, EngagementStatus.AT_RISK, 0.5
+            )
         )
-        used = explained.confidence_reasons[0]
-        assert "gaze" not in used and "face" not in used
-        assert any(
-            "Not available" in r and "gaze on screen" in r for r in explained.confidence_reasons
-        )
+        assert "gaze" not in " ".join(fields(explained)).lower()
+        assert "face" not in " ".join(fields(explained)).lower()
 
     def test_a_low_score_recommends_a_private_check_in(self) -> None:
         explained = explain_student_engagement(
@@ -286,9 +294,9 @@ class TestStudentEngagement:
         )
         assert "privately" in explained.recommendation
         assert "not proof" in explained.recommendation
-        assert explained.reason == "Engagement score 20% (disengaged) from 3 signals."
+        assert explained.reason == "Engagement score 25% (disengaged) from participation evidence."
 
-    def test_few_signals_is_an_early_indication_not_a_finding(self) -> None:
+    def test_it_is_always_an_early_indication_not_a_finding(self) -> None:
         explained = explain_student_engagement(
             computation(["attempt_rate", "response_timing"], 0.2, EngagementStatus.AT_RISK, 0.4)
         )
@@ -321,7 +329,7 @@ class TestStudentEngagement:
         assert "not a judgement of the student" in bad.explanation
 
     def test_every_status_and_signal_set_is_complete(self) -> None:
-        names = list(SIGNAL_LABELS)
+        names = list(engagement_module._SIGNAL_NAMES)
         for status, count, score in itertools.product(
             EngagementStatus, range(len(names) + 1), [None, 0.0, 0.5, 1.0]
         ):
