@@ -84,6 +84,24 @@ until these checks and CI are complete.
 | Accessibility | Keyboard through the complete student session and post-session review; no trap, visible focus, logical order. Screen-reader labels/status and OS reduced motion, at 200% zoom and narrow Teams width. Verify media are optional for all learning tasks. |
 | Privacy | Inspect network during capture and disable; only authorized summary transport, no image/audio/landmarks. Revoke consent remotely, wait for recheck, confirm teardown; repeat reconnect and model-load failure. |
 
+## Repository-wide CI blocker outside this frontend change
+
+The initial run's backend job reports **4 failed, 1843 passed, 1 skipped**.
+No backend files or backend CI steps differ from baseline in this PR.
+The failures are in existing Phase 6 integration tests:
+
+- `test_engagement_fairness_live.py`: three expectations assume three baseline
+  samples; the current signal window rate limiting retains only one in their
+  sub-second test sequence (including the scorer's normalization expectation).
+- `test_privacy_verification.py::test_no_table_stores_a_raw_attention_reading`:
+  its blanket column-name prohibition rejects the existing
+  `attention_signal_summary.gaze_on_screen_ratio` aggregate column.
+
+[Backend failure evidence](https://github.com/ShezinKhais/Cognitive_Learning_Intelligence_Platform/actions/runs/38609375369/job/116008466331).
+These require a separate reconciliation of the backend timing/privacy tests
+with the merged summary feature. This PR does not weaken those tests or change
+retention/scoring policy to make CI green. Overall project CI is **not** signed off.
+
 Known separate dependency risk: `npm audit` reports high-severity transitive
 build-tool advisories (including nanoid/source-map-js) in the baseline dependency
 tree. No automatic major dependency upgrades were bundled into this test PR;
