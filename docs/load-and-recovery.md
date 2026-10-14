@@ -111,6 +111,221 @@ Nothing else about the server is changed.
 ## Results
 
 <!-- results:begin -->
+
+Run on 2026-10-14T14:44:06+00:00 at commit `50db0499`, with 40 students.
+
+- Machine: Windows-11-10.0.26300-SP0, 20 logical processors, Python 3.12.10.
+- The backend, Postgres and all the clients ran on that one machine.
+- **68 of 68 checks passed.**
+
+| Scenario | Checks passed | Took |
+|---|---|---|
+| 40 students in one class, 8 questions | 9 of 9 | 17.8 s |
+| Dropped connections, resumed | 9 of 9 | 7.4 s |
+| Attention signals and breakout rooms under load | 12 of 12 | 36.2 s |
+| Reports and the retention purge during a class | 9 of 9 | 6.1 s |
+| The language model is unreachable | 3 of 3 | 18.9 s |
+| The server is killed mid-question and restarted | 6 of 6 | 7.6 s |
+| A planned shutdown and restart during a class | 2 of 2 | 7.4 s |
+| The database is stopped for 8 s during a class | 7 of 7 | 37.6 s |
+| A Teams meeting through the mock adapter | 7 of 7 | 2.5 s |
+| 10 sessions at once on the automatic question cycle | 4 of 4 | 36.6 s |
+
+### 40 students in one class, 8 questions
+
+| Measured | Result |
+|---|---|
+| Connect all seconds | 1.23 |
+| Time to ready | median 494.8 ms, 95th percentile 585.2 ms, worst 592.1 ms (40 samples) |
+| Question fan out | median 23.5 ms, 95th percentile 37.7 ms, worst 38.7 ms (320 samples) |
+| Of which server to student | median 1.1 ms, 95th percentile 2.6 ms, worst 3 ms (320 samples) |
+| Of which the lecturers request | median 25.3 ms, 95th percentile 39.4 ms, worst 39.4 ms (8 samples) |
+| Fan out first to last student | median 2.1 ms, 95th percentile 2.6 ms, worst 2.6 ms (8 samples) |
+| Answer to receipt | median 14.8 ms, 95th percentile 185.7 ms, worst 246.8 ms (320 samples) |
+
+| Check | Result |
+|---|---|
+| Every student connected and was told the session's state | passed |
+| All connected inside 10 s | passed |
+| The lecturer's panel counts every student once | passed |
+| Every answer was accepted | passed |
+| Every question closed with every student counted as shown and answered | passed |
+| The slowest question reached its last student inside 2 s | passed |
+| The slowest receipt came back inside 2 s | passed |
+| Every answer is in the database | passed |
+| No client saw a gap or a repeat in its stream | passed |
+
+### Dropped connections, resumed
+
+| Measured | Result |
+|---|---|
+| Half class resume seconds | 0.38 |
+| Whole class reconnect seconds | 0.55 |
+| Reconnect time to ready | median 376.4 ms, 95th percentile 474.4 ms, worst 492.6 ms (40 samples) |
+| Fan out after reconnects | median 37.4 ms, 95th percentile 38.3 ms, worst 38.4 ms (40 samples) |
+
+| Check | Result |
+|---|---|
+| Every returning student was resumed from the cursor it offered | passed |
+| The question they missed was replayed to each, delivery and close | passed |
+| The replay left no gap and repeated nothing | passed |
+| Each could answer the question that was open when they came back | passed |
+| That question closed with the whole class counted | passed |
+| The whole class was back inside 10 s | passed |
+| All were resumed from the cursor they offered, with no gap | passed |
+| The panel's count returned to the whole class | passed |
+| A cursor from another stream is refused, and the client starts afresh | passed |
+
+### Attention signals and breakout rooms under load
+
+| Measured | Result |
+|---|---|
+| Signals sent | 2480 |
+| Signals per second | 155.0 |
+| Fan out while signalling | median 26.9 ms, 95th percentile 27.4 ms, worst 27.5 ms (40 samples) |
+| Room status events | 99 |
+| Refocus prompts | 20 |
+| Attention minutes stored | 40 |
+
+| Check | Result |
+|---|---|
+| A question still reached everyone inside 2 s | passed |
+| No signal was refused or throttled | passed |
+| The panel was told about every room | passed |
+| The rooms that talked are active | passed |
+| The rooms that never talked came to need attention | passed |
+| Each silent room raised one alert, and no other room did | passed |
+| No student was sent a room's status or an alert | passed |
+| Every student who was looking away got one private prompt | passed |
+| No student who was looking at the screen was prompted | passed |
+| Engagement is reported for every student | passed |
+| A minute of attention reached the analytics table for every student | passed |
+| No gap in any stream | passed |
+
+### Reports and the retention purge during a class
+
+| Measured | Result |
+|---|---|
+| Fan out with reports building | median 23.9 ms, 95th percentile 26.1 ms, worst 26.5 ms (120 samples) |
+| Fan out baseline | median 23.5 ms, 95th percentile 37.7 ms, worst 38.7 ms (320 samples) |
+| Report pdf bytes | 3404 |
+| Purge runs during class | 1 |
+
+| Check | Result |
+|---|---|
+| The report was accepted at once | passed |
+| Asking again while it is built returns the same report | passed |
+| Questions still reached everyone inside 2 s | passed |
+| The report became ready | passed |
+| The report counts the questions delivered when it was asked for | passed |
+| The report names no student | passed |
+| The pdf downloads | passed |
+| The purge ran while the class did | passed |
+| Every purge during the class gave way to it and deleted nothing | passed |
+
+### The language model is unreachable
+
+| Measured | Result |
+|---|---|
+| Chat time to failure | median 5261.5 ms, 95th percentile 8215.1 ms, worst 8215.1 ms (4 samples) |
+| Chat endings | error, error, error, error |
+| Fan out with model down | median 17.5 ms, 95th percentile 18.3 ms, worst 18.4 ms (40 samples) |
+
+| Check | Result |
+|---|---|
+| The tutor answered each question with a plain failure and no hang | passed |
+| Questions still go out and are answered with the model down | passed |
+| Readiness reports the model as down | passed |
+
+### The server is killed mid-question and restarted
+
+| Measured | Result |
+|---|---|
+| Clients noticed seconds | 0.05 |
+| Restart to healthy seconds | 3.73 |
+| Whole class back seconds | 0.77 |
+| Fan out after restart | median 484.1 ms, 95th percentile 484.9 ms, worst 485 ms (40 samples) |
+| Deliveries left unclosed by the crash | 1 |
+
+| Check | Result |
+|---|---|
+| Every client noticed the connection had gone | passed |
+| No cursor from before the crash was honoured | passed |
+| The session came back active, with its count of questions intact | passed |
+| The question that was open is not offered again | passed |
+| An answer to the abandoned question is refused, with a receipt | passed |
+| The next question reached and was answered by the whole class | passed |
+
+Note: The question open at the crash has no recorded close. Readers treat a delivery whose closes_at has passed as closed by a restart, respondents unknown.
+
+### A planned shutdown and restart during a class
+
+| Measured | Result |
+|---|---|
+| Shutdown seconds | 0.45 |
+| Close codes seen | 1012 |
+| Restart to healthy seconds | 3.66 |
+| Whole class back seconds | 0.8 |
+| Fan out after restart | median 468.9 ms, 95th percentile 469.8 ms, worst 469.9 ms (40 samples) |
+
+| Check | Result |
+|---|---|
+| Every client was disconnected by the shutdown | passed |
+| The class carried on: the next question was answered by everyone | passed |
+
+### The database is stopped for 8 s during a class
+
+| Measured | Result |
+|---|---|
+| Readiness answered in seconds | 11.09 |
+| Delivery refused in seconds | 10.25 |
+| Ready again after seconds | 2.94 |
+| Errors logged during outage | 3 |
+| Fan out after recovery | median 67 ms, 95th percentile 67.7 ms, worst 67.8 ms (40 samples) |
+
+| Check | Result |
+|---|---|
+| Readiness says the server is not ready | passed |
+| Liveness still answers | passed |
+| A delivery is refused with an error and not left hanging | passed |
+| No socket was dropped while the database was away | passed |
+| A new connection is turned away during the outage, to try again | passed |
+| With the database back, a question reached and was answered by everyone | passed |
+| No stream had a gap across the outage | passed |
+
+### A Teams meeting through the mock adapter
+
+| Measured | Result |
+|---|---|
+| Meeting start to last student | median 44.1 ms, 95th percentile 45.4 ms, worst 45.5 ms (40 samples) |
+
+| Check | Result |
+|---|---|
+| The meeting was linked to a prepared session | passed |
+| Students waiting in the meeting are told the session is prepared | passed |
+| The meeting starting started the session for everyone | passed |
+| The same event delivered twice changed nothing | passed |
+| The meeting ending ended the session for everyone | passed |
+| A meeting with no session linked creates and starts one | passed |
+| The real teams adapter answers 503 while no teams credentials are set | passed |
+
+### 10 sessions at once on the automatic question cycle
+
+| Measured | Result |
+|---|---|
+| Questions per session | fewest 10, most 12 |
+| Expected per session | about 10 |
+| Seconds between questions | count 97, p50 3.02, max 3.05 |
+| Seconds between questions expected | 3.0 |
+| Worst lateness seconds | 0.05 |
+
+| Check | Result |
+|---|---|
+| Every session kept its own cycle going | passed |
+| No question was more than a second late | passed |
+| Every question closed with its whole class answered | passed |
+| No stream had a gap | passed |
+
 <!-- results:end -->
 
 ## What the results say
@@ -152,6 +367,16 @@ them out.
 - **Readiness waits for the model.** `GET /api/v1/ready` asks the model server
   and waits up to 3 seconds for it. A load balancer that polls it should allow
   for that, or poll `GET /api/v1/health`.
+- **Failing to reach something takes seconds on Windows.** With the database
+  stopped, a request that needs it took about 10 seconds to fail, and
+  readiness about 11. With the model unreachable, the tutor took 5 to 8
+  seconds to report the failure. Neither is the server waiting: Windows
+  retries a refused local connection for about two seconds a time before
+  giving up, where Linux refuses at once. A deployment on Linux should fail
+  these much faster; this run does not show it.
+- **Only the requests that needed the database failed.** Three errors were
+  logged while it was down, all from not reaching it, and none after. No socket
+  was dropped, and the first question after it came back reached everyone.
 - **One process.** Everything above is one backend process, which is how the
   application is meant to run: the hub, the classroom, the scheduler and the
   reports keep their state in it. How much of the machine a class uses was not

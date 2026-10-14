@@ -1,0 +1,610 @@
+{
+  "machine": {
+    "when": "2026-10-14T14:44:06+00:00",
+    "commit": "50db0499",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "processor": "Intel64 Family 6 Model 151 Stepping 2, GenuineIntel",
+    "cpus": 20,
+    "python": "3.12.10"
+  },
+  "students": 40,
+  "passed": true,
+  "scenarios": [
+    {
+      "name": "class",
+      "title": "40 students in one class, 8 questions",
+      "passed": true,
+      "figures": {
+        "connect_all_seconds": 1.23,
+        "time_to_ready": {
+          "count": 40,
+          "p50_ms": 494.8,
+          "p95_ms": 585.2,
+          "max_ms": 592.1
+        },
+        "question_fan_out": {
+          "count": 320,
+          "p50_ms": 23.5,
+          "p95_ms": 37.7,
+          "max_ms": 38.7
+        },
+        "of_which_server_to_student": {
+          "count": 320,
+          "p50_ms": 1.1,
+          "p95_ms": 2.6,
+          "max_ms": 3.0
+        },
+        "of_which_the_lecturers_request": {
+          "count": 8,
+          "p50_ms": 25.3,
+          "p95_ms": 39.4,
+          "max_ms": 39.4
+        },
+        "fan_out_first_to_last_student": {
+          "count": 8,
+          "p50_ms": 2.1,
+          "p95_ms": 2.6,
+          "max_ms": 2.6
+        },
+        "answer_to_receipt": {
+          "count": 320,
+          "p50_ms": 14.8,
+          "p95_ms": 185.7,
+          "max_ms": 246.8
+        },
+        "scenario_seconds": 17.8
+      },
+      "checks": [
+        {
+          "name": "every student connected and was told the session's state",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "all connected inside 10 s",
+          "ok": true,
+          "detail": "1.23 s"
+        },
+        {
+          "name": "the lecturer's panel counts every student once",
+          "ok": true,
+          "detail": "last count 40"
+        },
+        {
+          "name": "every answer was accepted",
+          "ok": true,
+          "detail": "0 refused"
+        },
+        {
+          "name": "every question closed with every student counted as shown and answered",
+          "ok": true,
+          "detail": "[]"
+        },
+        {
+          "name": "the slowest question reached its last student inside 2 s",
+          "ok": true,
+          "detail": "39 ms"
+        },
+        {
+          "name": "the slowest receipt came back inside 2 s",
+          "ok": true,
+          "detail": "247 ms"
+        },
+        {
+          "name": "every answer is in the database",
+          "ok": true,
+          "detail": "320 of 320"
+        },
+        {
+          "name": "no client saw a gap or a repeat in its stream",
+          "ok": true,
+          "detail": "[]"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "name": "reconnect",
+      "title": "Dropped connections, resumed",
+      "passed": true,
+      "figures": {
+        "half_class_resume_seconds": 0.38,
+        "whole_class_reconnect_seconds": 0.55,
+        "reconnect_time_to_ready": {
+          "count": 40,
+          "p50_ms": 376.4,
+          "p95_ms": 474.4,
+          "max_ms": 492.6
+        },
+        "fan_out_after_reconnects": {
+          "count": 40,
+          "p50_ms": 37.4,
+          "p95_ms": 38.3,
+          "max_ms": 38.4
+        },
+        "scenario_seconds": 7.4
+      },
+      "checks": [
+        {
+          "name": "every returning student was resumed from the cursor it offered",
+          "ok": true,
+          "detail": "[]"
+        },
+        {
+          "name": "the question they missed was replayed to each, delivery and close",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "the replay left no gap and repeated nothing",
+          "ok": true,
+          "detail": "[]"
+        },
+        {
+          "name": "each could answer the question that was open when they came back",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "that question closed with the whole class counted",
+          "ok": true,
+          "detail": "{'question_id': '3fb45981-d93c-45b1-8b00-1494d8d3e082', 'reason': 'window_elapsed', 'respondents': 40, 'eligible': 40}"
+        },
+        {
+          "name": "the whole class was back inside 10 s",
+          "ok": true,
+          "detail": "0.55 s"
+        },
+        {
+          "name": "all were resumed from the cursor they offered, with no gap",
+          "ok": true,
+          "detail": "[]"
+        },
+        {
+          "name": "the panel's count returned to the whole class",
+          "ok": true,
+          "detail": "40"
+        },
+        {
+          "name": "a cursor from another stream is refused, and the client starts afresh",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "notes": []
+    },
+    {
+      "name": "signals",
+      "title": "Attention signals and breakout rooms under load",
+      "passed": true,
+      "figures": {
+        "signals_sent": 2480,
+        "signals_per_second": 155.0,
+        "fan_out_while_signalling": {
+          "count": 40,
+          "p50_ms": 26.9,
+          "p95_ms": 27.4,
+          "max_ms": 27.5
+        },
+        "room_status_events": 99,
+        "refocus_prompts": 20,
+        "attention_minutes_stored": 40,
+        "scenario_seconds": 36.2
+      },
+      "checks": [
+        {
+          "name": "a question still reached everyone inside 2 s",
+          "ok": true,
+          "detail": "28 ms"
+        },
+        {
+          "name": "no signal was refused or throttled",
+          "ok": true,
+          "detail": "[]"
+        },
+        {
+          "name": "the panel was told about every room",
+          "ok": true,
+          "detail": "['Room 1', 'Room 2', 'Room 3', 'Room 4', 'Room 5', 'Room 6', 'Room 7', 'Room 8']"
+        },
+        {
+          "name": "the rooms that talked are active",
+          "ok": true,
+          "detail": "{'Room 1': 'active', 'Room 2': 'active', 'Room 3': 'active', 'Room 4': 'active', 'Room 5': 'needs_attention', 'Room 6': 'needs_attention', 'Room 7': 'needs_attention', 'Room 8': 'needs_attention'}"
+        },
+        {
+          "name": "the rooms that never talked came to need attention",
+          "ok": true,
+          "detail": "{'Room 1': 'active', 'Room 2': 'active', 'Room 3': 'active', 'Room 4': 'active', 'Room 5': 'needs_attention', 'Room 6': 'needs_attention', 'Room 7': 'needs_attention', 'Room 8': 'needs_attention'}"
+        },
+        {
+          "name": "each silent room raised one alert, and no other room did",
+          "ok": true,
+          "detail": "['Room 5 has been quiet for 7 seconds.', 'Room 6 has been quiet for 7 seconds.', 'Room 7 has been quiet for 7 seconds.', 'Room 8 has been quiet for 7 seconds.']"
+        },
+        {
+          "name": "no student was sent a room's status or an alert",
+          "ok": true,
+          "detail": "[]"
+        },
+        {
+          "name": "every student who was looking away got one private prompt",
+          "ok": true,
+          "detail": "{}"
+        },
+        {
+          "name": "no student who was looking at the screen was prompted",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "engagement is reported for every student",
+          "ok": true,
+          "detail": "40"
+        },
+        {
+          "name": "a minute of attention reached the analytics table for every student",
+          "ok": true,
+          "detail": "40"
+        },
+        {
+          "name": "no gap in any stream",
+          "ok": true,
+          "detail": "[]"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "name": "housekeeping",
+      "title": "Reports and the retention purge during a class",
+      "passed": true,
+      "figures": {
+        "fan_out_with_reports_building": {
+          "count": 120,
+          "p50_ms": 23.9,
+          "p95_ms": 26.1,
+          "max_ms": 26.5
+        },
+        "fan_out_baseline": {
+          "count": 320,
+          "p50_ms": 23.5,
+          "p95_ms": 37.7,
+          "max_ms": 38.7
+        },
+        "report_pdf_bytes": 3404,
+        "purge_runs_during_class": 1,
+        "scenario_seconds": 6.1
+      },
+      "checks": [
+        {
+          "name": "the report was accepted at once",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "asking again while it is built returns the same report",
+          "ok": true,
+          "detail": "['{\"report_id\":\"439e74d2-0f8c-4d7e-87f0-13b9eb52d6bd\",\"session_id\":\"85c442b9-ac29-4de2-ac17-ff5064536e3b\",\"status\":\"queued', '{\"report_id\":\"439e74d2-0f8c-4d7e-87f0-13b9eb52d6bd\",\"session_id\":\"85c442b9-ac29-4de2-ac17-ff5064536e3b\",\"status\":\"runnin']"
+        },
+        {
+          "name": "questions still reached everyone inside 2 s",
+          "ok": true,
+          "detail": "26 ms"
+        },
+        {
+          "name": "the report became ready",
+          "ok": true,
+          "detail": "('ready', None, None)"
+        },
+        {
+          "name": "the report counts the questions delivered when it was asked for",
+          "ok": true,
+          "detail": "12"
+        },
+        {
+          "name": "the report names no student",
+          "ok": true,
+          "detail": "([], [])"
+        },
+        {
+          "name": "the PDF downloads",
+          "ok": true,
+          "detail": "(200, 'application/pdf')"
+        },
+        {
+          "name": "the purge ran while the class did",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "every purge during the class gave way to it and deleted nothing",
+          "ok": true,
+          "detail": "['2026-10-14 18:42:08,324 INFO     [-] clip.retention  retention_purge deleted 0 item(s) older than 2026-07-16 (stored-uploads: 0); stopped early, the next run continues']"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "name": "model",
+      "title": "The language model is unreachable",
+      "passed": true,
+      "figures": {
+        "chat_time_to_failure": {
+          "count": 4,
+          "p50_ms": 5261.5,
+          "p95_ms": 8215.1,
+          "max_ms": 8215.1
+        },
+        "chat_endings": [
+          "error",
+          "error",
+          "error",
+          "error"
+        ],
+        "fan_out_with_model_down": {
+          "count": 40,
+          "p50_ms": 17.5,
+          "p95_ms": 18.3,
+          "max_ms": 18.4
+        },
+        "scenario_seconds": 18.9
+      },
+      "checks": [
+        {
+          "name": "the tutor answered each question with a plain failure and no hang",
+          "ok": true,
+          "detail": "['error', 'error', 'error', 'error']"
+        },
+        {
+          "name": "questions still go out and are answered with the model down",
+          "ok": true,
+          "detail": "{'question_id': '5b900da2-23b2-45a6-b6ac-317651113c2c', 'reason': 'window_elapsed', 'respondents': 40, 'eligible': 40}"
+        },
+        {
+          "name": "readiness reports the model as down",
+          "ok": true,
+          "detail": "{\"ready\":true,\"checked_at\":\"2026-10-14T14:42:30.122776Z\",\"dependencies\":[{\"name\":\"postgres\",\"ok\":true,\"detail\":null,\"latency_ms\":null},{\"name\":\"ollama\",\"ok\":false,\"detail\":null,\"latency_ms\":null}]}"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "name": "crash",
+      "title": "The server is killed mid-question and restarted",
+      "passed": true,
+      "figures": {
+        "clients_noticed_seconds": 0.05,
+        "restart_to_healthy_seconds": 3.73,
+        "whole_class_back_seconds": 0.77,
+        "fan_out_after_restart": {
+          "count": 40,
+          "p50_ms": 484.1,
+          "p95_ms": 484.9,
+          "max_ms": 485.0
+        },
+        "deliveries_left_unclosed_by_the_crash": 1,
+        "scenario_seconds": 7.6
+      },
+      "checks": [
+        {
+          "name": "every client noticed the connection had gone",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "no cursor from before the crash was honoured",
+          "ok": true,
+          "detail": "a restarted server numbers its stream again, so an old cursor must not match"
+        },
+        {
+          "name": "the session came back active, with its count of questions intact",
+          "ok": true,
+          "detail": "expected 17 delivered; 0 differ, such as []"
+        },
+        {
+          "name": "the question that was open is not offered again",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "an answer to the abandoned question is refused, with a receipt",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "the next question reached and was answered by the whole class",
+          "ok": true,
+          "detail": "{'question_id': 'cf9d714a-4e8e-454b-a027-77024a36a9cd', 'reason': 'window_elapsed', 'respondents': 40, 'eligible': 40}"
+        }
+      ],
+      "notes": [
+        "The question open at the crash has no recorded close. Readers treat a delivery whose closes_at has passed as closed by a restart, respondents unknown."
+      ]
+    },
+    {
+      "name": "restart",
+      "title": "A planned shutdown and restart during a class",
+      "passed": true,
+      "figures": {
+        "shutdown_seconds": 0.45,
+        "close_codes_seen": [
+          1012
+        ],
+        "restart_to_healthy_seconds": 3.66,
+        "whole_class_back_seconds": 0.8,
+        "fan_out_after_restart": {
+          "count": 40,
+          "p50_ms": 468.9,
+          "p95_ms": 469.8,
+          "max_ms": 469.9
+        },
+        "scenario_seconds": 7.4
+      },
+      "checks": [
+        {
+          "name": "every client was disconnected by the shutdown",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "the class carried on: the next question was answered by everyone",
+          "ok": true,
+          "detail": "{'question_id': '3ba56003-7de0-4d26-bef0-1820b0b4f719', 'reason': 'window_elapsed', 'respondents': 40, 'eligible': 40}"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "name": "database",
+      "title": "The database is stopped for 8 s during a class",
+      "passed": true,
+      "figures": {
+        "readiness_answered_in_seconds": 11.09,
+        "delivery_refused_in_seconds": 10.25,
+        "ready_again_after_seconds": 2.94,
+        "errors_logged_during_outage": 3,
+        "fan_out_after_recovery": {
+          "count": 40,
+          "p50_ms": 67.0,
+          "p95_ms": 67.7,
+          "max_ms": 67.8
+        },
+        "scenario_seconds": 37.6
+      },
+      "checks": [
+        {
+          "name": "readiness says the server is not ready",
+          "ok": true,
+          "detail": "503"
+        },
+        {
+          "name": "liveness still answers",
+          "ok": true,
+          "detail": "200"
+        },
+        {
+          "name": "a delivery is refused with an error and not left hanging",
+          "ok": true,
+          "detail": "500 {\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"An unexpected error occurred\",\"detail\":{}},\"request_id\":\"2ff8589a-c79c-4965"
+        },
+        {
+          "name": "no socket was dropped while the database was away",
+          "ok": true,
+          "detail": "0"
+        },
+        {
+          "name": "a new connection is turned away during the outage, to try again",
+          "ok": true,
+          "detail": "ConnectionClosedError no close frame received or sent"
+        },
+        {
+          "name": "with the database back, a question reached and was answered by everyone",
+          "ok": true,
+          "detail": "{'question_id': 'f881783a-2260-4ac0-b69c-331692b39ea1', 'reason': 'window_elapsed', 'respondents': 40, 'eligible': 40}"
+        },
+        {
+          "name": "no stream had a gap across the outage",
+          "ok": true,
+          "detail": "[]"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "name": "teams",
+      "title": "A Teams meeting through the mock adapter",
+      "passed": true,
+      "figures": {
+        "meeting_start_to_last_student": {
+          "count": 40,
+          "p50_ms": 44.1,
+          "p95_ms": 45.4,
+          "max_ms": 45.5
+        },
+        "scenario_seconds": 2.5
+      },
+      "checks": [
+        {
+          "name": "the meeting was linked to a prepared session",
+          "ok": true,
+          "detail": "{\"id\":\"a828142c-af46-4e41-a272-788f8044fcab\",\"course_code\":\"LOAD101\",\"title\":\"Teams class\",\"lecturer_id\":\"d54cae12-e4cb-418e-9051-f7b93113829a\",\"status\":\"prepared\",\"starts_at\":\"2026-10-14T14:43:23.337"
+        },
+        {
+          "name": "students waiting in the meeting are told the session is prepared",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "the meeting starting started the session for everyone",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "the same event delivered twice changed nothing",
+          "ok": true,
+          "detail": "[1, 1, 1]"
+        },
+        {
+          "name": "the meeting ending ended the session for everyone",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "name": "a meeting with no session linked creates and starts one",
+          "ok": true,
+          "detail": "{\"id\":\"aa9ffd8c-1008-4022-b7d2-f1b1dadee2d3\",\"course_code\":\"LOAD101\",\"title\":\"Teams meeting\",\"lecturer_id\":\"d54cae12-e4cb-418e-9051-f7b93113829a\",\"status\":\"active\",\"starts_at\":\"2026-10-14T14:43:24.810"
+        },
+        {
+          "name": "the real Teams adapter answers 503 while no Teams credentials are set",
+          "ok": true,
+          "detail": "503"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "name": "scheduler",
+      "title": "10 sessions at once on the automatic question cycle",
+      "passed": true,
+      "figures": {
+        "questions_per_session": {
+          "fewest": 10,
+          "most": 12
+        },
+        "expected_per_session": "about 10",
+        "seconds_between_questions": {
+          "count": 97,
+          "p50": 3.02,
+          "max": 3.05
+        },
+        "seconds_between_questions_expected": 3.0,
+        "worst_lateness_seconds": 0.05,
+        "scenario_seconds": 36.6
+      },
+      "checks": [
+        {
+          "name": "every session kept its own cycle going",
+          "ok": true,
+          "detail": "[12, 11, 11, 11, 11, 11, 10, 10, 10, 10]"
+        },
+        {
+          "name": "no question was more than a second late",
+          "ok": true,
+          "detail": "0.05 s"
+        },
+        {
+          "name": "every question closed with its whole class answered",
+          "ok": true,
+          "detail": "0"
+        },
+        {
+          "name": "no stream had a gap",
+          "ok": true,
+          "detail": "[]"
+        }
+      ],
+      "notes": []
+    }
+  ]
+}
