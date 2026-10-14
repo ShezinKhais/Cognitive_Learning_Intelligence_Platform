@@ -161,16 +161,42 @@ def test_no_table_has_a_binary_column() -> None:
     assert binary == []
 
 
+# The one place per-minute attention figures are kept (BBIS, Phase 6): ratios of
+# a student's own five-second windows, null when a sensor was off. Listed in full
+# so a new column here is a decision someone makes on purpose.
+ATTENTION_SUMMARY_COLUMNS = {
+    "summary_id",
+    "session_id",
+    "student_id",
+    "window_start",
+    "window_seconds",
+    "sample_count",
+    "gaze_on_screen_ratio",
+    "face_present_ratio",
+    "speaking_ratio",
+    "recorded_at",
+}
+
+
 def test_no_table_stores_a_raw_attention_reading() -> None:
-    """A score and a label are kept; the gaze ratio and face flag behind them
-    are not, so there is no record of where anyone looked."""
-    names = {
-        f"{table.name}.{column.name}"
-        for table in Base.metadata.tables.values()
-        for column in table.columns
-    }
-    for forbidden in ("gaze", "face_present", "landmark", "frame", "audio", "transcript_audio"):
-        assert not [n for n in names if forbidden in n.split(".")[1]], forbidden
+    """A score, a label and per-minute ratios are kept; no table has a raw
+    reading, landmark, frame or audio column, so there is no record of where
+    anyone looked from moment to moment."""
+    for table in Base.metadata.tables.values():
+        if table.name == "attention_signal_summary":
+            continue
+        for column in table.columns:
+            for forbidden in ("gaze", "face_present", "landmark", "frame", "audio"):
+                assert forbidden not in column.name, f"{table.name}.{column.name}"
+
+
+def test_the_attention_summary_table_holds_only_derived_ratios() -> None:
+    table = Base.metadata.tables["attention_signal_summary"]
+    assert {c.name for c in table.columns} == ATTENTION_SUMMARY_COLUMNS
+    for name in ("gaze_on_screen_ratio", "face_present_ratio", "speaking_ratio"):
+        column = table.columns[name]
+        assert column.nullable, name  # a missing sensor is null, never zero
+        assert type(column.type).__name__ == "Float", name
 
 
 def test_the_stored_engagement_record_is_derived_data_only() -> None:

@@ -23,6 +23,19 @@ from .classroom_support import answer_to, deliver_next, join_as, make_room, make
 
 pytestmark = pytest.mark.usefixtures("fake_session_repository")
 
+
+@pytest.fixture(autouse=True)
+def _no_signal_spacing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests send several readings a fraction of a second apart. The
+    server drops a student's signal that follows the last within
+    MIN_SIGNAL_INTERVAL (attention_windows.py); that rule has its own tests."""
+    from datetime import timedelta
+
+    from app.realtime import attention_windows
+
+    monkeypatch.setattr(attention_windows, "MIN_SIGNAL_INTERVAL", timedelta(0))
+
+
 ALL = {
     ConsentType.TERMS,
     ConsentType.ENGAGEMENT_MONITORING,
@@ -257,7 +270,7 @@ async def test_the_lecturers_view_does_not_reveal_who_is_accommodated() -> None:
 
 
 async def test_the_scorer_reads_a_student_against_their_own_baseline() -> None:
-    from datetime import UTC, datetime
+    from datetime import UTC, datetime, timedelta
 
     from app.realtime.attention import Attention
 
@@ -267,7 +280,7 @@ async def test_the_scorer_reads_a_student_against_their_own_baseline() -> None:
     for _ in range(3):
         attention.observe(student, _gaze(0.4), now)
         attention.score({student}, set(), {}, now)
-        now = now.replace(microsecond=(now.microsecond + 1000) % 1_000_000)
+        now = now + timedelta(seconds=3)
     # attempt rate 0, gaze 0.4 which is 100% of their own normal
     [scored] = attention.scores()
     assert scored.engagement.score == pytest.approx(0.5 / 1.5)
