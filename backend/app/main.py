@@ -25,6 +25,7 @@ from app.services.live_wiring import install_live_store
 from app.services.material_recovery import SWEEP_EVERY, sweep_stranded
 from app.services.meeting_directory import meetings
 from app.services.reports import get_report_queue
+from app.services.retention import purge_expired_data
 from app.services.scheduler import ScheduledJob, Scheduler
 from app.services.uploads import get_background_processor
 
@@ -55,6 +56,7 @@ def housekeeping() -> Scheduler:
     """The jobs this process runs on a timer, beside the live classes."""
     processor = get_background_processor()
     reports = get_report_queue()
+    purge_every = timedelta(hours=get_settings().retention_purge_interval_hours)
 
     async def expire_reports() -> None:
         # On the event loop, not in a thread: the queue is not thread-safe,
@@ -75,6 +77,14 @@ def housekeeping() -> Scheduler:
                 timedelta(minutes=5),
                 expire_reports,
                 first_after=timedelta(minutes=5),
+            ),
+            # Deletes what has outlived DATA_RETENTION_DAYS, a batch at a
+            # time, giving way to any class that is running (retention.py).
+            ScheduledJob(
+                "retention-purge",
+                purge_every,
+                purge_expired_data,
+                first_after=min(timedelta(minutes=10), purge_every),
             ),
         ]
     )
