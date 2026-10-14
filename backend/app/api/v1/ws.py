@@ -36,6 +36,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -48,14 +49,21 @@ from starlette.websockets import WebSocketState
 from app.api.deps import AppSettings, DbSession
 from app.auth.service import granted_consents, user_from_token
 from app.core.security import TokenValidationError
-from app.realtime.classroom import classroom
+from app.realtime.classroom import (
+    ROOM_LABEL_INVALID,
+    ROOM_LIMIT,
+    ROOM_NOT_IN_SESSION,
+    classroom,
+)
 from app.realtime.hub import CLOSE_TRY_AGAIN_LATER, Connection, hub
+from app.realtime.signals import Throttle
 from app.schemas.events import (
     AnswerSubmitPayload,
     AttentionSignalPayload,
     AuthPayload,
     ClientEventType,
     PromptAckPayload,
+    RoomConfirmPayload,
     ServerEvent,
     ServerEventType,
     parse_client_event,
@@ -76,6 +84,21 @@ CLOSE_AUTH_TIMEOUT = 4408
 # A socket that connects and then says nothing would otherwise hold a slot open
 # for the lifetime of the process.
 AUTH_TIMEOUT_SECONDS = 10
+
+# How many attention signals a socket may send together, as a tab does when it
+# wakes, before the interval in the settings applies.
+SIGNAL_BURST = 5
+# A student confirms a room once, or again after moving.
+ROOM_CONFIRM_EVERY_SECONDS = 2.0
+ROOM_CONFIRM_BURST = 3
+# A throttled sender is told so at most this often.
+THROTTLE_ERROR_EVERY_SECONDS = 10.0
+
+ROOM_REFUSALS = {
+    ROOM_NOT_IN_SESSION: "only a student in a running session sends room.confirm",
+    ROOM_LIMIT: "this session already has as many rooms as it may",
+    ROOM_LABEL_INVALID: "that room label has nothing in it to show",
+}
 
 
 async def _send(
@@ -312,6 +335,10 @@ async def session_socket(
     # the hub dropped it first.
     seat: tuple[UUID, SessionStatus] | None = None
 
+    # Per socket, so one student's broken client costs nobody else anything.
+    signals = Throttle(settings.attention_signal_min_interval_seconds, SIGNAL_BURST, time.monotonic)
+    rooms = Throttle(ROOM_CONFIRM_EVERY_SECONDS, ROOM_CONFIRM_BURST, time.monotonic)
+
     try:
         if not await hub.connect(connection, last_seq, stream_id, welcome):
             return
@@ -388,6 +415,19 @@ async def session_socket(
                 # Optional client-side evidence for engagement scoring. Kept
                 # only for a student connected to a running session who has
                 # consented to engagement monitoring.
+                if not signals.allow():
+                    # Dropped before it can take the session's lock. One
+                    # error covers the burst.
+                    if signals.should_tell(THROTTLE_ERROR_EVERY_SECONDS):
+                        await _send(
+                            websocket,
+                            ServerEventType.ERROR,
+                            {
+                                "code": "RATE_LIMITED",
+                                "detail": "signal.attention is being sent too often",
+                            },
+                        )
+                    continue
                 if (
                     session_id is not None
                     and role is Role.STUDENT
@@ -414,7 +454,34 @@ async def session_socket(
                     )
                 continue
 
-            # Breakout rooms belong to a later workstream.
+            if isinstance(payload, RoomConfirmPayload):
+                # The student's own word for which breakout room they are in.
+                if not rooms.allow():
+                    if rooms.should_tell(THROTTLE_ERROR_EVERY_SECONDS):
+                        await _send(
+                            websocket,
+                            ServerEventType.ERROR,
+                            {
+                                "code": "RATE_LIMITED",
+                                "detail": "room.confirm is being sent too often",
+                            },
+                        )
+                    continue
+                refused = (
+                    ROOM_NOT_IN_SESSION
+                    if session_id is None or role is not Role.STUDENT
+                    else await classroom.confirm_room(session_id, user_id, payload)
+                )
+                if refused is not None:
+                    await _send(
+                        websocket,
+                        ServerEventType.ERROR,
+                        {"code": refused, "detail": ROOM_REFUSALS[refused]},
+                    )
+                continue
+
+            # Every event type in the contract is handled above. This is for
+            # one added to the contract before its handler.
             await _send(
                 websocket,
                 ServerEventType.ERROR,

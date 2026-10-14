@@ -31,6 +31,12 @@ What is stored, scored and alerted on plugs in through the contracts in
 recorders.py. Feedback on an answer is what the ResponseRecorder returns,
 sent here after the receipt, and the answer can be revealed from the
 CloseRecorder once the window is over.
+
+Phase 6 adds the watch: once a session has an attention signal or a breakout
+room, a timer looks at both every signal_watch_seconds. It rescores the
+students whose devices are reporting, sends a private prompt to one whose
+signals have stayed low, and tells the lecturer how each room is doing. See
+signals.py and rooms.py.
 """
 
 from __future__ import annotations
@@ -71,9 +77,11 @@ from app.realtime.recorders import (
     PromptResult,
     QuestionComprehension,
     ResponseRecorder,
+    RoomAlert,
     Submission,
     best_effort,
 )
+from app.realtime.rooms import Refusal, RoomLimits, Rooms
 from app.repositories.session_repository import SessionRepository
 from app.schemas.content import QuestionType
 from app.schemas.events import (
@@ -88,6 +96,9 @@ from app.schemas.events import (
     QuestionClosedPayload,
     QuestionCloseReason,
     QuestionDeliveredPayload,
+    RoomConfirmPayload,
+    RoomStatus,
+    RoomStatusPayload,
     ServerEventType,
     SessionStatePayload,
 )
@@ -99,7 +110,13 @@ from app.services.ai_explainability import (
     explain_topic_difficulty,
     fallback_explanation,
 )
-from app.services.engagement import evaluate_comprehension_alert, should_send_dynamic_prompt
+from app.services.engagement import (
+    ENGAGED_THRESHOLD,
+    EngagementInputs,
+    compute_engagement,
+    evaluate_comprehension_alert,
+    should_send_dynamic_prompt,
+)
 
 log = logging.getLogger("clip.classroom")
 
@@ -112,8 +129,15 @@ MAX_FINISHED_SESSIONS = 1024
 WORKERS_ENV = "WEB_CONCURRENCY"
 
 ENGAGEMENT_PROMPT_MESSAGE = "Quick check-in: are you still following along?"
+# Sent when a student's own device has reported them away for a while.
+REFOCUS_PROMPT_MESSAGE = "Quick check-in: are you still with the class?"
 
 NOT_OPEN = "This question is not open."
+
+# Why a room.confirm was refused, as the error code the student's client is sent.
+ROOM_NOT_IN_SESSION = "NOT_IN_SESSION"
+ROOM_LIMIT = "ROOM_LIMIT"
+ROOM_LABEL_INVALID = "ROOM_LABEL_INVALID"
 
 
 @dataclass(slots=True)
@@ -193,6 +217,14 @@ class LiveSession:
         # the minute, so a slow store never delays that student's next answer;
         # the end of the session waits for them.
         self.storing: set[asyncio.Task[None]] = set()
+        self.rooms = Rooms()
+        # The timer that looks at signals and rooms. Started by the first of
+        # either, so a class with neither has no timer.
+        self.watch: asyncio.Task[None] | None = None
+        # What staff were last told about each room, by label, so only a
+        # change is sent; and the rooms already reported as needing attention.
+        self.rooms_told: dict[str, RoomStatusPayload] = {}
+        self.rooms_alerted: set[str] = set()
 
 
 class Classroom:
@@ -278,6 +310,12 @@ class Classroom:
 
     def get_running(self, session_id: UUID) -> LiveSession | None:
         return self._live.get(session_id)
+
+    @property
+    def running_count(self) -> int:
+        """How many sessions this process is running now. The retention purge
+        stops between batches while this is above zero."""
+        return len(self._live)
 
     def activate(self, session_id: UUID, delivered: int = 0, paused: bool = False) -> LiveSession:
         """Begin running a session: its cycle starts counting from now."""
@@ -376,6 +414,7 @@ class Classroom:
             if open_ is not None:
                 live.attention.score(*self._monitored_in(open_), open_.timing, _now())
         _cancel(live.cycle)
+        _cancel(live.watch)
         for prompt in withdrawn:
             _cancel(prompt.expiry)
         await self.announce(session_id, status, delivered)
@@ -401,6 +440,7 @@ class Classroom:
         storing = [task for live in self._live.values() for task in live.storing]
         for live in self._live.values():
             tasks.append(live.cycle)
+            tasks.append(live.watch)
             if live.open is not None:
                 tasks.append(live.open.closer)
             tasks.extend(prompt.expiry for prompt in live.attention.pending())
@@ -537,6 +577,11 @@ class Classroom:
         prompt = live.attention.waiting(user_id, now)
         if prompt is not None:
             events.append((ServerEventType.PROMPT_ATTENTION, _json(prompt.payload)))
+        if role in (Role.LECTURER, Role.ADMIN):
+            # A panel opened or refreshed mid-class shows the rooms as they
+            # are, and is told of each change after that.
+            for room in self._room_statuses(live, now):
+                events.append((ServerEventType.ROOM_STATUS, _json(room)))
         return events
 
     # -- delivery -----------------------------------------------------------
@@ -768,6 +813,8 @@ class Classroom:
             if reason is not None:
                 return reason, None
             open_.accept(user_id, received_at)
+            # Answering is the task a breakout room is doing.
+            live.rooms.interacted(user_id)
             if self.recorder is None:
                 return None, None
             saved = asyncio.get_running_loop().create_future()
@@ -900,10 +947,11 @@ class Classroom:
     ) -> bool:
         """Keep a student's client attention signal for their next engagement
         score and their current minute, less whatever their consent does not
-        cover, and store the minutes that are now over. False when the session
-        is not running here, the sender is not a student connected to it, or
-        they have not consented to engagement monitoring. A signal sent too
-        soon after the last is dropped quietly, and still returns True."""
+        cover, count its voice reading towards their breakout room, and store
+        the minutes that are now over. False when the session is not running
+        here, the sender is not a student connected to it, or they have not
+        consented to engagement monitoring. A signal sent too soon after the
+        last is dropped quietly, and still returns True."""
         live = self._live.get(session_id)
         if live is None or user_id not in self._hub.student_ids(session_id):
             return False
@@ -911,12 +959,208 @@ class Classroom:
         if kept is None:
             return False
         async with live.lock:
-            finished = live.attention.observe(user_id, kept, _now())
+            if self._live.get(session_id) is not live:
+                return False
+            now = _now()
+            held, finished = live.attention.observe(user_id, kept, now)
+            if held is not None:
+                live.rooms.heard(
+                    user_id,
+                    held.speaking,
+                    now,
+                    timedelta(seconds=self._settings().room_voice_fresh_seconds),
+                )
+                self._start_watch(live)
         if finished:
             task = asyncio.create_task(self._record_windows(session_id, finished))
             live.storing.add(task)
             task.add_done_callback(live.storing.discard)
         return True
+
+    # -- breakout rooms and the watch (Phase 6) ---------------------------------
+
+    async def confirm_room(
+        self, session_id: UUID, user_id: UUID, confirm: RoomConfirmPayload
+    ) -> str | None:
+        """Put a student in the breakout room they say they are in, and tell
+        the lecturer how the rooms now stand. Returns why it was refused, as
+        an error code, or None.
+
+        The student's word is the mapping. They move by confirming another
+        room; a room left empty disappears from the lecturer's panel.
+        """
+        live = self._live.get(session_id)
+        if live is None or user_id not in self._hub.student_ids(session_id):
+            return ROOM_NOT_IN_SESSION
+        async with live.lock:
+            if self._live.get(session_id) is not live:
+                return ROOM_NOT_IN_SESSION
+            refused = live.rooms.confirm(
+                user_id, confirm.room_label, self._settings().max_rooms_per_session
+            )
+            if refused is not None:
+                return ROOM_LIMIT if refused is Refusal.FULL else ROOM_LABEL_INVALID
+            self._start_watch(live)
+            alerts = await self._tell_rooms_locked(live, _now())
+        # A member arriving can be what first shows a room has been silent
+        # too long, so an alert may fall due here as well as in the watch.
+        for alert in alerts:
+            await self._raise_room_alert(alert)
+        return None
+
+    def rooms(self, session_id: UUID) -> list[RoomStatusPayload]:
+        """How each breakout room of a session this process is running is
+        doing now, in label order."""
+        live = self._live.get(session_id)
+        return self._room_statuses(live, _now()) if live is not None else []
+
+    def _room_statuses(self, live: LiveSession, now: datetime) -> list[RoomStatusPayload]:
+        settings = self._settings()
+        return live.rooms.statuses(
+            now,
+            self._hub.student_ids(live.session_id),
+            RoomLimits(
+                fresh=timedelta(seconds=settings.room_voice_fresh_seconds),
+                quiet_after=timedelta(seconds=settings.room_quiet_after_seconds),
+                needs_attention_after=timedelta(
+                    seconds=settings.room_needs_attention_after_seconds
+                ),
+                max_rooms=settings.max_rooms_per_session,
+            ),
+        )
+
+    def _start_watch(self, live: LiveSession) -> None:
+        if live.watch is None or live.watch.done():
+            live.watch = asyncio.create_task(
+                self._watch(live), name=f"signal-watch-{live.session_id}"
+            )
+
+    async def _watch(self, live: LiveSession) -> None:
+        """Look at the session's signals and rooms every signal_watch_seconds
+        until it ends. One pass failing is logged and the next still runs."""
+        while True:
+            await asyncio.sleep(self._settings().signal_watch_seconds)
+            if self._live.get(live.session_id) is not live:
+                return
+            try:
+                await self.watch_once(live)
+            except Exception:
+                log.exception("signal watch failed for session %s", live.session_id)
+
+    async def watch_once(self, live: LiveSession) -> None:
+        """One pass of the watch: rescore, prompt, and tell the lecturer about
+        the rooms, then raise any room alert once the lock is released."""
+        async with live.lock:
+            if self._live.get(live.session_id) is not live:
+                return
+            now = _now()
+            await self._watch_signals_locked(live, now)
+            alerts = await self._tell_rooms_locked(live, now)
+        for alert in alerts:
+            await self._raise_room_alert(alert)
+
+    async def _watch_signals_locked(self, live: LiveSession, now: datetime) -> None:
+        """Rescore every student whose device has reported, and send a
+        private prompt to one whose signals have stayed low.
+
+        A prompt needs all of: enough of the window covered by signals, the
+        signals themselves low, engagement scoring agreeing on more than one
+        kind of evidence (Cyber 1's rule), and no prompt from signals within
+        the cooldown. _prompt_locked then applies the limits every prompt
+        obeys: not while paused, not over a question the student still has to
+        answer, one at a time, and no more than the cap. The prompt goes to
+        the student alone; staff are not told.
+        """
+        settings = self._settings()
+        connected = self._hub.student_ids(live.session_id)
+        needed = settings.refocus_min_signal_seconds
+        cooldown = timedelta(seconds=settings.refocus_cooldown_seconds)
+        for user_id in live.attention.observed():
+            # Withdrawing monitoring already drops the student's signals
+            # (Attention.forget), so they are not observed; this is the
+            # second lock on that door.
+            if user_id not in connected or not self.consents.monitored(user_id):
+                continue
+            scored = live.attention.rescore(user_id, now)
+            signal = live.attention.signal(user_id, now)
+            if (
+                needed > 0
+                and signal is not None
+                and signal.window_seconds >= needed
+                and _signals_low(signal)
+                and should_send_dynamic_prompt(scored.engagement)
+                and live.attention.refocus_due(user_id, now, cooldown)
+                and await self._prompt_locked(live, user_id, REFOCUS_PROMPT_MESSAGE) is not None
+            ):
+                live.attention.refocused(user_id, now)
+
+    async def _tell_rooms_locked(self, live: LiveSession, now: datetime) -> list[RoomAlert]:
+        """Tell connected staff about every room whose status has changed,
+        and return an alert for each room that has just come to need
+        attention. A room that has emptied is reported once more, with nobody
+        in it, so a panel can take it down."""
+        statuses = {room.room_label: room for room in self._room_statuses(live, now)}
+        changed = [room for label, room in statuses.items() if live.rooms_told.get(label) != room]
+        for label, told in live.rooms_told.items():
+            if label not in statuses and told.members:
+                changed.append(
+                    RoomStatusPayload(
+                        room_label=label,
+                        status=RoomStatus.UNKNOWN,
+                        members=0,
+                        speaking_now=0,
+                        silence_seconds=0,
+                        task_interactions=told.task_interactions,
+                    )
+                )
+        live.rooms_told = statuses
+        if changed:
+            staff = self._hub.staff_ids(live.session_id)
+            for room in changed:
+                for staff_id in staff:
+                    await self._hub.send_to_user(
+                        live.session_id, staff_id, ServerEventType.ROOM_STATUS, _json(room)
+                    )
+
+        alerts = []
+        reporting = live.rooms.reporting(
+            now,
+            self._hub.student_ids(live.session_id),
+            timedelta(seconds=self._settings().room_voice_fresh_seconds),
+        )
+        for label, room in statuses.items():
+            if room.status is RoomStatus.NEEDS_ATTENTION:
+                if label not in live.rooms_alerted:
+                    live.rooms_alerted.add(label)
+                    alerts.append(_room_alert(live.session_id, room, reporting.get(label, 0), now))
+            elif room.status is RoomStatus.ACTIVE:
+                # Heard from again, so its next long silence is reported.
+                live.rooms_alerted.discard(label)
+        live.rooms_alerted &= set(statuses)
+        return alerts
+
+    async def _raise_room_alert(self, alert: RoomAlert) -> None:
+        """Keep a room alert, then tell the lecturer. As with a comprehension
+        alert, a store that fails does not cost the lecturer the alert."""
+        if self.alert_recorder is not None:
+            await best_effort(
+                self.alert_recorder.record_room_alert(alert), "store a room alert", alert.session_id
+            )
+        payload = AlertRaisedPayload(
+            alert_id=alert.alert_id,
+            kind=AlertKind.BREAKOUT_INACTIVE,
+            message=alert.message,
+            reason=alert.reason,
+            confidence=alert.confidence,
+            explanation=alert.explanation,
+            explanation_source=alert.explanation_source,  # type: ignore[arg-type]
+            confidence_reasons=list(alert.confidence_reasons),
+            recommendation=alert.recommendation,
+        )
+        for staff_id in self._hub.staff_ids(alert.session_id):
+            await self._hub.send_to_user(
+                alert.session_id, staff_id, ServerEventType.ALERT_RAISED, _json(payload)
+            )
 
     def _monitored_in(self, question: _OpenQuestion) -> tuple[set[UUID], set[UUID]]:
         """Who was shown a question and who answered it, among the students
@@ -959,6 +1203,11 @@ class Classroom:
                     live.attention.restrict_signal(
                         user_id, lambda signal: permitted_signal(signal, held)
                     )
+                # A room's voice activity comes from the same signals, so
+                # what was heard from this student goes with the consent.
+                # They stay in the room they confirmed.
+                if not {ConsentType.ENGAGEMENT_MONITORING, ConsentType.MICROPHONE} <= held:
+                    live.rooms.unhear(user_id)
         for prompt in withdrawn:
             _cancel(prompt.expiry)
         if consent is ConsentType.TERMS:
@@ -1129,6 +1378,66 @@ def _explain_comprehension_alert(
     except Exception:
         log.exception("could not explain a comprehension alert in session %s", closed.session_id)
         return fallback_explanation(AlertKind.TOPIC_DIFFICULTY)
+
+
+def _signals_low(signal: AttentionSignalPayload) -> bool:
+    """Whether a student's own signals, taken alone, fall short of engaged.
+    Scored by the same rule as everything else, so there is one definition of
+    low. A window that reported neither gaze nor a face is not low: it says
+    nothing."""
+    score = compute_engagement(EngagementInputs(attention=signal)).score
+    return score is not None and score < ENGAGED_THRESHOLD
+
+
+ROOM_ALERT_EXPLANATION = (
+    "Nobody in this room has had voice activity for that long. This is worked out from "
+    "whether each member's own device detects a voice. Nothing is recorded or listened "
+    "to, and members who have not allowed the microphone are not heard at all, so a room "
+    "working quietly looks the same as one that has stopped."
+)
+
+
+def _room_alert(
+    session_id: UUID, room: RoomStatusPayload, reporting: int, now: datetime
+) -> RoomAlert:
+    """The alert for a room that has been silent too long. All of it is
+    built from the counts, since no model is asked about a room: what was
+    measured, how, and how far to trust it. The confidence is the share of
+    the room's members whose devices are reporting on voice, because a room
+    heard through one member of five is known far less well than one heard
+    through all of them."""
+    fallback = fallback_explanation(AlertKind.BREAKOUT_INACTIVE)
+    reporting = min(reporting, room.members)
+    confidence = reporting / room.members if room.members else 0.0
+    # In whole minutes once there is one, since that is how a lecturer
+    # thinks of it. A deployment with a short limit is told in seconds.
+    minutes = room.silence_seconds // 60
+    quiet_for = (
+        f"{minutes} minute{'' if minutes == 1 else 's'}"
+        if minutes
+        else f"{room.silence_seconds} seconds"
+    )
+    members = f"{room.members} member{'' if room.members == 1 else 's'}"
+    return RoomAlert(
+        alert_id=uuid4(),
+        session_id=session_id,
+        room_label=room.room_label,
+        members=room.members,
+        silence_seconds=room.silence_seconds,
+        raised_at=now,
+        message=f"{room.room_label} has been quiet for {quiet_for}.",
+        reason=f"No voice activity from {members} for {room.silence_seconds} seconds.",
+        confidence=confidence,
+        explanation=ROOM_ALERT_EXPLANATION,
+        # Written here and not by a model, which is what "fallback" says.
+        explanation_source="fallback",
+        confidence_reasons=[
+            f"{reporting} of the room's {members} "
+            f"{'is' if reporting == 1 else 'are'} reporting voice activity.",
+            "Silence is counted only from when the room was first heard.",
+        ],
+        recommendation=fallback.recommendation,
+    )
 
 
 def _missed_message(missed: int) -> str:
