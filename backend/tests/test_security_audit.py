@@ -76,6 +76,9 @@ AUDIENCE = {
     ("POST", "/api/v1/sessions/{session_id}/start"): STAFF,
     ("GET", "/api/v1/sessions/{session_id}/summary/{student_id}"): MEMBER,
     ("GET", "/api/v1/sessions/{session_id}/topics"): STAFF,
+    ("POST", "/api/v1/sessions/{session_id}/reports"): STAFF,
+    ("GET", "/api/v1/reports/{report_id}"): STAFF,
+    ("GET", "/api/v1/reports/{report_id}/pdf"): STAFF,
 }
 
 # Routes with a published contract and no handler, so far. Each answers 501 to a
@@ -609,3 +612,25 @@ def test_a_user_channel_socket_over_the_cap_is_closed_over_the_real_endpoint(
         assert closed.value.code == ws_module.CLOSE_RATE_LIMITED
         first.send_json({"type": "ping"})
         assert first.receive_json()["type"] == "pong"
+
+
+async def test_another_lecturer_cannot_read_a_report_by_its_id(db, app) -> None:  # noqa: ANN001
+    client, factory, created = db
+    course = await add_course(factory, created)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    session = create_session(client, course)
+    asked = client.post(f"/api/v1/sessions/{session['id']}/reports")
+    assert asked.status_code == 202
+    report_id = asked.json()["report_id"]
+    assert client.get(f"/api/v1/reports/{report_id}").status_code == 200
+
+    sign_in_as(app, uuid4(), Role.LECTURER)
+    missing = client.get(f"/api/v1/reports/{uuid4()}")
+    for path in (f"/api/v1/reports/{report_id}", f"/api/v1/reports/{report_id}/pdf"):
+        response = client.get(path)
+        # The same answer as a report that does not exist.
+        assert response.status_code == missing.status_code == 404, path
+        assert response.json()["error"]["message"] == missing.json()["error"]["message"]
+
+    sign_in_as(app, STUDENT_ID, Role.STUDENT)
+    assert client.get(f"/api/v1/reports/{report_id}").status_code == 403
