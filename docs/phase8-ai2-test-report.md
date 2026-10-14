@@ -17,10 +17,16 @@ Local validation (2026-10-14, macOS, Node 24.19.0):
   summary shape, chat protocol and Teams theme/context tests).
 - `npm run build`: **passed**, including TypeScript project compilation.
 - Browser harness production build: **passed**.
+- `npm run lint` and separate browser-test TypeScript compilation: **passed**.
 - Installed Chrome launch: **blocked by execution sandbox** (SIGABRT before
   any page/test executed). This is not a passing browser run.
 - Chrome and Edge browser results: see the PR's `student-browser` CI jobs and
   their retained HTML reports, failure traces and synthetic performance JSON.
+  Initial commit `089a7b8` passed **14/14 in Chrome 155.0.8059.79** (28.3s)
+  and **14/14 in Edge 155.0.4283.45** (27.1s), without retries, on Ubuntu
+  24.04.5 / Node 24.21.0. [Verified run](https://github.com/ShezinKhais/Cognitive_Learning_Intelligence_Platform/actions/runs/38609375369).
+  Subsequent runs additionally require a non-null inference observation and
+  print synthetic startup measurements to the log for durable evidence.
   A configured test is not evidence of a pass until that job succeeds.
 
 ## Repeatable automated coverage
@@ -32,7 +38,7 @@ Local validation (2026-10-14, macOS, Node 24.19.0):
 | Privacy shutdown | Real synthetic tracks end on disable, disconnect, unmount, rejected consent, pagehide and simulated document hidden. |
 | Local AI | Actual self-hosted MediaPipe and Silero/ONNX startup with synthetic browser media; missing face model failure releases tracks. No mocked inference runtime in startup tests. |
 | Slower CPU | CDP 4x CPU throttling, startup duration attached per sensor, and at least one derived summary within 15 seconds after readiness. This is a regression smoke budget, not an accuracy or real-device latency claim. |
-| Raw-media boundary | Summary keys restricted to the four derived fields; startup test records page requests and rejects external runtime requests. This does not replace a full network/privacy audit or backend transport test. |
+| Raw-media boundary | Summary keys restricted to the four derived fields; startup test records browser-context requests (including workers) and rejects external runtime requests. This does not replace a full network/privacy audit or backend transport test. |
 | Keyboard | Native opt-in controls, save/enable, disable, chat submission and streaming cancellation; Shift+Enter and IME Enter do not submit. |
 | Reduced motion | With reduced-motion emulation, streamed chat update scroll requests are immediate rather than smooth. Existing CSS reduces animation/transition duration. |
 | Chat | Source metadata/excerpt rendering and incremental response cancellation retaining partial text. |

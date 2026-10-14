@@ -78,7 +78,7 @@ test('cancel a pending permission request and release a late stream', async ({ p
 for (const sensor of ['camera', 'microphone'] as const) {
   test(`${sensor}: real local model startup, derived summaries and shutdown under CPU throttling`, async ({ page, context }, info) => {
     const external: string[] = []
-    page.on('request', request => {
+    context.on('request', request => {
       if (!request.url().startsWith('http://127.0.0.1:4174/') && !request.url().startsWith('blob:')) external.push(request.url())
     })
     const cdp = await context.newCDPSession(page)
@@ -89,6 +89,11 @@ for (const sensor of ['camera', 'microphone'] as const) {
     await expect(page.getByRole('button', { name: `Stop ${sensor}`, exact: true })).toBeVisible({ timeout: 60_000 })
     const startupMs = Date.now() - start
     await expect.poll(() => page.evaluate(() => (window as any).probe.summaries.length), { timeout: 15_000 }).toBeGreaterThan(0)
+    // Ready alone is insufficient: require an actual observation from inference.
+    await expect.poll(() => page.evaluate(sensor => (window as any).probe.summaries.some(
+      (summary: { face_present: boolean | null; speaking: boolean | null }) =>
+        (sensor === 'camera' ? summary.face_present : summary.speaking) !== null,
+    ), sensor), { timeout: 15_000 }).toBe(true)
     const summaries = await page.evaluate(() => (window as any).probe.summaries)
     for (const summary of summaries) {
       expect(Object.keys(summary).sort()).toEqual(['face_present', 'gaze_on_screen_ratio', 'speaking', 'window_seconds'])
@@ -96,7 +101,9 @@ for (const sensor of ['camera', 'microphone'] as const) {
       expect(summary.window_seconds).toBeLessThanOrEqual(3600)
     }
     expect(external).toEqual([])
-    await info.attach(`${sensor}-synthetic-performance.json`, { body: JSON.stringify({ startupMs, cpuThrottle: 4, summaries, externalRequests: external }), contentType: 'application/json' })
+    const measurement = { browser: context.browser()?.version(), sensor, startupMs, cpuThrottle: 4, summaries, externalRequests: external }
+    console.log('Synthetic local-AI measurement:', JSON.stringify(measurement))
+    await info.attach(`${sensor}-synthetic-performance.json`, { body: JSON.stringify(measurement), contentType: 'application/json' })
     await page.getByRole('button', { name: 'Disable all now' }).click()
     await expect.poll(() => page.evaluate(() => (window as any).probe.tracks.every((t: MediaStreamTrack) => t.readyState === 'ended'))).toBe(true)
     await expect(page.getByRole('status')).toHaveText('Local sensing off')
