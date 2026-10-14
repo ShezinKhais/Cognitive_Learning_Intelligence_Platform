@@ -62,6 +62,11 @@ ENTRY_POINT = API_TS.parent / "main.tsx"
 
 # Bare specifiers ('react', 'lucide-react') are dependencies, not our source.
 RELATIVE_IMPORT = re.compile(r"""(?:from|import)\s+['"](\.{1,2}/[^'"]+|@/[^'"]+)['"]""")
+# Vite bundles worker entry points separately; they are not ordinary imports.
+WORKER_IMPORT = re.compile(
+    r"""new\s+(?:SharedWorker|Worker)\s*\(\s*new\s+URL\s*\(\s*['"]"""
+    r"""(\.{1,2}/[^'"]+)['"]\s*,\s*import\.meta\.url\s*\)"""
+)
 
 # Vite resolves an extensionless import by trying these in order.
 CANDIDATE_SUFFIXES = ("", ".ts", ".tsx", "/index.ts", "/index.tsx")
@@ -84,7 +89,7 @@ def _resolve(specifier: str, importer: Path, src: Path) -> Path | None:
 def _reachable_from_entry_point(src: Path) -> set[Path]:
     """Walk imports out from main.tsx and collect every module they reach."""
     seen: set[Path] = set()
-    queue = [ENTRY_POINT]
+    queue = [src / "main.tsx"]
 
     while queue:
         current = queue.pop()
@@ -92,12 +97,38 @@ def _reachable_from_entry_point(src: Path) -> set[Path]:
             continue
         seen.add(current)
 
-        for specifier in RELATIVE_IMPORT.findall(current.read_text(encoding="utf-8")):
+        source = current.read_text(encoding="utf-8")
+        for specifier in RELATIVE_IMPORT.findall(source) + WORKER_IMPORT.findall(source):
             target = _resolve(specifier, current, src)
             if target is not None and target.suffix in {".ts", ".tsx"}:
                 queue.append(target)
 
     return seen
+
+
+@pytest.mark.parametrize("constructor", ["Worker", "SharedWorker"])
+def test_reachability_follows_worker_and_its_imports(tmp_path: Path, constructor: str) -> None:
+    (tmp_path / "main.tsx").write_text(
+        f"new {constructor}(\n new URL('./face.worker.ts', import.meta.url), {{ type: 'module' }})",
+        encoding="utf-8",
+    )
+    (tmp_path / "face.worker.ts").write_text("import './signals'", encoding="utf-8")
+    (tmp_path / "signals.ts").write_text("export const value = 1", encoding="utf-8")
+    # An unrelated worker is still an orphan: do not exempt all *.worker.ts files.
+    (tmp_path / "unused.worker.ts").write_text("export {}", encoding="utf-8")
+    assert {path.name for path in _reachable_from_entry_point(tmp_path)} == {
+        "main.tsx",
+        "face.worker.ts",
+        "signals.ts",
+    }
+
+
+def test_asset_url_does_not_make_a_worker_reachable(tmp_path: Path) -> None:
+    (tmp_path / "main.tsx").write_text(
+        "const asset = new URL('./unused.worker.ts', import.meta.url)", encoding="utf-8"
+    )
+    (tmp_path / "unused.worker.ts").write_text("export {}", encoding="utf-8")
+    assert _reachable_from_entry_point(tmp_path) == {tmp_path / "main.tsx"}
 
 
 @pytest.mark.skipif(not ENTRY_POINT.exists(), reason="frontend not present")

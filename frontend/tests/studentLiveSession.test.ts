@@ -23,6 +23,14 @@ const question = {
   source_slide: 4,
 }
 
+test('a rejected attention signal stops local sensing without filling the session error banner', () => {
+  const state = initialLiveSessionState('active')
+  const rejected = liveSessionReducer(state, { type: 'attention-consent-rejected' })
+  assert.equal(rejected.attentionConsentRejected, 1)
+  assert.equal(rejected.error, null)
+  assert.equal(liveSessionReducer(rejected, { type: 'attention-consent-rejected' }).attentionConsentRejected, 2)
+})
+
 test('a student can receive, answer and get feedback for a checkpoint', () => {
   let state = initialLiveSessionState('prepared')
 
