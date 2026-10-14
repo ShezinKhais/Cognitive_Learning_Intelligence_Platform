@@ -903,4 +903,4 @@ async def test_engagement_reports_the_student_id_not_the_user_id(db, app) -> Non
 
     assert scored["student_id"] == str(student_id)
     assert scored["student_id"] != str(STUDENT_ID)
-    assert (scored["status"], scored["signals_available"]) == ("engaged", ["attempt_rate"])
+    assert (scored["status"], scored["signals_available"]) == ("engaged", ["participation"])

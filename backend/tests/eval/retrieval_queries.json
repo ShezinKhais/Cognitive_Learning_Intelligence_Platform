@@ -1,0 +1,68 @@
+[
+  {
+    "material": "lecture.pptx",
+    "kind": "image",
+    "query": "What goes wrong when a straight regression line is fitted to 0/1 gender data against height?",
+    "pages": [9]
+  },
+  {
+    "material": "lecture.pptx",
+    "kind": "image",
+    "query": "Plot of the logit function y = exp(b0 + b1 x) / (1 + exp(b0 + b1 x))",
+    "pages": [12]
+  },
+  {
+    "material": "lecture.pptx",
+    "kind": "image",
+    "query": "Fitted probabilities from the logistic model plotted against height",
+    "pages": [15, 16]
+  },
+  {
+    "material": "lecture.pptx",
+    "kind": "image",
+    "query": "S-shaped logistic curve drawn over the jittered gender points",
+    "pages": [16]
+  },
+  {
+    "material": "lecture.pptx",
+    "kind": "image",
+    "query": "At around what height does the predicted probability of being female fall to one half?",
+    "pages": [15, 16]
+  },
+  {
+    "material": "lecture.pptx",
+    "kind": "text",
+    "query": "What are the three types of logistic regression?",
+    "pages": [5]
+  },
+  {
+    "material": "lecture.pptx",
+    "kind": "text",
+    "query": "Why are the beta estimates exponentiated into odds ratios?",
+    "pages": [4]
+  },
+  {
+    "material": "lecture.pptx",
+    "kind": "text",
+    "query": "Is logistic regression a discriminative or a generative model?",
+    "pages": [6]
+  },
+  {
+    "material": "lecture.pptx",
+    "kind": "text",
+    "query": "Examples of categorical response variables",
+    "pages": [7]
+  },
+  {
+    "material": "lecture.pptx",
+    "kind": "text",
+    "query": "What is the mean of a 0/1 indicator variable?",
+    "pages": [10]
+  },
+  {
+    "material": "lecture.pptx",
+    "kind": "text",
+    "query": "R output of glm(Gender ~ Hgt, family = binomial) with its coefficients",
+    "pages": [13, 14]
+  }
+]

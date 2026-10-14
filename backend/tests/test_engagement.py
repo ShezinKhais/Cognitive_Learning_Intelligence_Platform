@@ -84,8 +84,10 @@ def test_gaze_is_optional_and_missing_signals_are_renormalised():
         EngagementInputs(questions_shown=2, questions_answered=2, attention=attention)
     )
     assert result.signals_available == ["attempt_rate", "gaze"]
-    assert result.score == 0.95
-    assert result.confidence == 2 / 5
+    # Participation alone reads engaged, so the camera cannot move the score.
+    assert result.score == 1.0
+    # Weight that contributed, out of all that could: (1 + 0.5) / (3 * 1 + 2 * 0.5).
+    assert result.confidence == 1.5 / 4
 
 
 def test_speaking_is_never_scored():

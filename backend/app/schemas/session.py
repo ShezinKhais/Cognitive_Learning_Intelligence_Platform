@@ -160,11 +160,19 @@ class EngagementOut(BaseModel):
     confidence: float = Field(
         ge=0.0,
         le=1.0,
-        description="Low confidence renders as 'insufficient data', never as 'disengaged'.",
+        description=(
+            "Whether participation evidence backs the score: 1 when it does, 0 when it does "
+            "not, worked out the same way for every student. It is not a probability. "
+            "No evidence renders as 'insufficient data', never as 'disengaged'."
+        ),
     )
     signals_available: list[str] = Field(
         default_factory=list,
-        description="Which signals contributed. Missing signals are renormalised, not zeroed.",
+        description=(
+            "['participation'] when questions attempted, answer timing or attention prompt "
+            "responses backed the score, otherwise empty. The same view for every student; "
+            "camera and microphone detail is not reported."
+        ),
     )
     computed_at: datetime
 

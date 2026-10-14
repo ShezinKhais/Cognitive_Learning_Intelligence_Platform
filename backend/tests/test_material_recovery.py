@@ -86,3 +86,20 @@ async def test_only_a_material_nobody_is_working_on_is_failed(sessions, lecturer
             (finished, "completed"),
         ):
             assert (await session.get(Material, material_id)).status == status
+
+
+async def test_a_sweep_that_cannot_reach_the_database_is_skipped_quietly(monkeypatch, caplog):
+    """Run every few minutes by the scheduler, so a database that is down must
+    not fill the log with tracebacks; the next sweep tries again."""
+    from app.services import material_recovery
+
+    async def unreachable(active):
+        raise ConnectionRefusedError
+
+    monkeypatch.setattr(material_recovery, "fail_stranded_materials", unreachable)
+
+    with caplog.at_level("DEBUG", logger="clip.material_recovery"):
+        await material_recovery.sweep_stranded(lambda: frozenset())
+
+    assert "stranded material sweep skipped: ConnectionRefusedError" in caplog.text
+    assert not [r for r in caplog.records if r.levelname in ("ERROR", "WARNING")]

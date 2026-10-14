@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator
+from dataclasses import replace
 
 import pytest
 from sqlalchemy import select, text
@@ -27,7 +28,11 @@ from app.repositories.material_repository import MaterialRepository
 from app.repositories.question_repository import QuestionRepository
 from app.schemas.content import Difficulty, QuestionType
 from app.schemas.events import MaterialStage
-from app.services.extraction import ContentChunk, ExtractedElement, ProcessingResult
+from app.services.extraction import (
+    ContentChunk,
+    ExtractedElement,
+    ProcessingResult,
+)
 from app.services.jobs import JobStatus
 from app.services.material_pages import page_previews
 from app.services.material_seams import (
@@ -268,6 +273,37 @@ async def test_nothing_is_half_written_when_the_completion_fails(sessions, lectu
     assert row.status == "pending"
     assert leftovers == []
     assert questions == []
+
+
+async def test_stored_elements_keep_heading_levels_and_captions(sessions, lecturer) -> None:
+    """The upload is deleted once processed, so the stored elements are all
+    that is kept of it: each heading keeps its level, and a captioned image is
+    stored as its caption."""
+    material_id = uuid.uuid4()
+    elements = [
+        ExtractedElement("heading", "Chapter 2", 1, level=1),
+        ExtractedElement("heading", "2.1 Layers", 1, level=2),
+        ExtractedElement("text", "A dense layer connects every input.", 1),
+        ExtractedElement("image", "[image]", 1, caption="A diagram of three dense layers."),
+        ExtractedElement("image", "[image]", 2),
+    ]
+    completed = _completed(material_id)
+    completed = replace(
+        completed,
+        result=replace(completed.result, elements=elements),
+    )
+    store = DatabaseMaterialStore(lambda: sessions)
+    await store.record_accepted(_stored(material_id), lecturer)
+
+    await store.record_completed(completed)
+
+    async with sessions() as session:
+        rows = await MaterialRepository(session).list_elements(material_id)
+    assert [row.metadata_json for row in rows][:2] == [{"level": 1}, {"level": 2}]
+    assert [row.content for row in rows][3:] == [
+        "[Image: A diagram of three dense layers.]",
+        "[image]",
+    ]
 
 
 def test_page_previews_flag_thin_and_image_heavy_pages() -> None:
