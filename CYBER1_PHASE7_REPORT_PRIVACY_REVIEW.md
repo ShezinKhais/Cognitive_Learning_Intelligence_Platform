@@ -41,7 +41,7 @@ Branch `hunain-phase-7`, built on `main`. Location named by the issue:
   class's own score; otherwise it reads `insufficient_data` with no signals.
 * **No per-signal engagement detail**: the engagement block uses the same staff view as
   `/engagement` (`engagement_view.py`, identical to #143's): `signals_available` is
-  `['participation']` or empty and `confidence` is 0, 0.5 or 1, the same for every student,
+  `['participation']` or empty and `confidence` is 0 or 1 (participation evidence or not), the same for every student,
   so a summary cannot reveal that an accommodation rule applied.
 * **Audit**: staff reading a student's summary leave a `security_event=STUDENT_SUMMARY_VIEWED`
   log line (viewer, student, session) and an `audit_log` row (viewer, action, IP). Reading

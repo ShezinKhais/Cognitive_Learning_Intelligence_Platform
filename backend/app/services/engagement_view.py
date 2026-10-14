@@ -7,8 +7,10 @@ that detail, shown per student, would tell a lecturer who has an accommodation
 even though the accommodation itself is never sent anywhere.
 
 So staff see one view, computed the same way for every student from one thing:
-how many *participation* signals (questions attempted, answer timing, attention
-prompt responses) backed the score, capped at what every student can have.
+whether any *participation* signal (questions attempted, answer timing, attention
+prompt responses) backed the score. Not how many: an accommodated student can
+never have the answer-speed signal, so a count, even a capped one, would still
+tell a student with one signal from one with two.
 Camera-derived signals are never named to staff: they only ever added to a score,
 and a per-student camera detail is not something a lecturer should act on.
 
@@ -28,9 +30,9 @@ PARTICIPATION_SIGNALS = ("attempt_rate", "response_timing", "prompt_response")
 # The one name staff see. Not a scorer signal: a summary of the ones above.
 PARTICIPATION = "participation"
 
-# The most participation evidence every student can have: an accommodated
-# student is never scored on answer speed, so two is what all can reach.
-COMMON_CEILING = 2
+# The most participation evidence that cannot tell students apart: every
+# student with any participation signal has at least one (questions attempted).
+COMMON_CEILING = 1
 
 
 def participation_count(signals: Iterable[str]) -> int:
@@ -43,5 +45,6 @@ def staff_signals(signals: Iterable[str]) -> list[str]:
 
 
 def staff_confidence(signals: Iterable[str]) -> float:
-    """0, 0.5 or 1.0: participation evidence, capped at what every student can have."""
+    """1.0 when participation evidence backed the score, else 0.0. Whether there was
+    evidence, not a probability that the score is right."""
     return min(participation_count(signals), COMMON_CEILING) / COMMON_CEILING
