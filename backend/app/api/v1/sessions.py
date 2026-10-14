@@ -43,8 +43,9 @@ from app.schemas.session import (
     StudentSessionSummary,
     TopicDifficultyOut,
 )
-from app.services import alert_store, session_lifecycle, student_report
+from app.services import alert_store, session_lifecycle
 from app.services.session_access import may_view_session_analytics
+from app.services.student_report import build_student_summary, record_staff_view
 
 # Running a session is staff work. Students reach a session over the socket.
 _staff = [Depends(require_roles(Role.LECTURER, Role.ADMIN))]
@@ -326,11 +327,11 @@ async def student_summary(
     consented = ConsentType.ENGAGEMENT_MONITORING in await granted_consents(
         student.user_id, settings, db
     )
-    summary = await student_report.build_student_summary(
+    summary = await build_student_summary(
         db, session_id, student_id, student.user_id, engagement_consented=consented
     )
     if not own:
-        await student_report.record_staff_view(
+        await record_staff_view(
             db,
             viewer=principal.user_id,
             student_id=student_id,
