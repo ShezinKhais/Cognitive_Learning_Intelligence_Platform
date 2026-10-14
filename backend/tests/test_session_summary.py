@@ -681,3 +681,57 @@ def test_a_topic_name_is_not_read_as_a_claim():
     facts = lecturer_facts([topic("Why simple models fail", 1, 1, 4, level=Difficulty.HARD)])
     summary = "Why simple models fail was hard: 4 of 6 answers were struggling."
     assert summary_problems(summary, facts) == []
+
+
+# --- second review of #138: only the words the facts allow ---------------------
+
+
+@pytest.mark.parametrize(
+    "summary",
+    [
+        "The class mastered Odds ratios.",
+        "Odds ratios went well and needs no revisiting.",
+        "Odds ratios was not hard.",
+        "Odds ratios was hard. Photosynthesis and Logit were easy.",
+    ],
+)
+def test_lecturer_sentences_the_facts_do_not_allow_are_refused(summary):
+    assert summary_problems(summary, two_facts())
+
+
+@pytest.mark.parametrize(
+    "summary",
+    [
+        "You mastered Logit across 2 questions, well done. Odds ratios needs more work, "
+        "so review slides 4 and 5, just like Sara.",
+        "You have not mastered Logit. Odds ratios needs more work, so review slides 4 and 5.",
+        "You mastered Logit. Odds ratios went perfectly, no need to review slides 4 and 5.",
+        "You mastered Logit and Photosynthesis. Odds ratios needs more work, "
+        "so review slides 4 and 5.",
+    ],
+)
+def test_student_sentences_the_facts_do_not_allow_are_refused(summary):
+    assert student_summary_problems(summary, student_facts(my_answers(), ME))
+
+
+def test_praise_and_review_advice_must_fit_the_topic():
+    facts = student_facts(my_answers(), ME)
+    assert student_summary_problems(
+        "Logit needs more work, so review it. Odds ratios: review slides 4 and 5.", facts
+    )
+    assert student_summary_problems(
+        "You mastered Logit across 2 questions. Odds ratios, well done.", facts
+    )
+    assert summary_problems("Logit was easy, so revisit it.", two_facts())
+
+
+def test_a_topic_is_named_only_as_whole_words():
+    facts = student_facts([answer("Logit", "mastered", slide=2)], ME)
+    assert "does not mention Logit" in student_summary_problems(
+        "You mastered Logits across 1 question.", facts
+    )
+
+
+def test_unsupported_words_are_listed_for_the_retry():
+    problems = summary_problems("Odds ratios was not hard, said Sara.", two_facts())
+    assert any("uses words the facts do not support: not, said, sara" in p for p in problems)
