@@ -177,6 +177,13 @@ export default function LecturerAttentionPanel({
             </div>
           </dl>
 
+          <p className="mt-4 text-xs leading-5 text-muted-foreground">
+            For privacy and contract safety, the current
+            engagement API provides student IDs rather than
+            display names. Shortened IDs are shown here
+            instead of adding an unapproved identity lookup.
+          </p>
+
           <div className="mt-5 grid gap-3 md:grid-cols-2">
             {students.map(
               (student) => (

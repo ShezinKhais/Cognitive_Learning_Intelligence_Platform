@@ -322,9 +322,7 @@ export default function LecturerLiveSessionPage() {
     sessionState?.status,
   ])
 
-
-
-    useEffect(() => {
+  useEffect(() => {
     if (!sessionId) {
       setTopics([])
       setTopicsError(null)
@@ -380,8 +378,6 @@ export default function LecturerLiveSessionPage() {
     sessionId,
     closedQuestion,
   ])
-
-
 
   useEffect(() => {
     if (
