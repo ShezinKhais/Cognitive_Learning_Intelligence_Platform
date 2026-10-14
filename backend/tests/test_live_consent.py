@@ -363,3 +363,36 @@ async def test_the_consent_route_applies_a_withdrawal_now_and_a_grant_at_the_nex
         "/api/v1/auth/consent", json={"consent_type": "engagement_monitoring", "granted": True}
     )
     assert not classroom.consents.monitored(STUDENT_ID)
+
+
+async def test_joining_a_class_notes_whether_the_student_has_an_accommodation(db, app) -> None:
+    """The fact is looked up when a student joins, and only the fact is kept."""
+    from sqlalchemy import update
+
+    from app.models.student import Student
+
+    client, factory, created = db
+    course = await add_course(factory, created)
+    await enrol(factory, course)
+    async with factory() as seed:
+        await seed.execute(
+            update(Student)
+            .where(Student.user_id == STUDENT_ID)
+            .values(accessibility_need="needs x")
+        )
+        await seed.commit()
+    await add_question(db, course, LECTURER_ID)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    session = create_session(client, course)
+    assert client.post(f"/api/v1/sessions/{session['id']}/start").status_code == 200
+    token = token_for(client, "student@clip.example.com", STUDENT_PASSWORD)
+    classroom.accommodations.set(STUDENT_ID, False)
+
+    try:
+        with client.websocket_connect("/ws/session") as ws:
+            ws.send_json({"type": "auth", "data": {"token": token, "session_id": session["id"]}})
+            assert ws.receive_json()["type"] == "ready"
+            assert STUDENT_ID in classroom.accommodations
+    finally:
+        classroom.accommodations.set(STUDENT_ID, False)
+        client.post(f"/api/v1/sessions/{session['id']}/end")
