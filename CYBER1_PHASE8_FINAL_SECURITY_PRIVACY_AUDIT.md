@@ -67,7 +67,8 @@ Mutation pass over every control added in this phase: 35 deliberate breaks, 32 c
 ## 7. Integration check
 
 main + #143 + #144 + this branch merged in a scratch worktree and the full suite run on the
-result.
+result: 1995 passed, ruff and the contract check clean, and the three branches merge without conflicts.
+The audit matrix also checks #144's summary route (404 for another lecturer) once it is present.
 
 ## 8. Residual risks
 
