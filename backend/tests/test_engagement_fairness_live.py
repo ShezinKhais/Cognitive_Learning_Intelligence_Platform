@@ -302,3 +302,21 @@ async def test_an_error_while_checking_never_logs_its_text(
         await has_accommodation(_Db(), uuid4())  # type: ignore[arg-type]
     assert "wheelchair" not in caplog.text
     assert "wheelchair" not in " ".join(str(r.exc_info) for r in caplog.records)
+
+
+async def test_nothing_is_learned_from_the_camera_of_an_accommodated_student() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from app.realtime.attention import Attention
+
+    attention = Attention(uuid4())
+    plain, accommodated = uuid4(), uuid4()
+    now = datetime.now(UTC)
+    for _ in range(3):
+        for student in (plain, accommodated):
+            attention.observe(student, _gaze(0.4, True), now)
+        attention.score({plain, accommodated}, set(), {}, now, {accommodated})
+        now = now + timedelta(seconds=3)
+    assert len(attention._students[plain].baseline.gaze) == 3
+    kept = attention._students[accommodated].baseline
+    assert (kept.gaze, kept.face) == ([], [])
