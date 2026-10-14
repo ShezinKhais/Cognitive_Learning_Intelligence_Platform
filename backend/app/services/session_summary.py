@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from app.schemas.content import Difficulty
 from app.schemas.session import ComprehensionLabel
 from app.services.generation import contains_embedded_instruction
+from app.services.text_screening import safe_display_text
 from app.services.topic_difficulty import (
     EASY_BELOW,
     HARD_FROM,
@@ -59,6 +60,18 @@ class TopicFact:
     expected: Difficulty | None
 
 
+# A topic name is written by people (the lecturer, the question generator) and
+# reaches both the model's prompt and the plain-facts fallback, so it is
+# screened like any other text of unknown origin. One that fails is shown by
+# its place instead: "Topic 2".
+MAX_TOPIC_CHARS = 80
+
+
+def safe_topic(name: str, number: int) -> str:
+    """The topic's name, or "Topic <number>" when it is not safe to show."""
+    return safe_display_text(name, limit=MAX_TOPIC_CHARS) or f"Topic {number}"
+
+
 def lecturer_facts(topics: Iterable[TopicDifficulty]) -> list[TopicFact]:
     """The facts behind a lecturer's summary, hardest topic first.
 
@@ -67,9 +80,10 @@ def lecturer_facts(topics: Iterable[TopicDifficulty]) -> list[TopicFact]:
     out because the level already says it in words, and a second number is one
     more the model could get wrong.
     """
+    levelled = [t for t in topics if t.level is not None]
     return [
         TopicFact(
-            topic=t.topic,
+            topic=safe_topic(t.topic, number),
             level=t.level,
             answers=t.answers,
             mastered=t.mastered,
@@ -78,12 +92,13 @@ def lecturer_facts(topics: Iterable[TopicDifficulty]) -> list[TopicFact]:
             uncertain=t.uncertain,
             expected=t.expected if t.expected != t.level else None,
         )
-        for t in topics
-        if t.level is not None
+        for number, t in enumerate(levelled, start=1)
     ]
 
 
-SUMMARY_PROMPT_VERSION = "lecturer-summary-v3"
+# v4: the same prompt with the words a summary may use for levels and numbers
+# spelled out, now that the check refuses any others (_unsupported_claims).
+SUMMARY_PROMPT_VERSION = "lecturer-summary-v4"
 
 # A few sentences: the lecturer reads it between classes, and every extra
 # sentence is another place a wrong number can hide.
@@ -103,7 +118,11 @@ Rules:
 - Call each topic by its name exactly as written in the facts.
 - Give each topic its own sentence, and name a topic from the facts in every
   sentence.
-- Start with the hardest topic. Say which topics the lecturer should revisit.
+- Describe a level only with the words easy, medium or hard.
+- Do not say why a topic went as it did, and do not describe the students or
+  the lecturer.
+- Begin with the first topic in the facts. Say which topics the lecturer
+  should revisit.
 - At most {max_sentences} sentences of plain text. No headings, no lists.
 
 FACTS:
@@ -126,6 +145,52 @@ _COUNTED = re.compile(
     flags=re.IGNORECASE,
 )
 _LEVEL = re.compile(r"\b(easy|medium|hard)\b", flags=re.IGNORECASE)
+
+# What no sentence may say, because no fact supports it. The check reads
+# numbers and level words; these are the other ways a fluent sentence adds a
+# claim. Each is (pattern, what was wrong), and the pattern is matched on the
+# sentence with its topic names blanked out, so a topic called "Why models
+# fail" is not a cause.
+_UNSUPPORTED = (
+    (
+        # Counts belong in digits, where the check can read them.
+        r"\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve"
+        r"|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty"
+        r"|forty|fifty|hundred|dozen|half|quarter|third)\b",
+        "writes a number as a word",
+    ),
+    (
+        r"\b(?:all|every|everyone|everybody|nobody|none|most|majority|entire|whole)\b"
+        r"|\bno\s+one\b",
+        "claims something about a whole group",
+    ),
+    (
+        r"\b(?:because|due\s+to|caused?|reasons?|since|probably|likely|maybe|perhaps"
+        r"|might|seems?|suggests?|therefore|thus|as\s+a\s+result)\b",
+        "gives a cause or a guess",
+    ),
+    (
+        r"\b(?:lecturer|teacher|instructor|teaching|study|studied|studying|effort|lazy"
+        r"|careless|motivat\w*|tired|distracted|weak|slow|smart|clever"
+        r"|stupid|dumb|talented|gifted|incapable|clearly|obviously)\b|\bbad\s+at\b",
+        "describes a person",
+    ),
+    (
+        # A level is easy, medium or hard: any other word for it cannot be
+        # checked against the facts.
+        r"\b(?:difficult|difficulty|tough|toughest|challeng\w*|tricky|simple|straightforward"
+        r"|trivial|hardest|harder|easiest|easier)\b",
+        "describes a level with a word other than easy, medium or hard",
+    ),
+)
+_UNSUPPORTED_PATTERNS = tuple(
+    (re.compile(pattern, flags=re.IGNORECASE), why) for pattern, why in _UNSUPPORTED
+)
+
+
+def _unsupported_claims(claims: str) -> list[str]:
+    """What the sentence, its topic names blanked out, says that no fact can."""
+    return [why for pattern, why in _UNSUPPORTED_PATTERNS if pattern.search(claims)]
 
 
 def _numbers(fact: TopicFact) -> set[str]:
@@ -162,6 +227,7 @@ def _sentence_problems(
         # about a count of 2.
         claims = _without_topics(sentence, [topics[i] for i in named])
         checked.append((claims, named))
+        problems.extend(f"sentence {number} {why}" for why in _unsupported_claims(claims))
         numbers = _NUMBER.findall(claims)
         if not named:
             # Nothing to check it against, so nothing it says can be
@@ -352,7 +418,8 @@ class LecturerSummariser:
 
 # --- the student's summary ---------------------------------------------------
 
-STUDENT_PROMPT_VERSION = "student-summary-v3"
+# v4: as the lecturer's v4, plus no words about the student as a person.
+STUDENT_PROMPT_VERSION = "student-summary-v4"
 NO_STUDENT_FACTS = "You have no marked answers in this session yet."
 
 # Good news first: the summary starts with what the student did well.
@@ -405,7 +472,7 @@ def student_facts(
         groups.setdefault(key, []).append(answer)
 
     facts = []
-    for key, group in groups.items():
+    for number, (key, group) in enumerate(groups.items(), start=1):
         label = _student_label(group)
         slides = (
             ()
@@ -423,7 +490,7 @@ def student_facts(
         )
         facts.append(
             StudentTopicFact(
-                topic=names[key],
+                topic=safe_topic(names[key], number),
                 label=label,
                 questions=len({a.question_id for a in group}),
                 slides=slides,
@@ -453,6 +520,8 @@ Rules:
 - Speak to the student as "you". Start with what they did well, then what to
   review, with its slide numbers.
 - Never mention other students, the class, averages or comparisons.
+- Talk about the topics, never about the student as a person: no words like
+  weak, lazy or clever.
 - Write every number as digits, exactly as it appears in the facts, and say
   what it counts, e.g. "2 questions" or "slides 4 and 5".
 - Call each topic by its name exactly as written in the facts.
@@ -473,8 +542,10 @@ def build_student_prompt(facts: Sequence[StudentTopicFact]) -> str:
 # Words that compare a student with others. "class" alone is allowed: "in
 # today's class" says nothing about anyone else.
 _OTHERS = re.compile(
-    r"\b(classmates?|other students?|everyone else|rest of the class|"
-    r"(?:the )?average|peers?|compared|most students|the class as a whole)\b",
+    r"\b(classmates?|other\s+(?:students?|learners?|people|pupils?)|others|fellow\w*"
+    r"|everyone\s+else|rest\s+of\s+the\s+class|(?:the\s+)?average|peers?|compar\w*"
+    r"|most\s+students|the\s+class\s+as\s+a\s+whole|unlike|(?:better|worse|more|less"
+    r"|faster|slower)\s+than|ahead\s+of|ranked?|ranking|top\s+of\s+the\s+class)\b",
     flags=re.IGNORECASE,
 )
 _STUDENT_LABEL = re.compile(r"\b(mastered|partial(?:ly)?|struggl\w*)\b", flags=re.IGNORECASE)
