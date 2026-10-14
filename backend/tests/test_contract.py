@@ -52,6 +52,10 @@ EXPECTED_PATHS = {
     # Added in Phase 5 for the tutor (General CS). Additive. The reply is a
     # stream of NDJSON events, so it has no response model.
     "/api/v1/sessions/{session_id}/chat",
+    # Added in Phase 7 for session reports and their PDF (General CS). Additive.
+    "/api/v1/sessions/{session_id}/reports",
+    "/api/v1/reports/{report_id}",
+    "/api/v1/reports/{report_id}/pdf",
 }
 
 

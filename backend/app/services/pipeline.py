@@ -31,7 +31,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Coroutine, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from functools import partial
 from typing import Any
 from uuid import UUID
 
@@ -41,8 +42,9 @@ from app.core.threads import run_in_daemon_thread
 from app.realtime.hub import SessionHub
 from app.realtime.hub import hub as default_hub
 from app.schemas.events import MaterialProgressPayload, MaterialStage, ServerEventType
-from app.services.extraction import ContentChunk, process_material
+from app.services.extraction import ContentChunk, extract_material, finish_material
 from app.services.generation import contains_embedded_instruction
+from app.services.image_captioning import CAPTION_PROMPT_VERSION, ImageCaptioner, add_captions
 from app.services.jobs import (
     INTERNAL_ERROR,
     INTERRUPTED_ERROR,
@@ -59,7 +61,7 @@ from app.services.material_seams import (
     ModelRun,
     QuestionGenerator,
 )
-from app.services.processing_security import validate_processing_result
+from app.services.processing_security import validate_extraction, validate_processing_result
 from app.services.storage import MaterialStorage, StoredFile
 
 log = logging.getLogger("clip.pipeline")
@@ -96,6 +98,9 @@ class MaterialPipeline:
     generator: QuestionGenerator
     store: MaterialStore | None = None
     hub: SessionHub = field(default=default_hub)
+    # Describes the material's images before it is chunked for good. None
+    # leaves them as placeholders, as before Phase 6.
+    captioner: ImageCaptioner | None = None
 
     def job(self, stored: StoredFile, owner_id: UUID) -> MaterialJob:
         return MaterialJob(self, stored, owner_id)
@@ -182,18 +187,51 @@ class MaterialJob:
 
         await self._report(MaterialStage.EXTRACTING, "Reading the document.")
         async with pipeline.storage.materialise(self._stored) as path:
-            # process_material is synchronous and CPU-bound: fifteen seconds on
+            # extract_material is synchronous and CPU-bound: fifteen seconds on
             # a normal deck, eighteen when it upgrades to docling. Calling it
             # inline would freeze every live session on this process for that
             # long, which is the exact failure the 202 exists to avoid.
             # Extraction only reads the stored file, so a daemon thread is safe.
-            result = await run_in_daemon_thread(
-                process_material,
+            extraction = await run_in_daemon_thread(
+                partial(extract_material, with_images=pipeline.captioner is not None),
                 str(path),
-                self.material_id,
                 pipeline.settings.max_upload_bytes,
                 name="material-extraction",
             )
+
+        # Checked before captioning, so a file already over the limits is
+        # rejected before it spends minutes of vision model calls.
+        validate_extraction(extraction.elements, pipeline.settings)
+
+        model_runs: list[ModelRun] = []
+        if pipeline.captioner is not None and any(e.image for e in extraction.elements):
+            await self._report(MaterialStage.EXTRACTING, "Describing the images.")
+            elements, captions = await add_captions(
+                extraction.elements, pipeline.captioner, self.material_id
+            )
+            extraction = replace(
+                extraction,
+                elements=elements,
+                warnings=extraction.warnings + captions.warnings(),
+            )
+            if captions.sent:
+                model_runs.append(
+                    ModelRun(
+                        operation="image_captioning",
+                        model=captions.model,
+                        succeeded=captions.succeeded,
+                        detail=(
+                            f"{captions.captioned} of {captions.sent} image(s) described, "
+                            f"prompt {CAPTION_PROMPT_VERSION}"
+                        ),
+                    )
+                )
+        # Chunked once, with the captions in, off the event loop like the
+        # extraction. An image-only file let through extraction to be
+        # captioned fails here when no caption was written.
+        result = await run_in_daemon_thread(
+            finish_material, extraction, self.material_id, name="material-chunking"
+        )
 
         # Validation, extraction and chunking are one call in AI 1's module, so
         # this event marks chunking finished rather than started. Splitting it
@@ -242,6 +280,7 @@ class MaterialJob:
                 questions=tuple(questions),
                 warnings=tuple(warnings),
                 model_runs=(
+                    *model_runs,
                     ModelRun(operation="embedding", model=embeddings.model, succeeded=True),
                     generation,
                 ),

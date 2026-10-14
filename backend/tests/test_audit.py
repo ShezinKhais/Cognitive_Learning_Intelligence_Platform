@@ -111,3 +111,50 @@ async def test_audit_action_does_not_log_failed_change() -> None:
 
     assert db.added == []
     assert db.flushed is False
+
+
+class CommittingSession(FakeSession):
+    def __init__(self) -> None:
+        super().__init__()
+        self.committed_after_flush = False
+
+    async def commit(self) -> None:
+        self.committed_after_flush = self.flushed
+
+
+@pytest.mark.asyncio
+async def test_audit_action_can_commit_the_change_with_its_record() -> None:
+    db = CommittingSession()
+
+    @audit_action("CONSENT_UPDATED", commit=True)
+    async def endpoint(*, principal, settings, db, request):
+        return "success"
+
+    await endpoint(
+        principal=SimpleNamespace(user_id=uuid4()),
+        settings=SimpleNamespace(is_production=True),
+        db=db,
+        request=make_request(),
+    )
+
+    assert len(db.added) == 1
+    assert db.committed_after_flush is True
+
+
+@pytest.mark.asyncio
+async def test_audit_action_does_not_commit_a_failed_change() -> None:
+    db = CommittingSession()
+
+    @audit_action("CONSENT_UPDATED", commit=True)
+    async def endpoint(*, principal, settings, db, request):
+        raise ValueError("change failed")
+
+    with pytest.raises(ValueError, match="change failed"):
+        await endpoint(
+            principal=SimpleNamespace(user_id=uuid4()),
+            settings=SimpleNamespace(is_production=True),
+            db=db,
+            request=make_request(),
+        )
+
+    assert db.added == [] and db.committed_after_flush is False
