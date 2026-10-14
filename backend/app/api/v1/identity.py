@@ -8,8 +8,12 @@ Contract frozen in Phase 1. Handler bodies are owned by:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from fastapi import APIRouter, Depends, Request, UploadFile, status
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from app.api.deps import (
     AppSettings,
@@ -291,12 +295,29 @@ async def me(
     )
 
 
+def _after_commit(db: AsyncSession, apply: Callable[[], None]) -> None:
+    """Run apply once db's transaction commits, and never if it rolls back."""
+    session = db.sync_session
+    pending = [True]
+
+    def committed(_: Session) -> None:
+        if pending:
+            pending.clear()
+            apply()
+
+    def rolled_back(_: Session) -> None:
+        pending.clear()
+
+    event.listen(session, "after_commit", committed)
+    event.listen(session, "after_rollback", rolled_back)
+
+
 @auth.post(
     "/consent",
     response_model=ConsentOut,
     status_code=status.HTTP_201_CREATED,
 )
-@audit_action("CONSENT_UPDATED")
+@audit_action("CONSENT_UPDATED", commit=True)
 async def record_consent(
     payload: ConsentRequest,
     request: Request,
@@ -346,18 +367,23 @@ async def record_consent(
 
     # Live classes act on a decision at once, not at the user's next join.
     # A withdrawal is applied before anything else can happen. A grant is
-    # committed first and then read back from the store, so a class never
-    # acts on one that might not be kept, and a withdrawal made meanwhile wins.
+    # read back from the store within this transaction and admitted only once
+    # the transaction, audit record included, has committed (audit_action
+    # commits it before responding), so a class never acts on a grant that
+    # was not kept with its audit record. A withdrawal made meanwhile wins.
     if not record.granted:
         await classroom.withdraw_consent(principal.user_id, payload.consent_type)
     else:
-        await db.commit()
         read_at = classroom.consents.version(principal.user_id)
-        classroom.admit_consents(
-            principal.user_id,
-            await granted_consents(principal.user_id, settings, db),
-            read_at,
-        )
+        granted = await granted_consents(principal.user_id, settings, db)
+
+        def admit() -> None:
+            classroom.admit_consents(principal.user_id, granted, read_at)
+
+        if settings.is_production:
+            _after_commit(db, admit)
+        else:
+            admit()
 
     return ConsentOut(
         consent_type=record_consent_type,

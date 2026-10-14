@@ -19,8 +19,8 @@ class that means:
 The classroom reads this registry and the socket fills it from the store when
 a user is admitted. The consent route applies a decision to it at once, so
 collection starts or stops immediately rather than at the next reconnect: a
-withdrawal straight away, a grant once it is committed and read back from the
-store, so no class acts on one the database might not keep.
+withdrawal straight away, a grant once it has committed with its audit record,
+so no class acts on one the database might not keep.
 """
 
 from __future__ import annotations

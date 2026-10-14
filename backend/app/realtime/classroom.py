@@ -940,9 +940,10 @@ class Classroom:
         microphone: those parts of their stored signal are dropped. Terms:
         their session sockets are closed.
 
-        A grant is not applied here. The consent route admits it once it is
-        committed and read back from the store (admit_consents), so no class
-        ever acts on a decision the database might not keep.
+        A grant is not applied here. The consent route reads it back from the
+        store and admits it (admit_consents) once it has committed together
+        with its audit record, so no class ever acts on a decision the
+        database might not keep.
         """
         held = self.consents.set(user_id, self.consents.granted(user_id) - {consent})
         withdrawn: list[Prompt] = []

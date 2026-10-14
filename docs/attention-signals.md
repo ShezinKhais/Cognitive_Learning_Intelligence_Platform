@@ -74,8 +74,9 @@ recorders, and `install_live_store` registers one.
 
 ## Consent changes during a class
 
-- **Granted:** it applies once the consent route has committed it and read it
-  back from the store. Before #59, a grant only took effect when the student
+- **Granted:** it applies once the consent route has committed it together with
+  its audit record. If either fails, the grant is neither stored nor applied.
+  Before #59, a grant only took effect when the student
   next joined. Until then, every signal from a student who opted in during class
   was refused with `CONSENT_REQUIRED`.
 - **Monitoring withdrawn:** the minute in progress is dropped and never stored,
