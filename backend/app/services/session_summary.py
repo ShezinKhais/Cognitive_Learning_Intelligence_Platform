@@ -96,9 +96,10 @@ def lecturer_facts(topics: Iterable[TopicDifficulty]) -> list[TopicFact]:
     ]
 
 
-# v4: the same prompt with the words a summary may use for levels and numbers
-# spelled out, now that the check refuses any others (_unsupported_claims).
-SUMMARY_PROMPT_VERSION = "lecturer-summary-v4"
+# v4: the words a summary may use for levels and numbers spelled out.
+# v5: the check accepts only the words of LECTURER_WORDS besides topics and
+# numbers, so the prompt asks for plain sentences of that shape.
+SUMMARY_PROMPT_VERSION = "lecturer-summary-v5"
 
 # A few sentences: the lecturer reads it between classes, and every extra
 # sentence is another place a wrong number can hide.
@@ -120,7 +121,9 @@ Rules:
   sentence.
 - Describe a level only with the words easy, medium or hard.
 - Do not say why a topic went as it did, and do not describe the students or
-  the lecturer.
+  the lecturer. No negatives, no praise, no names of people, no other topics.
+- Write plain sentences like these: "Odds ratios was hard: 4 of 6 answers were
+  struggling, so revisit it." "Logit was easy, with 5 mastered."
 - Begin with the first topic in the facts. Say which topics the lecturer
   should revisit.
 - At most {max_sentences} sentences of plain text. No headings, no lists.
@@ -145,52 +148,51 @@ _COUNTED = re.compile(
     flags=re.IGNORECASE,
 )
 _LEVEL = re.compile(r"\b(easy|medium|hard)\b", flags=re.IGNORECASE)
+_LABEL_WORD = re.compile(r"\b(?:mastered|partial|struggling|uncertain)\b", flags=re.IGNORECASE)
 
-# What no sentence may say, because no fact supports it. The check reads
-# numbers and level words; these are the other ways a fluent sentence adds a
-# claim. Each is (pattern, what was wrong), and the pattern is matched on the
-# sentence with its topic names blanked out, so a topic called "Why models
-# fail" is not a cause.
-_UNSUPPORTED = (
-    (
-        # Counts belong in digits, where the check can read them.
-        r"\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve"
-        r"|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty"
-        r"|forty|fifty|hundred|dozen|half|quarter|third)\b",
-        "writes a number as a word",
-    ),
-    (
-        r"\b(?:all|every|everyone|everybody|nobody|none|most|majority|entire|whole)\b"
-        r"|\bno\s+one\b",
-        "claims something about a whole group",
-    ),
-    (
-        r"\b(?:because|due\s+to|caused?|reasons?|since|probably|likely|maybe|perhaps"
-        r"|might|seems?|suggests?|therefore|thus|as\s+a\s+result)\b",
-        "gives a cause or a guess",
-    ),
-    (
-        r"\b(?:lecturer|teacher|instructor|teaching|study|studied|studying|effort|lazy"
-        r"|careless|motivat\w*|tired|distracted|weak|slow|smart|clever"
-        r"|stupid|dumb|talented|gifted|incapable|clearly|obviously)\b|\bbad\s+at\b",
-        "describes a person",
-    ),
-    (
-        # A level is easy, medium or hard: any other word for it cannot be
-        # checked against the facts.
-        r"\b(?:difficult|difficulty|tough|toughest|challeng\w*|tricky|simple|straightforward"
-        r"|trivial|hardest|harder|easiest|easier)\b",
-        "describes a level with a word other than easy, medium or hard",
-    ),
+# The words a sentence may use besides topic names and numbers. The check
+# allows, rather than forbids: a word not listed is a claim the facts may not
+# support, however it is phrased ("not hard", "went well", "just like Sara",
+# a topic that is not in the facts), so the sentence is refused. Numbers,
+# levels and labels among these are then checked against the facts.
+_SHARED_WORDS = frozenset(
+    """a an and the it its this that these those both each also only as so then
+    with of on in at for from by to was were is are be been has had have topic
+    topics answer answers mastered partial partly struggling uncertain label
+    labels""".split()
 )
-_UNSUPPORTED_PATTERNS = tuple(
-    (re.compile(pattern, flags=re.IGNORECASE), why) for pattern, why in _UNSUPPORTED
+LECTURER_WORDS = _SHARED_WORDS | frozenset(
+    """class students found easy medium hard expected although but while whereas
+    however overall out""".split()
 )
+# Allowed only about a topic that is not easy: it is advice to go back to it.
+LECTURER_REVISIT_WORDS = frozenset(
+    """revisit revisiting review reviewing worth consider again next lesson session
+    time needs need more work should""".split()
+)
+STUDENT_WORDS = _SHARED_WORDS | frozenset(
+    """you your question questions answered struggled across slide slides""".split()
+)
+# Praise is allowed only about mastered topics, and advice to review only
+# about topics that are not mastered.
+STUDENT_PRAISE_WORDS = frozenset("well done great good job nice excellent keep up".split())
+STUDENT_REVIEW_WORDS = frozenset(
+    """review revisit needs need more work another look again practise practice
+    worth go back over""".split()
+)
+# Most words a problem lists, so a reply full of them does not fill the retry.
+MAX_WORDS_LISTED = 5
+_WORD = re.compile(r"[a-z]+")
 
 
-def _unsupported_claims(claims: str) -> list[str]:
-    """What the sentence, its topic names blanked out, says that no fact can."""
-    return [why for pattern, why in _UNSUPPORTED_PATTERNS if pattern.search(claims)]
+def _unsupported_words(claims: str, allowed: frozenset[str]) -> list[str]:
+    """Words in the sentence, its topic names blanked out, that no fact backs."""
+    return sorted({word for word in _WORD.findall(claims.lower()) if word not in allowed})
+
+
+def _words_problem(number: int, words: Sequence[str]) -> str:
+    listed = ", ".join(words[:MAX_WORDS_LISTED])
+    return f"sentence {number} uses words the facts do not support: {listed}"
 
 
 def _numbers(fact: TopicFact) -> set[str]:
@@ -222,12 +224,11 @@ def _sentence_problems(
 
     checked: list[tuple[str, list[int]]] = []
     for number, sentence in enumerate(sentences, start=1):
-        named = [i for i, t in enumerate(topics) if t.casefold() in sentence.casefold()]
+        named = [i for i, t in enumerate(topics) if _names_topic(sentence, t)]
         # A topic's own name is not a claim: "L2 regularization" says nothing
         # about a count of 2.
         claims = _without_topics(sentence, [topics[i] for i in named])
         checked.append((claims, named))
-        problems.extend(f"sentence {number} {why}" for why in _unsupported_claims(claims))
         numbers = _NUMBER.findall(claims)
         if not named:
             # Nothing to check it against, so nothing it says can be
@@ -244,11 +245,20 @@ def _sentence_problems(
     return problems, checked
 
 
+def _topic_pattern(topic: str) -> re.Pattern[str]:
+    """The topic's name as whole words: "Logit" is not named by "Logits"."""
+    return re.compile(r"(?<!\w)" + re.escape(topic) + r"(?!\w)", flags=re.IGNORECASE)
+
+
+def _names_topic(text: str, topic: str) -> bool:
+    return _topic_pattern(topic).search(text) is not None
+
+
 def _without_topics(sentence: str, topics: Sequence[str]) -> str:
     """The sentence with the named topics blanked out, longest first, so a
     shorter name inside a longer one is not left behind."""
     for topic in sorted(topics, key=len, reverse=True):
-        sentence = re.sub(re.escape(topic), " ", sentence, flags=re.IGNORECASE)
+        sentence = _topic_pattern(topic).sub(" ", sentence)
     return sentence
 
 
@@ -279,17 +289,25 @@ def summary_problems(summary: str, facts: Sequence[TopicFact]) -> list[str]:
     )
     if not summary.strip():
         return problems
-    if facts and facts[0].topic.casefold() not in summary.casefold():
+    if facts and not _names_topic(summary, facts[0].topic):
         problems.append(f"does not mention the hardest topic, {facts[0].topic}")
 
     for number, (sentence, indexes) in enumerate(checked, start=1):
         named = [facts[i] for i in indexes]
         if not named:
             continue
+        allowed = LECTURER_WORDS
+        if all(f.level != Difficulty.EASY for f in named):
+            allowed = allowed | LECTURER_REVISIT_WORDS
+        words = _unsupported_words(sentence, allowed)
+        if words:
+            problems.append(_words_problem(number, words))
         bound: set[int] = set()
+        counted_labels: set[int] = set()
         for match in _COUNTED.finditer(sentence):
             count, field = match.group(1), match.group(2).lower()
             bound.add(match.start(1))
+            counted_labels.add(match.start(2))
             if not all(str(getattr(f, field)) == count for f in named):
                 problems.append(f"{count} {field} is wrong for {_names(named)}")
         for match in _ANSWERS.finditer(sentence):
@@ -299,6 +317,13 @@ def summary_problems(summary: str, facts: Sequence[TopicFact]) -> list[str]:
                 problems.append(f"{match.group(group)} answers is wrong for {_names(named)}")
         for value in _unbound_numbers(sentence, bound):
             problems.append(f"sentence {number} has {value} without saying what it counts")
+        # A label says how many answers had it, never what "the class" did:
+        # "the class mastered Odds ratios" is true of no count.
+        for match in _LABEL_WORD.finditer(sentence):
+            if match.start() not in counted_labels:
+                problems.append(
+                    f"sentence {number} says {match.group().lower()} without a count of answers"
+                )
         for match in _LEVEL.finditer(sentence):
             level = match.group(1).lower()
             if _EXPECTED_BEFORE.search(sentence[: match.start()]):
@@ -419,7 +444,8 @@ class LecturerSummariser:
 # --- the student's summary ---------------------------------------------------
 
 # v4: as the lecturer's v4, plus no words about the student as a person.
-STUDENT_PROMPT_VERSION = "student-summary-v4"
+# v5: as the lecturer's v5, with STUDENT_WORDS.
+STUDENT_PROMPT_VERSION = "student-summary-v5"
 NO_STUDENT_FACTS = "You have no marked answers in this session yet."
 
 # Good news first: the summary starts with what the student did well.
@@ -521,7 +547,9 @@ Rules:
   review, with its slide numbers.
 - Never mention other students, the class, averages or comparisons.
 - Talk about the topics, never about the student as a person: no words like
-  weak, lazy or clever.
+  weak, lazy or clever. No negatives, no names of people, no other topics.
+- Write plain sentences like these: "You mastered Logit across 2 questions,
+  well done." "Odds ratios needs more work, so review slides 4 and 5."
 - Write every number as digits, exactly as it appears in the facts, and say
   what it counts, e.g. "2 questions" or "slides 4 and 5".
 - Call each topic by its name exactly as written in the facts.
@@ -583,12 +611,20 @@ def student_summary_problems(summary: str, facts: Sequence[StudentTopicFact]) ->
         problems.append("mentions other students or the class")
     # Every topic, so what went well is said as well as what to review.
     for fact in facts:
-        if fact.topic.casefold() not in summary.casefold():
+        if not _names_topic(summary, fact.topic):
             problems.append(f"does not mention {fact.topic}")
     for number, (sentence, indexes) in enumerate(checked, start=1):
         named = [facts[i] for i in indexes]
         if not named:
             continue
+        allowed = STUDENT_WORDS
+        if all(f.label == ComprehensionLabel.MASTERED.value for f in named):
+            allowed = allowed | STUDENT_PRAISE_WORDS
+        if all(f.label != ComprehensionLabel.MASTERED.value for f in named):
+            allowed = allowed | STUDENT_REVIEW_WORDS
+        words = _unsupported_words(sentence, allowed)
+        if words:
+            problems.append(_words_problem(number, words))
         bound: set[int] = set()
         for match in _SLIDES.finditer(sentence):
             for slide in re.finditer(r"\d+", match.group(1)):
