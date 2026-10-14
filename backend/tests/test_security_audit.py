@@ -509,3 +509,103 @@ async def test_too_many_open_sockets_for_one_user_are_refused(db, app, monkeypat
             assert first.receive_json()["type"] == "pong"
     finally:
         client.post(f"/api/v1/sessions/{session['id']}/end")
+
+
+# -- the cap holds when connections arrive together, and on a user's own channel -------------
+
+
+class _Closing:
+    """A socket that records how it was closed."""
+
+    def __init__(self) -> None:
+        self.closed: list[int] = []
+        self.sent: list[dict] = []
+
+    async def send_json(self, payload: dict) -> None:
+        self.sent.append(payload)
+
+    async def close(self, code: int, reason: str = "") -> None:
+        self.closed.append(code)
+
+
+async def test_concurrent_connections_cannot_all_slip_under_the_cap() -> None:
+    import asyncio
+
+    from app.realtime.event_limit import CLOSE_RATE_LIMITED
+    from app.realtime.hub import Connection, SessionHub
+
+    hub = SessionHub()
+    user, session = uuid4(), uuid4()
+    sockets = [_Closing() for _ in range(8)]
+    results = await asyncio.gather(
+        *(
+            hub.connect(Connection(s, user, session, Role.STUDENT), max_per_user=3)  # type: ignore[arg-type]
+            for s in sockets
+        )
+    )
+    assert sum(results) == 3
+    assert hub.connection_count(session, user) == 3
+    refused = [s for s, ok in zip(sockets, results, strict=True) if not ok]
+    assert len(refused) == 5
+    assert all(s.closed == [CLOSE_RATE_LIMITED] for s in refused)
+
+
+async def test_the_cap_applies_to_a_users_own_channel_too() -> None:
+    import asyncio
+
+    from app.realtime.hub import Connection, SessionHub
+
+    hub = SessionHub()
+    user = uuid4()
+    results = await asyncio.gather(
+        *(
+            hub.connect(Connection(_Closing(), user, None, Role.STUDENT), max_per_user=2)  # type: ignore[arg-type]
+            for _ in range(5)
+        )
+    )
+    assert sum(results) == 2
+
+
+async def test_one_users_sockets_do_not_use_up_anothers_allowance() -> None:
+    from app.realtime.hub import Connection, SessionHub
+
+    hub = SessionHub()
+    session = uuid4()
+    a, b = uuid4(), uuid4()
+    for user in (a, a, b, b):
+        assert await hub.connect(
+            Connection(_Closing(), user, session, Role.STUDENT),  # type: ignore[arg-type]
+            max_per_user=2,
+        )
+    assert not await hub.connect(
+        Connection(_Closing(), a, session, Role.STUDENT),  # type: ignore[arg-type]
+        max_per_user=2,
+    )
+
+
+def test_a_user_channel_socket_over_the_cap_is_closed_over_the_real_endpoint(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fastapi.websockets import WebSocketDisconnect
+
+    from app.api.v1 import ws as ws_module
+
+    from .dev_credentials import STUDENT_PASSWORD
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "student@clip.example.com", "password": STUDENT_PASSWORD},
+    )
+    token = login.json()["access_token"]
+    monkeypatch.setattr(ws_module, "MAX_SOCKETS_PER_USER", 1)
+    auth = {"type": "auth", "data": {"token": token}}
+    with client.websocket_connect("/ws/session") as first:
+        first.send_json(auth)
+        assert first.receive_json()["type"] == "ready"
+        with pytest.raises(WebSocketDisconnect) as closed:  # noqa: PT012
+            with client.websocket_connect("/ws/session") as second:
+                second.send_json(auth)
+                second.receive_json()
+        assert closed.value.code == ws_module.CLOSE_RATE_LIMITED
+        first.send_json({"type": "ping"})
+        assert first.receive_json()["type"] == "pong"

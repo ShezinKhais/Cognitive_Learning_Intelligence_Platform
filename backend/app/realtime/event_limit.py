@@ -18,8 +18,11 @@ from collections.abc import Callable
 MAX_EVENTS = 100
 WINDOW_SECONDS = 10.0
 
-# Tabs one user may have open in one class.
+# Tabs one user may have open on one channel: one class, or their own channel.
 MAX_SOCKETS_PER_USER = 10
+
+# The socket is sending too much, or too many sockets are open for one user.
+CLOSE_RATE_LIMITED = 4429
 
 
 class EventLimit:

@@ -24,6 +24,7 @@ from weakref import WeakValueDictionary
 
 from fastapi import WebSocket
 
+from app.realtime.event_limit import CLOSE_RATE_LIMITED
 from app.schemas.events import ReadyPayload, ServerEvent, ServerEventType
 from app.schemas.identity import Role
 
@@ -167,8 +168,15 @@ class SessionHub:
         last_seq: int | None = None,
         generation: UUID | None = None,
         welcome: Welcome | None = None,
+        max_per_user: int | None = None,
     ) -> bool:
         """Send READY, join, replay what the client missed, then the welcome.
+
+        With max_per_user, a user who already holds that many sockets on the
+        channel is refused (closed with CLOSE_RATE_LIMITED, nothing joined).
+        The count and the join happen under the channel's delivery lock, so
+        concurrent attempts cannot all see room and then all join. This holds
+        for a session's channel and for a user's own channel alike.
 
         Delivery on the connection's channel is held for the whole of it, so
         no event can arrive before READY, slip between READY and the join, or
@@ -178,6 +186,20 @@ class SessionHub:
         """
         async with self._delivering(connection.channel):
             stream = self._stream(connection.channel)
+            if max_per_user is not None:
+                held = sum(1 for c in stream.members if c.user_id == connection.user_id)
+                if held >= max_per_user:
+                    log.warning(
+                        "security_event=ACCESS_DENIED transport=websocket user_id=%s "
+                        "channel=%s reason=too_many_sockets",
+                        connection.user_id,
+                        connection.channel,
+                    )
+                    with contextlib.suppress(Exception):
+                        await connection.websocket.close(
+                            code=CLOSE_RATE_LIMITED, reason="too many connections"
+                        )
+                    return False
             resumed = stream.resume_point(last_seq, generation)
             ready = ServerEvent(
                 type=ServerEventType.READY,

@@ -61,11 +61,19 @@ SET_ASIDE = re.compile(
     r"|تجاهل\s+(?:جميع\s+|كل\s+)?(?:التعليمات|الأوامر|القواعد)\s+(?:السابقة|أعلاه)"
     r"|игнорир\w+\s+(?:все\s+)?(?:предыдущие|прежние|выше)\s+(?:инструкции|указания)"
     r"|<\|(?:im_start|im_end|system|endoftext)\|>|</?s>\s*<s>"
+    # English, and only when the thing set aside is the model's own orders: a
+    # lecture may well say "ignore all previous terms in the series" or "from
+    # now on you will use the notation x_i".
+    r"|\b(?:forget|ignore|disregard)\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior|earlier|preceding|above)"
+    r"\s+(?:instructions?|prompts?|rules|messages?|directions|directives|context|guidelines|commands)\b"
+    r"|\b(?:ignore|disregard)\s+the\s+above\s+and\s+(?:say|do|write|print|output|tell|reply|respond"
+    r"|instead)\b"
     r"|\b(?:forget|ignore|disregard)\s+(?:everything|all)\s+(?:above|before|previously"
-    r"|you\s+(?:know|were\s+told))\b"
-    r"|\b(?:ignore|disregard|forget)\s+(?:all|any)\s+(?:previous|prior|earlier|preceding|above)\b"
-    r"|\b(?:ignore|disregard)\s+the\s+above\b"
-    r"|\bfrom\s+now\s+on\s+you\s+(?:will|must|are|shall)\b",
+    r"|you\s+were\s+told)\s*(?:and\b|[,.;]|$)"
+    r"|\bfrom\s+now\s+on,?\s+you\s+(?:will|must|shall|are\s+to)\s+(?:"
+    r"(?:ignore|obey|disregard|reveal|pretend|behave|act\s+as)\b"
+    r"|(?:answer|respond|reply)\s+(?:without|with\s+no)\b"
+    r"|(?:only|always|never)\s+(?:answer|respond|reply|obey)\b)",
     flags=re.IGNORECASE,
 )
 
