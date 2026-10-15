@@ -21,7 +21,7 @@ development database is read or written.
 |---|---|---|
 | A class (`class`) | 40 students connect at once, and the lecturer sends questions which every student answers. | Everyone connects within 10 seconds and is counted once. Every answer is accepted, receipted and stored. Each question reaches the last student, and each receipt comes back, inside 2 seconds. No client sees a gap or a repeat in its stream. |
 | Reconnect (`reconnect`) | Half the class loses its connection with no goodbye, misses a whole question and returns during the next. Then the whole class drops and returns at once. | Each client is resumed from the cursor it offers and is replayed exactly what it missed, the question and its close. The whole class is back inside 10 seconds and the panel's count returns to the class. A cursor from another stream is refused. |
-| Signals and rooms (`signals`) | Every student confirms one of eight breakout rooms and sends attention signals four times a second for 16 seconds. The first four rooms talk, and the other four never do. In every room the odd-numbered students look away with no face in view. A question goes out in the middle of it. | The question still arrives on time, and no signal is refused or throttled with an error. The panel is told about every room. Rooms that talk are active, and silent ones need attention and raise one alert each. Every student looking away gets one private prompt, and nobody else gets any. No student is sent a room's status or an alert. Engagement is reported for every student. A minute of attention reaches `attention_signal_summary` for every student. |
+| Signals and rooms (`signals`) | Every student confirms one of eight breakout rooms and sends attention signals four times a second for 16 seconds. The first four rooms talk, and the other four never do. In every room the odd-numbered students look away with no face in view. A question goes out in the middle of it. | The question still arrives on time, and no signal is refused or throttled with an error. The panel is told about every room. Rooms that talk are active, and silent ones need attention and raise one alert each. Nobody is sent a refocus prompt: everyone has answered every question, and by Cyber 1's rule the camera alone is no grounds for one. No student is sent a room's status or an alert. Engagement is reported for every student. A minute of attention reaches `attention_signal_summary` for every student. |
 | Housekeeping (`housekeeping`) | A report is asked for twice while questions go out. The server runs the retention purge every few seconds. | The report is accepted at once, and the second request gets the same `report_id` back. Questions are not delayed. The report becomes ready, counts the questions delivered, and names no student. Its PDF downloads. The purge ran during the class, and every run gave way to it and deleted nothing. |
 | Model down (`model`) | The tutor is asked questions with no model reachable. | Each gets a plain failure quickly. Questions still go out and are answered. Readiness reports the model as down. |
 | Crash (`crash`) | The server process is killed with a question open, and started again. | Every client notices and reconnects. No cursor from before the crash is honoured. The session is active again with its count intact, the question that was open is not offered again, and an answer to it is refused with a receipt. The next question reaches everyone. |
@@ -112,36 +112,36 @@ Nothing else about the server is changed.
 
 <!-- results:begin -->
 
-Run on 2026-10-14T14:44:06+00:00 at commit `50db0499`, with 40 students.
+Run on 2026-10-15T18:16:02+00:00 at commit `3c8a46e1`, with 40 students.
 
 - Machine: Windows-11-10.0.26300-SP0, 20 logical processors, Python 3.12.10.
 - The backend, Postgres and all the clients ran on that one machine.
-- **68 of 68 checks passed.**
+- **67 of 67 checks passed.**
 
 | Scenario | Checks passed | Took |
 |---|---|---|
-| 40 students in one class, 8 questions | 9 of 9 | 17.8 s |
+| 40 students in one class, 8 questions | 9 of 9 | 17.9 s |
 | Dropped connections, resumed | 9 of 9 | 7.4 s |
-| Attention signals and breakout rooms under load | 12 of 12 | 36.2 s |
+| Attention signals and breakout rooms under load | 11 of 11 | 56.6 s |
 | Reports and the retention purge during a class | 9 of 9 | 6.1 s |
-| The language model is unreachable | 3 of 3 | 18.9 s |
+| The language model is unreachable | 3 of 3 | 18.8 s |
 | The server is killed mid-question and restarted | 6 of 6 | 7.6 s |
-| A planned shutdown and restart during a class | 2 of 2 | 7.4 s |
-| The database is stopped for 8 s during a class | 7 of 7 | 37.6 s |
-| A Teams meeting through the mock adapter | 7 of 7 | 2.5 s |
-| 10 sessions at once on the automatic question cycle | 4 of 4 | 36.6 s |
+| A planned shutdown and restart during a class | 2 of 2 | 7.2 s |
+| The database is stopped for 8 s during a class | 7 of 7 | 37.8 s |
+| A Teams meeting through the mock adapter | 7 of 7 | 2.2 s |
+| 10 sessions at once on the automatic question cycle | 4 of 4 | 35.9 s |
 
 ### 40 students in one class, 8 questions
 
 | Measured | Result |
 |---|---|
-| Connect all seconds | 1.23 |
-| Time to ready | median 494.8 ms, 95th percentile 585.2 ms, worst 592.1 ms (40 samples) |
-| Question fan out | median 23.5 ms, 95th percentile 37.7 ms, worst 38.7 ms (320 samples) |
-| Of which server to student | median 1.1 ms, 95th percentile 2.6 ms, worst 3 ms (320 samples) |
-| Of which the lecturers request | median 25.3 ms, 95th percentile 39.4 ms, worst 39.4 ms (8 samples) |
-| Fan out first to last student | median 2.1 ms, 95th percentile 2.6 ms, worst 2.6 ms (8 samples) |
-| Answer to receipt | median 14.8 ms, 95th percentile 185.7 ms, worst 246.8 ms (320 samples) |
+| Connect all seconds | 1.39 |
+| Time to ready | median 612.2 ms, 95th percentile 713 ms, worst 715 ms (40 samples) |
+| Question fan out | median 25 ms, 95th percentile 53 ms, worst 53.7 ms (320 samples) |
+| Of which server to student | median 1.1 ms, 95th percentile 2.2 ms, worst 2.7 ms (320 samples) |
+| Of which the lecturers request | median 27.3 ms, 95th percentile 54.4 ms, worst 54.4 ms (8 samples) |
+| Fan out first to last student | median 2.1 ms, 95th percentile 2.5 ms, worst 2.5 ms (8 samples) |
+| Answer to receipt | median 16 ms, 95th percentile 127.1 ms, worst 301.3 ms (320 samples) |
 
 | Check | Result |
 |---|---|
@@ -159,10 +159,10 @@ Run on 2026-10-14T14:44:06+00:00 at commit `50db0499`, with 40 students.
 
 | Measured | Result |
 |---|---|
-| Half class resume seconds | 0.38 |
-| Whole class reconnect seconds | 0.55 |
-| Reconnect time to ready | median 376.4 ms, 95th percentile 474.4 ms, worst 492.6 ms (40 samples) |
-| Fan out after reconnects | median 37.4 ms, 95th percentile 38.3 ms, worst 38.4 ms (40 samples) |
+| Half class resume seconds | 0.4 |
+| Whole class reconnect seconds | 0.58 |
+| Reconnect time to ready | median 411.4 ms, 95th percentile 502.7 ms, worst 537.2 ms (40 samples) |
+| Fan out after reconnects | median 18.2 ms, 95th percentile 19.3 ms, worst 19.4 ms (40 samples) |
 
 | Check | Result |
 |---|---|
@@ -180,11 +180,11 @@ Run on 2026-10-14T14:44:06+00:00 at commit `50db0499`, with 40 students.
 
 | Measured | Result |
 |---|---|
-| Signals sent | 2480 |
-| Signals per second | 155.0 |
-| Fan out while signalling | median 26.9 ms, 95th percentile 27.4 ms, worst 27.5 ms (40 samples) |
-| Room status events | 99 |
-| Refocus prompts | 20 |
+| Signals sent | 2466 |
+| Signals per second | 154.1 |
+| Fan out while signalling | median 27 ms, 95th percentile 28.3 ms, worst 28.4 ms (40 samples) |
+| Room status events | 107 |
+| Refocus prompts | 0 |
 | Attention minutes stored | 40 |
 
 | Check | Result |
@@ -196,8 +196,7 @@ Run on 2026-10-14T14:44:06+00:00 at commit `50db0499`, with 40 students.
 | The rooms that never talked came to need attention | passed |
 | Each silent room raised one alert, and no other room did | passed |
 | No student was sent a room's status or an alert | passed |
-| Every student who was looking away got one private prompt | passed |
-| No student who was looking at the screen was prompted | passed |
+| Nobody who answers every question is prompted on the camera alone | passed |
 | Engagement is reported for every student | passed |
 | A minute of attention reached the analytics table for every student | passed |
 | No gap in any stream | passed |
@@ -206,10 +205,10 @@ Run on 2026-10-14T14:44:06+00:00 at commit `50db0499`, with 40 students.
 
 | Measured | Result |
 |---|---|
-| Fan out with reports building | median 23.9 ms, 95th percentile 26.1 ms, worst 26.5 ms (120 samples) |
-| Fan out baseline | median 23.5 ms, 95th percentile 37.7 ms, worst 38.7 ms (320 samples) |
-| Report pdf bytes | 3404 |
-| Purge runs during class | 1 |
+| Fan out with reports building | median 20.1 ms, 95th percentile 24.2 ms, worst 24.4 ms (120 samples) |
+| Fan out baseline | median 25 ms, 95th percentile 53 ms, worst 53.7 ms (320 samples) |
+| Report pdf bytes | 3409 |
+| Purge runs during class | 2 |
 
 | Check | Result |
 |---|---|
@@ -227,9 +226,9 @@ Run on 2026-10-14T14:44:06+00:00 at commit `50db0499`, with 40 students.
 
 | Measured | Result |
 |---|---|
-| Chat time to failure | median 5261.5 ms, 95th percentile 8215.1 ms, worst 8215.1 ms (4 samples) |
+| Chat time to failure | median 5436.2 ms, 95th percentile 7797.5 ms, worst 7797.5 ms (4 samples) |
 | Chat endings | error, error, error, error |
-| Fan out with model down | median 17.5 ms, 95th percentile 18.3 ms, worst 18.4 ms (40 samples) |
+| Fan out with model down | median 16.3 ms, 95th percentile 17.1 ms, worst 17.1 ms (40 samples) |
 
 | Check | Result |
 |---|---|
@@ -241,10 +240,10 @@ Run on 2026-10-14T14:44:06+00:00 at commit `50db0499`, with 40 students.
 
 | Measured | Result |
 |---|---|
-| Clients noticed seconds | 0.05 |
-| Restart to healthy seconds | 3.73 |
-| Whole class back seconds | 0.77 |
-| Fan out after restart | median 484.1 ms, 95th percentile 484.9 ms, worst 485 ms (40 samples) |
+| Clients noticed seconds | 0.06 |
+| Restart to healthy seconds | 3.62 |
+| Whole class back seconds | 0.88 |
+| Fan out after restart | median 482 ms, 95th percentile 482.8 ms, worst 482.8 ms (40 samples) |
 | Deliveries left unclosed by the crash | 1 |
 
 | Check | Result |
@@ -262,11 +261,11 @@ Note: The question open at the crash has no recorded close. Readers treat a deli
 
 | Measured | Result |
 |---|---|
-| Shutdown seconds | 0.45 |
+| Shutdown seconds | 0.43 |
 | Close codes seen | 1012 |
-| Restart to healthy seconds | 3.66 |
-| Whole class back seconds | 0.8 |
-| Fan out after restart | median 468.9 ms, 95th percentile 469.8 ms, worst 469.9 ms (40 samples) |
+| Restart to healthy seconds | 3.59 |
+| Whole class back seconds | 0.72 |
+| Fan out after restart | median 457.2 ms, 95th percentile 458 ms, worst 458 ms (40 samples) |
 
 | Check | Result |
 |---|---|
@@ -278,10 +277,10 @@ Note: The question open at the crash has no recorded close. Readers treat a deli
 | Measured | Result |
 |---|---|
 | Readiness answered in seconds | 11.09 |
-| Delivery refused in seconds | 10.25 |
-| Ready again after seconds | 2.94 |
+| Delivery refused in seconds | 10.31 |
+| Ready again after seconds | 2.9 |
 | Errors logged during outage | 3 |
-| Fan out after recovery | median 67 ms, 95th percentile 67.7 ms, worst 67.8 ms (40 samples) |
+| Fan out after recovery | median 73.3 ms, 95th percentile 74.6 ms, worst 74.8 ms (40 samples) |
 
 | Check | Result |
 |---|---|
@@ -297,7 +296,7 @@ Note: The question open at the crash has no recorded close. Readers treat a deli
 
 | Measured | Result |
 |---|---|
-| Meeting start to last student | median 44.1 ms, 95th percentile 45.4 ms, worst 45.5 ms (40 samples) |
+| Meeting start to last student | median 41.1 ms, 95th percentile 41.7 ms, worst 41.8 ms (40 samples) |
 
 | Check | Result |
 |---|---|
@@ -313,11 +312,11 @@ Note: The question open at the crash has no recorded close. Readers treat a deli
 
 | Measured | Result |
 |---|---|
-| Questions per session | fewest 10, most 12 |
+| Questions per session | fewest 10, most 11 |
 | Expected per session | about 10 |
-| Seconds between questions | count 97, p50 3.02, max 3.05 |
+| Seconds between questions | count 95, p50 3.02, max 3.04 |
 | Seconds between questions expected | 3.0 |
-| Worst lateness seconds | 0.05 |
+| Worst lateness seconds | 0.04 |
 
 | Check | Result |
 |---|---|
