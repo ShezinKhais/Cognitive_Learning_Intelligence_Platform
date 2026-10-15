@@ -41,7 +41,7 @@ from app.schemas.session import (
     TopicDifficultyOut,
 )
 from app.services import alert_store, session_lifecycle
-from app.services.engagement_view import staff_confidence, staff_signals
+from app.services.engagement_view import staff_confidence, staff_score, staff_signals
 from app.services.session_access import may_view_session_analytics
 
 # Running a session is staff work. Students reach a session over the socket.
@@ -210,7 +210,7 @@ async def session_engagement(
         EngagementOut(
             student_id=student_ids[s.user_id],
             session_id=session_id,
-            score=s.engagement.score,
+            score=staff_score(s.engagement.score),
             status=s.engagement.status,
             # The same view for every student: see services/engagement_view.py.
             confidence=staff_confidence(s.engagement.signals_available),
