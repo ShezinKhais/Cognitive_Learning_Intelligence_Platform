@@ -245,8 +245,11 @@ and the correct answer is revealed when the window closes.
 - Private feedback on each answer, and the correct answer when the question closes
 - Private attention prompts, answered with "I'm here" or dismissed
 - Classes resume where they left off after a dropped connection
-- Personal performance summary after the session (planned, Phase 7)
-- Socratic chatbot that gives hints rather than answers (planned, Phase 5)
+- Free-text answers marked against the question's key points, in the background
+- Socratic chatbot that gives hints rather than answers, with the slides it used
+- Optional attention indicators worked out on the student's own device, and only the
+  derived figures sent (Phase 6)
+- Personal performance summary after the session (Phase 7, in review)
 
 ### Lecturer
 
@@ -256,21 +259,23 @@ and the correct answer is revealed when the window closes.
 - Send a question manually at any point
 - Live view of who is present, who answered and how the class is doing
 - Class comprehension alerts with the reason for each
-- Link a session to a Teams meeting so the meeting starts and ends it (Phase 4)
-- Breakout room facilitation (planned, Phase 6)
+- Link a session to a Teams meeting so the meeting starts and ends it
+- A session report with a PDF, built from what the session stored
+- Breakout room status and silence alerts (Phase 6, in review)
 
 ### Administrator
 
-- Import the timetable and student rosters from CSV, which create courses, users and
-  enrolments
+- Import the timetable and student rosters from CSV or XLSX: clashes are found and
+  names matched against existing accounts. Storing what was imported is not built yet
 - System status: database and model availability
-- Audit logs and data retention governance (planned, Phase 7)
+- An audit record of every change made on a user's behalf
+- Data retention governance (Phase 7, in progress)
 
 ## API Endpoints
 
 All routes are under `/api/v1`. Interactive documentation is served at `/docs` in
-development. Routes marked **501** have an agreed contract and name the workstream that
-will implement them.
+development. A route marked **501** has an agreed contract and names the workstream that
+will implement it.
 
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
@@ -289,22 +294,29 @@ will implement them.
 | POST | `/materials/{material_id}/questions/{question_id}:regenerate` | lecturer, admin | Generate a replacement question |
 | POST | `/materials/{material_id}/questions:bulk` | lecturer, admin | Review several questions at once |
 | POST | `/sessions` | lecturer, admin | Create a session for a course |
-| GET | `/sessions` | any | List sessions (**501**, BBIS, Phase 3) |
-| GET | `/sessions/{session_id}` | any | One session (**501**, BBIS, Phase 3) |
+| GET | `/sessions` | any | The caller's sessions: a lecturer's own, a student's courses' |
+| GET | `/sessions/{session_id}` | any | One session the caller may see |
+| GET | `/sessions/{session_id}/readiness` | lecturer, admin | Whether the session has anything to deliver |
 | POST | `/sessions/{session_id}/start` | lecturer, admin | Start the class |
 | POST | `/sessions/{session_id}/pause` | lecturer, admin | Pause the class and its question timer |
 | POST | `/sessions/{session_id}/resume` | lecturer, admin | Resume the class |
 | POST | `/sessions/{session_id}/end` | lecturer, admin | End the class |
 | GET | `/sessions/{session_id}/questions` | lecturer, admin | Approved questions that can be delivered |
 | POST | `/sessions/{session_id}/questions/{question_id}:deliver` | lecturer, admin | Send a question now |
-| GET | `/sessions/{session_id}/responses` | lecturer, admin | Answers received (**501**, BBIS, Phase 3) |
+| GET | `/sessions/{session_id}/responses` | any | Answers received; a student sees only their own |
 | GET | `/sessions/{session_id}/engagement` | lecturer, admin | Engagement score per student |
+| GET | `/sessions/{session_id}/topics` | lecturer, admin | How each topic went |
 | GET | `/sessions/{session_id}/alerts` | lecturer, admin | Class comprehension alerts |
+| POST | `/sessions/{session_id}/alerts/{alert_id}/acknowledge` | lecturer, admin | Mark an alert as seen |
+| POST | `/sessions/{session_id}/chat` | student | Ask the Socratic tutor, streamed |
+| POST | `/sessions/{session_id}/reports` | lecturer, admin | Build the session report |
+| GET | `/reports/{report_id}` | lecturer, admin | The report, once built |
+| GET | `/reports/{report_id}/pdf` | lecturer, admin | The report as a PDF |
 | GET | `/sessions/{session_id}/summary/{student_id}` | student, staff | Performance summary (**501**, Cyber 1, Phase 7) |
 | WS | `/ws/session` | token | Live classroom events, see `events.schema.json` |
 
 The Teams meeting routes (`/meetings/{meeting_id}`, `/meetings/events`) and the bot
-endpoint (`/teams/messages`) are added in Phase 4.
+endpoint (`/teams/messages`) are described in `teams-app/README.md`.
 
 ## Getting Started
 
@@ -475,12 +487,12 @@ rather than a component, so every phase ends with something that runs end to end
 | 0 | Repository, CI, database and feasibility spikes | Done |
 | 1 | Data and API spine: authentication, RBAC, consent, the API contract | Done |
 | 2 | Content and question pipeline | Done |
-| 3 | Live session core: WebSocket hub, question cycle, session lifecycle | In progress |
-| 4 | Microsoft Teams integration | In progress |
-| 5 | AI intelligence layer: free-text classification, Socratic chatbot | Planned |
-| 6 | Attention signals and breakout groups | Planned |
-| 7 | Reporting, retention and governance | Planned |
-| 8 | Hardening, load testing and delivery | Planned |
+| 3 | Live session core: WebSocket hub, question cycle, session lifecycle | Done |
+| 4 | Microsoft Teams integration | Done |
+| 5 | AI intelligence layer: free-text classification, Socratic chatbot | Done |
+| 6 | Attention signals and breakout groups | In progress |
+| 7 | Reporting, retention and governance | In progress |
+| 8 | Hardening, load testing and delivery | In progress |
 
 ![Project timeline](docs/images/gantt.png)
 
