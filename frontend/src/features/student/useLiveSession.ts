@@ -32,6 +32,7 @@ import {
   isAccessRevocation,
 } from '../materials/closeCodes'
 import type { SessionStatus } from './types'
+import type { AttentionSummary } from '../attention/signals'
 
 interface AnswerSubmission {
   selected_option?: number
@@ -323,6 +324,14 @@ export function useLiveSession(
             const payload = parseLiveError(event.data)
 
             if (payload?.code === 'PROMPT_NOT_OPEN') {
+              break
+            }
+
+            // The server can reject a signal if consent was withdrawn or its
+            // live consent registry has not observed a mid-session grant yet.
+            // Stop local capture instead of repeating this error every window.
+            if (payload?.code === 'CONSENT_REQUIRED') {
+              dispatch({ type: 'attention-consent-rejected' })
               break
             }
 
@@ -663,6 +672,18 @@ export function useLiveSession(
 
   return {
     state,
+    attentionConsentRejected: state.attentionConsentRejected,
+    sendAttention: (value: AttentionSummary) => {
+      const socket = socketRef.current
+      if (!readyRef.current || socket?.readyState !== WebSocket.OPEN || state.sessionStatus !== 'active' || state.paused) return false
+      socket.send(JSON.stringify({ type: 'signal.attention', data: {
+        gaze_on_screen_ratio: value.gaze_on_screen_ratio,
+        face_present: value.face_present,
+        speaking: value.speaking,
+        window_seconds: value.window_seconds,
+      } }))
+      return true
+    },
     selectOption,
     setFreeText,
     submitAnswer,

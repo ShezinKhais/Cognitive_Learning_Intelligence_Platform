@@ -408,7 +408,7 @@
             "type": "string"
           },
           "confidence": {
-            "description": "Low confidence renders as 'insufficient data', never as 'disengaged'.",
+            "description": "Whether participation evidence backs the score: 1 when it does, 0 when it does not, worked out the same way for every student. It is not a probability. No evidence renders as 'insufficient data', never as 'disengaged'.",
             "maximum": 1.0,
             "minimum": 0.0,
             "title": "Confidence",
@@ -433,7 +433,7 @@
             "type": "string"
           },
           "signals_available": {
-            "description": "Which signals contributed. Missing signals are renormalised, not zeroed.",
+            "description": "['participation'] when questions attempted, answer timing or attention prompt responses backed the score, otherwise empty. The same view for every student; camera and microphone detail is not reported.",
             "items": {
               "type": "string"
             },
@@ -1228,6 +1228,135 @@
         "title": "ReadinessResponse",
         "type": "object"
       },
+      "ReportJobOut": {
+        "description": "Where a report has got to. Poll it until status is ready or failed.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Machine-readable, when failed: INTERNAL_ERROR or INTERRUPTED.",
+            "title": "Error"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For the lecturer, when failed.",
+            "title": "Message"
+          },
+          "report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionReport"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set once status is ready."
+          },
+          "report_id": {
+            "format": "uuid",
+            "title": "Report Id",
+            "type": "string"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          }
+        },
+        "required": [
+          "report_id",
+          "session_id",
+          "status",
+          "requested_at"
+        ],
+        "title": "ReportJobOut",
+        "type": "object"
+      },
+      "ReportParticipation": {
+        "description": "What happened in the session, counted from what was stored.",
+        "properties": {
+          "answers": {
+            "minimum": 0.0,
+            "title": "Answers",
+            "type": "integer"
+          },
+          "attention_prompts": {
+            "minimum": 0.0,
+            "title": "Attention Prompts",
+            "type": "integer"
+          },
+          "missed_answers": {
+            "description": "A student shown a question who did not answer.",
+            "minimum": 0.0,
+            "title": "Missed Answers",
+            "type": "integer"
+          },
+          "questions_delivered": {
+            "minimum": 0.0,
+            "title": "Questions Delivered",
+            "type": "integer"
+          },
+          "students": {
+            "description": "Students who joined at least once.",
+            "minimum": 0.0,
+            "title": "Students",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "students",
+          "questions_delivered",
+          "answers",
+          "missed_answers",
+          "attention_prompts"
+        ],
+        "title": "ReportParticipation",
+        "type": "object"
+      },
+      "ReportStatus": {
+        "enum": [
+          "queued",
+          "running",
+          "ready",
+          "failed"
+        ],
+        "title": "ReportStatus",
+        "type": "string"
+      },
       "ResponseOut": {
         "properties": {
           "elapsed_ms": {
@@ -1706,6 +1835,89 @@
           "checked_at"
         ],
         "title": "SessionReadinessOut",
+        "type": "object"
+      },
+      "SessionReport": {
+        "description": "One session, as the lecturer's report shows it.\n\nComprehension (topics) and engagement are reported apart and never\ncombined into one figure, as everywhere else. Nothing here names a student.",
+        "properties": {
+          "alerts": {
+            "description": "Oldest first, as /alerts serves them.",
+            "items": {
+              "$ref": "#/components/schemas/AlertOut"
+            },
+            "title": "Alerts",
+            "type": "array"
+          },
+          "course_code": {
+            "title": "Course Code",
+            "type": "string"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "participation": {
+            "$ref": "#/components/schemas/ReportParticipation"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SessionStatus"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "topics": {
+            "description": "Hardest first, as /topics serves them.",
+            "items": {
+              "$ref": "#/components/schemas/TopicDifficultyOut"
+            },
+            "title": "Topics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "session_id",
+          "course_code",
+          "title",
+          "status",
+          "starts_at",
+          "ended_at",
+          "generated_at",
+          "participation",
+          "topics",
+          "alerts"
+        ],
+        "title": "SessionReport",
         "type": "object"
       },
       "SessionStatus": {
@@ -2860,6 +3072,90 @@
         ]
       }
     },
+    "/api/v1/reports/{report_id}": {
+      "get": {
+        "description": "How far a report has got, and the report itself once it is ready.",
+        "operationId": "report_status_api_v1_reports__report_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Status",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/{report_id}/pdf": {
+      "get": {
+        "description": "The report as a PDF. 409 until it is ready.",
+        "operationId": "report_pdf_api_v1_reports__report_id__pdf_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {}
+            },
+            "description": "The report as a PDF."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Pdf",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
     "/api/v1/sessions": {
       "get": {
         "operationId": "list_sessions_api_v1_sessions_get",
@@ -3484,6 +3780,50 @@
         "summary": "Session Readiness",
         "tags": [
           "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/reports": {
+      "post": {
+        "description": "Start building a report of the session, during it or after it. Answers\nat once; poll GET /reports/{report_id} until it is ready or failed. Asking\nagain while yours is still being built returns the same report.",
+        "operationId": "request_report_api_v1_sessions__session_id__reports_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Report",
+        "tags": [
+          "reports"
         ]
       }
     },

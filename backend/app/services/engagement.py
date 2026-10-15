@@ -1,8 +1,8 @@
-"""Camera-free engagement scoring v1, dynamic prompt gating and class
+"""Camera-free engagement scoring v2, dynamic prompt gating and class
 comprehension alerts.
 
-Owner: Cyber 1, Phase 3. The live classroom (app.realtime.classroom) feeds
-these functions what it already observes and acts on what they return.
+Owner: Cyber 1, Phases 3 and 6. The live classroom (app.realtime.classroom)
+feeds these functions what it already observes and acts on what they return.
 
 Camera-free: the score is built from participation the server sees for
 itself -- questions attempted out of those the student was actually shown,
@@ -10,12 +10,33 @@ how quickly answers arrived within the response window, and how the student
 answered attention prompts. Gaze and face presence are optional extras from a
 client `signal.attention` event; nothing depends on them.
 
-Renormalisation: a signal with no evidence yet is dropped from the average
-rather than counted as zero, and `confidence` reports how many signals backed
-the score. A student who has been shown fewer than MIN_QUESTIONS_SHOWN
-questions has no attempt rate at all, so a late joiner is "insufficient data",
-not "at risk". DISENGAGED needs at least two signals, and no prompt is ever
-sent on the attempt rate alone.
+Fairness (Phase 6), the judgment calls:
+
+* Weighted renormalisation. A signal with no evidence is dropped from the
+  average rather than counted as zero, and the rest are re-weighted. Participation
+  signals weigh PARTICIPATION_WEIGHT, camera-derived ones VISUAL_WEIGHT.
+* The camera corroborates, it never accuses. A status needs at least one
+  participation signal, so a student with only a camera reading is "insufficient
+  data". A student whose participation alone reads ENGAGED stays ENGAGED
+  whatever the camera says: looking away is not disengagement from someone who
+  is answering. Where participation is low, the camera adds to the evidence.
+* Personal baselines (engagement_baseline.py). Gaze, face presence and answer
+  speed are read against the student's own session, not a fixed ideal, so
+  looking at notes, a poorly placed camera or slow typing are not penalised.
+  A camera that rarely finds the student's face is set aside as unreliable.
+* Availability. Every signal that is not scored has an internal reason
+  (EngagementComputation.unavailable), so "no data" is never mistaken for
+  "low". Reasons are for the classroom and explanations, not a public field.
+* Accessibility. For a student with a recorded accommodation, signals that
+  assume a particular way of interacting (answer speed, gaze, face presence)
+  are not scored, a prompt left to expire is not held against them, they are
+  never classed DISENGAGED and never sent an automatic prompt. Only the fact
+  that an accommodation exists is used, never what it says.
+
+A student who has been shown fewer than MIN_QUESTIONS_SHOWN questions has no
+attempt rate at all, so a late joiner is "insufficient data", not "at risk".
+DISENGAGED needs at least two signals, and no prompt is ever sent on the
+attempt rate alone.
 
 `speaking` is not scored in either direction: voice activity is not evidence
 of engagement with the lecture.
@@ -25,13 +46,30 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
+from statistics import median
 
 from app.schemas.events import AttentionSignalPayload
 from app.schemas.session import ComprehensionLabel, EngagementStatus
+from app.services.engagement_baseline import MIN_BASELINE_SAMPLES, PersonalBaseline
 
-# Every signal this version can score. Confidence is how many contributed,
-# out of this fixed total, so it is comparable between students.
-_SIGNAL_NAMES = ("attempt_rate", "response_timing", "prompt_response", "gaze", "face_presence")
+PARTICIPATION_SIGNALS = ("attempt_rate", "response_timing", "prompt_response")
+VISUAL_SIGNALS = ("gaze", "face_presence")
+
+# Every signal this version can score. Confidence is how much of the weight
+# that could apply to the student contributed, so it is comparable between
+# students.
+_SIGNAL_NAMES = (*PARTICIPATION_SIGNALS, *VISUAL_SIGNALS)
+
+PARTICIPATION_WEIGHT = 1.0
+VISUAL_WEIGHT = 0.5
+_WEIGHTS = {
+    **{name: PARTICIPATION_WEIGHT for name in PARTICIPATION_SIGNALS},
+    **{name: VISUAL_WEIGHT for name in VISUAL_SIGNALS},
+}
+
+# Signals that assume a particular way of interacting, and so are not scored
+# for a student with an accommodation.
+ACCOMMODATED_UNSCORED = ("response_timing", "gaze", "face_presence")
 
 ENGAGED_THRESHOLD = 0.6
 AT_RISK_THRESHOLD = 0.3
@@ -52,6 +90,14 @@ PROMPT_ACKNOWLEDGED = 1.0
 PROMPT_DISMISSED = 0.5
 PROMPT_EXPIRED = 0.0
 
+# Why a signal was not scored. Internal: never sent to a client.
+REASON_TOO_FEW_QUESTIONS = "too_few_questions"
+REASON_NO_ANSWERS = "no_answers"
+REASON_NO_PROMPTS = "no_prompts"
+REASON_NO_CAMERA_SIGNAL = "no_camera_signal"
+REASON_CAMERA_UNRELIABLE = "camera_unreliable"
+REASON_ACCOMMODATION = "accommodation"
+
 
 @dataclass(frozen=True)
 class EngagementInputs:
@@ -63,6 +109,10 @@ class EngagementInputs:
     # Per resolved prompt: PROMPT_ACKNOWLEDGED, PROMPT_DISMISSED or PROMPT_EXPIRED.
     prompt_responses: Sequence[float] = field(default_factory=tuple)
     attention: AttentionSignalPayload | None = None
+    # The student's own normal for this session, if one has been kept.
+    baseline: PersonalBaseline | None = None
+    # Whether the student has a recorded accommodation. A fact, not its content.
+    accommodated: bool = False
 
 
 @dataclass(frozen=True)
@@ -71,54 +121,113 @@ class EngagementComputation:
     status: EngagementStatus
     confidence: float
     signals_available: list[str]
+    # signal name -> internal reason it was not scored.
+    unavailable: dict[str, str] = field(default_factory=dict)
+    accommodated: bool = False
 
 
 def _clamp(value: float) -> float:
     return max(0.0, min(1.0, value))
 
 
+def _timing_component(times: Sequence[float]) -> float:
+    """How promptly the student answers, against how they usually answer.
+
+    Answering at all scores at least 0.5; answering early scores up to 1.
+    Once there is a pattern, only slowing down from the student's own median
+    costs anything, so a consistently slow answerer is not penalised for it.
+    """
+    used = [_clamp(t) for t in times]
+    if len(used) < MIN_BASELINE_SAMPLES:
+        return 1.0 - 0.5 * (sum(used) / len(used))
+    usual = median(used)
+    recent = sum(used[-2:]) / 2
+    drift = max(0.0, recent - usual) / max(1.0 - usual, 0.1)
+    return 1.0 - 0.5 * _clamp(drift)
+
+
+def _gaze_component(ratio: float, baseline: PersonalBaseline | None) -> float:
+    """Gaze relative to how much this student normally looks at the screen."""
+    usual = baseline.gaze_reference() if baseline is not None else None
+    return _clamp(ratio / usual) if usual is not None else ratio
+
+
 def compute_engagement(inputs: EngagementInputs) -> EngagementComputation:
-    components: list[float] = []
-    signals: list[str] = []
+    values: dict[str, float] = {}
+    unavailable: dict[str, str] = {}
+    accommodated = inputs.accommodated
+    baseline = inputs.baseline
 
     if inputs.questions_shown >= MIN_QUESTIONS_SHOWN:
-        components.append(_clamp(inputs.questions_answered / inputs.questions_shown))
-        signals.append("attempt_rate")
+        values["attempt_rate"] = _clamp(inputs.questions_answered / inputs.questions_shown)
+    else:
+        unavailable["attempt_rate"] = REASON_TOO_FEW_QUESTIONS
 
-    if inputs.response_times:
-        # Answering at all scores at least 0.5; answering early scores up to 1.
-        used = sum(_clamp(t) for t in inputs.response_times) / len(inputs.response_times)
-        components.append(1.0 - 0.5 * used)
-        signals.append("response_timing")
+    if accommodated:
+        unavailable["response_timing"] = REASON_ACCOMMODATION
+    elif inputs.response_times:
+        values["response_timing"] = _timing_component(inputs.response_times)
+    else:
+        unavailable["response_timing"] = REASON_NO_ANSWERS
 
-    if inputs.prompt_responses:
-        components.append(_clamp(sum(inputs.prompt_responses) / len(inputs.prompt_responses)))
-        signals.append("prompt_response")
+    prompts = inputs.prompt_responses
+    if accommodated:
+        # A prompt that ran out is not proof of anything for someone who may
+        # need longer, or another way, to respond.
+        prompts = [p for p in prompts if p != PROMPT_EXPIRED]
+    if prompts:
+        values["prompt_response"] = _clamp(sum(prompts) / len(prompts))
+    else:
+        unavailable["prompt_response"] = REASON_NO_PROMPTS
 
     attention = inputs.attention
-    if attention is not None:
+    for name in VISUAL_SIGNALS:
+        if accommodated:
+            unavailable[name] = REASON_ACCOMMODATION
+        elif attention is None:
+            unavailable[name] = REASON_NO_CAMERA_SIGNAL
+    if not accommodated and attention is not None:
         if attention.gaze_on_screen_ratio is not None:
-            components.append(attention.gaze_on_screen_ratio)
-            signals.append("gaze")
-        if attention.face_present is not None:
-            components.append(1.0 if attention.face_present else 0.0)
-            signals.append("face_presence")
+            values["gaze"] = _gaze_component(attention.gaze_on_screen_ratio, baseline)
+        else:
+            unavailable["gaze"] = REASON_NO_CAMERA_SIGNAL
+        if attention.face_present is None:
+            unavailable["face_presence"] = REASON_NO_CAMERA_SIGNAL
+        elif baseline is not None and not baseline.face_reliable():
+            unavailable["face_presence"] = REASON_CAMERA_UNRELIABLE
+        else:
+            values["face_presence"] = 1.0 if attention.face_present else 0.0
 
-    confidence = len(signals) / len(_SIGNAL_NAMES)
+    signals = [name for name in _SIGNAL_NAMES if name in values]
+    applicable = [
+        name for name in _SIGNAL_NAMES if not (accommodated and name in ACCOMMODATED_UNSCORED)
+    ]
+    confidence = sum(_WEIGHTS[n] for n in signals) / sum(_WEIGHTS[n] for n in applicable)
 
-    if len(signals) < MIN_SIGNALS_FOR_STATUS:
+    participation = [name for name in signals if name in PARTICIPATION_SIGNALS]
+    if len(signals) < MIN_SIGNALS_FOR_STATUS or not participation:
+        # Nothing, or only the camera: the camera alone is never grounds to
+        # call a student anything.
         return EngagementComputation(
             score=None,
             status=EngagementStatus.INSUFFICIENT_DATA,
             confidence=confidence,
             signals_available=signals,
+            unavailable=unavailable,
+            accommodated=accommodated,
         )
 
-    score = sum(components) / len(components)
+    total = sum(_WEIGHTS[n] for n in signals)
+    score = sum(_WEIGHTS[n] * values[n] for n in signals) / total
+    participation_score = sum(values[n] for n in participation) / len(participation)
+    if participation_score >= ENGAGED_THRESHOLD:
+        # The camera may corroborate, but cannot pull down someone whose
+        # participation says they are engaged.
+        score = max(score, participation_score)
 
     if score >= ENGAGED_THRESHOLD:
         status = EngagementStatus.ENGAGED
-    elif score >= AT_RISK_THRESHOLD or len(signals) < MIN_SIGNALS_FOR_DISENGAGED:
+    elif score >= AT_RISK_THRESHOLD or len(signals) < MIN_SIGNALS_FOR_DISENGAGED or accommodated:
         status = EngagementStatus.AT_RISK
     else:
         status = EngagementStatus.DISENGAGED
@@ -128,20 +237,26 @@ def compute_engagement(inputs: EngagementInputs) -> EngagementComputation:
         status=status,
         confidence=confidence,
         signals_available=signals,
+        unavailable=unavailable,
+        accommodated=accommodated,
     )
 
 
 def should_send_dynamic_prompt(computation: EngagementComputation) -> bool:
     """Whether the engagement state warrants a private refocus nudge.
 
-    Needs a low status backed by at least two signals: a low attempt rate on
-    its own is exactly what a student who has just joined, or is thinking
-    through a hard question, looks like. Whether a prompt may go out right
-    now (cap, pause, open question, connection) is the classroom's call.
+    Needs a low status backed by at least two signals, one of them
+    participation: a low attempt rate on its own is exactly what a student who
+    has just joined, or is thinking through a hard question, looks like. A
+    student with an accommodation is never nudged automatically. Whether a
+    prompt may go out right now (cap, pause, open question, connection) is the
+    classroom's call.
     """
     return (
-        computation.status in (EngagementStatus.AT_RISK, EngagementStatus.DISENGAGED)
+        not computation.accommodated
+        and computation.status in (EngagementStatus.AT_RISK, EngagementStatus.DISENGAGED)
         and len(computation.signals_available) >= MIN_SIGNALS_FOR_PROMPT
+        and any(n in PARTICIPATION_SIGNALS for n in computation.signals_available)
     )
 
 

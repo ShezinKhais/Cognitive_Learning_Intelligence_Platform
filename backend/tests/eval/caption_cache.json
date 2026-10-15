@@ -1,0 +1,26 @@
+{
+  "11b456ec4ac65846e5c73df030373b2b07348593df58a2cf36a5f40b677ba7e0": {
+    "model": "qwen2.5vl:3b",
+    "outcome": "captioned",
+    "prompt": "caption-v2",
+    "text": "This image is a scatter plot. The x-axis is labeled \"Hgt\" and ranges from 60 to 75. The y-axis is labeled \"Gender\" and ranges from 0.0 to 1.0. The plot shows two series of data represented by different colored dots, with one series being lighter than the other."
+  },
+  "94e8f809f51218fe6e3d07f1daf8f22e4a6ccf42f2df2f7443d51466d8300db5": {
+    "model": "qwen2.5vl:3b",
+    "outcome": "captioned",
+    "prompt": "caption-v2",
+    "text": "This image is a scatter plot. It shows the relationship between two variables: \"jitter(Gender, amount = 0.05)\" on the y-axis and \"Hgt\" on the x-axis. The plot includes jittered data points, with the y-axis ranging from 0.0 to 1.0 and the x-axis ranging from 60 to 75. The scatter plot indicates how height affects the jitter, with higher jitter values around a height of 70."
+  },
+  "c21cf1f7db175cde987b0f4fcdefc101595e6d7400ce762372141831c7f6f5fa": {
+    "model": "qwen2.5vl:3b",
+    "outcome": "captioned",
+    "prompt": "caption-v2",
+    "text": "This image is a scatter plot. The x-axis is labeled \"Pulse\\$Hgt\" and ranges from approximately 60 to 75. The y-axis is labeled \"fitted(logitmodel)\" and ranges from 0.0 to 1.0. The plot shows a series of data points representing fitted model values against the pulse height."
+  },
+  "e41a80bb9994744017c50fd8ab104e3d8562ec82545e995c1ba9b8ba083b064d": {
+    "model": "qwen2.5vl:3b",
+    "outcome": "captioned",
+    "prompt": "caption-v2",
+    "text": "The image is a function plot showing a red curve representing an exponential function. The x-axis ranges from -10 to 12, and the y-axis ranges from 0.2 to 1.0. The equation for the function is \\( y = \\frac{\\exp{(b0 + b1*x)}}{1 + \\exp{(b0 + b1*x)}} \\). The plot indicates that the function approaches but does not reach a maximum value."
+  }
+}

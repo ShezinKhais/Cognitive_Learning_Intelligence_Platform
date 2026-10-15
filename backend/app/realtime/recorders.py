@@ -4,10 +4,10 @@ Owner: General CS, Phase 3, for the contract. AI 1, BBIS and Cyber 1 provide
 the implementations, and app/services/live_wiring.py installs them on the
 classroom at startup.
 
-Storing and scoring answers, question closes, prompt outcomes and
-attendance plug in through ResponseRecorder, CloseRecorder, PromptRecorder and
-ParticipantRecorder, and the class comprehension alert reads through
-ComprehensionSource. Until one is set, an
+Storing and scoring answers, question closes, prompt outcomes, attendance
+and attention summaries plug in through ResponseRecorder, CloseRecorder,
+PromptRecorder, ParticipantRecorder and AttentionRecorder, and the class
+comprehension alert reads through ComprehensionSource. Until one is set, an
 accepted answer is counted towards the question's respondents and kept
 nowhere else; Classroom.check_wiring() says so at startup, and refuses to
 start in production.
@@ -21,14 +21,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Mapping
+from collections.abc import Awaitable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from typing import Protocol, TypeVar
 from uuid import UUID
 
-from app.schemas.events import FeedbackResultPayload, QuestionCloseReason
+from app.schemas.events import (
+    AttentionSignalPayload,
+    FeedbackResultPayload,
+    QuestionCloseReason,
+)
 from app.schemas.session import ClassComprehensionAlert
 
 log = logging.getLogger("clip.classroom")
@@ -167,6 +171,32 @@ class ParticipantRecorder(Protocol):
     async def record_join(self, joined: Attendance) -> None: ...
 
     async def record_leave(self, left: Attendance) -> None: ...
+
+
+@dataclass(frozen=True)
+class AttentionWindow:
+    """One student's attention signals for one clock minute of a session.
+
+    Derived indicators only, as the student's device sent them, less what
+    their consent does not cover, and each held to the time it really covered.
+    """
+
+    session_id: UUID
+    user_id: UUID
+    window_start: datetime
+    signals: tuple[AttentionSignalPayload, ...]
+
+
+class AttentionRecorder(Protocol):
+    """Stores per-minute attention summaries for the analytics layer. BBIS
+    provides the table; live_wiring.py summarises and stores.
+
+    Called with every minute that has just finished, of any student, at once.
+    A failure is logged and otherwise ignored: those minutes are lost, and the
+    class goes on.
+    """
+
+    async def record_windows(self, windows: Sequence[AttentionWindow]) -> None: ...
 
 
 @dataclass(frozen=True)
