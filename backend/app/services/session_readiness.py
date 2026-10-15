@@ -1,18 +1,21 @@
-"""Whether a prepared session has the content it needs to begin.
+
+"""Check whether a prepared lecture session can begin.
 
 Owner: AI 1, Phase 4.
 
-A session may start once it has at least one approved, staged question to
-deliver: that question's material has processed, or it would not exist.
-Everything else explains why there is none, or is a warning when there are
-some, so a slow upload for another week never holds back a class that has
-something to ask. The readiness endpoint and start_session both call
-evaluate_readiness, so what the lecturer is shown and what the start button
-does cannot disagree.
+A lecturer can start a session even when no lecture materials have been
+uploaded or no approved questions have been staged.
 
-A failed material is a warning, not a blocker. It will never finish, so
-blocking on it would hold the class back forever even when the rest of the
-material is fine and has questions staged.
+Missing materials, unfinished processing, failed processing, and missing
+approved questions are reported as warnings rather than blockers.
+
+This allows teaching to begin without requiring a quiz or checkpoint.
+
+Questions can only be delivered when they are available and staged for
+the session. The question delivery system performs its own checks.
+
+Both the readiness endpoint and the session-starting service use
+evaluate_readiness(), keeping the dashboard and backend consistent.
 """
 
 from __future__ import annotations
@@ -26,10 +29,20 @@ from app.models.material import Material
 from app.models.session import Session
 from app.repositories.session_repository import SessionRepository
 from app.schemas.content import MaterialStatus
-from app.schemas.session import ReadinessIssue, ReadinessIssueCode, SessionReadinessOut
+from app.schemas.session import (
+    ReadinessIssue,
+    ReadinessIssueCode,
+    SessionReadinessOut,
+)
 
-# Materials that have not finished yet. Either may still produce questions.
-_UNFINISHED = {MaterialStatus.PENDING.value, MaterialStatus.PROCESSING.value}
+
+# Material statuses indicating that processing is not yet complete.
+# These materials may eventually produce questions, but they do not
+# prevent a lecturer from starting a session.
+_UNFINISHED = {
+    MaterialStatus.PENDING.value,
+    MaterialStatus.PROCESSING.value,
+}
 
 
 def assess(
@@ -39,52 +52,100 @@ def assess(
     *,
     now: datetime | None = None,
 ) -> SessionReadinessOut:
-    """Build the readiness report from what is already known. No database."""
+    """Build a readiness report without querying the database.
+
+    The session is always allowed to start from a content-readiness
+    perspective.
+
+    Missing materials and questions are reported as warnings so the
+    lecturer knows which features may be unavailable.
+
+    Other session requirements, such as the lecturer's permissions and
+    the session's current status, are checked elsewhere.
+    """
+
+    # Content-readiness issues no longer prevent starting a lecture.
     blockers: list[ReadinessIssue] = []
+
+    # Warnings inform the lecturer about missing or unavailable content.
     warnings: list[ReadinessIssue] = []
 
-    unfinished = [m for m in materials if m.status in _UNFINISHED]
-    failed = [m for m in materials if m.status == MaterialStatus.FAILED.value]
-    ready = deliverable_questions > 0
-    # Only a missing question blocks. Missing or unfinished material is the
-    # reason there is none, or a warning when there already are some, so
-    # ready is true exactly when blockers is empty.
-    reasons = warnings if ready else blockers
+    # Find materials that have not finished processing.
+    unfinished = [
+        material
+        for material in materials
+        if material.status in _UNFINISHED
+    ]
 
+    # Find materials whose processing failed.
+    failed = [
+        material
+        for material in materials
+        if material.status == MaterialStatus.FAILED.value
+    ]
+
+    # A lecture may start even without materials or approved questions.
+    ready = True
+
+    # All content-readiness issues are informational warnings.
+    reasons = warnings
+
+    # Warn the lecturer if no lecture materials have been uploaded.
     if not materials:
         reasons.append(
             ReadinessIssue(
                 code=ReadinessIssueCode.NO_MATERIAL,
-                message="Upload lecture material for this course before starting.",
+                message=(
+                    "No lecture material has been uploaded. "
+                    "You can start the lecture, but material-based "
+                    "questions will be unavailable."
+                ),
             )
         )
 
+    # Warn about materials that are still pending or processing.
+    # Processing does not prevent the lecture from starting.
     for material in unfinished:
         reasons.append(
             ReadinessIssue(
                 code=ReadinessIssueCode.MATERIAL_PROCESSING,
-                message=f"{material.filename} is still being processed.",
+                message=(
+                    f"{material.filename} is still being processed."
+                ),
                 material_id=material.id,
             )
         )
 
+    # Warn about materials whose processing failed.
+    # Other usable materials and questions remain available.
     for material in failed:
         warnings.append(
             ReadinessIssue(
                 code=ReadinessIssueCode.MATERIAL_FAILED,
-                message=f"{material.filename} could not be processed and has no questions.",
+                message=(
+                    f"{material.filename} could not be processed "
+                    "and has no questions."
+                ),
                 material_id=material.id,
             )
         )
 
-    if not ready:
-        blockers.append(
+    # Missing approved questions do not prevent the lecture from starting.
+    # Checkpoints remain unavailable until questions are staged.
+    if deliverable_questions == 0:
+        warnings.append(
             ReadinessIssue(
                 code=ReadinessIssueCode.NO_APPROVED_QUESTIONS,
-                message="Stage at least one approved question before starting the session.",
+                message=(
+                    "No approved questions are staged. "
+                    "You can start the lecture, but checkpoints "
+                    "will be unavailable until questions are approved."
+                ),
             )
         )
 
+    # Return the readiness report used by the lecturer dashboard
+    # and the backend session-starting service.
     return SessionReadinessOut(
         session_id=session_id,
         ready=ready,
@@ -98,9 +159,30 @@ def assess(
     )
 
 
-async def evaluate_readiness(db: AsyncSession, live: Session) -> SessionReadinessOut:
-    """Load the session's materials and staged questions, then assess them."""
+async def evaluate_readiness(
+    db: AsyncSession,
+    live: Session,
+) -> SessionReadinessOut:
+    """Load session materials and staged questions, then assess readiness.
+
+    The database provides the current material-processing states and
+    the number of questions available for delivery.
+
+    The assess() function converts that information into a readiness
+    report containing any relevant warnings.
+    """
+
     repo = SessionRepository(db)
+
+    # Retrieve materials associated with this session.
     materials = await repo.materials_for(live)
+
+    # Count questions that are currently available for delivery.
     deliverable = await repo.count_deliverable(live)
-    return assess(live.session_id, materials, deliverable)
+
+    # Generate and return the readiness report.
+    return assess(
+        live.session_id,
+        materials,
+        deliverable,
+    )
