@@ -294,7 +294,7 @@ class TestStudentEngagement:
         )
         assert "privately" in explained.recommendation
         assert "not proof" in explained.recommendation
-        assert explained.reason == "Engagement score 20% (disengaged) from participation evidence."
+        assert explained.reason == "Engagement score 25% (disengaged) from participation evidence."
 
     def test_it_is_always_an_early_indication_not_a_finding(self) -> None:
         explained = explain_student_engagement(

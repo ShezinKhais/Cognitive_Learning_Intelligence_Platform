@@ -320,10 +320,12 @@ class Attention:
                 student.answered += 1
                 if user_id in timing:
                     student.response_times.append(timing[user_id])
-            student.learn_baseline(now)
-            student.score = ScoredStudent(
-                user_id, student.engagement(now, user_id in accommodated), now
-            )
+            # Nothing is learned from the camera of a student whose camera is
+            # never scored: no baseline to keep, nothing to purge.
+            accommodation = user_id in accommodated
+            if not accommodation:
+                student.learn_baseline(now)
+            student.score = ScoredStudent(user_id, student.engagement(now, accommodation), now)
             scored.append(student.score)
         return scored
 

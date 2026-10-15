@@ -29,6 +29,7 @@ from app.services.engagement_view import (
     COMMON_CEILING,
     PARTICIPATION,
     staff_confidence,
+    staff_score,
     staff_signals,
 )
 
@@ -113,8 +114,9 @@ def test_the_internal_computation_still_knows_the_detail() -> None:
             questions_shown=4, questions_answered=4, response_times=(0.2,), accommodated=True
         )
     )
-    assert accommodated.signals_available == ["attempt_rate"]
-    assert accommodated.unavailable["response_timing"] == "accommodation"
+    # Answer speed counts as the neutral value, so the signal set matches.
+    assert accommodated.signals_available == ["attempt_rate", "response_timing"]
+    assert accommodated.unavailable["gaze"] == "accommodation"
 
 
 @pytest.mark.usefixtures("fake_session_repository")
@@ -161,4 +163,65 @@ async def test_the_staff_route_reports_an_accommodated_student_like_any_other(db
     plain, accommodated = seen
     assert plain["signals_available"] == accommodated["signals_available"] == [PARTICIPATION]
     assert plain["confidence"] == accommodated["confidence"] == 1.0
+    # Staff see the score in quarter steps, never the raw figure.
+    for shown in (plain, accommodated):
+        assert shown["score"] * 4 == int(shown["score"] * 4)
     assert "accommodat" not in str(accommodated).lower()
+
+
+def test_staff_see_the_score_in_quarter_steps() -> None:
+    assert staff_score(None) is None
+    for raw, banded in (
+        (0.0, 0.0),
+        (0.12, 0.0),
+        (0.13, 0.25),
+        (0.375, 0.5),
+        (0.5, 0.5),
+        (0.6249, 0.5),
+        (0.625, 0.75),
+        (0.875, 1.0),
+        (0.991, 1.0),
+        (1.0, 1.0),
+    ):
+        assert staff_score(raw) == banded, raw
+
+
+def test_every_banded_score_an_accommodated_student_shows_is_one_others_show() -> None:
+    """For the same questions shown and answered, whatever band an accommodated
+    student lands in, a student without an accommodation can land in it too."""
+    timings = [t / 10 for t in range(11)]
+    cameras = [
+        None,
+        AttentionSignalPayload(gaze_on_screen_ratio=0.1, face_present=False, window_seconds=5),
+        AttentionSignalPayload(gaze_on_screen_ratio=0.95, face_present=True, window_seconds=5),
+    ]
+    for shown, answered in itertools.product(range(2, 9), range(0, 9)):
+        if answered > shown:
+            continue
+        others = set()
+        for t, camera, prompts in itertools.product(
+            timings, cameras, ((), (PROMPT_ACKNOWLEDGED,), (PROMPT_EXPIRED,))
+        ):
+            computed = compute_engagement(
+                EngagementInputs(
+                    questions_shown=shown,
+                    questions_answered=answered,
+                    response_times=(t,) * answered,
+                    prompt_responses=prompts,
+                    attention=camera,
+                )
+            )
+            others.add(staff_score(computed.score))
+        for prompts in ((), (PROMPT_ACKNOWLEDGED,), (PROMPT_EXPIRED,)):
+            shown_score = staff_score(
+                compute_engagement(
+                    EngagementInputs(
+                        questions_shown=shown,
+                        questions_answered=answered,
+                        response_times=(0.5,) * answered,
+                        prompt_responses=prompts,
+                        accommodated=True,
+                    )
+                ).score
+            )
+            assert shown_score in others, (shown, answered, prompts, shown_score, sorted(others))
