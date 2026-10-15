@@ -418,7 +418,9 @@ def test_the_manifest_asks_only_for_what_the_app_uses() -> None:
     manifest = json.loads(MANIFEST.read_text("utf-8"))
 
     assert manifest["permissions"] == ["identity"]
-    assert "devicePermissions" not in manifest
+    # Camera and microphone, for AI 2's local attention sensors (#136), which ask
+    # first, show while they run and turn off in one click. Nothing else.
+    assert manifest["devicePermissions"] == ["media"]
     assert [bot["scopes"] for bot in manifest["bots"]] == [["groupChat"]]
     assert {
         (p["name"], p["type"]) for p in manifest["authorization"]["permissions"]["resourceSpecific"]

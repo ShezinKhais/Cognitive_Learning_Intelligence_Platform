@@ -11,7 +11,7 @@ import logging
 from collections.abc import Callable
 
 from fastapi import APIRouter, Depends, Request, UploadFile, status
-from sqlalchemy import event
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -41,6 +41,7 @@ from app.core.security import (
     create_access_token,
     verify_password,
 )
+from app.models.user import User
 from app.realtime.classroom import classroom
 from app.repositories.consent_repository import ConsentRepository
 from app.repositories.user_repository import UserRepository
@@ -396,9 +397,12 @@ async def record_consent(
     "/timetable",
     response_model=TimetableImportResult,
 )
+@audit_action("TIMETABLE_IMPORTED")
 async def import_timetable(
     file: UploadFile,
     principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
     db: DbSession,
 ) -> TimetableImportResult:
     """CSV or XLSX only. Structured data is parsed, never OCR'd."""
@@ -412,8 +416,9 @@ async def import_timetable(
 
     conflicts = detect_timetable_conflicts(rows)
 
-    # Placeholder until the final BBIS persistence integration.
-    known_lecturers: list[str] = []
+    # Matched against the lecturers who have accounts. Nothing is stored yet:
+    # turning a weekly slot into dated sessions is still to be decided.
+    known_lecturers = await _names_of(db, Role.LECTURER)
 
     unmatched_lecturers, _ = match_names(
         [row.lecturer for row in rows],
@@ -433,9 +438,12 @@ async def import_timetable(
     "/roster",
     response_model=TimetableImportResult,
 )
+@audit_action("ROSTER_IMPORTED")
 async def import_roster(
     file: UploadFile,
     principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
     db: DbSession,
 ) -> TimetableImportResult:
     """CSV or XLSX only, same reasoning as /timetable: no OCR path."""
@@ -447,8 +455,10 @@ async def import_roster(
         raw,
     )
 
-    # Placeholder until the final BBIS persistence integration.
-    known_students: list[str] = []
+    # Matched against the students who have accounts. Nothing is stored yet:
+    # a student holds one enrolment (student.user_id is unique), so enrolling
+    # from a roster would move students between courses.
+    known_students = await _names_of(db, Role.STUDENT)
 
     unmatched_students, _ = match_names(
         [row.student_name for row in rows],
@@ -462,6 +472,11 @@ async def import_roster(
         unmatched_lecturers=[],
         unmatched_students=unmatched_students,
     )
+
+
+async def _names_of(db: AsyncSession, role: Role) -> list[str]:
+    """The names of every account with this role, for matching an import."""
+    return list(await db.scalars(select(User.name).where(User.role == role.value)))
 
 
 router.include_router(auth)

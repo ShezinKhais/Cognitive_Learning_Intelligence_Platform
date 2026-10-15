@@ -83,7 +83,7 @@ def housekeeping() -> Scheduler:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if get_settings().teams_configured:
-        log.warning("Teams credentials set but the adapter is not implemented yet")
+        log.info("Teams integration enabled")
     else:
         log.info("Running without Teams integration")
     # What a live session cannot store is reported now, not discovered
