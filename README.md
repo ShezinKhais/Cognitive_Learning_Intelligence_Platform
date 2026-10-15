@@ -327,7 +327,7 @@ work for local development.
 ### Quick start with Docker
 
 ```bash
-ollama pull qwen2.5 && ollama pull nomic-embed-text   # Ollama runs on the host
+ollama pull qwen2.5:3b && ollama pull nomic-embed-text   # Ollama runs on the host
 docker compose up --build
 ```
 
@@ -341,7 +341,7 @@ http://localhost:5173; the API is on http://localhost:8000. Sign in with the dem
 docker compose up -d
 
 # 2. Models
-ollama pull qwen2.5
+ollama pull qwen2.5:3b
 ollama pull nomic-embed-text
 
 # 3. Backend, on http://localhost:8000

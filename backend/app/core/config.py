@@ -80,7 +80,7 @@ class Settings(BaseSettings):
 
     # LLM
     ollama_base_url: str = "http://localhost:11434/v1"
-    ollama_model: str = "qwen2.5"
+    ollama_model: str = "qwen2.5:3b"
     embedding_model: str = "nomic-embed-text"
     embedding_dim: int = 768
     # Tried once when the model above cannot answer. Empty for none. A smaller
