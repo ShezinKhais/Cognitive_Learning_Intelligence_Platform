@@ -23,7 +23,7 @@ from app.api.deps import (
     require_roles,
 )
 from app.auth.login_security import PersistentLoginSecurityStore
-from app.auth.service import granted_consents
+from app.auth.service import granted_consents, renew_token
 from app.auth.store import (
     get_consent_repository,
     get_login_security_store,
@@ -38,7 +38,9 @@ from app.core.errors import (
 )
 from app.core.security import (
     DUMMY_PASSWORD_HASH,
+    TokenValidationError,
     create_access_token,
+    extract_bearer_token,
     verify_password,
 )
 from app.realtime.classroom import classroom
@@ -248,6 +250,51 @@ async def login(
         access_token=token,
         expires_in=expires_in,
         role=role,
+    )
+
+
+@auth.post(
+    "/refresh",
+    response_model=TokenResponse,
+)
+async def refresh(
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> TokenResponse:
+    """Swap a still-valid access token for a fresh one.
+
+    The client calls this shortly before its token expires, so a class longer
+    than the token's lifetime is not interrupted by a sign-in. The account is
+    checked again, and the sign-in itself still ends max_sign_in_hours after
+    the password was typed. An expired token cannot be refreshed: the user
+    signs in again.
+    """
+
+    try:
+        renewed = await renew_token(
+            extract_bearer_token(request.headers.get("Authorization")),
+            settings,
+            db,
+        )
+    except TokenValidationError as exc:
+        log.warning(
+            "security_event=TOKEN_REFRESH_REFUSED reason=%s",
+            str(exc),
+        )
+
+        raise AuthenticationError("Sign in again.") from exc
+
+    log.info(
+        "security_event=TOKEN_REFRESHED user_id=%s role=%s",
+        renewed.user.id,
+        renewed.user.role.value,
+    )
+
+    return TokenResponse(
+        access_token=renewed.access_token,
+        expires_in=renewed.expires_in,
+        role=renewed.user.role,
     )
 
 

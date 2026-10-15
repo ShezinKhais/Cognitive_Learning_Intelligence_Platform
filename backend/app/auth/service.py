@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.store import get_consent_repository, get_user_repository
 from app.core.config import Settings
 from app.core.security import (
+    TokenClaims,
     TokenValidationError,
+    create_access_token,
     decode_access_token,
 )
 from app.repositories.consent_repository import ConsentRepository
@@ -68,6 +71,16 @@ async def user_from_token(
         settings,
     )
 
+    return await _holder(claims, settings, db)
+
+
+async def _holder(
+    claims: TokenClaims,
+    settings: Settings,
+    db: AsyncSession,
+) -> AuthenticatedUser:
+    """The account a token's claims name, while it still matches them."""
+
     user = await active_user(claims.user_id, settings, db)
 
     if user is None:
@@ -77,3 +90,40 @@ async def user_from_token(
         raise TokenValidationError("token identity no longer matches the user")
 
     return user
+
+
+@dataclass(frozen=True, slots=True)
+class RenewedToken:
+    access_token: str
+    expires_in: int
+    user: AuthenticatedUser
+
+
+async def renew_token(
+    token: str,
+    settings: Settings,
+    db: AsyncSession,
+) -> RenewedToken:
+    """A fresh access token for the holder of a still-valid one.
+
+    The account is checked again as it stands now: it must exist, be active
+    and have the role the token was issued for. The new token keeps the
+    original sign-in time, and none is issued once max_sign_in_hours have
+    passed since it, so refreshing never stands in for signing in. An expired
+    token is refused like any other invalid one.
+    """
+
+    claims = decode_access_token(token, settings)
+    user = await _holder(claims, settings, db)
+
+    if datetime.now(UTC) >= claims.auth_time + timedelta(hours=settings.max_sign_in_hours):
+        raise TokenValidationError("sign-in has reached its maximum length")
+
+    renewed, expires_in = create_access_token(
+        user_id=user.id,
+        role=user.role,
+        email=user.email,
+        settings=settings,
+        auth_time=claims.auth_time,
+    )
+    return RenewedToken(access_token=renewed, expires_in=expires_in, user=user)
