@@ -495,6 +495,7 @@ rather than a component, so every phase ends with something that runs end to end
 | Requirements Analysis (SRS) | `TBD` |
 | Design Document | `TBD` |
 | Test Plan | `TBD` |
+| Security and privacy reviews | [docs/security](docs/security/README.md) |
 | Final Report | `TBD` |
 | Poster | `TBD` |
 

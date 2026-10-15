@@ -1,6 +1,6 @@
 """Cyber 1, Phase 4: the Teams surfaces' permissions, identities and access.
 
-Each section is a finding in CYBER1_PHASE4_TEAMS_SECURITY_REVIEW.md, tested
+Each section is a finding in docs/security/phase4-teams-security-review.md, tested
 from the attacker's side: an activity from the wrong channel or tenant, a
 lecturer the bot should no longer act for, a caller the meeting routes
 should refuse, and a manifest asking for more than the app uses.
