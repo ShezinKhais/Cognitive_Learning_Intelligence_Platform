@@ -1,7 +1,4 @@
-import {
-  apiUrl,
-  getAccessToken,
-} from '../../api'
+import { authenticatedFetch } from '../../api'
 import { parseNdjsonLine } from './chatProtocol'
 import type { ChatStreamEvent } from './chatTypes'
 
@@ -16,15 +13,11 @@ export interface ChatRequest {
 }
 
 export async function streamChat(request: ChatRequest): Promise<void> {
-  const token = getAccessToken()
-  if (!token) throw new Error('Login is required.')
-
-  const response = await fetch(
-    apiUrl(`/sessions/${encodeURIComponent(request.sessionId)}/chat`),
+  const response = await authenticatedFetch(
+    `/sessions/${encodeURIComponent(request.sessionId)}/chat`,
     {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
         Accept: 'application/x-ndjson',
       },

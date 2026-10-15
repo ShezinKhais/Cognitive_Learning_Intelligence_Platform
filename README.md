@@ -288,6 +288,7 @@ will implement it.
 | GET | `/health` | none | Liveness, and whether Teams is configured |
 | GET | `/ready` | none | Whether PostgreSQL and Ollama are reachable |
 | POST | `/auth/login` | none | Sign in and receive an access token |
+| POST | `/auth/refresh` | any | Swap a still-valid token for a fresh one, within 12 hours of signing in |
 | GET | `/auth/me` | any | The signed-in user, with role and consents |
 | POST | `/auth/consent` | any | Grant or withdraw one kind of consent |
 | POST | `/admin/timetable` | admin | Import the timetable CSV |
