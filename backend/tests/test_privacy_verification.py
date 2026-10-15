@@ -17,7 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 from fastapi.websockets import WebSocketDisconnect
 from pydantic import ValidationError
-from sqlalchemy import LargeBinary
+from sqlalchemy import Float, LargeBinary
 
 import app.models  # noqa: F401  (registers every table on Base)
 from app.api.v1 import ws as ws_module
@@ -162,15 +162,44 @@ def test_no_table_has_a_binary_column() -> None:
 
 
 def test_no_table_stores_a_raw_attention_reading() -> None:
-    """A score and a label are kept; the gaze ratio and face flag behind them
-    are not, so there is no record of where anyone looked."""
+    """Only the explicitly approved minute aggregates may use visual names.
+
+    These derived ratios are not raw frames, landmarks or per-frame readings.
+    No other table (or newly added column) receives a blanket exemption.
+    """
+    aggregates = {
+        "attention_signal_summary.gaze_on_screen_ratio",
+        "attention_signal_summary.face_present_ratio",
+    }
     names = {
         f"{table.name}.{column.name}"
         for table in Base.metadata.tables.values()
         for column in table.columns
     }
+    assert aggregates <= names
     for forbidden in ("gaze", "face_present", "landmark", "frame", "audio", "transcript_audio"):
-        assert not [n for n in names if forbidden in n.split(".")[1]], forbidden
+        assert not [n for n in names - aggregates if forbidden in n.split(".")[1]], forbidden
+
+
+def test_attention_summary_is_a_bounded_schema_of_derived_scalars() -> None:
+    from app.models.attention_signal_summary import AttentionSignalSummary
+
+    columns = AttentionSignalSummary.__table__.columns
+    assert set(columns.keys()) == {
+        "summary_id",
+        "session_id",
+        "student_id",
+        "window_start",
+        "window_seconds",
+        "sample_count",
+        "gaze_on_screen_ratio",
+        "face_present_ratio",
+        "speaking_ratio",
+        "recorded_at",
+    }
+    for name in ("gaze_on_screen_ratio", "face_present_ratio", "speaking_ratio"):
+        assert isinstance(columns[name].type, Float)
+        assert columns[name].nullable  # Unavailable signals are not forced to zero.
 
 
 def test_the_stored_engagement_record_is_derived_data_only() -> None:
