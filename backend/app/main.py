@@ -26,6 +26,7 @@ from app.services.material_recovery import SWEEP_EVERY, sweep_stranded
 from app.services.meeting_directory import meetings
 from app.services.reports import get_report_queue
 from app.services.scheduler import ScheduledJob, Scheduler
+from app.services.teams_notifications import notifications
 from app.services.uploads import get_background_processor
 
 settings = get_settings()
@@ -83,12 +84,16 @@ def housekeeping() -> Scheduler:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if get_settings().teams_configured:
-        log.warning("Teams credentials set but the adapter is not implemented yet")
+        log.info(
+            "Teams bot configured; checkpoint notifications enabled=%s",
+            get_settings().teams_notifications_enabled,
+        )
     else:
         log.info("Running without Teams integration")
     # What a live session cannot store is reported now, not discovered
     # after a class.
     install_live_store(classroom)
+    classroom.checkpoint_notifier = notifications.enqueue
     meetings.directory = DatabaseMeetingDirectory()
     classroom.check_wiring()
     meetings.check_wiring()
@@ -109,6 +114,7 @@ async def lifespan(app: FastAPI):
     # Question windows and cycles are timers on this process. Sessions stay
     # active in the database and resume when the next process is touched.
     await classroom.shutdown()
+    await notifications.shutdown()
     # Material processing outlives the request that started it, so a shutdown
     # that does not wait for it kills a parse halfway and leaves the lecturer
     # watching a bar stuck at 20 per cent with no record of why.
