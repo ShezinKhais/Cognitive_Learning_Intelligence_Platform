@@ -163,7 +163,7 @@ def test_the_purge_runs_on_its_interval_and_first_well_after_startup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from app.core.config import Settings
-    from app.services.retention import purge_expired_data
+    from app.services.purge_runner import purge_expired_data
 
     monkeypatch.setattr("app.main.get_settings", lambda: Settings(_env_file=None))
     [job] = [j for j in housekeeping().jobs if j.name == "retention-purge"]

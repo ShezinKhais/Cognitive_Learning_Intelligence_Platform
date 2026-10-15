@@ -14,8 +14,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from app.services import retention as retention_module
-from app.services.retention import BATCH_SIZE, MAX_BATCHES_PER_TASK, PurgeReport, PurgeRunner
+from app.services import purge_runner
+from app.services.purge_runner import BATCH_SIZE, MAX_BATCHES_PER_TASK, PurgeReport, PurgeRunner
 
 NOW = datetime(2026, 6, 1, 3, 0, tzinfo=UTC)
 RETENTION = timedelta(days=30)
@@ -255,7 +255,7 @@ async def test_the_run_stops_between_batches_when_a_class_starts() -> None:
 async def test_a_task_that_is_never_empty_stops_at_the_batch_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(retention_module, "MAX_BATCHES_PER_TASK", 4)
+    monkeypatch.setattr(purge_runner, "MAX_BATCHES_PER_TASK", 4)
     endless = Endless("a")
     runner = make_runner()
     runner.register(endless)
@@ -270,7 +270,7 @@ async def test_a_task_that_is_never_empty_stops_at_the_batch_limit(
 async def test_the_tasks_after_one_that_never_empties_still_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(retention_module, "MAX_BATCHES_PER_TASK", 3)
+    monkeypatch.setattr(purge_runner, "MAX_BATCHES_PER_TASK", 3)
     after = FakeTask("b", [1])
     runner = make_runner()
     runner.register(Endless("a"))
@@ -286,7 +286,7 @@ async def test_the_tasks_after_one_that_never_empties_still_run(
 async def test_a_task_that_empties_on_its_last_allowed_batch_is_not_marked_interrupted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(retention_module, "MAX_BATCHES_PER_TASK", 3)
+    monkeypatch.setattr(purge_runner, "MAX_BATCHES_PER_TASK", 3)
     runner = make_runner()
     runner.register(FakeTask("a", [BATCH, BATCH, 1]))
 

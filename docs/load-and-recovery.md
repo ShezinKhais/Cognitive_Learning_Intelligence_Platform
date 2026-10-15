@@ -59,7 +59,7 @@ should be read with that in mind.
   `retention_purge` lines written while the class ran. With a class running,
   each line must say it deleted 0 items and stopped early. The check does not
   prove that the purge deletes anything. That is covered by
-  `tests/test_retention.py` and `tests/test_upload_purge.py`.
+  `tests/test_purge_runner.py` and `tests/test_upload_purge.py`.
 
 Two things are measured as times and not judged against a target, because the
 project has not set one: how long a question takes to reach the last student,

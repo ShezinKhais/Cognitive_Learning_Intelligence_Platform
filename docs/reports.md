@@ -2,7 +2,7 @@
 
 Owner: General CS, Phase 7 (#65). Code: `backend/app/api/v1/reports.py`,
 `backend/app/services/reports.py`, `backend/app/services/report_pdf.py`,
-`backend/app/services/scheduler.py` and `backend/app/services/retention.py`.
+`backend/app/services/scheduler.py` and `backend/app/services/purge_runner.py`.
 
 A lecturer asks for a report of a session. It is built in the background, and
 they follow it until it is ready, then read it as JSON or download it as a PDF.
@@ -86,7 +86,7 @@ no time limit on a job, so the purge keeps its own, described below.
 
 The README promises that session data is deleted after `DATA_RETENTION_DAYS`.
 The `retention-purge` job keeps that promise on a timer. It runs
-`purge_expired_data()` in `retention.py`, which runs the purge runner
+`purge_expired_data()` in `purge_runner.py`, which runs the purge runner
 (`PurgeRunner`) and holds it to `RETENTION_PURGE_TIMEOUT_MINUTES`. The runner
 works through purge tasks. Each task knows one kind of data and deletes a
 bounded batch of it, oldest first.
@@ -134,7 +134,7 @@ A task has a `name` and an `async purge(cutoff, limit) -> int`. `purge`
 deletes at most `limit` items last changed before `cutoff`, oldest first,
 commits, and returns how many it deleted. Returning fewer than `limit` says
 there is nothing left. Register it before requests arrive, with
-`get_purge_runner().register(task)` from `app/services/retention.py`. A name
+`get_purge_runner().register(task)` from `app/services/purge_runner.py`. A name
 that is already registered is refused.
 
 The example shows the shape of a task. It is not a decision about which tables
@@ -147,7 +147,7 @@ from sqlalchemy import delete, select
 
 from app.core.database import get_session_factory
 from app.models.attention_signal_summary import AttentionSignalSummary
-from app.services.retention import get_purge_runner
+from app.services.purge_runner import get_purge_runner
 
 
 class AttentionSummaryPurge:

@@ -19,8 +19,8 @@ from pathlib import Path
 import pytest
 
 from app.core.config import Settings
-from app.services import retention
-from app.services.retention import (
+from app.services import purge_runner
+from app.services.purge_runner import (
     STALE_PARTIAL_AFTER,
     PurgeRunner,
     StoredUploadPurge,
@@ -196,7 +196,7 @@ async def test_the_runner_leaves_the_directory_alone_when_a_class_is_running(
 
 def test_the_process_runner_purges_the_upload_directory(monkeypatch: pytest.MonkeyPatch) -> None:
     get_purge_runner.cache_clear()
-    monkeypatch.setattr(retention, "get_settings", lambda: Settings(_env_file=None))
+    monkeypatch.setattr(purge_runner, "get_settings", lambda: Settings(_env_file=None))
     try:
         assert get_purge_runner().task_names == ["stored-uploads"]
     finally:
@@ -211,7 +211,7 @@ async def test_the_process_runner_gives_way_while_a_class_is_running(
     put(tmp_path, "old.pdf", 400)
     get_purge_runner.cache_clear()
     monkeypatch.setattr(
-        retention,
+        purge_runner,
         "get_settings",
         lambda: Settings(_env_file=None, upload_storage_dir=str(tmp_path)),
     )
@@ -236,11 +236,11 @@ async def test_a_scheduled_run_that_runs_out_of_time_is_reported_not_raised(
             await asyncio.sleep(10)
 
     monkeypatch.setattr(
-        retention,
+        purge_runner,
         "get_settings",
         lambda: Settings(_env_file=None, retention_purge_timeout_minutes=0.0005),
     )
-    monkeypatch.setattr(retention, "get_purge_runner", lambda: Slow())
+    monkeypatch.setattr(purge_runner, "get_purge_runner", lambda: Slow())
 
     with caplog.at_level(logging.WARNING, logger="clip.retention"):
         assert await purge_expired_data() is None
@@ -254,7 +254,7 @@ async def test_a_scheduled_run_returns_what_it_deleted(
     put(tmp_path, "old.pdf", 400)
     runner = PurgeRunner(retention=lambda: RETENTION, clock=lambda: NOW, pause=0)
     runner.register(StoredUploadPurge(tmp_path))
-    monkeypatch.setattr(retention, "get_purge_runner", lambda: runner)
+    monkeypatch.setattr(purge_runner, "get_purge_runner", lambda: runner)
 
     report = await purge_expired_data()
 
