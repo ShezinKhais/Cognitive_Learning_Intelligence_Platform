@@ -17,7 +17,6 @@ process is still running.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -38,7 +37,7 @@ log = logging.getLogger("clip.material_recovery")
 
 # Far longer than any stage takes; extraction, the slowest, is under a minute.
 STALE_AFTER = timedelta(minutes=15)
-SWEEP_EVERY_SECONDS = 300.0
+SWEEP_EVERY = timedelta(minutes=5)
 
 STRANDED_MESSAGE = "Processing stopped before it finished. Please upload the file again."
 
@@ -81,15 +80,10 @@ async def fail_stranded_materials(
     return stranded
 
 
-async def keep_sweeping(active: Callable[[], frozenset[UUID]]) -> None:
-    """Sweep now and then every SWEEP_EVERY_SECONDS until cancelled.
-
-    Run from the app lifespan. A database that cannot be reached skips that
-    sweep; the next one tries again.
-    """
-    while True:
-        try:
-            await fail_stranded_materials(active())
-        except Exception as exc:
-            log.debug("stranded material sweep skipped: %s", type(exc).__name__)
-        await asyncio.sleep(SWEEP_EVERY_SECONDS)
+async def sweep_stranded(active: Callable[[], frozenset[UUID]]) -> None:
+    """One sweep, run by the scheduler every SWEEP_EVERY. A database that
+    cannot be reached skips this sweep quietly; the next one tries again."""
+    try:
+        await fail_stranded_materials(active())
+    except Exception as exc:
+        log.debug("stranded material sweep skipped: %s", type(exc).__name__)
