@@ -120,8 +120,8 @@ async def session_readiness(
     principal: CurrentUser,
     db: DbSession,
 ) -> SessionReadinessOut:
-    """Whether the session's material has processed and approved questions are
-    staged. Start is refused, with the same blockers, until ready is true."""
+    """What the session has to deliver: its material and staged questions.
+    Each issue is a warning; none of them stops the session from starting."""
     return await session_lifecycle.session_readiness(db, principal, session_id)
 
 

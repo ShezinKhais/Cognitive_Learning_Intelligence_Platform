@@ -746,7 +746,9 @@ export default function LecturerLiveSessionPage() {
 
                       <p className="mt-1 text-sm text-muted-foreground">
                         {readiness.ready
-                          ? 'The session has approved content available for delivery.'
+                          ? readiness.deliverable_questions > 0
+                            ? 'The session has approved content available for delivery.'
+                            : 'You can start now and stage questions during the session.'
                           : 'Resolve the blockers below before starting the session.'}
                       </p>
                     </div>
