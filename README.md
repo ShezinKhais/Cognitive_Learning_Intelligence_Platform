@@ -324,7 +324,17 @@ work for local development.
 | `OLLAMA_BASE_URL` | Where Ollama is listening |
 | `CLIENT_ID`, `CLIENT_SECRET`, `TENANT_ID` | Teams bot registration; leave empty to run without Teams |
 
-### Setup
+### Quick start with Docker
+
+```bash
+ollama pull qwen2.5 && ollama pull nomic-embed-text   # Ollama runs on the host
+docker compose up --build
+```
+
+This starts PostgreSQL, the backend (migrations run on start) and the frontend. Open
+http://localhost:5173; the API is on http://localhost:8000. Sign in with the demo accounts below.
+
+### Setup without Docker for the app
 
 ```bash
 # 1. Database

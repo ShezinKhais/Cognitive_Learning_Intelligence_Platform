@@ -18,5 +18,33 @@ services:
       timeout: 5s
       retries: 10
 
+  backend:
+    build: ./backend
+    container_name: clip-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      CLIP_ENV: development
+      DATABASE_URL: postgresql+asyncpg://clip:clip_dev_password@db:5432/clip
+      # Ollama runs on the host machine, not in a container.
+      OLLAMA_BASE_URL: http://host.docker.internal:11434/v1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    container_name: clip-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_BACKEND_URL: http://backend:8000
+    ports:
+      - "5173:5173"
+
 volumes:
   clip_pgdata:
