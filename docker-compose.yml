@@ -43,6 +43,7 @@ services:
       - backend
     environment:
       VITE_BACKEND_URL: http://backend:8000
+      VITE_LIVE_SESSIONS_ENABLED: "true"
     ports:
       - "5173:5173"
 

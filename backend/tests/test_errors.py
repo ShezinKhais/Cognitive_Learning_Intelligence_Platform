@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 
 from app.main import create_app
 
+STUB_SESSION = "00000000-0000-0000-0000-000000000001"
+
 
 def _assert_envelope(body: dict) -> None:
     assert set(body) == {"error", "request_id"}
@@ -50,20 +52,20 @@ def test_authentication_is_checked_before_anything_else(client: TestClient) -> N
 
 def test_unimplemented_route_names_its_owner(as_lecturer: TestClient) -> None:
     """Past the auth gate, a stub tells you who is building it and when."""
-    response = as_lecturer.get("/api/v1/sessions")
+    response = as_lecturer.get(f"/api/v1/sessions/{STUB_SESSION}/summary/{STUB_SESSION}")
     assert response.status_code == 501
 
     body = response.json()
     _assert_envelope(body)
     assert body["error"]["code"] == "NOT_IMPLEMENTED"
-    assert body["error"]["detail"]["owner"] == "BBIS"
-    assert body["error"]["detail"]["phase"] == "Phase 3"
+    assert body["error"]["detail"]["owner"] == "Cyber 1"
+    assert body["error"]["detail"]["phase"] == "Phase 7"
 
 
 def test_every_stub_reports_an_owner(as_lecturer: TestClient) -> None:
     """No route may 501 without saying who is responsible for it."""
     paths = {
-        ("get", "/api/v1/sessions"),
+        ("get", f"/api/v1/sessions/{STUB_SESSION}/summary/{STUB_SESSION}"),
     }
     for method, path in paths:
         response = as_lecturer.request(method.upper(), path)

@@ -77,7 +77,17 @@ async def list_sessions(
     db: DbSession,
     page: Paginated,
 ) -> Page[SessionOut]:
-    raise not_implemented("BBIS", "Phase 3")
+    """The caller's own sessions: all of them for an admin, those they run for a
+    lecturer, those of their course for a student. Newest first."""
+    rows, total = await SessionRepository(db).list_visible(
+        principal.user_id, principal.role, limit=page.limit, offset=page.offset
+    )
+    return Page(
+        items=[await session_lifecycle.session_out(db, row) for row in rows],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
 
 
 @router.get("/{session_id}", response_model=SessionOut)
@@ -86,7 +96,11 @@ async def get_session(
     principal: CurrentUser,
     db: DbSession,
 ) -> SessionOut:
-    raise not_implemented("BBIS", "Phase 3")
+    row = await SessionRepository(db).get_visible(session_id, principal.user_id, principal.role)
+    if row is None:
+        # Not found rather than forbidden, so an id cannot be probed for existence.
+        raise NotFoundError("Session was not found.", {"session_id": str(session_id)})
+    return await session_lifecycle.session_out(db, row)
 
 
 @router.get(
@@ -189,7 +203,34 @@ async def list_responses(
     db: DbSession,
     page: Paginated,
 ) -> Page[ResponseOut]:
-    raise not_implemented("BBIS", "Phase 3")
+    """Answers given in a session. Staff who may see the session read all of them;
+    a student reads only their own."""
+    repo = SessionRepository(db)
+    row = await repo.get_visible(session_id, principal.user_id, principal.role)
+    if row is None:
+        raise NotFoundError("Session was not found.", {"session_id": str(session_id)})
+    only_user = principal.user_id if principal.role == Role.STUDENT else None
+    answers, total = await repo.list_responses(
+        session_id, only_user_id=only_user, limit=page.limit, offset=page.offset
+    )
+    return Page(
+        items=[
+            ResponseOut(
+                id=a.response_id,
+                question_id=a.question_id,
+                student_id=a.student_id,
+                selected_option=a.selected_option,
+                free_text=a.free_text,
+                is_correct=a.is_correct,
+                elapsed_ms=a.elapsed_ms,
+                submitted_at=a.submitted_at,
+            )
+            for a in answers
+        ],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
 
 
 @router.get("/{session_id}/engagement", response_model=list[EngagementOut], dependencies=_staff)

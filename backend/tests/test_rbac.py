@@ -74,7 +74,9 @@ def test_student_and_lecturer_cannot_upload_a_timetable(client: TestClient) -> N
         assert response.json()["error"]["code"] == "FORBIDDEN"
 
 
-def test_admin_can_reach_timetable_and_roster_handlers(client: TestClient) -> None:
+async def test_admin_can_reach_timetable_and_roster_handlers(db) -> None:
+    # The handlers save to the database, so this runs on the engine the db fixture owns.
+    client, _, _ = db
     token = _login(client, "admin@clip.example.com", ADMIN_PASSWORD)
     _accept_terms(client, token)
 

@@ -8,6 +8,11 @@ were silently dropped from the router.
 
 from __future__ import annotations
 
+from app.auth.store import ADMIN_ID
+from app.schemas.identity import Role
+
+from .session_support import sign_in_as
+
 TIMETABLE_CSV = (
     b"course_code,lecturer,day,start_time,end_time,room\n"
     b"CSIT321,Dr. Orumchian,Monday,09:00,11:00,Room 12\n"
@@ -34,11 +39,15 @@ def test_timetable_upload_rejects_bad_extension(as_admin):
     assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
-def test_roster_upload_parses_rows(as_admin):
+async def test_roster_upload_parses_rows(db, app):
+    # The roster is saved, so this uses the database fixture's engine.
+    client, _, _ = db
+    sign_in_as(app, ADMIN_ID, Role.ADMIN)
     files = {"file": ("roster.csv", ROSTER_CSV, "text/csv")}
-    resp = as_admin.post("/api/v1/admin/roster", files=files)
+    resp = client.post("/api/v1/admin/roster", files=files)
     assert resp.status_code == 200
     assert resp.json()["rows_read"] == 1
+    assert resp.json()["unmatched_students"] == ["A Student (a.student@uni.test)"]
 
 
 def test_admin_routes_reject_non_admin_role(as_lecturer):

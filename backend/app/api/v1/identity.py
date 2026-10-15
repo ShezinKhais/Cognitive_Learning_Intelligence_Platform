@@ -54,9 +54,9 @@ from app.schemas.identity import (
     TokenResponse,
     UserOut,
 )
+from app.services.import_persistence import save_roster, save_timetable
 from app.services.timetable_import import (
     detect_timetable_conflicts,
-    match_names,
     parse_roster,
     parse_timetable,
 )
@@ -412,19 +412,24 @@ async def import_timetable(
 
     conflicts = detect_timetable_conflicts(rows)
 
-    # Placeholder until the final BBIS persistence integration.
-    known_lecturers: list[str] = []
+    # A timetable with a clash is not saved at all: half of it would leave the
+    # administrator unsure which sessions exist.
+    if conflicts:
+        return TimetableImportResult(
+            rows_read=rows_read,
+            sessions_created=0,
+            conflicts=conflicts,
+            unmatched_lecturers=[],
+            unmatched_students=[],
+        )
 
-    unmatched_lecturers, _ = match_names(
-        [row.lecturer for row in rows],
-        known_lecturers,
-    )
+    outcome = await save_timetable(db, rows)
 
     return TimetableImportResult(
         rows_read=rows_read,
-        sessions_created=0,
+        sessions_created=outcome.sessions_created,
         conflicts=conflicts,
-        unmatched_lecturers=unmatched_lecturers,
+        unmatched_lecturers=outcome.unmatched_lecturers,
         unmatched_students=[],
     )
 
@@ -447,20 +452,14 @@ async def import_roster(
         raw,
     )
 
-    # Placeholder until the final BBIS persistence integration.
-    known_students: list[str] = []
-
-    unmatched_students, _ = match_names(
-        [row.student_name for row in rows],
-        known_students,
-    )
+    outcome = await save_roster(db, rows)
 
     return TimetableImportResult(
         rows_read=rows_read,
         sessions_created=0,
-        conflicts=[],
+        conflicts=outcome.problems,
         unmatched_lecturers=[],
-        unmatched_students=unmatched_students,
+        unmatched_students=outcome.unmatched_students,
     )
 
 

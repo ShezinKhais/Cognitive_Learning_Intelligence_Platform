@@ -18,8 +18,11 @@ from app.models.delivered_question import DeliveredQuestion
 from app.models.material import Material
 from app.models.question import Question
 from app.models.session import Session
+from app.models.student import Student
+from app.models.student_response import StudentResponse
 from app.repositories.live_event_repository import LiveEventRepository
 from app.schemas.content import QuestionStatus, QuestionType
+from app.schemas.identity import Role
 
 
 class SessionRepository:
@@ -63,6 +66,77 @@ class SessionRepository:
         if for_update:
             query = query.with_for_update(key_share=True)
         return (await self.session.execute(query)).scalar_one_or_none()
+
+    def _visible_to(self, user_id: uuid.UUID, role: Role):  # noqa: ANN202 - a select
+        """Sessions this user may see: an admin sees every one, a lecturer the
+        ones they run, a student those of the course they are enrolled on."""
+        query = select(Session)
+        if role == Role.LECTURER:
+            query = query.where(Session.instructor_id == user_id)
+        elif role == Role.STUDENT:
+            query = query.where(
+                Session.course_id.in_(select(Student.course_id).where(Student.user_id == user_id))
+            )
+        return query
+
+    async def list_visible(
+        self, user_id: uuid.UUID, role: Role, *, limit: int, offset: int
+    ) -> tuple[list[Session], int]:
+        visible = self._visible_to(user_id, role)
+        total = (
+            await self.session.execute(select(func.count()).select_from(visible.subquery()))
+        ).scalar_one()
+        rows = (
+            (
+                await self.session.execute(
+                    visible.order_by(Session.start_time.desc(), Session.session_id)
+                    .limit(limit)
+                    .offset(offset)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return list(rows), total
+
+    async def get_visible(
+        self, session_id: uuid.UUID, user_id: uuid.UUID, role: Role
+    ) -> Session | None:
+        query = self._visible_to(user_id, role).where(Session.session_id == session_id)
+        return (await self.session.execute(query)).scalar_one_or_none()
+
+    async def list_responses(
+        self,
+        session_id: uuid.UUID,
+        *,
+        only_user_id: uuid.UUID | None,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[StudentResponse], int]:
+        """Answers given in a session, oldest first. only_user_id narrows them to
+        one student's own."""
+        query = select(StudentResponse).where(StudentResponse.session_id == session_id)
+        if only_user_id is not None:
+            query = query.where(
+                StudentResponse.student_id.in_(
+                    select(Student.student_id).where(Student.user_id == only_user_id)
+                )
+            )
+        total = (
+            await self.session.execute(select(func.count()).select_from(query.subquery()))
+        ).scalar_one()
+        rows = (
+            (
+                await self.session.execute(
+                    query.order_by(StudentResponse.submitted_at, StudentResponse.response_id)
+                    .limit(limit)
+                    .offset(offset)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return list(rows), total
 
     async def course_code(self, course_id: uuid.UUID) -> str:
         result = await self.session.execute(select(Course.code).where(Course.id == course_id))

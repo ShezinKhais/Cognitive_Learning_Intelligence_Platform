@@ -332,7 +332,9 @@ docker compose up --build
 ```
 
 This starts PostgreSQL, the backend (migrations run on start) and the frontend. Open
-http://localhost:5173; the API is on http://localhost:8000. Sign in with the demo accounts below.
+http://localhost:5173; the API is on http://localhost:8000. Sign in with the demo accounts below. As the administrator, import `samples/timetable.csv`
+then `samples/roster.csv`: each timetable row creates one prepared session on the next time that
+weekday comes round, and the roster enrols students matched by email.
 
 ### Setup without Docker for the app
 

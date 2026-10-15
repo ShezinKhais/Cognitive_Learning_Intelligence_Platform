@@ -2876,6 +2876,7 @@
     },
     "/api/v1/sessions": {
       "get": {
+        "description": "The caller's own sessions: all of them for an admin, those they run for a\nlecturer, those of their course for a student. Newest first.",
         "operationId": "list_sessions_api_v1_sessions_get",
         "parameters": [
           {
@@ -3547,6 +3548,7 @@
     },
     "/api/v1/sessions/{session_id}/responses": {
       "get": {
+        "description": "Answers given in a session. Staff who may see the session read all of them;\na student reads only their own.",
         "operationId": "list_responses_api_v1_sessions__session_id__responses_get",
         "parameters": [
           {
