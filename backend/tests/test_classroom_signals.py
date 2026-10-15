@@ -13,15 +13,14 @@ from uuid import UUID, uuid4
 import pytest
 
 from app.realtime import classroom as classroom_module
+from app.realtime import rooms as rooms_module
 from app.realtime.classroom import (
     REFOCUS_PROMPT_MESSAGE,
-    ROOM_LABEL_INVALID,
-    ROOM_LIMIT,
-    ROOM_NOT_IN_SESSION,
     Classroom,
 )
 from app.realtime.hub import Connection
 from app.realtime.recorders import RoomAlert
+from app.realtime.rooms import Refusal
 from app.schemas.events import (
     AttentionSignalPayload,
     PromptAckPayload,
@@ -445,9 +444,9 @@ async def test_confirming_a_room_is_refused_for_anyone_who_is_not_a_connected_st
     _, lecturer = await join_as(events, row.session_id, Role.LECTURER)
     payload = RoomConfirmPayload(room_label="Room 1")
 
-    assert await room.confirm_room(uuid4(), uuid4(), payload) == ROOM_NOT_IN_SESSION
-    assert await room.confirm_room(row.session_id, lecturer, payload) == ROOM_NOT_IN_SESSION
-    assert await room.confirm_room(row.session_id, uuid4(), payload) == ROOM_NOT_IN_SESSION
+    assert await room.confirm_room(uuid4(), uuid4(), payload) is Refusal.NOT_IN_SESSION
+    assert await room.confirm_room(row.session_id, lecturer, payload) is Refusal.NOT_IN_SESSION
+    assert await room.confirm_room(row.session_id, uuid4(), payload) is Refusal.NOT_IN_SESSION
     assert room.rooms(row.session_id) == []
     await room.shutdown()
 
@@ -456,7 +455,7 @@ async def test_a_label_with_nothing_printable_in_it_is_refused() -> None:
     room, events, row = await _class()
     _, student = await join_as(events, row.session_id, Role.STUDENT)
 
-    assert await _confirm(room, row, student, "\x00\x07") == ROOM_LABEL_INVALID
+    assert await _confirm(room, row, student, "\x00\x07") is Refusal.BLANK
     assert room.rooms(row.session_id) == []
     await room.shutdown()
 
@@ -467,7 +466,7 @@ async def test_a_session_at_its_room_limit_refuses_a_new_room() -> None:
     _, second = await join_as(events, row.session_id, Role.STUDENT)
     assert await _confirm(room, row, first, "A") is None
 
-    assert await _confirm(room, row, second, "B") == ROOM_LIMIT
+    assert await _confirm(room, row, second, "B") is Refusal.FULL
     assert await _confirm(room, row, second, "a") is None
 
     [only] = room.rooms(row.session_id)
@@ -663,7 +662,7 @@ async def test_a_room_alert_says_how_it_was_measured_and_how_far_to_trust_it(
     [raised] = lecturer.of(ServerEventType.ALERT_RAISED)
     alert = raised["data"]
     assert alert["confidence"] == 0.25
-    assert alert["explanation"] == classroom_module.ROOM_ALERT_EXPLANATION
+    assert alert["explanation"] == rooms_module.ROOM_ALERT_EXPLANATION
     assert alert["explanation_source"] == "fallback"
     assert alert["confidence_reasons"][0] == (
         "1 of the room's 4 members is reporting voice activity."
@@ -819,7 +818,7 @@ async def test_the_watch_starts_with_the_first_confirmed_room_and_not_a_refused_
     assert live is not None
     _, student = await join_as(events, row.session_id, Role.STUDENT)
 
-    assert await _confirm(room, row, student, "\x00") == ROOM_LABEL_INVALID
+    assert await _confirm(room, row, student, "\x00") is Refusal.BLANK
     assert live.watch is None
     assert await _confirm(room, row, student) is None
 

@@ -118,13 +118,9 @@ class PurgeRunner:
     def task_names(self) -> list[str]:
         return sorted(self._tasks)
 
-    async def run(self, *, yield_to_sessions: bool = True) -> PurgeReport:
-        """Delete everything past the retention period, a batch at a time.
-
-        With yield_to_sessions, a run stops between batches as soon as a
-        session is running. A run started by hand passes False: whoever asked
-        has decided it should finish.
-        """
+    async def run(self) -> PurgeReport:
+        """Delete everything past the retention period, a batch at a time,
+        stopping between batches as soon as a session is running."""
         retention = self._retention()
         if retention <= timedelta(0):
             # A retention of zero would delete everything there is. It is a
@@ -140,7 +136,7 @@ class PurgeRunner:
             yielded = False
             try:
                 for _ in range(MAX_BATCHES_PER_TASK):
-                    if yield_to_sessions and self._busy():
+                    if self._busy():
                         yielded = True
                         break
                     removed = await task.purge(cutoff, self._batch_size)

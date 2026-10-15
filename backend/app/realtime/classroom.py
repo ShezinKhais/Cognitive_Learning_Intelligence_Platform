@@ -50,6 +50,7 @@ from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import Protocol
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -83,6 +84,7 @@ from app.realtime.recorders import (
     best_effort,
 )
 from app.realtime.rooms import Refusal, RoomLimits, Rooms
+from app.realtime.signals import signals_low
 from app.repositories.session_repository import SessionRepository
 from app.schemas.content import QuestionType
 from app.schemas.events import (
@@ -98,7 +100,6 @@ from app.schemas.events import (
     QuestionCloseReason,
     QuestionDeliveredPayload,
     RoomConfirmPayload,
-    RoomStatus,
     RoomStatusPayload,
     ServerEventType,
     SessionStatePayload,
@@ -111,11 +112,7 @@ from app.services.ai_explainability import (
     explain_topic_difficulty,
     fallback_explanation,
 )
-from app.services.engagement import (
-    ENGAGED_THRESHOLD,
-    evaluate_comprehension_alert,
-    should_send_dynamic_prompt,
-)
+from app.services.engagement import evaluate_comprehension_alert, should_send_dynamic_prompt
 
 log = logging.getLogger("clip.classroom")
 
@@ -132,11 +129,6 @@ ENGAGEMENT_PROMPT_MESSAGE = "Quick check-in: are you still following along?"
 REFOCUS_PROMPT_MESSAGE = "Quick check-in: are you still with the class?"
 
 NOT_OPEN = "This question is not open."
-
-# Why a room.confirm was refused, as the error code the student's client is sent.
-ROOM_NOT_IN_SESSION = "NOT_IN_SESSION"
-ROOM_LIMIT = "ROOM_LIMIT"
-ROOM_LABEL_INVALID = "ROOM_LABEL_INVALID"
 
 
 @dataclass(slots=True)
@@ -199,6 +191,7 @@ class LiveSession:
         session_id: UUID,
         delivered: int,
         first_wait: timedelta | None,
+        rooms: Rooms,
         paused: bool = False,
     ) -> None:
         self.session_id = session_id
@@ -216,14 +209,10 @@ class LiveSession:
         # the minute, so a slow store never delays that student's next answer;
         # the end of the session waits for them.
         self.storing: set[asyncio.Task[None]] = set()
-        self.rooms = Rooms()
+        self.rooms = rooms
         # The timer that looks at signals and rooms. Started by the first of
         # either, so a class with neither has no timer.
         self.watch: asyncio.Task[None] | None = None
-        # What staff were last told about each room, by label, so only a
-        # change is sent; and the rooms already reported as needing attention.
-        self.rooms_told: dict[str, RoomStatusPayload] = {}
-        self.rooms_alerted: set[str] = set()
 
 
 class Classroom:
@@ -322,7 +311,11 @@ class Classroom:
         live = self._live.get(session_id)
         if live is None:
             live = self._live[session_id] = LiveSession(
-                session_id, delivered, self._next_wait(), paused
+                session_id,
+                delivered,
+                self._next_wait(),
+                Rooms(RoomLimits.from_settings(self._settings())),
+                paused,
             )
             if not paused:
                 self._start_cycle(live)
@@ -528,11 +521,14 @@ class Classroom:
             return
         else:
             status = recorded
-        payload = self.state(session_id, status).model_dump(mode="json")
+        await self._tell_staff(
+            session_id, ServerEventType.SESSION_STATE, _json(self.state(session_id, status))
+        )
+
+    async def _tell_staff(self, session_id: UUID, event: ServerEventType, data: dict) -> None:
+        """Send one event to every member of staff connected to the session."""
         for staff_id in self._hub.staff_ids(session_id):
-            await self._hub.send_to_user(
-                session_id, staff_id, ServerEventType.SESSION_STATE, payload
-            )
+            await self._hub.send_to_user(session_id, staff_id, event, data)
 
     def welcome(
         self, session_id: UUID, recorded: SessionStatus, user_id: UUID, role: Role | None
@@ -580,7 +576,7 @@ class Classroom:
         if role in (Role.LECTURER, Role.ADMIN):
             # A panel opened or refreshed mid-class shows the rooms as they
             # are, and is told of each change after that.
-            for room in self._room_statuses(live, now):
+            for room in live.rooms.statuses(now, self._hub.student_ids(session_id)):
                 events.append((ServerEventType.ROOM_STATUS, _json(room)))
         return events
 
@@ -964,12 +960,7 @@ class Classroom:
             now = _now()
             held, finished = live.attention.observe(user_id, kept, now)
             if held is not None:
-                live.rooms.heard(
-                    user_id,
-                    held.speaking,
-                    now,
-                    timedelta(seconds=self._settings().room_voice_fresh_seconds),
-                )
+                live.rooms.heard(user_id, held.speaking, now)
                 self._start_watch(live)
         if finished:
             task = asyncio.create_task(self._record_windows(session_id, finished))
@@ -981,25 +972,23 @@ class Classroom:
 
     async def confirm_room(
         self, session_id: UUID, user_id: UUID, confirm: RoomConfirmPayload
-    ) -> str | None:
+    ) -> Refusal | None:
         """Put a student in the breakout room they say they are in, and tell
-        the lecturer how the rooms now stand. Returns why it was refused, as
-        an error code, or None.
+        the lecturer how the rooms now stand. Returns why it was refused, or
+        None.
 
         The student's word is the mapping. They move by confirming another
         room; a room left empty disappears from the lecturer's panel.
         """
         live = self._live.get(session_id)
         if live is None or user_id not in self._hub.student_ids(session_id):
-            return ROOM_NOT_IN_SESSION
+            return Refusal.NOT_IN_SESSION
         async with live.lock:
             if self._live.get(session_id) is not live:
-                return ROOM_NOT_IN_SESSION
-            refused = live.rooms.confirm(
-                user_id, confirm.room_label, self._settings().max_rooms_per_session
-            )
+                return Refusal.NOT_IN_SESSION
+            refused = live.rooms.confirm(user_id, confirm.room_label)
             if refused is not None:
-                return ROOM_LIMIT if refused is Refusal.FULL else ROOM_LABEL_INVALID
+                return refused
             self._start_watch(live)
             alerts = await self._tell_rooms_locked(live, _now())
         # A member arriving can be what first shows a room has been silent
@@ -1012,22 +1001,9 @@ class Classroom:
         """How each breakout room of a session this process is running is
         doing now, in label order."""
         live = self._live.get(session_id)
-        return self._room_statuses(live, _now()) if live is not None else []
-
-    def _room_statuses(self, live: LiveSession, now: datetime) -> list[RoomStatusPayload]:
-        settings = self._settings()
-        return live.rooms.statuses(
-            now,
-            self._hub.student_ids(live.session_id),
-            RoomLimits(
-                fresh=timedelta(seconds=settings.room_voice_fresh_seconds),
-                quiet_after=timedelta(seconds=settings.room_quiet_after_seconds),
-                needs_attention_after=timedelta(
-                    seconds=settings.room_needs_attention_after_seconds
-                ),
-                max_rooms=settings.max_rooms_per_session,
-            ),
-        )
+        if live is None:
+            return []
+        return live.rooms.statuses(_now(), self._hub.student_ids(session_id))
 
     def _start_watch(self, live: LiveSession) -> None:
         if live.watch is None or live.watch.done():
@@ -1088,7 +1064,7 @@ class Classroom:
                 needed > 0
                 and signal is not None
                 and signal.window_seconds >= needed
-                and _signals_low(signal)
+                and signals_low(signal)
                 and should_send_dynamic_prompt(scored.engagement)
                 and live.attention.refocus_due(user_id, now, cooldown)
                 and await self._prompt_locked(live, user_id, REFOCUS_PROMPT_MESSAGE) is not None
@@ -1097,48 +1073,12 @@ class Classroom:
 
     async def _tell_rooms_locked(self, live: LiveSession, now: datetime) -> list[RoomAlert]:
         """Tell connected staff about every room whose status has changed,
-        and return an alert for each room that has just come to need
-        attention. A room that has emptied is reported once more, with nobody
-        in it, so a panel can take it down."""
-        statuses = {room.room_label: room for room in self._room_statuses(live, now)}
-        changed = [room for label, room in statuses.items() if live.rooms_told.get(label) != room]
-        for label, told in live.rooms_told.items():
-            if label not in statuses and told.members:
-                changed.append(
-                    RoomStatusPayload(
-                        room_label=label,
-                        status=RoomStatus.UNKNOWN,
-                        members=0,
-                        speaking_now=0,
-                        silence_seconds=0,
-                        task_interactions=told.task_interactions,
-                    )
-                )
-        live.rooms_told = statuses
-        if changed:
-            staff = self._hub.staff_ids(live.session_id)
-            for room in changed:
-                for staff_id in staff:
-                    await self._hub.send_to_user(
-                        live.session_id, staff_id, ServerEventType.ROOM_STATUS, _json(room)
-                    )
-
-        alerts = []
-        reporting = live.rooms.reporting(
-            now,
-            self._hub.student_ids(live.session_id),
-            timedelta(seconds=self._settings().room_voice_fresh_seconds),
-        )
-        for label, room in statuses.items():
-            if room.status is RoomStatus.NEEDS_ATTENTION:
-                if label not in live.rooms_alerted:
-                    live.rooms_alerted.add(label)
-                    alerts.append(_room_alert(live.session_id, room, reporting.get(label, 0), now))
-            elif room.status is RoomStatus.ACTIVE:
-                # Heard from again, so its next long silence is reported.
-                live.rooms_alerted.discard(label)
-        live.rooms_alerted &= set(statuses)
-        return alerts
+        and return the alerts that have fallen due, to be raised once the
+        lock is released."""
+        news = live.rooms.news(live.session_id, now, self._hub.student_ids(live.session_id))
+        for room in news.changed:
+            await self._tell_staff(live.session_id, ServerEventType.ROOM_STATUS, _json(room))
+        return news.alerts
 
     async def _raise_room_alert(self, alert: RoomAlert) -> None:
         """Keep a room alert, then tell the lecturer. As with a comprehension
@@ -1147,21 +1087,11 @@ class Classroom:
             await best_effort(
                 self.alert_recorder.record_room_alert(alert), "store a room alert", alert.session_id
             )
-        payload = AlertRaisedPayload(
-            alert_id=alert.alert_id,
-            kind=AlertKind.BREAKOUT_INACTIVE,
-            message=alert.message,
-            reason=alert.reason,
-            confidence=alert.confidence,
-            explanation=alert.explanation,
-            explanation_source=alert.explanation_source,  # type: ignore[arg-type]
-            confidence_reasons=list(alert.confidence_reasons),
-            recommendation=alert.recommendation,
+        await self._tell_staff(
+            alert.session_id,
+            ServerEventType.ALERT_RAISED,
+            _json(_raised(AlertKind.BREAKOUT_INACTIVE, alert)),
         )
-        for staff_id in self._hub.staff_ids(alert.session_id):
-            await self._hub.send_to_user(
-                alert.session_id, staff_id, ServerEventType.ALERT_RAISED, _json(payload)
-            )
 
     def _monitored_in(self, question: _OpenQuestion) -> tuple[set[UUID], set[UUID]]:
         """Who was shown a question and who answered it, among the students
@@ -1248,9 +1178,8 @@ class Classroom:
         if not decision.should_alert or decision.correct_ratio is None:
             return
         explained = _explain_comprehension_alert(found, closed, settings)
-        alert_id = uuid4()
         stored = ClassComprehensionAlert(
-            alert_id=alert_id,
+            alert_id=uuid4(),
             session_id=closed.session_id,
             question_id=closed.question_id,
             topic=found.topic,
@@ -1274,21 +1203,11 @@ class Classroom:
             await best_effort(
                 self.alert_recorder.record_alert(stored), "store an alert", closed.session_id
             )
-        payload = AlertRaisedPayload(
-            alert_id=alert_id,
-            kind=AlertKind.TOPIC_DIFFICULTY,
-            message=explained.message,
-            reason=explained.reason,
-            confidence=explained.confidence,
-            explanation=explained.explanation,
-            explanation_source=explained.explanation_source,
-            confidence_reasons=list(explained.confidence_reasons),
-            recommendation=explained.recommendation,
+        await self._tell_staff(
+            closed.session_id,
+            ServerEventType.ALERT_RAISED,
+            _json(_raised(AlertKind.TOPIC_DIFFICULTY, stored)),
         )
-        for staff_id in self._hub.staff_ids(closed.session_id):
-            await self._hub.send_to_user(
-                closed.session_id, staff_id, ServerEventType.ALERT_RAISED, _json(payload)
-            )
 
     def engagement(self, session_id: UUID) -> list[ScoredStudent]:
         """The latest engagement score of each student scored in a session this
@@ -1385,70 +1304,31 @@ def _explain_comprehension_alert(
         return fallback_explanation(AlertKind.TOPIC_DIFFICULTY)
 
 
-def _signals_low(signal: AttentionSignalPayload) -> bool:
-    """Whether a student's own signals, taken alone, fall short of engaged:
-    the mean of the gaze ratio and face presence, the two weighed equally as
-    engagement scoring weighs them, against its threshold. Scoring itself
-    will not score the camera alone, so this is worked out here; it only ever
-    narrows what scoring already asks for. A window that reported neither
-    gaze nor a face is not low: it says nothing."""
-    face = signal.face_present
-    readings = [
-        value
-        for value in (signal.gaze_on_screen_ratio, None if face is None else float(face))
-        if value is not None
-    ]
-    return bool(readings) and sum(readings) / len(readings) < ENGAGED_THRESHOLD
+class _Raisable(Protocol):
+    """What every alert kept for a lecturer carries, whatever raised it."""
+
+    alert_id: UUID
+    message: str
+    reason: str
+    confidence: float
+    explanation: str
+    explanation_source: str
+    confidence_reasons: list[str]
+    recommendation: str
 
 
-ROOM_ALERT_EXPLANATION = (
-    "Nobody in this room has had voice activity for that long. This is worked out from "
-    "whether each member's own device detects a voice. Nothing is recorded or listened "
-    "to, and members who have not allowed the microphone are not heard at all, so a room "
-    "working quietly looks the same as one that has stopped."
-)
-
-
-def _room_alert(
-    session_id: UUID, room: RoomStatusPayload, reporting: int, now: datetime
-) -> RoomAlert:
-    """The alert for a room that has been silent too long. All of it is
-    built from the counts, since no model is asked about a room: what was
-    measured, how, and how far to trust it. The confidence is the share of
-    the room's members whose devices are reporting on voice, because a room
-    heard through one member of five is known far less well than one heard
-    through all of them."""
-    fallback = fallback_explanation(AlertKind.BREAKOUT_INACTIVE)
-    reporting = min(reporting, room.members)
-    confidence = reporting / room.members if room.members else 0.0
-    # In whole minutes once there is one, since that is how a lecturer
-    # thinks of it. A deployment with a short limit is told in seconds.
-    minutes = room.silence_seconds // 60
-    quiet_for = (
-        f"{minutes} minute{'' if minutes == 1 else 's'}"
-        if minutes
-        else f"{room.silence_seconds} seconds"
-    )
-    members = f"{room.members} member{'' if room.members == 1 else 's'}"
-    return RoomAlert(
-        alert_id=uuid4(),
-        session_id=session_id,
-        room_label=room.room_label,
-        members=room.members,
-        silence_seconds=room.silence_seconds,
-        raised_at=now,
-        message=f"{room.room_label} has been quiet for {quiet_for}.",
-        reason=f"No voice activity from {members} for {room.silence_seconds} seconds.",
-        confidence=confidence,
-        explanation=ROOM_ALERT_EXPLANATION,
-        # Written here and not by a model, which is what "fallback" says.
-        explanation_source="fallback",
-        confidence_reasons=[
-            f"{reporting} of the room's {members} "
-            f"{'is' if reporting == 1 else 'are'} reporting voice activity.",
-            "Silence is counted only from when the room was first heard.",
-        ],
-        recommendation=fallback.recommendation,
+def _raised(kind: AlertKind, alert: _Raisable) -> AlertRaisedPayload:
+    """The alert.raised payload for an alert that has been kept."""
+    return AlertRaisedPayload(
+        alert_id=alert.alert_id,
+        kind=kind,
+        message=alert.message,
+        reason=alert.reason,
+        confidence=alert.confidence,
+        explanation=alert.explanation,
+        explanation_source=alert.explanation_source,  # type: ignore[arg-type]
+        confidence_reasons=list(alert.confidence_reasons),
+        recommendation=alert.recommendation,
     )
 
 

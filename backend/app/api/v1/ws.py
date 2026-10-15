@@ -50,13 +50,9 @@ from app.api.deps import AppSettings, DbSession
 from app.auth.service import granted_consents, user_from_token
 from app.core.security import TokenValidationError
 from app.realtime.accommodations import has_accommodation
-from app.realtime.classroom import (
-    ROOM_LABEL_INVALID,
-    ROOM_LIMIT,
-    ROOM_NOT_IN_SESSION,
-    classroom,
-)
+from app.realtime.classroom import classroom
 from app.realtime.hub import CLOSE_TRY_AGAIN_LATER, Connection, hub
+from app.realtime.rooms import Refusal
 from app.realtime.signals import Throttle
 from app.schemas.events import (
     AnswerSubmitPayload,
@@ -95,18 +91,27 @@ ROOM_CONFIRM_BURST = 3
 # A throttled sender is told so at most this often.
 THROTTLE_ERROR_EVERY_SECONDS = 10.0
 
-ROOM_REFUSALS = {
-    ROOM_NOT_IN_SESSION: "only a student in a running session sends room.confirm",
-    ROOM_LIMIT: "this session already has as many rooms as it may",
-    ROOM_LABEL_INVALID: "that room label has nothing in it to show",
-}
-
 # The largest frame a client may send, text or binary. The biggest legitimate
 # event is a free-text answer (MAX_FREE_TEXT_LENGTH characters) in its envelope.
 # Anything larger is not a client of ours -- in particular, not a frame of video
 # or audio, which this server never accepts -- and the socket is closed.
 MAX_FRAME_BYTES = 64 * 1024
 CLOSE_TOO_BIG = 1009
+
+
+async def _throttled(websocket: WebSocket, throttle: Throttle, event: str) -> bool:
+    """Whether this socket is sending `event` too often. Its frame is then
+    dropped before it can take the session's lock, and the sender is told,
+    once for a whole burst."""
+    if throttle.allow():
+        return False
+    if throttle.should_tell(THROTTLE_ERROR_EVERY_SECONDS):
+        await _send(
+            websocket,
+            ServerEventType.ERROR,
+            {"code": "RATE_LIMITED", "detail": f"{event} is being sent too often"},
+        )
+    return True
 
 
 async def _send(
@@ -432,18 +437,7 @@ async def session_socket(
                 # Optional client-side evidence for engagement scoring. Kept
                 # only for a student connected to a running session who has
                 # consented to engagement monitoring.
-                if not signals.allow():
-                    # Dropped before it can take the session's lock. One
-                    # error covers the burst.
-                    if signals.should_tell(THROTTLE_ERROR_EVERY_SECONDS):
-                        await _send(
-                            websocket,
-                            ServerEventType.ERROR,
-                            {
-                                "code": "RATE_LIMITED",
-                                "detail": "signal.attention is being sent too often",
-                            },
-                        )
+                if await _throttled(websocket, signals, "signal.attention"):
                     continue
                 if (
                     session_id is not None
@@ -473,19 +467,10 @@ async def session_socket(
 
             if isinstance(payload, RoomConfirmPayload):
                 # The student's own word for which breakout room they are in.
-                if not rooms.allow():
-                    if rooms.should_tell(THROTTLE_ERROR_EVERY_SECONDS):
-                        await _send(
-                            websocket,
-                            ServerEventType.ERROR,
-                            {
-                                "code": "RATE_LIMITED",
-                                "detail": "room.confirm is being sent too often",
-                            },
-                        )
+                if await _throttled(websocket, rooms, "room.confirm"):
                     continue
                 refused = (
-                    ROOM_NOT_IN_SESSION
+                    Refusal.NOT_IN_SESSION
                     if session_id is None or role is not Role.STUDENT
                     else await classroom.confirm_room(session_id, user_id, payload)
                 )
@@ -493,7 +478,7 @@ async def session_socket(
                     await _send(
                         websocket,
                         ServerEventType.ERROR,
-                        {"code": refused, "detail": ROOM_REFUSALS[refused]},
+                        {"code": refused.value, "detail": refused.detail},
                     )
                 continue
 

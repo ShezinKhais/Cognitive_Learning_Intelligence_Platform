@@ -252,22 +252,6 @@ async def test_the_run_stops_between_batches_when_a_class_starts() -> None:
     assert report.interrupted is True
 
 
-async def test_a_run_that_does_not_yield_to_sessions_finishes_whatever_is_running() -> None:
-    first = FakeTask("a", [BATCH, 1])
-    second = FakeTask("b", [2])
-    runner = make_runner(busy=lambda: True)
-    runner.register(first)
-    runner.register(second)
-
-    report = await runner.run(yield_to_sessions=False)
-
-    assert report.deleted == {"a": BATCH + 1, "b": 2}
-    assert report.interrupted is False
-
-
-# -- a task that never says it is empty ---------------------------------------------
-
-
 async def test_a_task_that_is_never_empty_stops_at_the_batch_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

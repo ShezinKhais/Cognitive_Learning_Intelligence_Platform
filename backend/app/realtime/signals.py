@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from app.schemas.events import AttentionSignalPayload
+from app.services.engagement import ENGAGED_THRESHOLD
 
 # Summaries kept per student. A minute of five-second summaries is twelve;
 # this is the ceiling whatever the client sends.
@@ -173,3 +174,19 @@ class SignalWindow:
             speaking=any(heard) if heard else None,
             window_seconds=covered,
         )
+
+
+def signals_low(signal: AttentionSignalPayload) -> bool:
+    """Whether a student's own signals, taken alone, fall short of engaged:
+    the mean of the gaze ratio and face presence, the two weighed equally as
+    engagement scoring weighs them, against its threshold. Scoring itself
+    will not score the camera alone, so this is worked out here; it only ever
+    narrows what scoring already asks for. A window that reported neither
+    gaze nor a face is not low: it says nothing."""
+    face = signal.face_present
+    readings = [
+        value
+        for value in (signal.gaze_on_screen_ratio, None if face is None else float(face))
+        if value is not None
+    ]
+    return bool(readings) and sum(readings) / len(readings) < ENGAGED_THRESHOLD
