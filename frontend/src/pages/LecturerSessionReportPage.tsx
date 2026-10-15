@@ -128,50 +128,116 @@ export default function LecturerSessionReportPage() {
 
     let active = true
 
-    const timer =
-      window.setTimeout(
-        async () => {
-          try {
-            const updated =
-              await getSessionReport(
-                reportId,
-              )
+    let timer:
+      | number
+      | undefined
 
-            if (active) {
-              setJob(updated)
-              setError(null)
-            }
-          } catch (
-            caught: unknown
-          ) {
-            if (!active) {
-              return
-            }
+    function scheduleNextPoll() {
+      if (!active) {
+        return
+      }
 
-            if (
-              caught instanceof ApiError &&
-              caught.status === 401
-            ) {
-              clearAccessToken()
-              window.location.assign(
-                '/login',
-              )
-              return
-            }
+      timer =
+        window.setTimeout(
+          () => {
+            void pollReport()
+          },
+          2000,
+        )
+    }
 
-            setError(
-              caught instanceof ApiError
-                ? caught.message
-                : 'The report status could not be refreshed.',
-            )
-          }
-        },
-        2000,
-      )
+    async function pollReport() {
+      if (!active) {
+        return
+      }
+
+      try {
+        const updated =
+          await getSessionReport(
+            reportId,
+          )
+
+        if (!active) {
+          return
+        }
+
+        setJob(updated)
+        setError(null)
+
+        if (
+          updated.status ===
+            'queued' ||
+          updated.status ===
+            'running'
+        ) {
+          scheduleNextPoll()
+        }
+      } catch (
+        caught: unknown
+      ) {
+        if (!active) {
+          return
+        }
+
+        if (
+          caught instanceof ApiError &&
+          caught.status === 401
+        ) {
+          clearAccessToken()
+
+          window.location.assign(
+            '/login',
+          )
+
+          return
+        }
+
+        if (
+          caught instanceof ApiError &&
+          caught.status === 404
+        ) {
+          setJob(null)
+
+          setError(
+            'This report is no longer available. It may have expired or the server may have restarted. Generate the report again.',
+          )
+
+          return
+        }
+
+        if (
+          caught instanceof ApiError &&
+          caught.status === 403
+        ) {
+          setError(
+            caught.message,
+          )
+
+          return
+        }
+
+        setError(
+          caught instanceof ApiError
+            ? `${caught.message} Automatic status checks will continue.`
+            : 'The report status could not be refreshed. Automatic status checks will continue.',
+        )
+
+        scheduleNextPoll()
+      }
+    }
+
+    scheduleNextPoll()
 
     return () => {
       active = false
-      window.clearTimeout(timer)
+
+      if (
+        timer !== undefined
+      ) {
+        window.clearTimeout(
+          timer,
+        )
+      }
     }
   }, [job])
 
@@ -198,9 +264,11 @@ export default function LecturerSessionReportPage() {
         caught.status === 401
       ) {
         clearAccessToken()
+
         window.location.assign(
           '/login',
         )
+
         return
       }
 
@@ -237,9 +305,24 @@ export default function LecturerSessionReportPage() {
         caught.status === 401
       ) {
         clearAccessToken()
+
         window.location.assign(
           '/login',
         )
+
+        return
+      }
+
+      if (
+        caught instanceof ApiError &&
+        caught.status === 404
+      ) {
+        setJob(null)
+
+        setError(
+          'This report is no longer available. It may have expired or the server may have restarted. Generate the report again.',
+        )
+
         return
       }
 
@@ -276,7 +359,9 @@ export default function LecturerSessionReportPage() {
         )
 
       const link =
-        document.createElement('a')
+        document.createElement(
+          'a',
+        )
 
       link.href = url
       link.download =
@@ -300,9 +385,24 @@ export default function LecturerSessionReportPage() {
         caught.status === 401
       ) {
         clearAccessToken()
+
         window.location.assign(
           '/login',
         )
+
+        return
+      }
+
+      if (
+        caught instanceof ApiError &&
+        caught.status === 404
+      ) {
+        setJob(null)
+
+        setError(
+          'This report is no longer available. Generate it again before downloading a PDF.',
+        )
+
         return
       }
 
@@ -321,8 +421,14 @@ export default function LecturerSessionReportPage() {
 
   const failure =
     job
-      ? reportFailureMessage(job)
+      ? reportFailureMessage(
+          job,
+        )
       : null
+
+  const canGenerate =
+    !job ||
+    job.status === 'failed'
 
   return (
     <main className="min-h-screen bg-background">
@@ -330,7 +436,8 @@ export default function LecturerSessionReportPage() {
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              C.L.I.P lecturer workspace
+              C.L.I.P lecturer
+              workspace
             </p>
 
             <h1 className="mt-1 text-xl font-bold text-card-foreground">
@@ -375,14 +482,17 @@ export default function LecturerSessionReportPage() {
 
               <div>
                 <h2 className="text-2xl font-semibold tracking-tight">
-                  Staff session report
+                  Staff session
+                  report
                 </h2>
 
                 <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-                  Generate a protected report from
-                  the session data stored by C.L.I.P.
-                  Comprehension evidence remains
-                  separate from engagement evidence.
+                  Generate a protected
+                  report from the session
+                  data stored by C.L.I.P.
+                  Comprehension evidence
+                  remains separate from
+                  engagement evidence.
                 </p>
 
                 <p className="mt-2 text-xs text-muted-foreground">
@@ -393,7 +503,7 @@ export default function LecturerSessionReportPage() {
               </div>
             </div>
 
-            {!job && (
+            {canGenerate && (
               <button
                 type="button"
                 disabled={
@@ -407,9 +517,28 @@ export default function LecturerSessionReportPage() {
               >
                 {loading
                   ? 'Requesting...'
-                  : 'Generate report'}
+                  : job?.status ===
+                      'failed'
+                    ? 'Generate again'
+                    : 'Generate report'}
               </button>
             )}
+          </div>
+
+          <div className="mt-5 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
+            <p className="font-medium">
+              PDF language limitation
+            </p>
+
+            <p className="mt-1 text-muted-foreground">
+              The current PDF exporter
+              uses built-in fonts.
+              Non-Latin text, including
+              Arabic, may appear as boxes
+              in the downloaded PDF. The
+              report shown on this page is
+              unaffected.
+            </p>
           </div>
 
           {error && (
@@ -488,17 +617,21 @@ export default function LecturerSessionReportPage() {
               </div>
 
               {(
-                job.status === 'queued' ||
-                job.status === 'running'
+                job.status ===
+                  'queued' ||
+                job.status ===
+                  'running'
               ) && (
                 <p
                   role="status"
                   className="mt-4 text-sm text-muted-foreground"
                 >
                   The report is being
-                  generated. This page will
-                  refresh its status
-                  automatically.
+                  generated. This page
+                  checks its status
+                  automatically. Temporary
+                  refresh failures are
+                  retried.
                 </p>
               )}
 
@@ -519,7 +652,9 @@ export default function LecturerSessionReportPage() {
             <section className="mt-6 rounded-2xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">
-                  {report.course_code}
+                  {
+                    report.course_code
+                  }
                 </p>
 
                 <h2 className="mt-1 text-2xl font-semibold">
@@ -533,7 +668,9 @@ export default function LecturerSessionReportPage() {
                     </dt>
 
                     <dd className="mt-1 font-semibold capitalize">
-                      {report.status}
+                      {
+                        report.status
+                      }
                     </dd>
                   </div>
 
@@ -582,9 +719,9 @@ export default function LecturerSessionReportPage() {
               </h2>
 
               <p className="mt-1 text-sm text-muted-foreground">
-                Stored session activity only.
-                Missing information is not
-                estimated.
+                Stored session activity
+                only. Missing information
+                is not estimated.
               </p>
 
               <dl className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -666,10 +803,11 @@ export default function LecturerSessionReportPage() {
               </h2>
 
               <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-                Topic difficulty comes from
-                stored comprehension results.
-                It is presented separately
-                from engagement and attention
+                Topic difficulty comes
+                from stored comprehension
+                results. It is presented
+                separately from
+                engagement and attention
                 evidence.
               </p>
 
@@ -678,27 +816,33 @@ export default function LecturerSessionReportPage() {
                 <p className="mt-5 rounded-lg border border-border bg-background p-4 text-sm text-muted-foreground">
                   No topic-level
                   comprehension data is
-                  available for this report.
+                  available for this
+                  report.
                 </p>
               ) : (
                 <div className="mt-5 space-y-3">
                   {report.topics.map(
                     (topic) => (
                       <article
-                        key={topic.topic}
+                        key={
+                          topic.topic
+                        }
                         className="rounded-xl border border-border bg-background p-4"
                       >
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <h3 className="font-semibold">
-                              {topic.topic}
+                              {
+                                topic.topic
+                              }
                             </h3>
 
                             <p className="mt-1 text-sm text-muted-foreground">
                               {
                                 topic.answers
                               }{' '}
-                              answers across{' '}
+                              answers
+                              across{' '}
                               {
                                 topic.questions
                               }{' '}
@@ -781,22 +925,26 @@ export default function LecturerSessionReportPage() {
 
             <section className="mt-6 rounded-2xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
               <h2 className="text-lg font-semibold">
-                Governance-aware alerts
+                Governance-aware
+                alerts
               </h2>
 
               <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
                 These are stored session
                 alerts and their
-                authoritative explanations.
-                They are not independently
-                re-scored by the frontend.
+                authoritative
+                explanations. They are
+                not independently
+                re-scored by the
+                frontend.
               </p>
 
               {report.alerts.length ===
               0 ? (
                 <p className="mt-5 rounded-lg border border-border bg-background p-4 text-sm text-muted-foreground">
                   No stored alerts are
-                  included in this report.
+                  included in this
+                  report.
                 </p>
               ) : (
                 <div className="mt-5 space-y-3">
@@ -811,7 +959,9 @@ export default function LecturerSessionReportPage() {
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                              {alert.kind}
+                              {
+                                alert.kind
+                              }
                             </p>
 
                             <h3 className="mt-1 font-semibold">
@@ -829,7 +979,9 @@ export default function LecturerSessionReportPage() {
                         </div>
 
                         <p className="mt-3 text-sm">
-                          {alert.reason}
+                          {
+                            alert.reason
+                          }
                         </p>
 
                         <div className="mt-4 rounded-lg bg-muted/40 p-3">

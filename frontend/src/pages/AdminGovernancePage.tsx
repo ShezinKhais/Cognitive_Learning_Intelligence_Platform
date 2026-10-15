@@ -42,6 +42,8 @@ import {
   runRetention,
 } from '../features/governance/governanceApi'
 
+const AUDIT_PAGE_SIZE = 50
+
 function dateLabel(
   value: string | null,
 ): string {
@@ -79,7 +81,12 @@ function detailsLabel(
   return entries
     .map(
       ([key, value]) =>
-        `${key}: ${String(value)}`,
+        `${key}: ${
+          typeof value === 'object' &&
+          value !== null
+            ? JSON.stringify(value)
+            : String(value)
+        }`,
     )
     .join(' · ')
 }
@@ -91,6 +98,11 @@ export default function AdminGovernancePage() {
   ] = useState('')
 
   const [
+    identityLoading,
+    setIdentityLoading,
+  ] = useState(true)
+
+  const [
     auditEntries,
     setAuditEntries,
   ] =
@@ -100,6 +112,24 @@ export default function AdminGovernancePage() {
     auditTotal,
     setAuditTotal,
   ] = useState(0)
+
+  const [
+    auditOffset,
+    setAuditOffset,
+  ] = useState(0)
+
+  const [
+    auditLoading,
+    setAuditLoading,
+  ] = useState(false)
+
+  const [
+    auditError,
+    setAuditError,
+  ] =
+    useState<string | null>(
+      null,
+    )
 
   const [
     auditActionFilter,
@@ -118,6 +148,19 @@ export default function AdminGovernancePage() {
     useState<DeletionRequest[]>([])
 
   const [
+    deletionLoading,
+    setDeletionLoading,
+  ] = useState(false)
+
+  const [
+    deletionError,
+    setDeletionError,
+  ] =
+    useState<string | null>(
+      null,
+    )
+
+  const [
     deletionStatusFilter,
     setDeletionStatusFilter,
   ] =
@@ -134,9 +177,17 @@ export default function AdminGovernancePage() {
     )
 
   const [
-    loading,
-    setLoading,
-  ] = useState(true)
+    retentionLoading,
+    setRetentionLoading,
+  ] = useState(false)
+
+  const [
+    retentionError,
+    setRetentionError,
+  ] =
+    useState<string | null>(
+      null,
+    )
 
   const [
     busyAction,
@@ -185,10 +236,23 @@ export default function AdminGovernancePage() {
     setConfirmPurge,
   ] = useState(false)
 
-  function handleApiError(
+  const [
+    pendingExecutionId,
+    setPendingExecutionId,
+  ] =
+    useState<string | null>(
+      null,
+    )
+
+  const [
+    confirmDeletion,
+    setConfirmDeletion,
+  ] = useState(false)
+
+  function apiErrorMessage(
     caught: unknown,
     fallback: string,
-  ) {
+  ): string | null {
     if (
       caught instanceof ApiError &&
       caught.status === 401
@@ -199,27 +263,34 @@ export default function AdminGovernancePage() {
         '/login',
       )
 
-      return
+      return null
     }
 
-    setError(
-      caught instanceof ApiError
-        ? caught.message
-        : fallback,
-    )
+    return caught instanceof ApiError
+      ? caught.message
+      : fallback
   }
 
-  async function loadAudit() {
+  async function loadAudit(
+    nextOffset = auditOffset,
+  ) {
+    setAuditLoading(true)
+    setAuditError(null)
+
     try {
       const result =
-        await listAuditLog({
-          action_type:
-            auditActionFilter.trim() ||
-            undefined,
-          target_type:
-            auditTargetFilter.trim() ||
-            undefined,
-        })
+        await listAuditLog(
+          {
+            action_type:
+              auditActionFilter.trim() ||
+              undefined,
+            target_type:
+              auditTargetFilter.trim() ||
+              undefined,
+          },
+          AUDIT_PAGE_SIZE,
+          nextOffset,
+        )
 
       setAuditEntries(
         result.items,
@@ -228,17 +299,33 @@ export default function AdminGovernancePage() {
       setAuditTotal(
         result.total,
       )
+
+      setAuditOffset(
+        nextOffset,
+      )
     } catch (
       caught: unknown
     ) {
-      handleApiError(
-        caught,
-        'The audit log could not be loaded.',
-      )
+      const message =
+        apiErrorMessage(
+          caught,
+          'The audit log could not be loaded.',
+        )
+
+      if (message) {
+        setAuditError(
+          message,
+        )
+      }
+    } finally {
+      setAuditLoading(false)
     }
   }
 
   async function loadDeletionRequests() {
+    setDeletionLoading(true)
+    setDeletionError(null)
+
     try {
       const result =
         await listDeletionRequests(
@@ -252,14 +339,26 @@ export default function AdminGovernancePage() {
     } catch (
       caught: unknown
     ) {
-      handleApiError(
-        caught,
-        'Deletion requests could not be loaded.',
-      )
+      const message =
+        apiErrorMessage(
+          caught,
+          'Deletion requests could not be loaded.',
+        )
+
+      if (message) {
+        setDeletionError(
+          message,
+        )
+      }
+    } finally {
+      setDeletionLoading(false)
     }
   }
 
   async function loadRetention() {
+    setRetentionLoading(true)
+    setRetentionError(null)
+
     try {
       const result =
         await previewRetention()
@@ -268,72 +367,195 @@ export default function AdminGovernancePage() {
     } catch (
       caught: unknown
     ) {
-      handleApiError(
-        caught,
-        'The retention preview could not be loaded.',
-      )
+      const message =
+        apiErrorMessage(
+          caught,
+          'The retention preview could not be loaded.',
+        )
+
+      if (message) {
+        setRetentionError(
+          message,
+        )
+      }
+    } finally {
+      setRetentionLoading(false)
     }
   }
 
-  useEffect(() => {
+    useEffect(() => {
     let active = true
 
-    async function load() {
-      setLoading(true)
+    function handleInitialError(
+      caught: unknown,
+      fallback: string,
+      setSectionError:
+        (
+          value: string | null,
+        ) => void,
+    ) {
+      if (!active) {
+        return
+      }
+
+      if (
+        caught instanceof ApiError &&
+        caught.status === 401
+      ) {
+        clearAccessToken()
+
+        window.location.assign(
+          '/login',
+        )
+
+        return
+      }
+
+      setSectionError(
+        caught instanceof ApiError
+          ? caught.message
+          : fallback,
+      )
+    }
+
+    async function loadIdentity() {
+      setIdentityLoading(true)
       setError(null)
 
       try {
-        const [
-          user,
-          audit,
-          deletions,
-          preview,
-        ] =
-          await Promise.all([
-            getCurrentUser(),
-            listAuditLog(),
-            listDeletionRequests(),
-            previewRetention(),
-          ])
+        const user =
+          await getCurrentUser()
 
         if (!active) {
           return
         }
 
         setAdminId(user.id)
-
-        setAuditEntries(
-          audit.items,
-        )
-
-        setAuditTotal(
-          audit.total,
-        )
-
-        setDeletionRequests(
-          deletions.items,
-        )
-
-        setRetention(preview)
       } catch (
         caught: unknown
       ) {
-        if (!active) {
-          return
-        }
-
-        handleApiError(
+        handleInitialError(
           caught,
-          'Governance data could not be loaded.',
+          'Your administrator identity could not be loaded.',
+          setError,
         )
       } finally {
         if (active) {
-          setLoading(false)
+          setIdentityLoading(
+            false,
+          )
         }
       }
     }
 
-    void load()
+    async function loadInitialAudit() {
+      setAuditLoading(true)
+      setAuditError(null)
+
+      try {
+        const result =
+          await listAuditLog(
+            {},
+            AUDIT_PAGE_SIZE,
+            0,
+          )
+
+        if (!active) {
+          return
+        }
+
+        setAuditEntries(
+          result.items,
+        )
+
+        setAuditTotal(
+          result.total,
+        )
+
+        setAuditOffset(0)
+      } catch (
+        caught: unknown
+      ) {
+        handleInitialError(
+          caught,
+          'The audit log could not be loaded.',
+          setAuditError,
+        )
+      } finally {
+        if (active) {
+          setAuditLoading(
+            false,
+          )
+        }
+      }
+    }
+
+    async function loadInitialDeletionRequests() {
+      setDeletionLoading(true)
+      setDeletionError(null)
+
+      try {
+        const result =
+          await listDeletionRequests()
+
+        if (!active) {
+          return
+        }
+
+        setDeletionRequests(
+          result.items,
+        )
+      } catch (
+        caught: unknown
+      ) {
+        handleInitialError(
+          caught,
+          'Deletion requests could not be loaded.',
+          setDeletionError,
+        )
+      } finally {
+        if (active) {
+          setDeletionLoading(
+            false,
+          )
+        }
+      }
+    }
+
+    async function loadInitialRetention() {
+      setRetentionLoading(true)
+      setRetentionError(null)
+
+      try {
+        const result =
+          await previewRetention()
+
+        if (!active) {
+          return
+        }
+
+        setRetention(result)
+      } catch (
+        caught: unknown
+      ) {
+        handleInitialError(
+          caught,
+          'The retention preview could not be loaded.',
+          setRetentionError,
+        )
+      } finally {
+        if (active) {
+          setRetentionLoading(
+            false,
+          )
+        }
+      }
+    }
+
+    void loadIdentity()
+    void loadInitialAudit()
+    void loadInitialDeletionRequests()
+    void loadInitialRetention()
 
     return () => {
       active = false
@@ -384,15 +606,20 @@ export default function AdminGovernancePage() {
 
       await Promise.all([
         loadDeletionRequests(),
-        loadAudit(),
+        loadAudit(0),
       ])
     } catch (
       caught: unknown
     ) {
-      handleApiError(
-        caught,
-        'The deletion request could not be created.',
-      )
+      const message =
+        apiErrorMessage(
+          caught,
+          'The deletion request could not be created.',
+        )
+
+      if (message) {
+        setError(message)
+      }
     } finally {
       setBusyAction(null)
     }
@@ -437,6 +664,14 @@ export default function AdminGovernancePage() {
           request.request_id,
         )
 
+        setPendingExecutionId(
+          null,
+        )
+
+        setConfirmDeletion(
+          false,
+        )
+
         setNotice(
           'Approved session deletion executed.',
         )
@@ -444,7 +679,7 @@ export default function AdminGovernancePage() {
 
       await Promise.all([
         loadDeletionRequests(),
-        loadAudit(),
+        loadAudit(0),
         loadRetention(),
       ])
     } catch (
@@ -457,13 +692,43 @@ export default function AdminGovernancePage() {
             ? 'rejected'
             : 'executed'
 
-      handleApiError(
-        caught,
-        `The deletion request could not be ${actionLabel}.`,
-      )
+      const message =
+        apiErrorMessage(
+          caught,
+          `The deletion request could not be ${actionLabel}.`,
+        )
+
+      if (message) {
+        setError(message)
+      }
     } finally {
       setBusyAction(null)
     }
+  }
+
+  function requestDeletionExecution(
+    request: DeletionRequest,
+  ) {
+    setPendingExecutionId(
+      request.request_id,
+    )
+
+    setConfirmDeletion(
+      false,
+    )
+
+    setError(null)
+    setNotice(null)
+  }
+
+  function cancelDeletionExecution() {
+    setPendingExecutionId(
+      null,
+    )
+
+    setConfirmDeletion(
+      false,
+    )
   }
 
   async function handleRetentionRun() {
@@ -491,22 +756,47 @@ export default function AdminGovernancePage() {
       setConfirmPurge(false)
 
       await Promise.all([
-        loadAudit(),
+        loadAudit(0),
         loadDeletionRequests(),
       ])
     } catch (
       caught: unknown
     ) {
-      handleApiError(
-        caught,
-        'The retention purge could not be completed.',
-      )
+      const message =
+        apiErrorMessage(
+          caught,
+          'The retention purge could not be completed.',
+        )
+
+      if (message) {
+        setError(message)
+      }
     } finally {
       setBusyAction(null)
     }
   }
 
-  if (loading) {
+  const auditFirst =
+    auditTotal === 0
+      ? 0
+      : auditOffset + 1
+
+  const auditLast =
+    Math.min(
+      auditOffset +
+        auditEntries.length,
+      auditTotal,
+    )
+
+  const hasPreviousAuditPage =
+    auditOffset > 0
+
+  const hasNextAuditPage =
+    auditOffset +
+      AUDIT_PAGE_SIZE <
+    auditTotal
+
+  if (identityLoading) {
     return (
       <main className="min-h-screen bg-background p-8">
         <p
@@ -611,6 +901,24 @@ export default function AdminGovernancePage() {
             </div>
           </div>
 
+          {retentionError && (
+            <div
+              role="alert"
+              className="mt-4 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm"
+            >
+              {retentionError}
+            </div>
+          )}
+
+          {retentionLoading && (
+            <p
+              role="status"
+              className="mt-4 text-sm text-muted-foreground"
+            >
+              Loading retention preview...
+            </p>
+          )}
+
           {retention && (
             <>
               <dl className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -677,7 +985,8 @@ export default function AdminGovernancePage() {
             <button
               type="button"
               disabled={
-                busyAction !== null
+                busyAction !== null ||
+                retentionLoading
               }
               onClick={() =>
                 void loadRetention()
@@ -714,7 +1023,8 @@ export default function AdminGovernancePage() {
               type="button"
               disabled={
                 !confirmPurge ||
-                busyAction !== null
+                busyAction !== null ||
+                retentionLoading
               }
               onClick={() =>
                 void handleRetentionRun()
@@ -750,6 +1060,15 @@ export default function AdminGovernancePage() {
               </p>
             </div>
           </div>
+
+          {deletionError && (
+            <div
+              role="alert"
+              className="mt-4 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm"
+            >
+              {deletionError}
+            </div>
+          )}
 
           <form
             className="mt-5 grid gap-4 lg:grid-cols-[160px_1fr_1fr_auto]"
@@ -904,17 +1223,33 @@ export default function AdminGovernancePage() {
                 void loadDeletionRequests()
               }
               disabled={
-                busyAction !== null
+                busyAction !== null ||
+                deletionLoading
               }
               className="rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
             >
-              Apply filter
+              {deletionLoading
+                ? 'Loading...'
+                : 'Apply filter'}
             </button>
           </div>
 
           <div className="mt-5 space-y-3">
-            {deletionRequests.length ===
-            0 ? (
+            {deletionLoading &&
+              deletionRequests.length ===
+                0 && (
+                <p
+                  role="status"
+                  className="rounded-lg border border-border bg-background p-4 text-sm text-muted-foreground"
+                >
+                  Loading deletion
+                  requests...
+                </p>
+              )}
+
+            {!deletionLoading &&
+            deletionRequests.length ===
+              0 ? (
               <p className="rounded-lg border border-border bg-background p-4 text-sm text-muted-foreground">
                 No deletion requests
                 found.
@@ -969,6 +1304,7 @@ export default function AdminGovernancePage() {
                       <button
                         type="button"
                         disabled={
+                          !adminId ||
                           !canApproveDeletion(
                             request,
                             adminId,
@@ -1017,9 +1353,8 @@ export default function AdminGovernancePage() {
                             null
                         }
                         onClick={() =>
-                          void handleDeletionAction(
+                          requestDeletionExecution(
                             request,
-                            'execute',
                           )
                         }
                         className="rounded-lg bg-destructive px-3 py-2 text-sm font-medium text-destructive-foreground disabled:cursor-not-allowed disabled:opacity-50"
@@ -1027,6 +1362,89 @@ export default function AdminGovernancePage() {
                         Execute deletion
                       </button>
                     </div>
+
+                    {pendingExecutionId ===
+                      request.request_id && (
+                      <div
+                        role="group"
+                        aria-label="Confirm irreversible session deletion"
+                        className="mt-4 rounded-lg border border-destructive/40 bg-destructive/10 p-4"
+                      >
+                        <p className="text-sm font-semibold">
+                          Confirm permanent
+                          session deletion
+                        </p>
+
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          This operation
+                          permanently deletes
+                          the data covered by
+                          this approved request
+                          and cannot be undone.
+                        </p>
+
+                        <label className="mt-3 flex items-start gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={
+                              confirmDeletion
+                            }
+                            onChange={(
+                              event,
+                            ) =>
+                              setConfirmDeletion(
+                                event
+                                  .target
+                                  .checked,
+                              )
+                            }
+                          />
+
+                          <span>
+                            I understand this
+                            deletion is
+                            irreversible.
+                          </span>
+                        </label>
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={
+                              !confirmDeletion ||
+                              busyAction !==
+                                null
+                            }
+                            onClick={() =>
+                              void handleDeletionAction(
+                                request,
+                                'execute',
+                              )
+                            }
+                            className="rounded-lg bg-destructive px-3 py-2 text-sm font-medium text-destructive-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {busyAction ===
+                            `execute-${request.request_id}`
+                              ? 'Deleting...'
+                              : 'Confirm deletion'}
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={
+                              busyAction !==
+                              null
+                            }
+                            onClick={
+                              cancelDeletionExecution
+                            }
+                            className="rounded-lg border border-border px-3 py-2 text-sm font-medium disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {request.status ===
                       'approved' &&
@@ -1055,6 +1473,15 @@ export default function AdminGovernancePage() {
             Governance metadata only.
             Newest events appear first.
           </p>
+
+          {auditError && (
+            <div
+              role="alert"
+              className="mt-4 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm"
+            >
+              {auditError}
+            </div>
+          )}
 
           <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto]">
             <div>
@@ -1105,24 +1532,86 @@ export default function AdminGovernancePage() {
 
             <button
               type="button"
-              onClick={() =>
-                void loadAudit()
+              disabled={
+                auditLoading
               }
-              className="self-end rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted"
+              onClick={() =>
+                void loadAudit(0)
+              }
+              className="self-end rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
             >
-              Apply filters
+              {auditLoading
+                ? 'Loading...'
+                : 'Apply filters'}
             </button>
           </div>
 
-          <p className="mt-4 text-xs text-muted-foreground">
-            Showing{' '}
-            {auditEntries.length} of{' '}
-            {auditTotal} events
-          </p>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">
+              Showing{' '}
+              {auditFirst}
+              {auditTotal > 0
+                ? `–${auditLast}`
+                : ''}{' '}
+              of {auditTotal} events
+            </p>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={
+                  !hasPreviousAuditPage ||
+                  auditLoading
+                }
+                onClick={() =>
+                  void loadAudit(
+                    Math.max(
+                      0,
+                      auditOffset -
+                        AUDIT_PAGE_SIZE,
+                    ),
+                  )
+                }
+                className="rounded-lg border border-border px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Previous
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  !hasNextAuditPage ||
+                  auditLoading
+                }
+                onClick={() =>
+                  void loadAudit(
+                    auditOffset +
+                      AUDIT_PAGE_SIZE,
+                  )
+                }
+                className="rounded-lg border border-border px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
 
           <div className="mt-4 space-y-3">
-            {auditEntries.length ===
-            0 ? (
+            {auditLoading &&
+              auditEntries.length ===
+                0 && (
+                <p
+                  role="status"
+                  className="rounded-lg border border-border bg-background p-4 text-sm text-muted-foreground"
+                >
+                  Loading audit
+                  events...
+                </p>
+              )}
+
+            {!auditLoading &&
+            auditEntries.length ===
+              0 ? (
               <p className="rounded-lg border border-border bg-background p-4 text-sm text-muted-foreground">
                 No audit events match
                 these filters.
