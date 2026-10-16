@@ -1,6 +1,41 @@
 {
   "components": {
     "schemas": {
+      "ActionItem": {
+        "description": "One thing a student could do next, worked out from their marked answers.\n\nOnly comprehension and missed questions give rise to one. Engagement never\ndoes: how someone's camera or click rate read says nothing about what they\nshould study.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "revisit_topic",
+              "review_missed"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic"
+          }
+        },
+        "required": [
+          "kind",
+          "text"
+        ],
+        "title": "ActionItem",
+        "type": "object"
+      },
       "AlertOut": {
         "description": "An alert kept for the lecturer: what was raised, why, what to do about it,\nand whether anyone has seen it.\n\nServed from the stored alert, so it is there after a refresh and after the\nsession. The three figures at the end are those of a topic difficulty alert,\nnull for any other kind.",
         "properties": {
@@ -1980,7 +2015,16 @@
         "type": "object"
       },
       "StudentSessionSummary": {
+        "description": "What one student did in one session. Engagement and comprehension sit in\nseparate fields and are never combined into one figure.",
         "properties": {
+          "action_items": {
+            "description": "Suggested next steps from comprehension and missed questions only.",
+            "items": {
+              "$ref": "#/components/schemas/ActionItem"
+            },
+            "title": "Action Items",
+            "type": "array"
+          },
           "comprehension_by_topic": {
             "additionalProperties": {
               "$ref": "#/components/schemas/ComprehensionLabel"
@@ -4007,6 +4051,7 @@
     },
     "/api/v1/sessions/{session_id}/summary/{student_id}": {
       "get": {
+        "description": "One student's results for one session: what they attempted and missed,\nwhere their answers were strong or weak, and what to do next. Engagement\nand comprehension are separate fields and never combined.\n\nA student reads only their own; staff read those of a session they run\n(and leave an audit trace when it is not their own). A session, a student\nor a pairing the caller may not see are all the same 404.",
         "operationId": "student_summary_api_v1_sessions__session_id__summary__student_id__get",
         "parameters": [
           {

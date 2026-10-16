@@ -174,13 +174,33 @@ class EngagementOut(BaseModel):
     computed_at: datetime
 
 
+class ActionItem(BaseModel):
+    """One thing a student could do next, worked out from their marked answers.
+
+    Only comprehension and missed questions give rise to one. Engagement never
+    does: how someone's camera or click rate read says nothing about what they
+    should study.
+    """
+
+    kind: Literal["revisit_topic", "review_missed"]
+    text: ShownText
+    topic: str | None = None
+
+
 class StudentSessionSummary(BaseModel):
+    """What one student did in one session. Engagement and comprehension sit in
+    separate fields and are never combined into one figure."""
+
     student_id: UUID
     session_id: UUID
     questions_attempted: int
     questions_missed: int
     engagement: EngagementOut
     comprehension_by_topic: dict[str, ComprehensionLabel] = Field(default_factory=dict)
+    action_items: list[ActionItem] = Field(
+        default_factory=list,
+        description="Suggested next steps from comprehension and missed questions only.",
+    )
 
 
 class AlertOut(BaseModel):

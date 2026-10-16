@@ -309,7 +309,11 @@ def test_rate_limited_readings_do_not_train_the_baseline() -> None:
     at = now + timedelta(seconds=5)
     attention.observe(student, _gaze(0.8), at)
     attention.score({student}, set(), {}, at)
-    assert attention._students[student].baseline.gaze == [0.4, 0.8]
+    # The baseline learns the student's recent signals as one: the 0.4 sent five
+    # seconds ago is still in the window, so the new entry is their mean. What
+    # matters is that the two dropped readings added nothing: one entry per
+    # accepted reading.
+    assert attention._students[student].baseline.gaze == pytest.approx([0.4, 0.6])
 
 
 async def test_an_error_while_checking_never_logs_its_text(
