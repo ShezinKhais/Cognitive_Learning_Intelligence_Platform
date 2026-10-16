@@ -24,6 +24,11 @@ production/real-tenant sign-off. No other open PR was merged for this audit.
 3. **Outdated student completion message.** Ended sessions now point to the
    existing review link instead of promising a future reporting phase.
    Cancelled sessions do not promise an ended-session review.
+4. **Timing-sensitive floating-point assertion.** A full-suite rerun exposed
+   four fairness-test failures in the shared baseline helper: duration-weighted
+   `0.4` sometimes becomes `0.39999999999999997`. Its three values are now
+   checked with absolute tolerance `1e-12` and no relative tolerance. Production
+   scoring, sample count and consent-purge checks are unchanged.
 
 The existing PostgreSQL REST/WebSocket integration test now continues past
 session end to student review and the Cyber 1 summary. It verifies the same
@@ -41,6 +46,9 @@ An isolated `pgvector/pgvector:pg16` test container was used on
   limitation below. The skip is real OCR without local Tesseract.
 - After fixes, focused database-backed security, token-refresh, student-review,
   student-summary and combined integration tests: **223 passed**.
+  A subsequent full local run passed **2,688**, skipped **1**, and failed the
+  known WMF case plus four instances of the floating-point assertion described
+  above; those four are addressed by the follow-up test-only correction.
 - Frontend unit/proxy tests: **105 passed**; lint, production build and browser
   test type-check passed.
 - Docker Chromium browser suite: **29 passed**, including real self-hosted
