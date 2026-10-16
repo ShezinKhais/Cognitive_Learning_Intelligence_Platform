@@ -288,3 +288,97 @@ async def test_a_dry_run_writes_no_audit_entry(db, history):
 async def test_the_retention_period_must_be_positive():
     with pytest.raises(ValueError):
         await purge_expired(None, retention_days=0)
+
+
+# -- the scheduled purge tasks ---------------------------------------------------------------
+
+
+@pytest.fixture
+def borrowed(db, monkeypatch):
+    """The tasks open their own session and commit. Lend them this test's
+    transaction instead, and make a commit only a flush, so it is rolled back."""
+    from contextlib import asynccontextmanager
+
+    async def flush_only():
+        await db.flush()
+
+    monkeypatch.setattr(db, "commit", flush_only)
+
+    @asynccontextmanager
+    async def session():
+        yield db
+
+    return lambda: session
+
+
+async def test_the_session_task_purges_what_is_past_the_cutoff(db, history, borrowed):
+    from app.services.retention_tasks import SessionDataPurge
+
+    removed = await SessionDataPurge(borrowed).purge(days_ago(90), 500)
+
+    assert removed >= 1
+    assert await holdings(db, history.expired) == dict.fromkeys(HOLDINGS, 0)
+    assert await holdings(db, history.kept) == dict.fromkeys(HOLDINGS, 1)
+
+
+async def test_the_session_task_audits_counts_as_the_system(db, history, borrowed):
+    from app.services.retention_tasks import SessionDataPurge
+
+    await SessionDataPurge(borrowed).purge(days_ago(90), 500)
+
+    entry = (
+        await db.scalars(
+            select(AuditLog)
+            .where(AuditLog.action_type == RETENTION_ACTION)
+            .order_by(AuditLog.timestamp.desc())
+        )
+    ).first()
+    assert entry is not None
+    assert entry.user_id is None
+    assert entry.details["task"] == "session-data"
+    assert entry.details["sessions"] >= 1
+
+
+async def test_the_roster_task_purges_old_syncs_only(db, history, borrowed):
+    from app.services.retention_tasks import RosterSyncPurge
+
+    removed = await RosterSyncPurge(borrowed).purge(days_ago(90), 500)
+
+    assert removed >= 1
+    assert await roster_syncs(db, history.expired) == 0
+    assert await roster_syncs(db, history.kept) == 1
+
+
+async def test_a_task_with_nothing_due_deletes_nothing_and_audits_nothing(db, borrowed):
+    from app.services.retention_tasks import SessionDataPurge
+
+    removed = await SessionDataPurge(borrowed).purge(datetime(1990, 1, 1, tzinfo=UTC), 500)
+
+    assert removed == 0
+
+
+def test_the_tasks_are_registered_once():
+    from app.services.purge_runner import PurgeRunner
+    from app.services.retention_tasks import register_database_purges
+
+    runner = PurgeRunner(retention=lambda: timedelta(days=90))
+    register_database_purges(runner)
+    register_database_purges(runner)
+
+    assert runner.task_names == ["session-data", "teams-roster-syncs"]
+
+
+def test_housekeeping_registers_the_database_purges():
+    from app.main import housekeeping
+    from app.services.purge_runner import get_purge_runner
+
+    get_purge_runner.cache_clear()
+    try:
+        housekeeping()
+        assert get_purge_runner().task_names == [
+            "session-data",
+            "stored-uploads",
+            "teams-roster-syncs",
+        ]
+    finally:
+        get_purge_runner.cache_clear()

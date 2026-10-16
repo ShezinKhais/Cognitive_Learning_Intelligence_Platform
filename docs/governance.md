@@ -102,12 +102,18 @@ All under `/api/v1/governance`, admin role and accepted terms required.
 | 409 `CONFLICT` | An open request exists, or the request is in the wrong state |
 | 422 `VALIDATION_ERROR` | Bad input, or `confirm` is not `true` |
 
-## For the scheduled purge runner
+## The scheduled purge
 
-Call `POST /api/v1/governance/retention/run` with `{"confirm": true}` as an admin
-once a day. Use `GET /retention/preview` first to see what is due. A scheduled call
-has no admin of its own today, so its audit entry records the admin whose token it
-used.
+The purge runner (`app/services/purge_runner.py`) runs once a day from the
+scheduler and deletes whatever has outlived `DATA_RETENTION_DAYS`, a batch at a
+time, oldest first, giving way to any class that is running. BBIS registers two
+tasks with it (`app/services/retention_tasks.py`): `session-data` deletes
+sessions past the period, and with them everything they hold; `teams-roster-syncs`
+deletes Teams roster syncs on their own received date. Each batch writes one
+`RETENTION_PURGE` audit entry with counts, as the system, and no personal data.
+
+`POST /api/v1/governance/retention/run` stays for an admin to run the same rule
+by hand, after `GET /retention/preview`. The audit log is never purged.
 
 ## Not done yet
 
