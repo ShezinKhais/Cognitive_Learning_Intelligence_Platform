@@ -655,7 +655,9 @@ function WaitingCard({
 
       <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted-foreground">
         {ended
-          ? 'Your responses have been saved. A review view will be available in the reporting phase.'
+          ? sessionStatus === 'ended'
+            ? 'Your responses have been saved. Open Review this session above to revisit your answers and source material.'
+            : 'This session was cancelled. Return to All sessions to find another class.'
           : paused
             ? 'The lecturer has paused the session. Checkpoints will resume automatically when the session continues.'
             : 'Stay on this page. The lecturer’s next question will appear automatically.'}

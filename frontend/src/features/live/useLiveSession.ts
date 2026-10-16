@@ -476,7 +476,6 @@ setAlerts((current) => {
       return
     }
 
-    const accessToken: string = token
 
     let socket: WebSocket | null = null
     let retryTimer: number | undefined
@@ -504,6 +503,11 @@ setAlerts((current) => {
       currentSocket.addEventListener(
         'open',
         () => {
+          const accessToken = getAccessToken()
+          if (!accessToken) {
+            currentSocket.close(4001, 'authentication required')
+            return
+          }
           const data: {
             token: string
             session_id: string

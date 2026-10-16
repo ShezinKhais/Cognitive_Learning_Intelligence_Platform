@@ -102,7 +102,6 @@ export function useLiveSession(
       dispatch({ type: 'connection', status: 'disconnected' })
       return
     }
-    const authToken = token
 
     let socket: WebSocket | null = null
     let reconnectTimer: number | undefined
@@ -151,6 +150,12 @@ export function useLiveSession(
       socketRef.current = currentSocket
 
       currentSocket.addEventListener('open', () => {
+        // A long-running page may have refreshed since its previous socket.
+        const authToken = getAccessToken()
+        if (!authToken) {
+          currentSocket.close(4001, 'authentication required')
+          return
+        }
         const data = buildAuthPayload(
           authToken,
           sessionId,

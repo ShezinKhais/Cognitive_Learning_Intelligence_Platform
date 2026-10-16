@@ -100,7 +100,6 @@ export function useMaterialProgress(
       setStatus('disconnected')
       return
     }
-    const accessToken: string = token
 
     let socket: WebSocket | null = null
     let retryTimer: number | undefined
@@ -118,6 +117,11 @@ export function useMaterialProgress(
       socket = currentSocket
 
       currentSocket.addEventListener('open', () => {
+        const accessToken = getAccessToken()
+        if (!accessToken) {
+          currentSocket.close(4001, 'authentication required')
+          return
+        }
         const data: {
           token: string
           last_seq: number

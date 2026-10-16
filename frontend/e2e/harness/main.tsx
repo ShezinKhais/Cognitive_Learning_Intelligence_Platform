@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { AttentionControls } from '../../src/features/attention/AttentionControls'
 import { SocraticChatPanel } from '../../src/features/chat/SocraticChatPanel'
+import { useLiveSession as useStudentSession } from '../../src/features/student/useLiveSession'
+import { useLiveSession as useLecturerSession } from '../../src/features/live/useLiveSession'
+import { useMaterialProgress } from '../../src/features/materials/useMaterialProgress'
 import '../../src/index.css'
 
 export function Harness() {
@@ -19,4 +22,21 @@ export function Harness() {
     <SocraticChatPanel sessionId="phase8" />
   </main>
 }
-createRoot(document.getElementById('root')!).render(<Harness />)
+function StudentSocket() {
+  const { state } = useStudentSession('refresh-session', 'active')
+  return <main>Student socket: {state.connection}</main>
+}
+function LecturerSocket() {
+  const { connectionStatus } = useLecturerSession('refresh-session')
+  return <main>Lecturer socket: {connectionStatus}</main>
+}
+function ProgressSocket() {
+  const status = useMaterialProgress(() => {})
+  return <main>Progress socket: {status}</main>
+}
+const socket = new URLSearchParams(window.location.search).get('socket')
+createRoot(document.getElementById('root')!).render(
+  socket === 'student' ? <StudentSocket /> :
+  socket === 'lecturer' ? <LecturerSocket /> :
+  socket === 'progress' ? <ProgressSocket /> : <Harness />,
+)

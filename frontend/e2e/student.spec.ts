@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type WebSocketRoute } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
 async function optIn(page: Page, sensor: 'camera' | 'microphone') {
@@ -28,6 +28,44 @@ test.beforeEach(async ({ page }) => {
   } }))
   await page.goto('/e2e/harness/index.html')
 })
+
+for (const socket of ['student', 'lecturer', 'progress']) {
+  test(`${socket} socket reconnect authenticates with the refreshed token`, async ({ page }) => {
+    const tokens: string[] = []
+    const connections: WebSocketRoute[] = []
+    await page.routeWebSocket('**/ws/session', ws => {
+      connections.push(ws)
+      ws.onMessage(message => {
+        const event = JSON.parse(String(message))
+        if (event.type === 'auth') tokens.push(event.data.token)
+      })
+    })
+    await page.goto(`/e2e/harness/index.html?socket=${socket}`)
+    await expect.poll(() => tokens).toEqual(['test-only'])
+    // The auth refresh route swaps storage without remounting live pages.
+    await page.evaluate(() => localStorage.setItem('clip_access_token', 'refreshed-token'))
+    connections[0].close({ code: 1012, reason: 'service restart' })
+    await expect.poll(() => tokens).toEqual(['test-only', 'refreshed-token'])
+  })
+
+  test(`${socket} socket never reuses a token removed before reconnect`, async ({ page }) => {
+    const tokens: string[] = []
+    const connections: WebSocketRoute[] = []
+    await page.routeWebSocket('**/ws/session', ws => {
+      connections.push(ws)
+      ws.onMessage(message => {
+        const event = JSON.parse(String(message))
+        if (event.type === 'auth') tokens.push(event.data.token)
+      })
+    })
+    await page.goto(`/e2e/harness/index.html?socket=${socket}`)
+    await expect.poll(() => tokens).toEqual(['test-only'])
+    await page.evaluate(() => localStorage.removeItem('clip_access_token'))
+    connections[0].close({ code: 1012, reason: 'service restart' })
+    await expect(page).toHaveURL(/\/login$/)
+    expect(tokens).toEqual(['test-only'])
+  })
+}
 
 test('devices remain off until saved opt-in and explicit enable; denial is recoverable', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Enable selected' })).toBeDisabled()
