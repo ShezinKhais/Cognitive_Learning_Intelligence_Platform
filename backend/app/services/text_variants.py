@@ -64,16 +64,20 @@ SET_ASIDE = re.compile(
     # English, and only when the thing set aside is the model's own orders: a
     # lecture may well say "ignore all previous terms in the series" or "from
     # now on you will use the notation x_i".
-    r"|\b(?:forget|ignore|disregard)\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior|earlier|preceding|above)"
-    r"\s+(?:instructions?|prompts?|rules|messages?|directions|directives|context|guidelines|commands)\b"
-    r"|\b(?:ignore|disregard)\s+the\s+above\s+and\s+(?:say|do|write|print|output|tell|reply|respond"
-    r"|instead)\b"
-    r"|\b(?:forget|ignore|disregard)\s+(?:everything|all)\s+(?:above|before|previously"
-    r"|you\s+were\s+told)\s*(?:and\b|[,.;]|$)"
+    r"|\b(?:forget|ignore|disregard)\s+(?:all\s+|any\s+|the\s+|your\s+)?"
+    r"(?:previous|prior|earlier|preceding|above)\s+(?:instructions?|prompts?|directives"
+    r"|guidelines|commands)\b"
+    r"|\b(?:ignore|disregard|forget)\s+(?:the\s+)?above\s+and\s+(?:now\s+|instead\s+)?"
+    r"(?:say|print|output|reveal|tell|reply|respond|give|provide|show)\b"
+    r"|\b(?:forget|ignore|disregard)\s+(?:all\s+|any\s+|the\s+|your\s+)?(?:previous|prior|earlier"
+    r"|preceding|above)\s+(?:messages?|context)\s+and\s+(?:now\s+|instead\s+)?"
+    r"(?:obey|follow|say|reveal|answer|act|pretend|start)\b"
+    r"|\b(?:forget|ignore|disregard)\s+(?:everything|all)\s+(?:you\s+(?:were|have\s+been)\s+told"
+    r"|(?:above|before|previously)\s+and\s+(?:now\s+|instead\s+)?"
+    r"(?:say|print|output|reveal|tell|reply|respond|act|pretend|answer|start|begin))"
     r"|\bfrom\s+now\s+on,?\s+you\s+(?:will|must|shall|are\s+to)\s+(?:"
     r"(?:ignore|obey|disregard|reveal|pretend|behave|act\s+as)\b"
-    r"|(?:answer|respond|reply)\s+(?:without|with\s+no)\b"
-    r"|(?:only|always|never)\s+(?:answer|respond|reply|obey)\b)",
+    r"|(?:answer|respond|reply)\s+(?:without|with\s+no)\b)",
     flags=re.IGNORECASE,
 )
 

@@ -188,15 +188,28 @@ _OVERRIDE_PATTERNS = (
     # Phase 8: paraphrases of the same moves.
     r"\b(?:pretend|imagine|suppose)\s+(?:that\s+)?(?:you\s+)?(?:have|had|are|were)\s+no\s+"
     r"(?:\w+\s+)?(?:guidelines|rules|restrictions|limits|limitations|instructions)\b",
-    r"\b(?:override|bypass|circumvent|disobey)\s+(?:your|the)\s+(?:\w+\s+){0,2}"
-    r"(?:safety|rules|guidelines|instructions|settings|restrictions|prompt|programming)\b",
+    # "your safety" is the assistant's; "the safety valve" is engineering.
+    r"\b(?:override|bypass|circumvent|disobey)\s+(?:"
+    r"your\s+(?:\w+\s+){0,2}(?:safety|settings)"
+    r"|(?:your|the)\s+(?:\w+\s+){0,2}(?:rules|guidelines|instructions|restrictions|prompt"
+    r"|programming)"
+    r"|(?:your|the)\s+(?:\w+\s+){0,2}safety\s+(?:rules|filters|guidelines|measures"
+    r"|restrictions|protocols|settings|instructions))\b",
     r"\b(?:do\s+not|don'?t|stop|no\s+longer)\s+(?:follow|following|obey|obeying)\s+"
     r"(?:\w+\s+){0,2}(?:system|rules|guidelines|instructions|prompt)\b",
-    r"\bstop\s+being\s+(?:a|an|the|my)\s+\w+",
+    r"\bstop\s+being\s+(?:a|an|the|my)\s+(?:\w+\s+){0,2}"
+    r"(?:tutor|assistant|ai|bot|chatbot|model|helper|teacher|llm)\b",
     r"\bact(?:ing)?\s+as\s+(?:if|though)\s+(?:the|your|there)\b(?:\W+\w+){0,2}?\W+"
     r"(?:rules|guidelines|restrictions|limits)\b",
-    r"\b(?:ignore|disregard|forget)\s+(?:all\s+|any\s+|the\s+)?"
-    r"(?:previous|prior|above|earlier|preceding)\b",
+    # Only what is set aside is the model's own orders, or nothing else follows:
+    # "why do we ignore the previous term?" is a maths question.
+    r"\b(?:ignore|disregard|forget)\s+(?:all\s+|any\s+|the\s+|your\s+)?"
+    r"(?:previous|prior|above|earlier|preceding)\s+(?:\w+\s+)?"
+    r"(?:instructions?|prompts?|directives|guidelines|commands|rules|messages?|context)\b",
+    r"\b(?:ignore|disregard|forget)\s+(?:all|any)\s+(?:previous|prior|above|earlier|preceding)"
+    r"\s*(?:$|[.!?,;:]|\band\b)",
+    r"\b(?:ignore|disregard|forget)\s+(?:the\s+)?above\s+and\s+(?:now\s+|instead\s+)?"
+    r"(?:say|print|output|reveal|tell|reply|respond|answer|act|pretend)\b",
     r"(?:^|\n)\s*#{2,}\s*(?:system|instructions?|assistant)\b",
 )
 _OVERRIDE = re.compile("|".join(_OVERRIDE_PATTERNS), flags=re.IGNORECASE)

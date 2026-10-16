@@ -90,6 +90,13 @@ ORDINARY = [
     "Что такое рекурсия?",
     "Pretend we are sorting cards: how does insertion sort work?",
     "What system does the lecture use for version control?",
+    "Why do we ignore the previous term in the recurrence?",
+    "Should I disregard the above example for part b?",
+    "Should I forget the earlier definition of odds?",
+    "Does the model ignore earlier observations?",
+    "How do I stop being a beginner at calculus?",
+    "How do I bypass the safety valve in the steam engine?",
+    "Why would a compiler override the default settings of a loop?",
 ]
 
 
@@ -104,6 +111,11 @@ LECTURE_PROSE = [
     "From now on, you must write the loop variable as i, not k.",
     "Ignore prior results when the sample is reset.",
     "We disregard earlier measurements because the sensor was recalibrated.",
+    "Ignore the previous messages in the queue; the consumer reads only the head.",
+    "Disregard all previous context of the experiment and start fresh.",
+    "Disregard the above and instead use the second formula.",
+    "From now on, you will always answer the exam in pen.",
+    "Forget everything above; it was a simplification.",
 ]
 
 

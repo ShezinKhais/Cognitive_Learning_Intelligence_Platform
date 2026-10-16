@@ -14,6 +14,7 @@ fail when a route is added, or changed, without meeting the rules.
 
 from __future__ import annotations
 
+import asyncio
 import re
 from uuid import UUID, uuid4
 
@@ -525,9 +526,13 @@ class _Closing:
         self.sent: list[dict] = []
 
     async def send_json(self, payload: dict) -> None:
+        # Yield, as a real socket does: without it each connect finishes before
+        # the next starts and no race could ever show.
+        await asyncio.sleep(0)
         self.sent.append(payload)
 
     async def close(self, code: int, reason: str = "") -> None:
+        await asyncio.sleep(0)
         self.closed.append(code)
 
 
