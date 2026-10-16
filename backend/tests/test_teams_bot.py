@@ -182,18 +182,18 @@ async def test_teams_starting_and_ending_the_meeting_runs_the_class(db, app, bot
 
 
 async def test_a_start_teams_cannot_apply_is_acknowledged_not_retried(db, app, bot) -> None:
-    """Nothing staged: the start is refused. Answering Teams with an error
-    would only make it redeliver an event that will be refused again."""
+    """The session is already over, so the start is refused. Answering Teams
+    with an error would only make it redeliver an event that will be refused
+    again."""
     client, factory, created = db
     course = await add_course(factory, created)
     sign_in_as(app, LECTURER_ID, Role.LECTURER)
     session = create_session(client, course)
     meeting = f"meeting-{uuid4().hex}"
     client.put(f"/api/v1/meetings/{meeting}", json={"session_id": session["id"]})
+    assert client.post(f"/api/v1/sessions/{session['id']}/end").json()["status"] == "cancelled"
 
     assert bot(client, _activity(START, meeting)).status_code == 200
-    # Still prepared, so the meeting's end cancels it.
-    assert bot(client, _activity(END, meeting)).status_code == 200
     after = client.post(f"/api/v1/sessions/{session['id']}/start")
     assert after.json()["error"]["detail"]["current_status"] == "cancelled"
 
