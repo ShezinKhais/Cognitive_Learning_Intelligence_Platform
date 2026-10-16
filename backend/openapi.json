@@ -1028,6 +1028,85 @@
         "title": "MeetingLinkRequest",
         "type": "object"
       },
+      "MyDeletionRequestCreate": {
+        "properties": {
+          "confirm": {
+            "description": "Must be true: the student was told this erases their data and cannot be undone.",
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why, in a few words. Optional.",
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "title": "MyDeletionRequestCreate",
+        "type": "object"
+      },
+      "MyDeletionRequestOut": {
+        "properties": {
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executed At"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "status": {
+            "description": "requested, approved, rejected or executed.",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "status",
+          "requested_at",
+          "decided_at",
+          "executed_at"
+        ],
+        "title": "MyDeletionRequestOut",
+        "type": "object"
+      },
       "Page_AuditEntryOut_": {
         "properties": {
           "items": {
@@ -2329,6 +2408,92 @@
         ],
         "title": "SessionStatus",
         "type": "string"
+      },
+      "StudentDataExport": {
+        "properties": {
+          "account": {
+            "additionalProperties": true,
+            "title": "Account",
+            "type": "object"
+          },
+          "answers": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Answers",
+            "type": "array"
+          },
+          "attention_summaries": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Attention Summaries",
+            "type": "array"
+          },
+          "deletion_requests": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Deletion Requests",
+            "type": "array"
+          },
+          "engagement": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Engagement",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "missed_responses": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Missed Responses",
+            "type": "array"
+          },
+          "profile": {
+            "additionalProperties": true,
+            "title": "Profile",
+            "type": "object"
+          },
+          "prompts": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Prompts",
+            "type": "array"
+          },
+          "retention_days": {
+            "description": "Session data is deleted this many days after it ends.",
+            "title": "Retention Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "generated_at",
+          "retention_days",
+          "account",
+          "profile",
+          "answers",
+          "prompts",
+          "engagement",
+          "attention_summaries",
+          "missed_responses",
+          "deletion_requests"
+        ],
+        "title": "StudentDataExport",
+        "type": "object"
       },
       "StudentReview": {
         "properties": {
@@ -3850,6 +4015,90 @@
         "summary": "Bulk Review Questions",
         "tags": [
           "content"
+        ]
+      }
+    },
+    "/api/v1/me/data": {
+      "get": {
+        "description": "Everything the platform keeps about you, as JSON.",
+        "operationId": "export_my_data_api_v1_me_data_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentDataExport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Export My Data",
+        "tags": [
+          "my-data"
+        ]
+      }
+    },
+    "/api/v1/me/deletion-request": {
+      "get": {
+        "description": "Where your latest deletion request stands.",
+        "operationId": "my_deletion_request_api_v1_me_deletion_request_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyDeletionRequestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "My Deletion Request",
+        "tags": [
+          "my-data"
+        ]
+      },
+      "post": {
+        "description": "Ask for your own data to be erased. Nothing is deleted until an admin\napproves the request and carries it out; erasing cannot be undone.",
+        "operationId": "request_my_deletion_api_v1_me_deletion_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MyDeletionRequestCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyDeletionRequestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request My Deletion",
+        "tags": [
+          "my-data"
         ]
       }
     },

@@ -28,6 +28,9 @@ NOT_AUDITED = {
     # Nobody is signed in yet. Failed attempts and lockouts are logged and
     # counted by the login itself.
     ("POST", "/api/v1/auth/login"),
+    # A student asking for their own data to be erased. The deletion request
+    # service writes the audit entry itself (DELETION_REQUESTED).
+    ("POST", "/api/v1/me/deletion-request"),
     # Renews the caller's own token and changes nothing that is kept. Every
     # refresh and refusal is in the security log, and an audit row an hour
     # per signed-in user would bury the changes the log is for.
