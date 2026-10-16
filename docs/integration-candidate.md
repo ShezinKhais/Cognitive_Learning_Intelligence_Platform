@@ -1,5 +1,9 @@
 # Combined integration candidate
 
+Historical candidate snapshot: #158 has since merged. See the
+[2026-10-17 merged-main audit](integration-audit-2026-10-17.md) for current gaps
+and verification; the branch-status statements below describe the older candidate.
+
 This branch is a **candidate for review, not a bug-free or production-ready
 sign-off**. It combines the existing work from #147 (`28f180b`), #154
 (`6ec052d`), #155 (`a5c5d3c`) and connection groundwork #157 (`702e96f`).

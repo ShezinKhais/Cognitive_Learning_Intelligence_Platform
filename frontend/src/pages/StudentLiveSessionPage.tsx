@@ -29,6 +29,7 @@ import type {
 import type { StudentSession } from '../features/student/types'
 import { useLiveSession } from '../features/student/useLiveSession'
 import { AttentionControls } from '../features/attention/AttentionControls'
+import { BreakoutRoomSelection } from '../features/student/BreakoutRoomSelection'
 
 const SOCRATIC_CHAT_ENABLED =
   import.meta.env.VITE_SOCRATIC_CHAT_ENABLED === 'true'
@@ -79,6 +80,7 @@ export function LiveSessionPanel({
     clearError,
     sendAttention,
     attentionConsentRejected,
+    selectRoom,
   } = useLiveSession(session.id, session.status, session.paused ?? false)
 
   const now = useCurrentTime(
@@ -144,6 +146,10 @@ export function LiveSessionPanel({
         </header>
 
         <ConnectionNotice status={state.connection} />
+
+        <BreakoutRoomSelection key={`${session.id}:${state.connection}`} onSelect={selectRoom}
+          serverError={state.error}
+          enabled={state.connection === 'connected' && state.sessionStatus === 'active' && !state.paused} />
 
         {LOCAL_ATTENTION_ENABLED && (
           <AttentionControls key={session.id} onSignal={sendAttention}
@@ -655,7 +661,9 @@ function WaitingCard({
 
       <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted-foreground">
         {ended
-          ? 'Your responses have been saved. A review view will be available in the reporting phase.'
+          ? sessionStatus === 'ended'
+            ? 'Your responses have been saved. Open Review this session above to revisit your answers and source material.'
+            : 'This session was cancelled. Return to All sessions to find another class.'
           : paused
             ? 'The lecturer has paused the session. Checkpoints will resume automatically when the session continues.'
             : 'Stay on this page. The lecturer’s next question will appear automatically.'}

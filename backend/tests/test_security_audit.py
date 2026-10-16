@@ -48,6 +48,10 @@ MEMBER = "a member of the session, decided in the handler"
 AUDIENCE = {
     ("POST", "/api/v1/auth/consent"): ANY_USER,
     ("GET", "/api/v1/auth/me"): ANY_USER,
+    ("POST", "/api/v1/auth/refresh"): ANY_USER,
+    ("GET", "/api/v1/student-reviews"): STUDENT_ONLY,
+    ("GET", "/api/v1/student-reviews/{session_id}"): STUDENT_ONLY,
+    ("GET", "/api/v1/student-reviews/{session_id}/responses/{response_id}/sources"): STUDENT_ONLY,
     ("POST", "/api/v1/admin/roster"): ADMIN_ONLY,
     ("POST", "/api/v1/admin/timetable"): ADMIN_ONLY,
     ("POST", "/api/v1/materials"): STAFF,
@@ -80,17 +84,6 @@ AUDIENCE = {
     ("POST", "/api/v1/sessions/{session_id}/reports"): STAFF,
     ("GET", "/api/v1/reports/{report_id}"): STAFF,
     ("GET", "/api/v1/reports/{report_id}/pdf"): STAFF,
-}
-
-# Routes with a published contract and no handler, so far. Each answers 501 to a
-# signed-in caller. Whoever implements one decides its audience, and this audit
-# then checks it like the rest. The summary route is implemented on its own
-# branch, so it may or may not be a stub here.
-STUBS = {
-    ("GET", "/api/v1/sessions"),
-    ("GET", "/api/v1/sessions/{session_id}"),
-    ("GET", "/api/v1/sessions/{session_id}/responses"),
-    ("GET", "/api/v1/sessions/{session_id}/summary/{student_id}"),
 }
 
 SECRETS = re.compile(
@@ -276,13 +269,7 @@ async def test_another_lecturer_cannot_touch_a_session_they_do_not_run(
     sign_in_as(app, uuid4(), Role.LECTURER)
     response = call(client, method, path, session_id=session)
 
-    if response.status_code == 501:
-        # A route with a frozen contract and no handler yet serves nothing, to
-        # anyone. test_unimplemented_routes_are_known makes whoever writes the
-        # handler come back here.
-        assert (method, path) in STUBS
-    else:
-        assert response.status_code in (403, 404), (method, path, response.status_code)
+    assert response.status_code in (403, 404), (method, path, response.status_code)
     assert not SECRETS.search(response.text)
 
     sign_in_as(app, LECTURER_ID, Role.LECTURER)
@@ -297,7 +284,15 @@ async def test_another_lecturer_cannot_touch_a_session_they_do_not_run(
     [
         r
         for r in AUDIENCE
-        if r != ("POST", "/api/v1/auth/consent") and r != ("GET", "/api/v1/auth/me")
+        # Authentication bootstrap does not expose session data and must work
+        # before terms are accepted. Refresh independently validates the bearer
+        # token and account (see test_token_refresh.py), not get_principal.
+        if r
+        not in {
+            ("POST", "/api/v1/auth/consent"),
+            ("GET", "/api/v1/auth/me"),
+            ("POST", "/api/v1/auth/refresh"),
+        }
     ],
 )
 def test_without_terms_consent_nothing_is_served(db, app, method: str, path: str) -> None:  # noqa: ANN001
@@ -322,15 +317,14 @@ def test_without_terms_consent_nothing_is_served(db, app, method: str, path: str
     )
 
 
-def test_unimplemented_routes_are_known(db, app) -> None:  # noqa: ANN001
-    """A route that answers 501 must be on the list; one that stops answering
-    501 has been implemented and needs its audience checked above."""
+def test_no_published_route_is_an_unimplemented_stub(db, app) -> None:  # noqa: ANN001
+    """The merged session and summary routes must never regress to 501."""
     client, factory, created = db
     sign_in_as(app, LECTURER_ID, Role.LECTURER)
     answering = {
         (method, path) for method, path in AUDIENCE if call(client, method, path).status_code == 501
     }
-    assert answering <= STUBS, sorted(answering - STUBS)
+    assert not answering, sorted(answering)
 
 
 # -- startup refuses an unknown environment ------------------------------------------------
