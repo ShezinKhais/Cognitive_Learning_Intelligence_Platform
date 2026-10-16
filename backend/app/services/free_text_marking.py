@@ -97,7 +97,9 @@ async def mark(response_id: UUID, question_id: UUID, answer: str) -> bool:
     was stored."""
     try:
         async with get_session_factory()() as db:
-            question = gradable(await QuestionRepository(db).get_by_id(question_id))
+            source = await QuestionRepository(db).get_by_id(question_id)
+            session_id = source.session_id if source is not None else None
+            question = gradable(source)
         if question is None:
             return False
         marker = classifier()
@@ -118,6 +120,10 @@ async def mark(response_id: UUID, question_id: UUID, answer: str) -> bool:
                 similarity=result.similarity,
             )
             await db.commit()
+        if stored and session_id is not None:
+            from app.realtime.classroom import classroom
+
+            await classroom.refresh_comprehension(session_id, question_id)
         return stored
     except Exception:
         log.exception("could not mark free-text answer %s", response_id)

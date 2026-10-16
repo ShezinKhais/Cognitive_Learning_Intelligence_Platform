@@ -1,5 +1,9 @@
 # Cross-phase integration checkpoint
 
+For the combined branch and its remaining release gates, see
+[the phases 1–6 integration candidate](phases-1-6-integration-candidate.md).
+The main-only inventory below records the earlier baseline, not this branch.
+
 Checked against `main` at `aa79ed7` on 2026-10-16. This is an integration
 checkpoint, not evidence that every open PR has shipped or passed a live demo.
 

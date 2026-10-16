@@ -609,6 +609,39 @@ async def test_answers_by_a_member_count_as_the_rooms_task_interactions() -> Non
 # -- breakout rooms: the alert ------------------------------------------------------------
 
 
+async def test_failed_storage_and_retries_do_not_inflate_room_activity() -> None:
+    room, events, row = await _class(window=30.0)
+    _, member = await join_as(events, row.session_id, Role.STUDENT)
+    await _confirm(room, row, member)
+    question = await deliver_next(room, row)
+
+    class Recorder:
+        failing = True
+
+        async def record(self, submission):  # noqa: ANN001, ANN201
+            if self.failing:
+                raise ConnectionError("answer store unavailable")
+            return None
+
+    recorder = Recorder()
+    room.recorder = recorder
+    try:
+        for _ in range(3):
+            receipt = await room.submit(
+                row.session_id, member, Role.STUDENT, answer_to(question.question_id)
+            )
+            assert not receipt.accepted
+        assert [s.task_interactions for s in room.rooms(row.session_id)] == [0]
+        recorder.failing = False
+        receipt = await room.submit(
+            row.session_id, member, Role.STUDENT, answer_to(question.question_id)
+        )
+        assert receipt.accepted
+        assert [s.task_interactions for s in room.rooms(row.session_id)] == [1]
+    finally:
+        await room.shutdown()
+
+
 async def _silent_room(clock: _Clock, **settings: float):  # noqa: ANN202
     """A room whose only member has been heard not speaking, 180 seconds ago."""
     room, events, row = await _class(voice_fresh=1000.0, **settings)

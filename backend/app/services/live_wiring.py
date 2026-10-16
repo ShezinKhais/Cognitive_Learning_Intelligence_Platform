@@ -40,6 +40,7 @@ from app.repositories.student_repository import StudentRepository
 from app.schemas.session import ClassComprehensionAlert
 from app.services import free_text_marking
 from app.services.alert_store import store_comprehension_alert, store_room_alert
+from app.services.comprehension_refresh import refresh
 from app.services.comprehension_writer import label_response
 from app.services.live_recorder import LiveCloseRecorder, LiveResponseRecorder
 
@@ -85,6 +86,9 @@ async def _store_close(closed: ClosedQuestion) -> None:
             reason=closed.reason,
             closed_at=closed.closed_at,
         )
+    from app.realtime.classroom import classroom
+
+    await classroom.refresh_comprehension(closed.session_id, closed.question_id)
 
 
 class _Engagement:
@@ -167,5 +171,6 @@ def install_live_store(room: Classroom) -> None:
     )
     room.prompt_recorder = room.participant_recorder = _Engagement()
     room.comprehension_source = DatabaseComprehensionSource()
+    room.comprehension_refresher = refresh
     room.alert_recorder = _Alerts()
     room.attention_recorder = _AttentionSummaries()

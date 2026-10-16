@@ -50,6 +50,12 @@ services:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
+      CLIENT_ID: ${CLIENT_ID:-}
+      CLIENT_SECRET: ${CLIENT_SECRET:-}
+      TENANT_ID: ${TENANT_ID:-}
+      TEAMS_NOTIFICATIONS_ENABLED: ${TEAMS_NOTIFICATIONS_ENABLED:-false}
+      TEAMS_APP_BASE_URL: ${TEAMS_APP_BASE_URL:-}
+      TEAMS_APP_ID: ${TEAMS_APP_ID:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -64,6 +70,7 @@ services:
         VITE_MATERIAL_PIPELINE_ENABLED: ${VITE_MATERIAL_PIPELINE_ENABLED:-true}
         VITE_LIVE_SESSIONS_ENABLED: ${VITE_LIVE_SESSIONS_ENABLED:-true}
         VITE_SOCRATIC_CHAT_ENABLED: ${VITE_SOCRATIC_CHAT_ENABLED:-true}
+        VITE_LOCAL_ATTENTION_ENABLED: ${VITE_LOCAL_ATTENTION_ENABLED:-false}
         VITE_TEAMS_MOCK_ENABLED: "false"
     image: clip-demo-web:latest
     restart: unless-stopped

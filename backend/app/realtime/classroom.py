@@ -47,7 +47,7 @@ import logging
 import os
 import random
 from collections import OrderedDict
-from collections.abc import AsyncIterator, Callable, Iterable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
@@ -242,6 +242,9 @@ class Classroom:
         self.close_recorder: CloseRecorder | None = None
         self.participant_recorder: ParticipantRecorder | None = None
         self.comprehension_source: ComprehensionSource | None = None
+        self.comprehension_refresher: (
+            Callable[[UUID, UUID], Awaitable[ClassComprehensionAlert | None]] | None
+        ) = None
         self.alert_recorder: AlertRecorder | None = None
         self.attention_recorder: AttentionRecorder | None = None
         self.checkpoint_notifier: Callable[[UUID, UUID, float], None] | None = None
@@ -817,16 +820,15 @@ class Classroom:
             if reason is not None:
                 return reason, None
             open_.accept(user_id, received_at)
-            # Answering is the task a breakout room is doing.
-            live.rooms.interacted(user_id)
             if self.recorder is None:
+                live.rooms.interacted(user_id)
                 return None, None
             saved = asyncio.get_running_loop().create_future()
             open_.saving.append(saved)
 
         try:
             async with asyncio.timeout(RECORD_TIMEOUT_SECONDS):
-                return None, await self.recorder.record(
+                feedback = await self.recorder.record(
                     Submission(
                         session_id=session_id,
                         question_id=answer.question_id,
@@ -837,6 +839,9 @@ class Classroom:
                         received_at=received_at,
                     )
                 )
+            async with live.lock:
+                live.rooms.interacted(user_id)
+            return None, feedback
         except Exception:
             log.exception("could not record an answer in session %s", session_id)
             async with live.lock:
@@ -1165,9 +1170,32 @@ class Classroom:
             if should_send_dynamic_prompt(scored.engagement):
                 await self._prompt_locked(live, scored.user_id, ENGAGEMENT_PROMPT_MESSAGE)
 
+    async def refresh_comprehension(self, session_id: UUID, question_id: UUID) -> None:
+        """Read committed late labels, persist once, then notify any staff still connected."""
+        if self.comprehension_refresher is None:
+            return
+        stored = await best_effort(
+            self.comprehension_refresher(session_id, question_id),
+            "refresh comprehension",
+            session_id,
+        )
+        if stored is None:
+            return
+        live = self._live.get(session_id)
+        if live is not None:
+            live.alerts.append(stored)
+        await self._tell_staff(
+            session_id,
+            ServerEventType.ALERT_RAISED,
+            _json(_raised(AlertKind.TOPIC_DIFFICULTY, stored)),
+        )
+
     async def _check_comprehension(self, live: LiveSession, closed: ClosedQuestion) -> None:
         """Raise a class comprehension alert to the lecturer once enough of
         the class has been classified partial or struggling on a question."""
+        if self.comprehension_refresher is not None:
+            await self.refresh_comprehension(closed.session_id, closed.question_id)
+            return
         if self.comprehension_source is None:
             return
         found = await best_effort(
