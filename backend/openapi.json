@@ -547,6 +547,18 @@
             "title": "Content Type",
             "type": "string"
           },
+          "course_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The course the material is filed under, if any.",
+            "title": "Course Code"
+          },
           "error": {
             "anyOf": [
               {
@@ -679,6 +691,38 @@
         ],
         "title": "MaterialStatus",
         "type": "string"
+      },
+      "MaterialUpdateRequest": {
+        "description": "Fields to change. Omit one to leave it; send course_code as null to\nfile the material under no course.",
+        "properties": {
+          "course_code": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Code"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          }
+        },
+        "title": "MaterialUpdateRequest",
+        "type": "object"
       },
       "MeetingEventIn": {
         "description": "A meeting started or ended. Teams can deliver an event more than once,\nso one that finds the session already in that state changes nothing.",
@@ -2367,6 +2411,41 @@
       }
     },
     "/api/v1/materials/{material_id}": {
+      "delete": {
+        "description": "Delete a material with its questions and what was read from it.\nRefused (409) while it is still processing, or once any of its questions\nhas been delivered in a class, whose history it is.",
+        "operationId": "remove_material_api_v1_materials__material_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "material_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Material Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Material",
+        "tags": [
+          "content"
+        ]
+      },
       "get": {
         "operationId": "get_material_api_v1_materials__material_id__get",
         "parameters": [
@@ -2404,6 +2483,58 @@
           }
         },
         "summary": "Get Material",
+        "tags": [
+          "content"
+        ]
+      },
+      "patch": {
+        "description": "Rename a material, or file it under a course: its questions are then\noffered only to that course's sessions. Send course_code as null to file\nit under none.",
+        "operationId": "edit_material_api_v1_materials__material_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "material_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Material Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaterialUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaterialOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Edit Material",
         "tags": [
           "content"
         ]

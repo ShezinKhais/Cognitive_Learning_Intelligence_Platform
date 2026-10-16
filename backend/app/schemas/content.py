@@ -80,6 +80,17 @@ class MaterialOut(BaseModel):
     uploaded_at: datetime
     warnings: list[str] = Field(default_factory=list)
     pages: list[MaterialPageOut] = Field(default_factory=list)
+    course_code: str | None = Field(
+        default=None, description="The course the material is filed under, if any."
+    )
+
+
+class MaterialUpdateRequest(BaseModel):
+    """Fields to change. Omit one to leave it; send course_code as null to
+    file the material under no course."""
+
+    filename: str | None = Field(default=None, min_length=1, max_length=255)
+    course_code: str | None = Field(default=None, max_length=20)
 
 
 class QuestionOut(BaseModel):
