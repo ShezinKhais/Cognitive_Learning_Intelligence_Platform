@@ -6,6 +6,8 @@ export interface PlannedFeature {
   /** What already works today, so nobody waits for what is there. */
   today: readonly string[]
   owner: string
+  /** The working preview shown on its page. */
+  demo: 'groups' | 'engagement' | 'progress' | 'governance'
 }
 
 export const PLANNED: Record<string, PlannedFeature> = {
@@ -22,6 +24,7 @@ export const PLANNED: Record<string, PlannedFeature> = {
       'A room that falls silent raises an alert on your live session page',
     ],
     owner: 'General CS (rooms), with the room interface to follow',
+    demo: 'groups',
   },
   engagement: {
     title: 'Engagement history',
@@ -35,6 +38,7 @@ export const PLANNED: Record<string, PlannedFeature> = {
       'It is not stored after the session yet, so there is no history to show',
     ],
     owner: 'BBIS (storing engagement), Cyber 1 (fairness rules)',
+    demo: 'engagement',
   },
   progress: {
     title: 'Progress over time',
@@ -45,6 +49,7 @@ export const PLANNED: Record<string, PlannedFeature> = {
     ],
     today: ['Each finished session has its own summary under My sessions'],
     owner: 'AI 1 (summaries), Cyber 1 (what a summary may say)',
+    demo: 'progress',
   },
   governance: {
     title: 'Data governance',
@@ -59,5 +64,6 @@ export const PLANNED: Record<string, PlannedFeature> = {
       'Every change made for a signed-in user is written to the audit log',
     ],
     owner: 'BBIS (retention and deletion requests), Cyber 2 (this console)',
+    demo: 'governance',
   },
 }

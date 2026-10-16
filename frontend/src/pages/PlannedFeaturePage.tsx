@@ -1,7 +1,17 @@
+import { lazy, Suspense } from 'react'
+
 import { PageBody, PageHeader, Panel, Tag } from '../components/ui/primitives'
 import type { PlannedFeature } from './plannedFeatures'
 
+const DEMOS = {
+  groups: lazy(() => import('../features/demos/BreakoutDemo')),
+  engagement: lazy(() => import('../features/demos/EngagementDemo')),
+  progress: lazy(() => import('../features/demos/ProgressDemo')),
+  governance: lazy(() => import('../features/demos/GovernanceDemo')),
+}
+
 export default function PlannedFeaturePage({ feature }: { feature: PlannedFeature }) {
+  const Demo = DEMOS[feature.demo]
   return (
     <>
       <PageHeader title={feature.title} description={feature.summary}>
@@ -10,8 +20,11 @@ export default function PlannedFeaturePage({ feature }: { feature: PlannedFeatur
         </div>
       </PageHeader>
       <PageBody>
-        <div className="grid gap-6 md:grid-cols-2">
-          <Panel title="What this will do">
+        <Suspense fallback={<p role="status" className="text-muted-foreground">Loading the demo…</p>}>
+          <Demo />
+        </Suspense>
+        <div className="mt-8 grid gap-6 md:grid-cols-2">
+          <Panel title="When it is built">
             <List items={feature.will} />
           </Panel>
           <Panel title="What works today">

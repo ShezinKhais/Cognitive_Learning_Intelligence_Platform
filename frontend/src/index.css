@@ -57,6 +57,9 @@
   --switch-background: #b6c0ca;
   --ring: #1f4e79;
 
+  /* Two series on one chart, checked for colour-blind separation. */
+  --series-1: #2f6fc4;
+  --series-2: #c2417f;
   --chart-1: #1f4e79;
   --chart-2: #1e7a4c;
   --chart-3: #a15c00;
@@ -85,6 +88,8 @@
   --accent: #1d3147;
   --accent-foreground: #cfe2f6;
   --highlight: #e9c949;
+  --series-1: #3d86dc;
+  --series-2: #d0629a;
   --highlight-foreground: #2b2300;
   --destructive: #f2867e;
   --success: #6fcf9b;
@@ -148,6 +153,8 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-highlight: var(--highlight);
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
   --color-highlight-foreground: var(--highlight-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
