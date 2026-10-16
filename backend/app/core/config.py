@@ -75,8 +75,10 @@ class Settings(BaseSettings):
     clip_log_level: str = "INFO"
     access_token_expire_minutes: int = 60
     # A refresh renews the token, never the sign-in: after this long the user
-    # signs in again, so a stolen token cannot be kept alive by refreshing it.
-    max_sign_in_hours: int = 12
+    # signs in again, so refreshing cannot keep a stolen token alive past it.
+    # A token that has been refreshed still works until its own expiry, as a
+    # token does after sign-out: tokens are not revoked.
+    max_sign_in_hours: int = Field(default=12, ge=1)
 
     # Database
     database_url: str = f"postgresql+asyncpg://clip:{DEV_DATABASE_PASSWORD}@localhost:5432/clip"

@@ -165,3 +165,13 @@ def test_a_token_from_before_auth_time_began_its_sign_in_when_issued() -> None:
     )
 
     assert decode_access_token(old, settings).auth_time == issued
+
+
+@pytest.mark.parametrize("hours", [0, -1])
+def test_a_sign_in_cap_below_an_hour_is_refused_at_startup(hours: int) -> None:
+    from pydantic import ValidationError
+
+    from app.core.config import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, max_sign_in_hours=hours)
