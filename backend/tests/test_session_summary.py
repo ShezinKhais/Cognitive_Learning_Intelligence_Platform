@@ -699,6 +699,11 @@ def test_lecturer_sentences_the_facts_do_not_allow_are_refused(summary):
     assert summary_problems(summary, two_facts())
 
 
+def test_partly_is_refused_in_the_lecturer_summary():
+    summary = "Odds ratios was hard: 4 of 6 answers were struggling, partly mastered."
+    assert any("partly" in p for p in summary_problems(summary, two_facts()))
+
+
 @pytest.mark.parametrize(
     "summary",
     [
@@ -707,6 +712,12 @@ def test_lecturer_sentences_the_facts_do_not_allow_are_refused(summary):
         "You have not mastered Logit. Odds ratios needs more work, so review slides 4 and 5.",
         "You mastered Logit. Odds ratios went perfectly, no need to review slides 4 and 5.",
         "You mastered Logit and Photosynthesis. Odds ratios needs more work, "
+        "so review slides 4 and 5.",
+        "You were uncertain on Logit across 2 questions. Odds ratios needs more work, "
+        "so review slides 4 and 5.",
+        "You partly mastered Logit across 2 questions. Odds ratios needs more work, "
+        "so review slides 4 and 5.",
+        "You mastered Logit across 2 questions. You were uncertain on Odds ratios, "
         "so review slides 4 and 5.",
     ],
 )
