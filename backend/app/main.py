@@ -196,6 +196,21 @@ def create_app() -> FastAPI:
         response.headers["X-Request-ID"] = rid
         return response
 
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        """Headers every response should carry.
+
+        No X-Frame-Options or frame-ancestors: a Teams tab is this app in an
+        iframe, so framing is deliberate. API replies hold student data and
+        are never cached; a route that sets its own Cache-Control keeps it.
+        """
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        if request.url.path.startswith(API_V1):
+            response.headers.setdefault("Cache-Control", "no-store")
+        return response
+
     register_error_handlers(app)
 
     app.include_router(api_router, prefix=API_V1)
