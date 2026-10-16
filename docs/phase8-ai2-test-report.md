@@ -1,5 +1,38 @@
 # Phase 8 AI2 — student interface and client-AI test report
 
+## Consolidated browser validation (2026-10-16)
+
+The additional tests and chat-notice contrast fix from validation branch
+`ai2-student-client-validation` (`b5bf429`) are now consolidated into this PR.
+No #158 backend, schema, deployment or integration changes are imported.
+
+The suite now has **23 cases per browser**, adding both-device/independent
+shutdown, remote monitoring-consent withdrawal without automatic restart,
+failed consent rechecks, missing VAD assets, insecure-context refusal, and axe
+WCAG 2 A/AA + 2.1 AA checks at 320px and in dark/high-contrast themes.
+
+The new scan reproduced a chat-notice contrast ratio of 4.44:1 against an
+expected 4.5:1. The notice now uses foreground text; no accessibility rule is
+disabled. Existing IME and reduced-motion fixes remain unchanged.
+
+On the combined #158 baseline plus these client changes, all **23 Chrome**,
+**23 Edge** and **23 Linux Chromium** cases passed, and 94 frontend tests and
+92 existing backend privacy/fairness regressions passed. Branded-browser
+evidence: [validation run 38894961240](https://github.com/ShezinKhais/Cognitive_Learning_Intelligence_Platform/actions/runs/38894961240).
+Those results describe that exact validation commit; this PR's rerun is the
+evidence for its own baseline, not inferred from the other branch.
+
+Synthetic 4x-CPU startup measurements in that CI run: Chrome camera 971ms /
+VAD 2371ms; Edge camera 1120ms / VAD 2730ms. These are smoke measurements, not
+real-device performance or gaze/voice accuracy results. Actual MediaPipe and
+ONNX runtimes process synthetic media; no real camera/mic is used.
+
+Real Teams/OS permissions, physical weak devices, human gaze/VAD accuracy,
+screen-reader/full-session navigation and independent Cyber 1 privacy/fairness
+sign-off remain manual gates. Automated axe scans are not WCAG certification.
+
+The sections below retain the earlier baseline and historical evidence.
+
 ## Scope and status
 
 Baseline: `main` at `5ddc0a3`. Tests mount the actual student attention controls

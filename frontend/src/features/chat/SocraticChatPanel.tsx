@@ -68,7 +68,7 @@ export function SocraticChatPanel({
             </p>
           </div>
         </div>
-        <p className="mt-3 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+        <p className="mt-3 rounded-lg bg-muted px-3 py-2 text-xs text-foreground">
           This assistant helps you reason through a topic. It will guide you instead of giving a final answer.
         </p>
       </header>

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import AxeBuilder from '@axe-core/playwright'
 
 async function optIn(page: Page, sensor: 'camera' | 'microphone') {
   await page.getByLabel(`I opt in to ${sensor} indicators`).check()
@@ -193,3 +194,97 @@ test('missing self-hosted face model stops capture and explains unavailability',
   await expect(page.getByText('Camera: unavailable. Microphone: off.')).toBeVisible({ timeout: 40_000 })
   await expect.poll(() => page.evaluate(() => (window as any).probe.tracks.every((t: MediaStreamTrack) => t.readyState === 'ended'))).toBe(true)
 })
+
+test('both sensors stop independently and disabling releases every track', async ({ page }) => {
+  await page.getByLabel('I opt in to camera indicators').check()
+  await page.getByLabel('I opt in to microphone indicators').check()
+  await page.getByRole('button', { name: 'Save monitoring and selected device opt-in' }).click()
+  await page.getByRole('button', { name: 'Enable selected' }).click()
+  await expect(page.getByRole('button', { name: 'Stop camera', exact: true })).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByRole('button', { name: 'Stop microphone', exact: true })).toBeVisible({ timeout: 60_000 })
+  await page.getByRole('button', { name: 'Stop camera', exact: true }).click()
+  await expect(page.getByText('Camera: off. Microphone: on.')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => (window as any).probe.tracks.map(
+    (track: MediaStreamTrack) => ({ kind: track.kind, state: track.readyState }),
+  ))).toContainEqual({ kind: 'audio', state: 'live' })
+  await page.getByRole('button', { name: 'Disable all now' }).click()
+  await expect.poll(() => page.evaluate(() => (window as any).probe.tracks.every(
+    (track: MediaStreamTrack) => track.readyState === 'ended',
+  ))).toBe(true)
+  await expect(page.getByRole('status')).toHaveText('Local sensing off')
+})
+
+for (const sensor of ['camera', 'microphone'] as const) {
+  test(`${sensor} stops on remote monitoring withdrawal and never auto-resumes`, async ({ page }) => {
+    await optIn(page, sensor)
+    await page.getByRole('button', { name: 'Enable selected' }).click()
+    await expect(page.getByRole('button', { name: `Stop ${sensor}`, exact: true })).toBeVisible({ timeout: 60_000 })
+    await page.route('**/api/v1/auth/me', route => route.fulfill({ json: {
+      id: 'student', role: 'student', consents: [],
+    } }))
+    await expect(page.getByRole('alert')).toContainText('Monitoring consent is unavailable', { timeout: 10_000 })
+    await expect.poll(() => page.evaluate(() => (window as any).probe.tracks.every(
+      (track: MediaStreamTrack) => track.readyState === 'ended',
+    ))).toBe(true)
+    const before = await page.evaluate(() => (window as any).probe.requests)
+    await page.getByRole('button', { name: 'Toggle session connection' }).click()
+    await page.getByRole('button', { name: 'Toggle session connection' }).click()
+    await expect(page.getByRole('status')).toHaveText('Local sensing off')
+    await expect(page.getByRole('button', { name: 'Enable selected' })).toBeDisabled()
+    expect(await page.evaluate(() => (window as any).probe.requests)).toBe(before)
+  })
+}
+
+test('failed consent recheck releases the microphone while chat stays usable', async ({ page }) => {
+  await optIn(page, 'microphone')
+  await page.getByRole('button', { name: 'Enable selected' }).click()
+  await expect(page.getByRole('button', { name: 'Stop microphone', exact: true })).toBeVisible({ timeout: 60_000 })
+  await page.route('**/api/v1/auth/me', route => route.fulfill({ status: 503, json: {} }))
+  await expect(page.getByRole('alert')).toContainText('Consent could not be verified', { timeout: 10_000 })
+  await expect.poll(() => page.evaluate(() => (window as any).probe.tracks.every(
+    (track: MediaStreamTrack) => track.readyState === 'ended',
+  ))).toBe(true)
+  await expect(page.getByLabel('Ask about this session')).toBeEnabled()
+})
+
+test('a missing VAD model releases audio and reports unavailability', async ({ page }) => {
+  await page.route('**/attention/vad/*.onnx', route => route.abort())
+  await optIn(page, 'microphone')
+  await page.getByRole('button', { name: 'Enable selected' }).click()
+  await expect(page.getByText('Camera: off. Microphone: unavailable.')).toBeVisible({ timeout: 40_000 })
+  await expect.poll(() => page.evaluate(() => (window as any).probe.tracks.every(
+    (track: MediaStreamTrack) => track.readyState === 'ended',
+  ))).toBe(true)
+})
+
+test('unsupported insecure context never requests a device', async ({ page }) => {
+  await optIn(page, 'camera')
+  await page.evaluate(() => Object.defineProperty(window, 'isSecureContext', { value: false }))
+  await page.getByRole('button', { name: 'Enable selected' }).click()
+  await expect(page.getByText('Camera: unavailable. Microphone: off.')).toBeVisible()
+  expect(await page.evaluate(() => (window as any).probe.requests)).toBe(0)
+})
+
+test('student controls pass automated WCAG checks at narrow width and during chat', async ({ page }, info) => {
+  await page.setViewportSize({ width: 320, height: 740 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  const builder = () => new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa'])
+  const initial = await builder().analyze()
+  await info.attach('accessibility-initial.json', { body: JSON.stringify(initial), contentType: 'application/json' })
+  expect(initial.violations).toEqual([])
+  await page.getByLabel('Ask about this session').fill('Help me reason')
+  await page.getByRole('button', { name: 'Ask', exact: true }).click()
+  await expect(page.getByText('Start with the first principle.')).toBeVisible()
+  const streaming = await builder().analyze()
+  await info.attach('accessibility-streaming.json', { body: JSON.stringify(streaming), contentType: 'application/json' })
+  expect(streaming.violations).toEqual([])
+  await page.getByRole('button', { name: 'Stop response', exact: true }).click()
+})
+
+for (const theme of ['dark', 'contrast']) {
+  test(`student controls have no automated WCAG violations in ${theme} theme`, async ({ page }) => {
+    await page.evaluate(theme => document.documentElement.classList.add(theme), theme)
+    const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()
+    expect(result.violations).toEqual([])
+  })
+}
