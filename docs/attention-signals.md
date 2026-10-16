@@ -40,8 +40,13 @@ Null always means "no reading". It never means zero, and it is stored as null.
    first signal in it. One signal cannot count for more time than really
    passed, and a minute's signals never add up to more than a minute.
 5. **Kept twice.**
-   - The latest signal is kept for engagement scoring (Cyber 1), as before.
+   - In a rolling window for engagement scoring (Cyber 1): the last two
+     minutes of the student's signals, each weighted by the time it covers.
+     See [signals-and-rooms.md](signals-and-rooms.md).
    - Every signal in the current clock minute is kept for storing.
+
+A signal dropped by the rate rule counts towards neither, nor towards the
+student's breakout room.
 
 ## Per-minute summaries
 
@@ -85,23 +90,24 @@ recorders, and `install_live_store` registers one.
   still stored if the withdrawal arrives during that write. It holds only
   signals sent while consent was given.
 - **Camera or microphone withdrawn:** those fields are removed from the minute
-  in progress, as well as from the latest signal.
+  in progress, as well as from the rolling window. Withdrawing the microphone
+  also clears what the student's breakout room heard from them.
 
 ## Refocus prompts
 
-Refocus prompts are unchanged and already private. They go only to the one
-student, outside the replayed sequence, with a per-student cap, an expiry and
-a recorded outcome. They are sent after missed questions, and when engagement
-scoring flags a student at a question close.
+Refocus prompts are private. They go only to the one student, outside the
+replayed sequence, with a per-student cap, an expiry and a recorded outcome.
+They are sent after missed questions, when engagement scoring flags a student
+at a question close, and between questions when the student's own signals
+have stayed low. That last one, and the breakout rooms the same signals feed,
+are described in [signals-and-rooms.md](signals-and-rooms.md).
 
 ## Not done yet
 
-- **Prompts from attention signals alone.** A prompt between questions, based
-  only on a student's attention minutes, needs Cyber 1 to agree a rule (#64).
 - **A class-level push to the lecturer.** The lecturer's panel (#141) polls
-  `GET /sessions/{id}/engagement`. With breakout rooms cut, `room.status` is
-  never sent. A pushed class summary would be a contract addition for the group
-  to agree.
+  `GET /sessions/{id}/engagement`. Breakout rooms are pushed as `room.status`,
+  but a pushed class engagement summary would be a contract addition for the
+  group to agree.
 - **Telling the client when consent is withdrawn.** The client finds out by
   polling. A `consent.changed` event would be a contract addition.
 - **Rejecting unknown fields in `signal.attention`.** They are dropped, not
@@ -109,5 +115,6 @@ scoring flags a student at a question close.
 - **A cap on WebSocket message size.** Uvicorn's default of 16 MiB applies.
   The deployment should start it with `--ws-max-size 65536`; the largest
   legitimate message (a free-text answer) is far smaller.
-- **Retention.** Purging summaries older than `DATA_RETENTION_DAYS` belongs to
-  the Phase 7 purge runner (#65).
+- **Retention.** The purge runner is scheduled (see [reports.md](reports.md)).
+  Purging summaries older than `DATA_RETENTION_DAYS` needs BBIS to register a
+  purge task for `attention_signal_summary`.

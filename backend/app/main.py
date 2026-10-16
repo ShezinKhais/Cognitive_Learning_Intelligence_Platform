@@ -24,8 +24,10 @@ from app.services.ai_gateway import get_ai_gateway
 from app.services.live_wiring import install_live_store
 from app.services.material_recovery import SWEEP_EVERY, sweep_stranded
 from app.services.meeting_directory import meetings
+from app.services.purge_runner import purge_expired_data
 from app.services.reports import get_report_queue
 from app.services.scheduler import ScheduledJob, Scheduler
+from app.services.teams_notifications import notifications
 from app.services.uploads import get_background_processor
 
 settings = get_settings()
@@ -55,6 +57,7 @@ def housekeeping() -> Scheduler:
     """The jobs this process runs on a timer, beside the live classes."""
     processor = get_background_processor()
     reports = get_report_queue()
+    purge_every = timedelta(hours=get_settings().retention_purge_interval_hours)
 
     async def expire_reports() -> None:
         # On the event loop, not in a thread: the queue is not thread-safe,
@@ -76,6 +79,14 @@ def housekeeping() -> Scheduler:
                 expire_reports,
                 first_after=timedelta(minutes=5),
             ),
+            # Deletes what has outlived DATA_RETENTION_DAYS, a batch at a
+            # time, giving way to any class that is running (purge_runner.py).
+            ScheduledJob(
+                "retention-purge",
+                purge_every,
+                purge_expired_data,
+                first_after=min(timedelta(minutes=10), purge_every),
+            ),
         ]
     )
 
@@ -83,12 +94,16 @@ def housekeeping() -> Scheduler:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if get_settings().teams_configured:
-        log.warning("Teams credentials set but the adapter is not implemented yet")
+        log.info(
+            "Teams bot configured; checkpoint notifications enabled=%s",
+            get_settings().teams_notifications_enabled,
+        )
     else:
         log.info("Running without Teams integration")
     # What a live session cannot store is reported now, not discovered
     # after a class.
     install_live_store(classroom)
+    classroom.checkpoint_notifier = notifications.enqueue
     meetings.directory = DatabaseMeetingDirectory()
     classroom.check_wiring()
     meetings.check_wiring()
@@ -109,6 +124,7 @@ async def lifespan(app: FastAPI):
     # Question windows and cycles are timers on this process. Sessions stay
     # active in the database and resume when the next process is touched.
     await classroom.shutdown()
+    await notifications.shutdown()
     # Material processing outlives the request that started it, so a shutdown
     # that does not wait for it kills a parse halfway and leaves the lecturer
     # watching a bar stuck at 20 per cent with no record of why.

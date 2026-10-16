@@ -36,6 +36,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -51,12 +52,15 @@ from app.core.security import TokenValidationError
 from app.realtime.accommodations import has_accommodation
 from app.realtime.classroom import classroom
 from app.realtime.hub import CLOSE_TRY_AGAIN_LATER, Connection, hub
+from app.realtime.rooms import Refusal
+from app.realtime.signals import Throttle
 from app.schemas.events import (
     AnswerSubmitPayload,
     AttentionSignalPayload,
     AuthPayload,
     ClientEventType,
     PromptAckPayload,
+    RoomConfirmPayload,
     ServerEvent,
     ServerEventType,
     parse_client_event,
@@ -78,12 +82,36 @@ CLOSE_AUTH_TIMEOUT = 4408
 # for the lifetime of the process.
 AUTH_TIMEOUT_SECONDS = 10
 
+# How many attention signals a socket may send together, as a tab does when it
+# wakes, before the interval in the settings applies.
+SIGNAL_BURST = 5
+# A student confirms a room once, or again after moving.
+ROOM_CONFIRM_EVERY_SECONDS = 2.0
+ROOM_CONFIRM_BURST = 3
+# A throttled sender is told so at most this often.
+THROTTLE_ERROR_EVERY_SECONDS = 10.0
+
 # The largest frame a client may send, text or binary. The biggest legitimate
 # event is a free-text answer (MAX_FREE_TEXT_LENGTH characters) in its envelope.
 # Anything larger is not a client of ours -- in particular, not a frame of video
 # or audio, which this server never accepts -- and the socket is closed.
 MAX_FRAME_BYTES = 64 * 1024
 CLOSE_TOO_BIG = 1009
+
+
+async def _throttled(websocket: WebSocket, throttle: Throttle, event: str) -> bool:
+    """Whether this socket is sending `event` too often. Its frame is then
+    dropped before it can take the session's lock, and the sender is told,
+    once for a whole burst."""
+    if throttle.allow():
+        return False
+    if throttle.should_tell(THROTTLE_ERROR_EVERY_SECONDS):
+        await _send(
+            websocket,
+            ServerEventType.ERROR,
+            {"code": "RATE_LIMITED", "detail": f"{event} is being sent too often"},
+        )
+    return True
 
 
 async def _send(
@@ -329,6 +357,10 @@ async def session_socket(
     # the hub dropped it first.
     seat: tuple[UUID, SessionStatus] | None = None
 
+    # Per socket, so one student's broken client costs nobody else anything.
+    signals = Throttle(settings.attention_signal_min_interval_seconds, SIGNAL_BURST, time.monotonic)
+    rooms = Throttle(ROOM_CONFIRM_EVERY_SECONDS, ROOM_CONFIRM_BURST, time.monotonic)
+
     try:
         if not await hub.connect(connection, last_seq, stream_id, welcome):
             return
@@ -405,6 +437,8 @@ async def session_socket(
                 # Optional client-side evidence for engagement scoring. Kept
                 # only for a student connected to a running session who has
                 # consented to engagement monitoring.
+                if await _throttled(websocket, signals, "signal.attention"):
+                    continue
                 if (
                     session_id is not None
                     and role is Role.STUDENT
@@ -431,7 +465,25 @@ async def session_socket(
                     )
                 continue
 
-            # Breakout rooms belong to a later workstream.
+            if isinstance(payload, RoomConfirmPayload):
+                # The student's own word for which breakout room they are in.
+                if await _throttled(websocket, rooms, "room.confirm"):
+                    continue
+                refused = (
+                    Refusal.NOT_IN_SESSION
+                    if session_id is None or role is not Role.STUDENT
+                    else await classroom.confirm_room(session_id, user_id, payload)
+                )
+                if refused is not None:
+                    await _send(
+                        websocket,
+                        ServerEventType.ERROR,
+                        {"code": refused.value, "detail": refused.detail},
+                    )
+                continue
+
+            # Every event type in the contract is handled above. This is for
+            # one added to the contract before its handler.
             await _send(
                 websocket,
                 ServerEventType.ERROR,

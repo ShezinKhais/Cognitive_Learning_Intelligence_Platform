@@ -10,10 +10,11 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Request, Response, status
 
-from app.api.deps import CurrentUser, DbSession, require_consents, require_roles
+from app.api.deps import AppSettings, CurrentUser, DbSession, require_consents, require_roles
 from app.api.v1.sessions import require_analytics_access
+from app.core.audit import audit_action
 from app.core.errors import ConflictError, NotFoundError
 from app.schemas.identity import ConsentType, Role
 from app.schemas.report import ReportJobOut, ReportStatus
@@ -36,8 +37,14 @@ _PRIVATE = {"Cache-Control": "no-store"}
     response_model=ReportJobOut,
     status_code=status.HTTP_202_ACCEPTED,
 )
+@audit_action("REPORT_REQUESTED")
 async def request_report(
-    session_id: UUID, principal: CurrentUser, db: DbSession, response: Response
+    session_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+    response: Response,
 ) -> ReportJobOut:
     """Start building a report of the session, during it or after it. Answers
     at once; poll GET /reports/{report_id} until it is ready or failed. Asking

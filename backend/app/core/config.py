@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     clip_secret_key: str = "change-me-in-production"
     clip_log_level: str = "INFO"
     access_token_expire_minutes: int = 60
+    # A refresh renews the token, never the sign-in: after this long the user
+    # signs in again, so refreshing cannot keep a stolen token alive past it.
+    # A token that has been refreshed still works until its own expiry, as a
+    # token does after sign-out: tokens are not revoked.
+    max_sign_in_hours: int = Field(default=12, ge=1)
 
     # Database
     database_url: str = f"postgresql+asyncpg://clip:{DEV_DATABASE_PASSWORD}@localhost:5432/clip"
@@ -165,6 +170,9 @@ class Settings(BaseSettings):
     client_id: str = ""
     client_secret: str = ""
     tenant_id: str = ""
+    teams_notifications_enabled: bool = False
+    teams_app_base_url: str = ""
+    teams_app_id: str = ""
 
     # Session behaviour. Once a question closes, the next is due after a fresh
     # random wait between these two, so the class cannot predict it. Both 0
@@ -184,6 +192,28 @@ class Settings(BaseSettings):
     # A student shown this many questions in a row without answering any is
     # sent a private prompt. 0 leaves prompting to engagement scoring alone.
     attention_prompt_after_missed_questions: int = Field(default=2, ge=0)
+
+    # Attention signals from a student's device. One is expected every five
+    # seconds; a socket may send one this often, after a short burst, before
+    # its frames are dropped unread.
+    attention_signal_min_interval_seconds: float = Field(default=2.0, ge=0)
+    # How often a running session looks at its signals and breakout rooms.
+    signal_watch_seconds: float = Field(default=10.0, gt=0)
+    # Signals may prompt a student only once this much of the last two minutes
+    # is covered by them, so nobody is judged on the first few seconds after
+    # turning a camera on. 0 turns prompting from signals off.
+    refocus_min_signal_seconds: float = Field(default=45.0, ge=0)
+    # The least time between two prompts sent to one student on the strength
+    # of their signals alone.
+    refocus_cooldown_seconds: float = Field(default=300.0, ge=0)
+
+    # Breakout rooms. How long one voice reading describes a member, how long
+    # a room may be silent before it is quiet and before the lecturer is told
+    # it needs attention, and how many rooms one session may have.
+    room_voice_fresh_seconds: float = Field(default=20.0, gt=0)
+    room_quiet_after_seconds: float = Field(default=60.0, gt=0)
+    room_needs_attention_after_seconds: float = Field(default=180.0, gt=0)
+    max_rooms_per_session: int = Field(default=50, ge=1)
 
     # Uploads (Includes CSV and XLSX for admin timetable/roster imports)
     max_upload_bytes: int = 52_428_800
@@ -210,11 +240,51 @@ class Settings(BaseSettings):
     max_material_chunks: int = 5000
 
     # Retention (UAE PDPL)
-    data_retention_days: int = 90
+    data_retention_days: int = Field(default=90, ge=1)
+    # How often the purge of data past that period runs, and how long one run
+    # may take. A run cut short carries on at the next.
+    retention_purge_interval_hours: float = Field(default=24.0, gt=0)
+    retention_purge_timeout_minutes: float = Field(default=30.0, gt=0)
 
     @property
     def is_production(self) -> bool:
         return self.clip_env.lower() in {"production", "prod"}
+
+    @model_validator(mode="after")
+    def _check_room_timing(self) -> "Settings":
+        """A room is quiet before it needs attention. With the two limits the
+        other way round no room could ever be reported as quiet."""
+        if self.room_needs_attention_after_seconds <= self.room_quiet_after_seconds:
+            raise ValueError(
+                "ROOM_NEEDS_ATTENTION_AFTER_SECONDS must be greater than ROOM_QUIET_AFTER_SECONDS"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_teams_notifications(self) -> "Settings":
+        if self.teams_notifications_enabled:
+            if not self.teams_configured:
+                raise ValueError(
+                    "Teams notifications require CLIENT_ID, CLIENT_SECRET and TENANT_ID"
+                )
+            from uuid import UUID
+
+            try:
+                UUID(self.teams_app_id)
+            except ValueError as exc:
+                raise ValueError("TEAMS_APP_ID must be the Teams app's id, a UUID") from exc
+            target = urlparse(self.teams_app_base_url)
+            if (
+                target.scheme != "https"
+                or not target.hostname
+                or target.username
+                or target.password
+                or target.query
+                or target.fragment
+                or target.path not in ("", "/")
+            ):
+                raise ValueError("TEAMS_APP_BASE_URL must be a public HTTPS origin")
+        return self
 
     @model_validator(mode="after")
     def _check_question_timing(self) -> "Settings":

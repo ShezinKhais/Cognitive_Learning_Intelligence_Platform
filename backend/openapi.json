@@ -2227,6 +2227,28 @@
         ]
       }
     },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "description": "Swap a still-valid access token for a fresh one.\n\nThe client calls this shortly before its token expires, so a class longer\nthan the token's lifetime is not interrupted by a sign-in. The account is\nchecked again, and the sign-in itself still ends max_sign_in_hours after\nthe password was typed. An expired token cannot be refreshed: the user\nsigns in again.",
+        "operationId": "refresh_api_v1_auth_refresh_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Refresh",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/health": {
       "get": {
         "operationId": "health_api_v1_health_get",
@@ -2876,6 +2898,7 @@
     },
     "/api/v1/sessions": {
       "get": {
+        "description": "The caller's sessions, newest first: a lecturer's own, a student's\ncourses', or every session for an admin.",
         "operationId": "list_sessions_api_v1_sessions_get",
         "parameters": [
           {
@@ -3547,6 +3570,7 @@
     },
     "/api/v1/sessions/{session_id}/responses": {
       "get": {
+        "description": "Every response in the session for its lecturer or an admin, and a\nstudent's own for a student.",
         "operationId": "list_responses_api_v1_sessions__session_id__responses_get",
         "parameters": [
           {

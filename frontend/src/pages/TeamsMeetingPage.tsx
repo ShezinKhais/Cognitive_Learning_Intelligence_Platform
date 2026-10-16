@@ -30,11 +30,11 @@ export default function TeamsMeetingPage() {
     )
   }
 
-  if (teams.context && teams.context.frameContext !== 'sidePanel') {
+  if (teams.context && !['sidePanel', 'task'].includes(teams.context.frameContext)) {
     return (
       <PanelStatus
         title="Open the in-meeting panel"
-        message="This student experience is designed for the Microsoft Teams meeting side panel."
+        message="Open C.L.I.P from the meeting side panel or a checkpoint notification."
       />
     )
   }
