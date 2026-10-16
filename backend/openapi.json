@@ -2745,7 +2745,7 @@
     },
     "/api/v1/governance/deletion-requests/{request_id}/execute": {
       "post": {
-        "description": "Carry out an approved request. Deleting a session removes everything it\nholds and cannot be undone. Erasing a student is not available yet.",
+        "description": "Carry out an approved request. Deleting a session removes everything it\nholds and cannot be undone. Erasing a student deletes their own data and\nanonymises their account.",
         "operationId": "execute_deletion_request_api_v1_governance_deletion_requests__request_id__execute_post",
         "parameters": [
           {

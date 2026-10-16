@@ -5,8 +5,8 @@ executed. The admin who made a request cannot approve it. Every step writes an
 audit entry, and the audit log and the request itself outlive what was deleted.
 
 Executing a session request deletes the session, and the database removes
-everything it holds. Executing a student request is not available yet: it waits
-on the decision whether a student's answers are deleted or anonymised.
+everything it holds. Executing a student request erases that student's own data
+and anonymises their account (see student_erasure.py).
 
 The caller owns the transaction and commits.
 """
@@ -25,6 +25,7 @@ from app.models.session import Session
 from app.models.student import Student
 from app.models.student_response import StudentResponse
 from app.repositories.audit_repository import record_event
+from app.services.student_erasure import erase_student
 
 MAX_REASON_LENGTH = 500
 OPEN_STATUSES = ("requested", "approved")
@@ -51,10 +52,6 @@ class WrongState(DeletionRequestError):
 
 
 class SelfApproval(DeletionRequestError):
-    pass
-
-
-class StudentErasureUnavailable(DeletionRequestError):
     pass
 
 
@@ -196,19 +193,10 @@ async def reject(
     return request
 
 
-async def execute(
-    db: AsyncSession, request_id: UUID, *, admin_id: UUID, ip_address: str | None = None
-) -> DeletionRequest:
-    """Carry out an approved request. A session already gone, for example purged
-    by retention, counts as done with nothing left to delete."""
-    request = await _locked(db, request_id)
-    _require(request, "approved", "executed")
-    if request.target_type == "student":
-        raise StudentErasureUnavailable("Erasing a student is not available yet.")
-
+async def _delete_session(db: AsyncSession, session_id: UUID) -> dict[str, int]:
     sessions = (
         await db.scalar(
-            select(func.count()).select_from(Session).where(Session.session_id == request.target_id)
+            select(func.count()).select_from(Session).where(Session.session_id == session_id)
         )
         or 0
     )
@@ -216,13 +204,27 @@ async def execute(
         await db.scalar(
             select(func.count())
             .select_from(StudentResponse)
-            .where(StudentResponse.session_id == request.target_id)
+            .where(StudentResponse.session_id == session_id)
         )
         or 0
     )
-    await db.execute(delete(Session).where(Session.session_id == request.target_id))
+    await db.execute(delete(Session).where(Session.session_id == session_id))
+    return {"sessions": sessions, "answers": answers}
 
-    outcome = {"sessions": sessions, "answers": answers}
+
+async def execute(
+    db: AsyncSession, request_id: UUID, *, admin_id: UUID, ip_address: str | None = None
+) -> DeletionRequest:
+    """Carry out an approved request. Something already gone, for example a
+    session purged by retention, counts as done with nothing left to delete."""
+    request = await _locked(db, request_id)
+    _require(request, "approved", "executed")
+
+    if request.target_type == "student":
+        outcome = (await erase_student(db, request.target_id)).as_counts()
+    else:
+        outcome = await _delete_session(db, request.target_id)
+
     request.status = "executed"
     request.executed_by = admin_id
     request.executed_at = datetime.now(UTC)

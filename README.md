@@ -202,7 +202,7 @@ and the correct answer is revealed when the window closes.
   roster syncs hold participant names, so they are purged on their own received date.
 - **Deletion requests.** An admin can ask for a session to be erased. A different admin
   approves the request before anything is deleted, and each step is recorded. Erasing a
-  single student is not available yet.
+  single student removes their own data and anonymises their account.
 - **Audit log.** Every deletion step and every purge is recorded with who did it, to what
   and how many rows, never with content. Nothing deletes the audit log: not retention, and
   not a deletion request.
@@ -321,7 +321,7 @@ will implement them.
 | GET | `/governance/deletion-requests/{request_id}` | admin | One deletion request |
 | POST | `/governance/deletion-requests/{request_id}/approve` | admin | Approve it (not the admin who asked) |
 | POST | `/governance/deletion-requests/{request_id}/reject` | admin | Reject it |
-| POST | `/governance/deletion-requests/{request_id}/execute` | admin | Carry out an approved request (sessions only, for now) |
+| POST | `/governance/deletion-requests/{request_id}/execute` | admin | Carry out an approved request (a session or a student) |
 | GET | `/governance/audit-log` | admin | Browse the audit log |
 | GET | `/governance/retention/preview` | admin | What the retention purge would delete |
 | POST | `/governance/retention/run` | admin | Run the purge (needs `"confirm": true`) |

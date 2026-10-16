@@ -44,10 +44,23 @@ approves it, and only then can it be executed.
 Rules: the admin who made a request cannot approve it; a target has at most one open
 request; a request is decided once; nothing is deleted before approval. Executing a
 **session** request deletes the session and everything it holds. A session already
-removed by retention counts as done. Executing a **student** request is not available
-yet and answers 501.
+removed by retention counts as done. Executing a **student** request erases that
+student's own data and anonymises their account (see 'Erasing a student').
 
 The request row outlives what it deleted: `target_id` is deliberately not a foreign key.
+
+## Erasing a student
+
+Executing an approved student request removes the student's own data: answers and the
+labels on them, attention prompts, engagement and attention summaries, attendance and
+missed questions, and the student profile with its accessibility and
+special-consideration notes. Alerts and recommendations keep their class-level content
+and lose only the link to the student. Teams ids and names that point at the account
+are cleared.
+
+The account row stays so the audit log and consent records keep a valid reference, but
+it identifies nobody: the name becomes "Deleted student", the email a placeholder, and
+sign-in is disabled. Audit entries and consent records are never touched.
 
 ## The audit log
 
@@ -88,7 +101,6 @@ All under `/api/v1/governance`, admin role and accepted terms required.
 | 404 `NOT_FOUND` | Unknown request, session or student |
 | 409 `CONFLICT` | An open request exists, or the request is in the wrong state |
 | 422 `VALIDATION_ERROR` | Bad input, or `confirm` is not `true` |
-| 501 `NOT_IMPLEMENTED` | Executing a student request |
 
 ## For the scheduled purge runner
 
@@ -99,8 +111,6 @@ used.
 
 ## Not done yet
 
-- Erasing a single student waits on the decision whether a student's answers are deleted
-  or anonymised.
 - Consent records and the `user` row are not touched by any of this yet.
 - Unresolved Teams user mappings also hold personal data and are not purged yet.
 

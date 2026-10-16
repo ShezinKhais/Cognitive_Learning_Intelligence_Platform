@@ -23,7 +23,6 @@ from app.services.deletion_requests import (
     AlreadyOpen,
     RequestNotFound,
     SelfApproval,
-    StudentErasureUnavailable,
     TargetNotFound,
     WrongState,
     approve,
@@ -112,6 +111,7 @@ async def world(db):
         second=second.user_id,
         session=session.session_id,
         student=student.student_id,
+        learner=learner.user_id,
     )
 
 
@@ -261,15 +261,18 @@ async def test_a_session_already_gone_counts_as_done(db, world):
     assert done.outcome == {"sessions": 0, "answers": 0}
 
 
-async def test_a_student_request_cannot_be_executed_yet(db, world):
+async def test_executing_a_student_request_erases_the_student(db, world):
     request = await request_session(db, world, target_type="student", target_id=world.student)
     await approve(db, request.request_id, admin_id=world.second)
 
-    with pytest.raises(StudentErasureUnavailable):
-        await execute(db, request.request_id, admin_id=world.second)
+    done = await execute(db, request.request_id, admin_id=world.second)
 
-    assert (await get_request(db, request.request_id)).status == "approved"
-    assert await count(db, Student, Student.student_id, world.student) == 1
+    assert done.status == "executed"
+    assert done.outcome["answers"] == 1
+    assert await count(db, Student, Student.student_id, world.student) == 0
+    assert await count(db, StudentResponse, StudentResponse.student_id, world.student) == 0
+    name = await db.scalar(select(User.name).where(User.user_id == world.learner))
+    assert name == "Deleted student"
 
 
 async def test_requests_can_be_listed_by_status(db, world):

@@ -28,7 +28,6 @@ from app.core.errors import (
     NotFoundError,
     PermissionError_,
     ValidationError,
-    not_implemented,
 )
 from app.repositories import audit_repository
 from app.schemas.common import Page
@@ -45,7 +44,6 @@ from app.services.deletion_requests import (
     AlreadyOpen,
     RequestNotFound,
     SelfApproval,
-    StudentErasureUnavailable,
     TargetNotFound,
     WrongState,
 )
@@ -71,8 +69,6 @@ def _translated() -> Iterator[None]:
         raise ConflictError(str(error)) from error
     except SelfApproval as error:
         raise PermissionError_(str(error)) from error
-    except StudentErasureUnavailable as error:
-        raise not_implemented("BBIS", "Phase 7") from error
     except ValueError as error:
         raise ValidationError(str(error)) from error
 
@@ -175,7 +171,8 @@ async def execute_deletion_request(
     request_id: UUID, request: Request, principal: CurrentUser, db: DbSession
 ) -> DeletionRequestOut:
     """Carry out an approved request. Deleting a session removes everything it
-    holds and cannot be undone. Erasing a student is not available yet."""
+    holds and cannot be undone. Erasing a student deletes their own data and
+    anonymises their account."""
     with _translated():
         done = await deletion_requests.execute(
             db, request_id, admin_id=principal.user_id, ip_address=_ip(request)

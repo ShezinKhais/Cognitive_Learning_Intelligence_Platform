@@ -8,14 +8,14 @@ wiring; the purge itself is tested, rolled back, in test_retention.py.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import delete, func, select, update
 
-from app.auth.store import ADMIN_ID, LECTURER_ID, STUDENT_ID
+from app.auth.store import ADMIN_ID, LECTURER_ID
 from app.core.config import get_settings
 from app.models.audit_log import AuditLog
 from app.models.deletion_request import DeletionRequest
@@ -26,7 +26,7 @@ from app.schemas.identity import Role
 from app.services import retention
 from app.services.retention import PurgeReport
 
-from .session_support import add_course, enrol, sign_in_as
+from .session_support import add_course, sign_in_as
 
 BASE = "/api/v1/governance"
 
@@ -73,6 +73,7 @@ async def governance(db, app):
         second=second,
         course=course,
         session=session.session_id,
+        created=created,
     )
     yield world
 
@@ -107,6 +108,31 @@ def file_request(world, **overrides):
 def decide(world, request_id: str, action: str, by: UUID | None = None):
     act_as(world, by or world.second)
     return world.client.post(f"{BASE}/deletion-requests/{request_id}/{action}")
+
+
+async def add_student(world) -> tuple[UUID, UUID]:
+    """A student of their own, so erasing one never touches the development account."""
+    user_id = uuid4()
+    async with world.factory() as seed:
+        seed.add(
+            User(
+                user_id=user_id,
+                name="Leaving Student",
+                role="student",
+                email=f"{user_id.hex}@t.test",
+            )
+        )
+        await seed.flush()
+        student = Student(
+            user_id=user_id,
+            course_id=world.course.id,
+            consent_status="granted",
+            enrolled_at=date.today(),
+        )
+        seed.add(student)
+        await seed.commit()
+    world.created["user"].append(user_id)
+    return user_id, student.student_id
 
 
 async def session_exists(world) -> bool:
@@ -273,22 +299,36 @@ async def test_an_unknown_status_filter_is_refused(governance):
     assert response.status_code == 422
 
 
-async def test_a_student_request_cannot_be_executed_yet(governance):
+async def test_a_student_request_erases_the_student_and_keeps_the_trail(governance):
     world = governance
-    await enrol(world.factory, world.course)
-    async with world.factory() as db:
-        student_id = await db.scalar(
-            select(Student.student_id).where(Student.user_id == STUDENT_ID)
-        )
-    request_id = file_request(world, target_type="student", target_id=str(student_id)).json()[
-        "request_id"
-    ]
+    student_user, student_id = await add_student(world)
+    created = file_request(world, target_type="student", target_id=str(student_id))
+    assert created.status_code == 201, created.text
+    request_id = created.json()["request_id"]
     assert decide(world, request_id, "approve").status_code == 200
 
-    response = decide(world, request_id, "execute")
+    done = decide(world, request_id, "execute")
 
-    assert response.status_code == 501
-    assert response.json()["error"]["code"] == "NOT_IMPLEMENTED"
+    assert done.status_code == 200, done.text
+    assert done.json()["status"] == "executed"
+    assert set(done.json()["outcome"]) == {
+        "answers",
+        "attention_summaries",
+        "prompts",
+        "engagement",
+        "teams_records",
+    }
+    async with world.factory() as db:
+        remaining = await db.scalar(
+            select(func.count()).select_from(Student).where(Student.student_id == student_id)
+        )
+        account = (
+            await db.execute(select(User.name, User.active).where(User.user_id == student_user))
+        ).one()
+    assert remaining == 0
+    assert (account.name, account.active) == ("Deleted student", False)
+    trail = world.client.get(f"{BASE}/audit-log", params={"target_id": str(student_id)})
+    assert trail.json()["total"] == 3
 
 
 # -- audit log --------------------------------------------------------------------
@@ -318,7 +358,7 @@ async def test_the_audit_log_can_be_filtered_and_is_paged(governance):
 
 async def test_the_preview_counts_but_deletes_nothing(governance):
     world = governance
-    old = datetime.now(UTC) - timedelta(days=100)
+    old = datetime.now(UTC) - timedelta(days=get_settings().data_retention_days + 10)
     async with world.factory() as db:
         await db.execute(
             update(SessionModel)
