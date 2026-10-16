@@ -9,6 +9,10 @@ const ACCESS_TOKEN_EXPIRES_KEY = 'clip_access_token_expires_at'
 // that runs past the token's lifetime is not ended by a sign-in. The sign-in
 // itself still ends when the backend's cap says so.
 const REFRESH_BEFORE_MS = 5 * 60 * 1000
+// A refresh that failed for any reason but a refused token (offline, a
+// restart) is tried again this often until the token expires. Once it has
+// expired the backend will not renew it, so waiting for a 401 is too late.
+const REFRESH_RETRY_MS = 30 * 1000
 
 export type Role = 'student' | 'lecturer' | 'admin'
 
@@ -82,12 +86,16 @@ export function clearAccessToken(): void {
 
 let refreshTimer: ReturnType<typeof setTimeout> | undefined
 
-function scheduleRefresh(): void {
+function scheduleRefresh(retry = false): void {
   if (refreshTimer !== undefined) clearTimeout(refreshTimer)
   refreshTimer = undefined
   const expiresAt = Number(window.localStorage.getItem(ACCESS_TOKEN_EXPIRES_KEY))
   if (!getAccessToken() || !expiresAt) return
-  const wait = Math.max(0, expiresAt - REFRESH_BEFORE_MS - Date.now())
+  const left = expiresAt - Date.now()
+  if (retry && left <= 0) return
+  const wait = retry
+    ? Math.min(REFRESH_RETRY_MS, left)
+    : Math.max(0, left - REFRESH_BEFORE_MS)
   refreshTimer = setTimeout(() => void refreshAccessToken(), wait)
 }
 
@@ -119,11 +127,16 @@ async function renewToken(): Promise<string | null> {
         headers: { Authorization: `Bearer ${current}` },
       })
     } catch {
-      // Offline for a moment: the token is kept, and a later 401 tries again.
+      // Offline for a moment: the token is kept and the refresh tried again.
+      scheduleRefresh(true)
+      return null
+    }
+    if (response.status === 401) {
+      clearAccessToken()
       return null
     }
     if (!response.ok) {
-      if (response.status === 401) clearAccessToken()
+      scheduleRefresh(true)
       return null
     }
     const renewed = (await response.json()) as LoginResponse
@@ -143,7 +156,8 @@ scheduleRefresh()
 /**
  * fetch with the caller's token. A 401 is answered by one refresh and one
  * retry, since the token may have run out while the tab slept, before the
- * user is sent to sign in.
+ * user is sent to sign in. The retry sends the body again, which holds for
+ * every caller today (JSON and FormData); a stream could not be re-sent.
  */
 export async function authenticatedFetch(
   path: string,

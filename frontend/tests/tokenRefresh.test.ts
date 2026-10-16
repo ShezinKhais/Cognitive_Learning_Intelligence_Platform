@@ -22,6 +22,11 @@ let valid = new Set<string>()
 let refreshes = 0
 let issued = 0
 let requests: string[] = []
+// Refreshes that fail before the backend answers: 'offline' throws, a number
+// is that status. Taken in order, then refreshes work again.
+let failures: Array<'offline' | number> = []
+// Off when timers are mocked, where a real wait would never end.
+let slowRefresh = true
 
 function bearer(init?: RequestInit): string {
   return new Headers(init?.headers).get('Authorization')?.replace('Bearer ', '') ?? ''
@@ -36,7 +41,10 @@ globalThis.fetch = (async (url: string, init?: RequestInit) => {
   }
   if (path.endsWith('/auth/refresh')) {
     refreshes += 1
-    await new Promise((resolve) => setTimeout(resolve, 5))
+    if (slowRefresh) await new Promise((resolve) => setTimeout(resolve, 5))
+    const failure = failures.shift()
+    if (failure === 'offline') throw new TypeError('Failed to fetch')
+    if (failure !== undefined) return new Response('{}', { status: failure })
     if (!valid.has(token)) return new Response('{}', { status: 401 })
     valid.delete(token)
     issued += 1
@@ -115,4 +123,62 @@ test('the token is refreshed before it expires, without waiting for a 401', asyn
   assert.equal(refreshes, 1)
   assert.ok(getAccessToken()?.startsWith('fresh-'))
   clearAccessToken()
+})
+
+test('a refresh that fails while the token is valid is tried again until one works', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1_000_000 })
+  slowRefresh = false
+  valid = new Set(['due'])
+  refreshes = 0
+  failures = ['offline', 503]
+  const settle = async () => {
+    for (let i = 0; i < 10; i += 1) await new Promise((resolve) => setImmediate(resolve))
+  }
+
+  // Two minutes left, so the refresh is due at once.
+  saveAccessToken('due', 120)
+  t.mock.timers.tick(0)
+  await settle()
+  assert.equal(refreshes, 1)
+  assert.equal(getAccessToken(), 'due')
+
+  t.mock.timers.tick(30_000)
+  await settle()
+  assert.equal(refreshes, 2)
+  assert.equal(getAccessToken(), 'due')
+
+  t.mock.timers.tick(30_000)
+  await settle()
+  assert.equal(refreshes, 3)
+  assert.ok(getAccessToken()?.startsWith('fresh-'))
+
+  clearAccessToken()
+  slowRefresh = true
+})
+
+test('a failed refresh is not retried once the token has expired', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 2_000_000 })
+  slowRefresh = false
+  valid = new Set(['nearly-gone'])
+  refreshes = 0
+  failures = ['offline', 'offline', 'offline']
+  const settle = async () => {
+    for (let i = 0; i < 10; i += 1) await new Promise((resolve) => setImmediate(resolve))
+  }
+
+  // Forty seconds left: one try now, one retry at 30s, none after expiry.
+  saveAccessToken('nearly-gone', 40)
+  t.mock.timers.tick(0)
+  await settle()
+  t.mock.timers.tick(30_000)
+  await settle()
+  t.mock.timers.tick(10_000)
+  await settle()
+  t.mock.timers.tick(60_000)
+  await settle()
+
+  assert.equal(refreshes, 3)
+  failures = []
+  clearAccessToken()
+  slowRefresh = true
 })
