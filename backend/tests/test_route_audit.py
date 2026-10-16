@@ -28,6 +28,10 @@ NOT_AUDITED = {
     # Nobody is signed in yet. Failed attempts and lockouts are logged and
     # counted by the login itself.
     ("POST", "/api/v1/auth/login"),
+    # Renews the caller's own token and changes nothing that is kept. Every
+    # refresh and refusal is in the security log, and an audit row an hour
+    # per signed-in user would bury the changes the log is for.
+    ("POST", "/api/v1/auth/refresh"),
     # Authenticated by Bot Framework, not a user; acts through the meeting
     # routes' service, and each activity is logged.
     ("POST", "/api/v1/teams/messages"),
