@@ -49,6 +49,10 @@ jobs:
             -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" \
             -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
 
+      - name: Install Tesseract
+        # So test_real_tesseract_reads_a_scanned_page runs the real OCR path
+        # here instead of skipping it.
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr
       - run: pip install -e ".[dev]"
       - name: Apply database migrations
         run: alembic upgrade head
@@ -70,6 +74,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - run: npm test
       # tsconfig.json is a solution file: "files": [] plus references. Under
       # that layout `tsc --noEmit` compiles nothing and passes on a file with a
       # blatant type error, so the typecheck has to go through the references.

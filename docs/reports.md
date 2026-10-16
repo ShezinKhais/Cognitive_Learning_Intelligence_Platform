@@ -1,8 +1,8 @@
 # Session reports and scheduled jobs
 
 Owner: General CS, Phase 7 (#65). Code: `backend/app/api/v1/reports.py`,
-`backend/app/services/reports.py`, `backend/app/services/report_pdf.py` and
-`backend/app/services/scheduler.py`.
+`backend/app/services/reports.py`, `backend/app/services/report_pdf.py`,
+`backend/app/services/scheduler.py` and `backend/app/services/purge_runner.py`.
 
 A lecturer asks for a report of a session. It is built in the background, and
 they follow it until it is ready, then read it as JSON or download it as a PDF.
@@ -72,16 +72,147 @@ lifespan (`housekeeping()` in `main.py`):
 |---|---|---|
 | `stranded-material-sweep` | 5 minutes | Ends materials whose processing stopped without recording it. This replaces the hand-written loop it used to be. |
 | `expire-reports` | 5 minutes | Drops reports that finished over an hour ago. |
+| `retention-purge` | `RETENTION_PURGE_INTERVAL_HOURS` (24 hours by default) | Deletes data past `DATA_RETENTION_DAYS`, see below. |
 
 A job never overlaps itself. One that raises is logged and tried again at its
 next turn. Stopping cancels a run in progress. A job must await its I/O and
 move CPU-bound work to a thread.
 
+`expire-reports` first runs after 5 minutes. `retention-purge` first runs
+after 10 minutes, or after one interval if that is shorter. The scheduler puts
+no time limit on a job, so the purge keeps its own, described below.
+
+## The retention purge
+
+The README promises that session data is deleted after `DATA_RETENTION_DAYS`.
+The `retention-purge` job keeps that promise on a timer. It runs
+`purge_expired_data()` in `purge_runner.py`, which runs the purge runner
+(`PurgeRunner`) and holds it to `RETENTION_PURGE_TIMEOUT_MINUTES`. The runner
+works through purge tasks. Each task knows one kind of data and deletes a
+bounded batch of it, oldest first.
+
+How a run goes:
+
+1. The cutoff is now minus `DATA_RETENTION_DAYS`. The period is read afresh
+   each run. A period of zero or less is refused as a misconfiguration and is
+   never read as "delete everything"; the setting itself must be at least 1.
+2. Tasks run in name order. Each is called with the cutoff and a limit of 500,
+   and called again until it returns fewer than 500.
+3. Before each batch the runner checks whether a session is running. If one
+   is, the whole run stops, and every task deletes oldest first, so the next
+   attempt carries on. A run that gave way to a class is tried again every 15
+   minutes (`RETRY_AFTER_CLASS`), in the gaps between classes, until the next
+   scheduled run is 15 minutes away, so a class that is always on when the
+   run is due cannot postpone the purge for good. After a full batch the
+   runner pauses for 0.05 seconds, so the database lock and the event loop
+   are never held for long.
+4. A task gets at most 500 batches in a run. One that is still not empty is
+   marked stopped early, and the other tasks still run.
+5. A task that raises is logged, listed as failed and skipped. What it deleted
+   before failing still counts.
+
+When the time limit is reached, the run is stopped. It has deleted only whole
+batches, the next run continues, and a warning saying so is logged. That is not
+counted as a failure.
+
+A run that finishes logs one line that a governance review can find, for
+example `retention_purge deleted 12 item(s) older than 2025-12-02 (stored-uploads: 12)`.
+A run that gave way to a class ends the line with `stopped early, the next run
+continues`, and logs again on each retry.
+
+The one task the application registers is `stored-uploads`
+(`StoredUploadPurge`). It deletes lecture files left in `UPLOAD_STORAGE_DIR`
+that were last changed before the cutoff, and an upload left under its
+temporary name for more than a day. A file is normally deleted as soon as its
+material has been processed, so what is left is the file of a material that
+failed in a way that might have been temporary.
+
+**What is not purged yet.** No database table is purged. Those tasks are BBIS's
+to register. Until they are, `DATA_RETENTION_DAYS` is kept for upload files and
+not for the database, and these tables keep their rows indefinitely:
+
+| Table | What it holds |
+|---|---|
+| `student_response`, `comprehension_result`, `missed_response` | Answers, their labels, and questions a student did not answer |
+| `engagement_record`, `attention_signal_summary`, `dynamic_prompt` | Engagement scores, attention summaries and the prompts sent |
+| `ai_alert`, `ai_recommendation` | Comprehension and room alerts, and what was suggested |
+| `delivered_question`, `session_activity`, `session_participant`, `breakout_room` | What each session delivered, its timeline, who joined, and rooms |
+| `teams_roster_sync`, `teams_participant_mapping` | Teams roster snapshots and meeting participants |
+
+`audit_log` is excluded on purpose: it is the record that the purge ran.
+BBIS's session purge (`Nour-Phase-7`, `services/retention.py`) deletes
+expired sessions and roster syncs when an administrator runs it; registering
+it here as batched tasks puts those tables on the daily run.
+
+### Registering a purge task (BBIS)
+
+A task has a `name` and an `async purge(cutoff, limit) -> int`. `purge`
+deletes at most `limit` items last changed before `cutoff`, oldest first,
+commits, and returns how many it deleted. Returning fewer than `limit` says
+there is nothing left. Register it before requests arrive, with
+`get_purge_runner().register(task)` from `app/services/purge_runner.py`. A name
+that is already registered is refused.
+
+The example shows the shape of a task. It is not a decision about which tables
+to purge.
+
+```python
+from datetime import datetime
+
+from sqlalchemy import delete, select
+
+from app.core.database import get_session_factory
+from app.models.attention_signal_summary import AttentionSignalSummary
+from app.services.purge_runner import get_purge_runner
+
+
+class AttentionSummaryPurge:
+    name = "attention-summaries"
+
+    async def purge(self, cutoff: datetime, limit: int) -> int:
+        async with get_session_factory()() as db:
+            ids = (
+                await db.scalars(
+                    select(AttentionSignalSummary.summary_id)
+                    .where(AttentionSignalSummary.window_start < cutoff)
+                    .order_by(AttentionSignalSummary.window_start)
+                    .limit(limit)
+                )
+            ).all()
+            if not ids:
+                return 0
+            await db.execute(
+                delete(AttentionSignalSummary).where(AttentionSignalSummary.summary_id.in_(ids))
+            )
+            await db.commit()
+            return len(ids)
+
+
+get_purge_runner().register(AttentionSummaryPurge())
+```
+
+Open a session per call and hold nothing between calls. Delete child rows
+before the parents they point at, and decide what "last changed" means for each
+table.
+
+### Settings
+
+All are in `backend/app/core/config.py` and can be set in `backend/.env`.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `DATA_RETENTION_DAYS` | 90 | Data older than this is deleted by the purge. At least 1. |
+| `RETENTION_PURGE_INTERVAL_HOURS` | 24.0 | How often the purge runs. |
+| `RETENTION_PURGE_TIMEOUT_MINUTES` | 30.0 | How long one run may take. A run cut short carries on at the next. |
+
+Fixed in code: a batch of 500, 500 batches per task in a run, and a pause of
+0.05 seconds between batches.
+
 ## Not done yet
 
-- **The retention purge.** BBIS's `purge_expired()` (`retention.py`) is on
-  `Nour-Phase-7` and not yet in a PR. Once it merges, scheduling it is one
-  `ScheduledJob` in `housekeeping()`, run daily.
+- **Purging the database.** The runner is scheduled and purges upload files.
+  The tasks for the database tables are BBIS's to register (see "The
+  retention purge").
 - **AI-written summaries in the report.** Luna's `LecturerSummariser` (#138)
   can add a summary paragraph once it merges. Its calls go through the AI
   gateway at background priority.

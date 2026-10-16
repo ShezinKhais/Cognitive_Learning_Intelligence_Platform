@@ -12,9 +12,17 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, UploadFile, status
+from fastapi import APIRouter, Depends, Request, UploadFile, status
 
-from app.api.deps import CurrentUser, DbSession, Paginated, require_consents, require_roles
+from app.api.deps import (
+    AppSettings,
+    CurrentUser,
+    DbSession,
+    Paginated,
+    require_consents,
+    require_roles,
+)
+from app.core.audit import audit_action
 from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.repositories.material_repository import MaterialRepository
 from app.repositories.question_repository import QuestionRepository
@@ -188,11 +196,14 @@ async def list_questions(
 
 
 @router.patch("/{material_id}/questions/{question_id}", response_model=QuestionOut)
+@audit_action("QUESTION_REVIEWED")
 async def review_question(
     material_id: UUID,
     question_id: UUID,
     payload: QuestionReviewRequest,
     principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
     db: DbSession,
 ) -> QuestionOut:
     """Approve, edit or reject a generated question. No question reaches a
@@ -226,10 +237,13 @@ async def review_question(
     response_model=QuestionOut,
     status_code=status.HTTP_201_CREATED,
 )
+@audit_action("QUESTION_REGENERATED")
 async def regenerate_question(
     material_id: UUID,
     question_id: UUID,
     principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
     db: DbSession,
 ) -> QuestionOut:
     """Replace a draft question with a newly generated one from the same page.
@@ -245,10 +259,13 @@ async def regenerate_question(
 
 
 @router.post("/{material_id}/questions:bulk", response_model=QuestionBulkReviewResult)
+@audit_action("QUESTIONS_BULK_REVIEWED")
 async def bulk_review_questions(
     material_id: UUID,
     payload: QuestionBulkReviewRequest,
     principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
     db: DbSession,
 ) -> QuestionBulkReviewResult:
     """Backs the 'approve all' and 'stage N questions' actions."""

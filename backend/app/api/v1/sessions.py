@@ -24,6 +24,7 @@ from app.api.deps import (
     require_roles,
 )
 from app.auth.service import granted_consents
+from app.core.audit import audit_action
 from app.core.errors import NotFoundError, not_implemented
 from app.realtime.classroom import classroom
 from app.repositories.session_repository import SessionRepository
@@ -43,7 +44,7 @@ from app.schemas.session import (
     StudentSessionSummary,
     TopicDifficultyOut,
 )
-from app.services import alert_store, session_lifecycle
+from app.services import alert_store, session_lifecycle, session_reads
 from app.services.engagement_view import staff_confidence, staff_score, staff_signals
 from app.services.session_access import may_view_session_analytics
 from app.services.student_report import build_student_summary, record_staff_view
@@ -66,9 +67,12 @@ router = APIRouter(
     status_code=status.HTTP_201_CREATED,
     dependencies=_staff,
 )
+@audit_action("SESSION_CREATED")
 async def create_session(
     payload: SessionCreateRequest,
     principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
     db: DbSession,
 ) -> SessionOut:
     """Prepare a session for a course. It starts once questions are staged."""
@@ -81,7 +85,9 @@ async def list_sessions(
     db: DbSession,
     page: Paginated,
 ) -> Page[SessionOut]:
-    raise not_implemented("BBIS", "Phase 3")
+    """The caller's sessions, newest first: a lecturer's own, a student's
+    courses', or every session for an admin."""
+    return await session_reads.list_sessions(db, principal, page.limit, page.offset)
 
 
 @router.get("/{session_id}", response_model=SessionOut)
@@ -90,7 +96,7 @@ async def get_session(
     principal: CurrentUser,
     db: DbSession,
 ) -> SessionOut:
-    raise not_implemented("BBIS", "Phase 3")
+    return await session_reads.get_session(db, principal, session_id)
 
 
 @router.get(
@@ -124,15 +130,18 @@ async def session_readiness(
     principal: CurrentUser,
     db: DbSession,
 ) -> SessionReadinessOut:
-    """Whether the session's material has processed and approved questions are
-    staged. Start is refused, with the same blockers, until ready is true."""
+    """What the session has to deliver: its material and staged questions.
+    Each issue is a warning; none of them stops the session from starting."""
     return await session_lifecycle.session_readiness(db, principal, session_id)
 
 
 @router.post("/{session_id}/start", response_model=SessionOut, dependencies=_staff)
+@audit_action("SESSION_STARTED")
 async def start_session(
     session_id: UUID,
     principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
     db: DbSession,
 ) -> SessionOut:
     """Blocked until the session is ready. GET /readiness says why it is not."""
@@ -140,9 +149,12 @@ async def start_session(
 
 
 @router.post("/{session_id}/pause", response_model=SessionOut, dependencies=_staff)
+@audit_action("SESSION_PAUSED")
 async def pause_session(
     session_id: UUID,
     principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
     db: DbSession,
 ) -> SessionOut:
     """Holds the question cycle of an active session until it resumes. A question
@@ -151,9 +163,12 @@ async def pause_session(
 
 
 @router.post("/{session_id}/resume", response_model=SessionOut, dependencies=_staff)
+@audit_action("SESSION_RESUMED")
 async def resume_session(
     session_id: UUID,
     principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
     db: DbSession,
 ) -> SessionOut:
     """Resumes a paused session. The next scheduled question comes after whatever
@@ -162,9 +177,12 @@ async def resume_session(
 
 
 @router.post("/{session_id}/end", response_model=SessionOut, dependencies=_staff)
+@audit_action("SESSION_ENDED")
 async def end_session(
     session_id: UUID,
     principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
     db: DbSession,
 ) -> SessionOut:
     """Ends an active session, or cancels one that has not started."""
@@ -176,10 +194,13 @@ async def end_session(
     status_code=status.HTTP_202_ACCEPTED,
     dependencies=_staff,
 )
+@audit_action("QUESTION_DELIVERED")
 async def deliver_question(
     session_id: UUID,
     question_id: UUID,
     principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
     db: DbSession,
 ) -> dict[str, str]:
     """Lecturer's manual trigger. The scheduler uses the same internal path."""
@@ -193,7 +214,9 @@ async def list_responses(
     db: DbSession,
     page: Paginated,
 ) -> Page[ResponseOut]:
-    raise not_implemented("BBIS", "Phase 3")
+    """Every response in the session for its lecturer or an admin, and a
+    student's own for a student."""
+    return await session_reads.list_responses(db, principal, session_id, page.limit, page.offset)
 
 
 @router.get("/{session_id}/engagement", response_model=list[EngagementOut], dependencies=_staff)
@@ -250,10 +273,13 @@ async def session_alerts(
     response_model=AlertOut,
     dependencies=_staff,
 )
+@audit_action("ALERT_ACKNOWLEDGED")
 async def acknowledge_session_alert(
     session_id: UUID,
     alert_id: UUID,
     principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
     db: DbSession,
 ) -> AlertOut:
     """Mark an alert as seen. The lecturer who runs the session, or an admin.

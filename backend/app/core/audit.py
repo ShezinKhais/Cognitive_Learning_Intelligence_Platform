@@ -9,6 +9,7 @@ from inspect import signature
 from typing import Any, ParamSpec, TypeVar
 
 from fastapi import Request
+from sqlalchemy import event
 
 from app.models.audit_log import AuditLog
 
@@ -60,8 +61,6 @@ def audit_action(
             if user_id is None:
                 raise RuntimeError("Audited endpoints require a principal with user_id.")
 
-            result = await func(*args, **kwargs)
-
             ip_address = "unknown"
 
             if isinstance(request, Request) and request.client is not None:
@@ -71,18 +70,40 @@ def audit_action(
                 if db is None:
                     raise RuntimeError("Production audited endpoints must receive a db parameter.")
 
-                db.add(
-                    AuditLog(
-                        user_id=user_id,
-                        action_type=action_type,
-                        ip_address=ip_address,
-                    )
-                )
+                recorded = False
 
-                await db.flush()
-                if commit:
-                    await db.commit()
+                def record(session: Any) -> None:
+                    nonlocal recorded
+                    # A released savepoint is not the durable endpoint commit.
+                    if getattr(session, "in_nested_transaction", lambda: False)():
+                        return
+                    if recorded:
+                        return
+                    session.add(
+                        AuditLog(
+                            user_id=user_id,
+                            action_type=action_type,
+                            ip_address=ip_address,
+                        )
+                    )
+                    recorded = True
+
+                # Services may commit before returning (and then announce live
+                # changes). Join that commit, not a second transaction afterward.
+                sync = getattr(db, "sync_session", None)
+                if sync is not None:
+                    event.listen(sync, "before_commit", record)
+                try:
+                    result = await func(*args, **kwargs)
+                    record(db)
+                    await db.flush()
+                    if commit:
+                        await db.commit()
+                finally:
+                    if sync is not None:
+                        event.remove(sync, "before_commit", record)
             else:
+                result = await func(*args, **kwargs)
                 log.info(
                     "audit_event=%s user_id=%s ip_address=%s",
                     action_type,
@@ -92,6 +113,8 @@ def audit_action(
 
             return result
 
+        # Read by the test that every state-changing route is audited.
+        wrapper.audit_action_type = action_type  # type: ignore[attr-defined]
         return wrapper
 
     return decorator

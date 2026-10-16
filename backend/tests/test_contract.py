@@ -16,6 +16,7 @@ EXPECTED_PATHS = {
     "/api/v1/health",
     "/api/v1/ready",
     "/api/v1/auth/login",
+    "/api/v1/auth/refresh",
     "/api/v1/auth/me",
     "/api/v1/auth/consent",
     "/api/v1/admin/timetable",

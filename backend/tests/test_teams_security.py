@@ -1,6 +1,6 @@
 """Cyber 1, Phase 4: the Teams surfaces' permissions, identities and access.
 
-Each section is a finding in CYBER1_PHASE4_TEAMS_SECURITY_REVIEW.md, tested
+Each section is a finding in docs/security/phase4-teams-security-review.md, tested
 from the attacker's side: an activity from the wrong channel or tenant, a
 lecturer the bot should no longer act for, a caller the meeting routes
 should refuse, and a manifest asking for more than the app uses.
@@ -418,7 +418,9 @@ def test_the_manifest_asks_only_for_what_the_app_uses() -> None:
     manifest = json.loads(MANIFEST.read_text("utf-8"))
 
     assert manifest["permissions"] == ["identity"]
-    assert "devicePermissions" not in manifest
+    # Camera and microphone, for AI 2's local attention sensors (#136), which ask
+    # first, show while they run and turn off in one click. Nothing else.
+    assert manifest["devicePermissions"] == ["media"]
     assert [bot["scopes"] for bot in manifest["bots"]] == [["groupChat"]]
     assert {
         (p["name"], p["type"]) for p in manifest["authorization"]["permissions"]["resourceSpecific"]

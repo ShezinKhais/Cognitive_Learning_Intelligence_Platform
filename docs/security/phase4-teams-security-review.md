@@ -175,7 +175,7 @@ app.
 | Entry | Decision | Why |
 |---|---|---|
 | `permissions: messageTeamMembers` | Removed | Nothing sends proactive direct messages. In-meeting notifications use the RSC permission below |
-| `devicePermissions: ["media"]` | Removed | Nothing uses camera or microphone until Phase 6 (optional). Re-add it with AI 2's Phase 6 permission flow, privacy indicator and one-click disable |
+| `devicePermissions: ["media"]` | Removed, then re-added in Phase 8 | Nothing used camera or microphone until Phase 6. Re-added once AI 2's permission flow, privacy indicator and one-click disable merged (#136) |
 | Bot scope `personal` | Removed | The bot does nothing in a personal chat, so the scope only let any user in the tenant message it. Meeting events need `groupChat`, which stays |
 | `permissions: identity` | Kept | Needed for the user's Teams identity |
 | RSC `OnlineMeeting.ReadBasic.Chat` | Kept | Needed for the meeting start and end events the bot acts on |

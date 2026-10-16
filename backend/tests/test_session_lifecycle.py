@@ -85,17 +85,27 @@ async def test_students_cannot_run_sessions(db, app) -> None:
 # -- starting ---------------------------------------------------------------
 
 
-async def test_a_session_will_not_start_without_a_staged_question(db, app) -> None:
+def _deliverable(client, session) -> int:
+    """How many staged questions the readiness check counts for a session."""
+    readiness = client.get(f"/api/v1/sessions/{session['id']}/readiness").json()
+    return readiness["deliverable_questions"]
+
+
+async def test_a_session_starts_without_a_staged_question(db, app) -> None:
+    """An approved question that is not staged does not count, but the
+    session still starts: the lecturer can stage one while it is live."""
     client, factory, created = db
     course = await add_course(factory, created)
     await add_question(db, course, LECTURER_ID, status="approved")
     sign_in_as(app, LECTURER_ID, Role.LECTURER)
     session = create_session(client, course)
+    assert _deliverable(client, session) == 0
 
     response = client.post(f"/api/v1/sessions/{session['id']}/start")
 
-    assert response.status_code == 409
-    assert "Stage" in response.json()["error"]["message"]
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "active"
+    client.post(f"/api/v1/sessions/{session['id']}/end")
 
 
 async def test_another_lecturers_staged_question_does_not_count(db, app) -> None:
@@ -106,7 +116,7 @@ async def test_another_lecturers_staged_question_does_not_count(db, app) -> None
     sign_in_as(app, LECTURER_ID, Role.LECTURER)
     session = create_session(client, course)
 
-    assert client.post(f"/api/v1/sessions/{session['id']}/start").status_code == 409
+    assert _deliverable(client, session) == 0
 
 
 async def test_a_question_for_another_course_does_not_count(db, app) -> None:
@@ -116,7 +126,7 @@ async def test_a_question_for_another_course_does_not_count(db, app) -> None:
     sign_in_as(app, LECTURER_ID, Role.LECTURER)
     session = create_session(client, course)
 
-    assert client.post(f"/api/v1/sessions/{session['id']}/start").status_code == 409
+    assert _deliverable(client, session) == 0
 
 
 async def test_a_staged_question_starts_the_session(db, app) -> None:
@@ -683,7 +693,7 @@ async def test_a_prompt_acknowledgement_needs_an_open_prompt(db, app) -> None:
 
 async def test_a_multiple_choice_question_with_no_choices_is_not_delivered(db, app) -> None:
     """Nobody could answer it, so the class is never shown it and it does not
-    count towards the staged question a session needs to start."""
+    count as a deliverable question."""
     client, factory, created = db
     course = await add_course(factory, created)
     broken = await add_question(db, course, LECTURER_ID, options=[])
@@ -691,10 +701,9 @@ async def test_a_multiple_choice_question_with_no_choices_is_not_delivered(db, a
     session = create_session(client, course)
     base = f"/api/v1/sessions/{session['id']}"
 
-    refused = client.post(f"{base}/start")
-
-    assert refused.status_code == 409, refused.text
+    assert _deliverable(client, session) == 0
     await add_question(db, course, LECTURER_ID)
+    assert _deliverable(client, session) == 1
     assert client.post(f"{base}/start").status_code == 200
     assert client.post(f"{base}/questions/{broken}:deliver").status_code == 404
     client.post(f"{base}/end")

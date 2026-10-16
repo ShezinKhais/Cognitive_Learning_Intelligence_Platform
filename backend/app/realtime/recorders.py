@@ -212,12 +212,33 @@ class QuestionComprehension:
     source_slide: int | None = None
 
 
+@dataclass(frozen=True)
+class RoomAlert:
+    """A breakout room that has been silent long enough to tell the lecturer."""
+
+    alert_id: UUID
+    session_id: UUID
+    room_label: str
+    members: int
+    silence_seconds: int
+    raised_at: datetime
+    message: str
+    reason: str
+    confidence: float
+    explanation: str
+    explanation_source: str
+    confidence_reasons: list[str]
+    recommendation: str
+
+
 class AlertRecorder(Protocol):
     """Keeps an alert raised to the lecturer, so it is still there after a refresh
     and once the session is over, and can be acknowledged. Cyber 1 provides this
     through BBIS's alert store."""
 
     async def record_alert(self, alert: ClassComprehensionAlert) -> None: ...
+
+    async def record_room_alert(self, alert: RoomAlert) -> None: ...
 
 
 class ComprehensionSource(Protocol):

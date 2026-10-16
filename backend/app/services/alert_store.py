@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_session_factory
 from app.core.errors import NotFoundError
 from app.models.ai_alert import AIAlert
+from app.realtime.recorders import RoomAlert
 from app.repositories import alert_repository
 from app.schemas.events import AlertKind
 from app.schemas.session import AlertOut, ClassComprehensionAlert
@@ -76,6 +77,32 @@ async def store_comprehension_alert(alert: ClassComprehensionAlert) -> None:
             confidence_reasons=list(alert.confidence_reasons),
             recommendation=alert.recommendation,
             details=alert_details(alert),
+        )
+        await db.commit()
+
+
+async def store_room_alert(alert: RoomAlert) -> None:
+    """Keep one breakout room alert, in a transaction of its own (General CS,
+    Phase 6). The room and the figures behind it go in details; the message
+    already names the room."""
+    async with get_session_factory()() as db:
+        await alert_repository.save_alert(
+            db,
+            alert_id=alert.alert_id,
+            session_id=alert.session_id,
+            kind=AlertKind.BREAKOUT_INACTIVE.value,
+            message=alert.message,
+            reason=alert.reason,
+            confidence=alert.confidence,
+            explanation=alert.explanation,
+            explanation_source=alert.explanation_source,
+            confidence_reasons=list(alert.confidence_reasons),
+            recommendation=alert.recommendation,
+            details={
+                "room_label": alert.room_label,
+                "members": alert.members,
+                "silence_seconds": alert.silence_seconds,
+            },
         )
         await db.commit()
 
