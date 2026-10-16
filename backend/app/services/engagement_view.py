@@ -6,7 +6,8 @@ with an accommodation, answer speed, gaze and face presence are never scored, so
 that detail, shown per student, would tell a lecturer who has an accommodation
 even though the accommodation itself is never sent anywhere.
 
-So staff see one view, computed the same way for every student from one thing:
+So staff see one view, computed the same way for every student from one thing
+(and the score in quarter steps, see staff_score):
 whether any *participation* signal (questions attempted, answer timing, attention
 prompt responses) backed the score. Not how many: an accommodated student can
 never have the answer-speed signal, so a count, even a capped one, would still
@@ -23,6 +24,7 @@ branch that uses it.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable
 
 PARTICIPATION_SIGNALS = ("attempt_rate", "response_timing", "prompt_response")
@@ -42,6 +44,19 @@ def participation_count(signals: Iterable[str]) -> int:
 def staff_signals(signals: Iterable[str]) -> list[str]:
     """['participation'] when any participation signal scored the student, else []."""
     return [PARTICIPATION] if participation_count(signals) else []
+
+
+def staff_score(score: float | None) -> float | None:
+    """The score in steps of a quarter (0, 0.25, 0.5, 0.75, 1).
+
+    A raw score has a shape of its own for a student with an accommodation: where
+    answer speed is not measured, the same answers give the same exact figure
+    every time. Quarter steps leave staff the picture (the status they see is
+    banded the same way) without a figure that can be told apart.
+    """
+    if score is None:
+        return None
+    return min(1.0, max(0.0, math.floor(score * 4 + 0.5) / 4))
 
 
 def staff_confidence(signals: Iterable[str]) -> float:

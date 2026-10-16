@@ -273,7 +273,13 @@ class Attention:
                 if user_id in timing:
                     student.response_times.append(timing[user_id])
             signal = student.current_signal(now)
-            if signal is not None and student.signal_at != student.baseline_from:
+            # Nothing is learned from the camera of a student whose camera is
+            # never scored: no baseline to keep, nothing to purge.
+            if (
+                signal is not None
+                and user_id not in accommodated
+                and student.signal_at != student.baseline_from
+            ):
                 student.baseline.record(signal.gaze_on_screen_ratio, signal.face_present)
                 student.baseline_from = student.signal_at
             engagement = compute_engagement(
