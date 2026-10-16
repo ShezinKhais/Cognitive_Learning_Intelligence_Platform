@@ -223,3 +223,19 @@ def test_the_old_fixed_interval_setting_is_reported_not_silently_ignored(
         Settings(checkpoint_interval_seconds=1200)
 
     assert "CHECKPOINT_INTERVAL_SECONDS is no longer read" in caplog.text
+
+
+@pytest.mark.parametrize(("quiet", "needs_attention"), [(60, 60), (120, 60)])
+def test_a_room_must_be_quiet_before_it_needs_attention(
+    quiet: float, needs_attention: float
+) -> None:
+    """With the limits the other way round no room could ever be reported quiet."""
+    with pytest.raises(ValueError, match="ROOM_NEEDS_ATTENTION_AFTER_SECONDS"):
+        Settings(room_quiet_after_seconds=quiet, room_needs_attention_after_seconds=needs_attention)
+
+
+def test_the_default_room_limits_are_one_minute_and_three() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.room_quiet_after_seconds == 60
+    assert settings.room_needs_attention_after_seconds == 180

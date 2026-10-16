@@ -25,7 +25,13 @@ from app.core.database import get_session_factory
 from app.models.question import Question
 from app.models.student_response import StudentResponse
 from app.realtime.classroom import Classroom
-from app.realtime.recorders import Attendance, AttentionWindow, ClosedQuestion, PromptOutcome
+from app.realtime.recorders import (
+    Attendance,
+    AttentionWindow,
+    ClosedQuestion,
+    PromptOutcome,
+    RoomAlert,
+)
 from app.repositories import attention_signal_repository
 from app.repositories.comprehension_repository import DatabaseComprehensionSource
 from app.repositories.live_event_repository import LiveEventRepository
@@ -33,7 +39,7 @@ from app.repositories.question_repository import QuestionRepository
 from app.repositories.student_repository import StudentRepository
 from app.schemas.session import ClassComprehensionAlert
 from app.services import free_text_marking
-from app.services.alert_store import store_comprehension_alert
+from app.services.alert_store import store_comprehension_alert, store_room_alert
 from app.services.comprehension_writer import label_response
 from app.services.live_recorder import LiveCloseRecorder, LiveResponseRecorder
 
@@ -115,6 +121,9 @@ class _Alerts:
 
     async def record_alert(self, alert: ClassComprehensionAlert) -> None:
         await store_comprehension_alert(alert)
+
+    async def record_room_alert(self, alert: RoomAlert) -> None:
+        await store_room_alert(alert)
 
 
 class _AttentionSummaries:

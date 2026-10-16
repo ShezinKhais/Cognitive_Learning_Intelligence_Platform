@@ -225,15 +225,17 @@ and the correct answer is revealed when the window closes.
 |   |   +-- schemas/         request, response and event contracts
 |   |   +-- services/        extraction, storage, jobs, pipeline, lifecycle, Teams bot
 |   +-- migrations/          Alembic migrations
-|   +-- scripts/             contract export, Teams packaging, mock meeting driver
+|   +-- scripts/             contract export, Teams packaging, mock meeting driver,
+|   |                        load test (scripts/loadtest/), deployment smoke test
 |   +-- tests/               pytest, mirroring the app layout
 |   +-- openapi.json         REST contract, generated
 |   +-- events.schema.json   WebSocket contract, generated
 +-- frontend/                React app: student, lecturer and admin interfaces
 +-- teams-app/               Teams manifest, icons and packaging notes
 +-- samples/                 example timetable and roster CSVs
-+-- docs/images/             architecture and design diagrams
++-- docs/                    reference documents; docs/images/ has the diagrams
 +-- docker-compose.yml       PostgreSQL with pgvector
++-- docker-compose.demo.yml  database, backend and web on one machine, see docs/deployment.md
 ```
 
 ## Features
@@ -244,6 +246,10 @@ and the correct answer is revealed when the window closes.
 - Answer live checkpoints in the Teams meeting side panel
 - Private feedback on each answer, and the correct answer when the question closes
 - Private attention prompts, answered with "I'm here" or dismissed
+- Attention signals, worked out on the device and sent as numbers, each kind only with
+  its own consent (accepted by the backend; the student app does not send them yet)
+- A private prompt when those signals stay low, and a way to say which breakout room
+  they are in (backend only)
 - Classes resume where they left off after a dropped connection
 - Free-text answers marked against the question's key points, in the background
 - Socratic chatbot that gives hints rather than answers, with the slides it used
@@ -513,6 +519,21 @@ rather than a component, so every phase ends with something that runs end to end
 | Security and privacy reviews | [docs/security](docs/security/README.md) |
 | Final Report | `TBD` |
 | Poster | `TBD` |
+
+### Reference documents
+
+Written alongside the code, in `docs/`:
+
+| Document | Covers |
+|---|---|
+| [AI gateway](docs/ai-gateway.md) | The one route every model call takes: queue, deadlines, retries, fallback |
+| [Tutor chat](docs/tutor-chat.md) | `POST /sessions/{session_id}/chat` and what the tutor may be told |
+| [Attention signals](docs/attention-signals.md) | How `signal.attention` becomes per-minute summaries for the analytics layer |
+| [Attention signals and breakout rooms](docs/signals-and-rooms.md) | `signal.attention`, `room.confirm`, `room.status`, private refocus prompts and room alerts |
+| [Reports and scheduled jobs](docs/reports.md) | The session report and its PDF, the scheduler and the retention purge |
+| [Deployment](docs/deployment.md) | Running the stack outside development |
+| [Load and recovery](docs/load-and-recovery.md) | The load-test harness and how the system behaves under failure |
+| [Teams frontend security](docs/teams-frontend-security.md) | Deployment security requirements for the Teams tab |
 
 ## Team
 

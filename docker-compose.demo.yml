@@ -1,0 +1,78 @@
+# Demo deployment: database, backend and web on one machine, one published port.
+# Separate from docker-compose.yml, which is the development database only.
+#
+#   cp deploy/demo.env.example deploy/demo.env     # then replace the values
+#   docker compose -p clip-demo -f docker-compose.demo.yml --env-file deploy/demo.env up -d --build
+#
+# Always pass -p clip-demo so this stack never shares a project, network or
+# volume with the development database. See docs/deployment.md.
+
+name: clip-demo
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: clip
+      POSTGRES_PASSWORD: ${DEMO_DB_PASSWORD:?set DEMO_DB_PASSWORD in the env file}
+      POSTGRES_DB: clip
+    # No published port. The backend reaches it as db:5432 on the compose network.
+    volumes:
+      - demo_pgdata:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clip -d clip"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    image: clip-demo-backend:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      CLIP_ENV: ${CLIP_ENV:-development}
+      CLIP_SECRET_KEY: ${CLIP_SECRET_KEY:?set CLIP_SECRET_KEY in the env file}
+      CLIP_LOG_LEVEL: ${CLIP_LOG_LEVEL:-INFO}
+      DATABASE_URL: postgresql+asyncpg://clip:${DEMO_DB_PASSWORD}@db:5432/clip
+      # One process: a session's question timer lives in it.
+      WEB_CONCURRENCY: "1"
+      # The backend is reachable only from nginx, so trust its forwarded headers.
+      FORWARDED_ALLOW_IPS: "*"
+      # No model is needed to log in and run a class. Point this at an Ollama
+      # on the host to get generated questions and the tutor.
+      AI_WARMUP_ENABLED: ${AI_WARMUP_ENABLED:-false}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - demo_data:/data
+    # The app drains running jobs on SIGTERM; give it longer than the 10 s default.
+    stop_grace_period: 30s
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        VITE_MATERIAL_PIPELINE_ENABLED: ${VITE_MATERIAL_PIPELINE_ENABLED:-true}
+        VITE_LIVE_SESSIONS_ENABLED: ${VITE_LIVE_SESSIONS_ENABLED:-true}
+        VITE_SOCRATIC_CHAT_ENABLED: ${VITE_SOCRATIC_CHAT_ENABLED:-true}
+        VITE_TEAMS_MOCK_ENABLED: "false"
+    image: clip-demo-web:latest
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${DEMO_PORT:-8088}:80"
+
+volumes:
+  demo_pgdata:
+  demo_data:
