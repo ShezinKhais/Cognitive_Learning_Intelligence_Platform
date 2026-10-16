@@ -55,6 +55,8 @@ class LabelledAnswer:
     confidence: float
     # What the question generator guessed the question's difficulty to be.
     question_difficulty: str | None = None
+    # The slide the question was written from, for a student's "review slide 4".
+    source_slide: int | None = None
 
 
 @dataclass(frozen=True)
