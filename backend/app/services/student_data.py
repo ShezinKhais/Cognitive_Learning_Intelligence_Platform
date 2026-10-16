@@ -10,6 +10,7 @@ The caller owns the transaction and commits.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -18,6 +19,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.history.database import resolve_history_factory
+from app.history.repository import list_for_student
 from app.models.attention_signal_summary import AttentionSignalSummary
 from app.models.comprehension_result import ComprehensionResult
 from app.models.deletion_request import DeletionRequest
@@ -61,7 +64,11 @@ async def latest_deletion_request(db: AsyncSession, student_id: UUID) -> Deletio
 
 
 async def export_student_data(
-    db: AsyncSession, user_id: UUID, *, ip_address: str | None = None
+    db: AsyncSession,
+    user_id: UUID,
+    *,
+    ip_address: str | None = None,
+    history: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
     student = await own_student(db, user_id)
     user = await db.get(User, user_id)
@@ -172,6 +179,27 @@ async def export_student_data(
         )
     ]
 
+    summaries = []
+    factory = resolve_history_factory(history)
+    if factory is not None:
+        async with factory() as history_db:
+            for row in await list_for_student(history_db, sid):
+                summaries.append(
+                    {
+                        "semester": row.semester,
+                        "course_id": _id(row.course_id),
+                        "sessions_attended": row.sessions_attended,
+                        "questions_attempted": row.questions_attempted,
+                        "questions_correct": row.questions_correct,
+                        "engagement_average": (
+                            row.engagement_sum / row.engagement_count
+                            if row.engagement_count
+                            else None
+                        ),
+                        "gaze_average": (row.gaze_sum / row.gaze_count if row.gaze_count else None),
+                    }
+                )
+
     await record_event(
         db,
         action_type=EXPORT_ACTION,
@@ -209,4 +237,5 @@ async def export_student_data(
         "attention_summaries": attention,
         "missed_responses": missed,
         "deletion_requests": requests,
+        "history": summaries,
     }

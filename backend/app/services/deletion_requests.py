@@ -13,6 +13,7 @@ The caller owns the transaction and commits.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -20,6 +21,8 @@ from uuid import UUID
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.history.database import resolve_history_factory
+from app.history.repository import delete_student as delete_student_history
 from app.models.deletion_request import DELETION_TARGETS, DeletionRequest
 from app.models.session import Session
 from app.models.student import Student
@@ -212,8 +215,26 @@ async def _delete_session(db: AsyncSession, session_id: UUID) -> dict[str, int]:
     return {"sessions": sessions, "answers": answers}
 
 
+async def _erase_history(student_id: UUID, history: Callable[[], Any] | None) -> int | None:
+    """Erase the student's rows in the history database, and commit there.
+    None when history is off. A failure propagates, so the request is not marked
+    executed and can be run again."""
+    factory = resolve_history_factory(history)
+    if factory is None:
+        return None
+    async with factory() as history_db:
+        removed = await delete_student_history(history_db, student_id)
+        await history_db.commit()
+    return removed
+
+
 async def execute(
-    db: AsyncSession, request_id: UUID, *, admin_id: UUID, ip_address: str | None = None
+    db: AsyncSession,
+    request_id: UUID,
+    *,
+    admin_id: UUID,
+    ip_address: str | None = None,
+    history: Callable[[], Any] | None = None,
 ) -> DeletionRequest:
     """Carry out an approved request. Something already gone, for example a
     session purged by retention, counts as done with nothing left to delete."""
@@ -221,7 +242,10 @@ async def execute(
     _require(request, "approved", "executed")
 
     if request.target_type == "student":
+        history_rows = await _erase_history(request.target_id, history)
         outcome = (await erase_student(db, request.target_id)).as_counts()
+        if history_rows is not None:
+            outcome["history_rows"] = history_rows
     else:
         outcome = await _delete_session(db, request.target_id)
 

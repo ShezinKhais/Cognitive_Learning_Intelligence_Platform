@@ -29,12 +29,16 @@ from app.core.errors import (
     PermissionError_,
     ValidationError,
 )
+from app.history.database import resolve_history_factory
+from app.history.repository import list_for_student
 from app.repositories import audit_repository
 from app.schemas.common import Page
 from app.schemas.governance import (
     AuditEntryOut,
     DeletionRequestCreate,
     DeletionRequestOut,
+    HistoryOut,
+    HistorySummaryOut,
     RetentionReportOut,
     RetentionRunRequest,
 )
@@ -246,3 +250,45 @@ async def run_retention(
         ip_address=_ip(request),
     )
     return _report(report, days)
+
+
+# -- history ----------------------------------------------------------------------
+
+
+@router.get("/history/{student_id}", response_model=HistoryOut)
+async def read_history(
+    student_id: UUID, request: Request, principal: CurrentUser, db: DbSession
+) -> HistoryOut:
+    """The summaries kept for a student after their session data was deleted.
+    Counts and averages only. Every read is audited."""
+    factory = resolve_history_factory()
+    if factory is None:
+        return HistoryOut(enabled=False, summaries=[])
+    async with factory() as history_db:
+        rows = await list_for_student(history_db, student_id)
+    await audit_repository.record_event(
+        db,
+        action_type="HISTORY_VIEWED",
+        user_id=principal.user_id,
+        ip_address=_ip(request),
+        target_type="student",
+        target_id=student_id,
+        details={"rows": len(rows)},
+    )
+    return HistoryOut(
+        enabled=True,
+        summaries=[
+            HistorySummaryOut(
+                semester=row.semester,
+                course_id=row.course_id,
+                sessions_attended=row.sessions_attended,
+                questions_attempted=row.questions_attempted,
+                questions_correct=row.questions_correct,
+                engagement_average=(
+                    row.engagement_sum / row.engagement_count if row.engagement_count else None
+                ),
+                gaze_average=row.gaze_sum / row.gaze_count if row.gaze_count else None,
+            )
+            for row in rows
+        ],
+    )

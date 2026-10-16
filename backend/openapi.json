@@ -793,6 +793,89 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "HistoryOut": {
+        "properties": {
+          "enabled": {
+            "description": "False when no history database is configured.",
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "summaries": {
+            "items": {
+              "$ref": "#/components/schemas/HistorySummaryOut"
+            },
+            "title": "Summaries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "enabled",
+          "summaries"
+        ],
+        "title": "HistoryOut",
+        "type": "object"
+      },
+      "HistorySummaryOut": {
+        "properties": {
+          "course_id": {
+            "format": "uuid",
+            "title": "Course Id",
+            "type": "string"
+          },
+          "engagement_average": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None when nothing was recorded.",
+            "title": "Engagement Average"
+          },
+          "gaze_average": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None when nothing was recorded.",
+            "title": "Gaze Average"
+          },
+          "questions_attempted": {
+            "title": "Questions Attempted",
+            "type": "integer"
+          },
+          "questions_correct": {
+            "title": "Questions Correct",
+            "type": "integer"
+          },
+          "semester": {
+            "description": "Calendar half-year, such as 2026-H1.",
+            "title": "Semester",
+            "type": "string"
+          },
+          "sessions_attended": {
+            "title": "Sessions Attended",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "semester",
+          "course_id",
+          "sessions_attended",
+          "questions_attempted",
+          "questions_correct",
+          "engagement_average",
+          "gaze_average"
+        ],
+        "title": "HistorySummaryOut",
+        "type": "object"
+      },
       "LoginRequest": {
         "properties": {
           "email": {
@@ -2453,6 +2536,15 @@
             "title": "Generated At",
             "type": "string"
           },
+          "history": {
+            "description": "Summaries kept per course and semester after session data is deleted.",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "History",
+            "type": "array"
+          },
           "missed_responses": {
             "items": {
               "additionalProperties": true,
@@ -2490,7 +2582,8 @@
           "engagement",
           "attention_summaries",
           "missed_responses",
-          "deletion_requests"
+          "deletion_requests",
+          "history"
         ],
         "title": "StudentDataExport",
         "type": "object"
@@ -3550,6 +3643,50 @@
           }
         },
         "summary": "Reject Deletion Request",
+        "tags": [
+          "governance"
+        ]
+      }
+    },
+    "/api/v1/governance/history/{student_id}": {
+      "get": {
+        "description": "The summaries kept for a student after their session data was deleted.\nCounts and averages only. Every read is audited.",
+        "operationId": "read_history_api_v1_governance_history__student_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "student_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Student Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read History",
         "tags": [
           "governance"
         ]

@@ -424,3 +424,87 @@ async def test_a_confirmed_purge_is_run_as_the_admin_who_asked(governance, monke
     assert call["dry_run"] is False
     assert call["actor_id"] == world.first
     assert call["retention_days"] == get_settings().data_retention_days
+
+
+# -- history ---------------------------------------------------------------------------------
+
+
+async def test_history_says_it_is_off_when_no_history_database_is_set(governance, monkeypatch):
+    from app.api.v1 import governance as routes
+
+    monkeypatch.setattr(routes, "resolve_history_factory", lambda override=None: None)
+    act_as(governance, governance.first)
+
+    response = governance.client.get(f"{BASE}/history/{uuid4()}")
+
+    assert response.status_code == 200
+    assert response.json() == {"enabled": False, "summaries": []}
+
+
+async def test_an_admin_reads_a_students_history_and_the_read_is_audited(governance, monkeypatch):
+    from app.api.v1 import governance as routes
+    from app.history import models  # noqa: F401
+    from app.history.database import HistoryBase
+    from app.history.repository import SemesterTotals, add_totals, delete_student
+
+    async with governance.factory() as setup:
+        await setup.run_sync(lambda session: HistoryBase.metadata.create_all(session.connection()))
+        await setup.commit()
+    student, course = uuid4(), uuid4()
+    async with governance.factory() as seed:
+        await add_totals(
+            seed,
+            [
+                SemesterTotals(
+                    student,
+                    course,
+                    "2001-H1",
+                    sessions_attended=2,
+                    questions_attempted=4,
+                    questions_correct=3,
+                    engagement_sum=1.0,
+                    engagement_count=2,
+                )
+            ],
+        )
+        await seed.commit()
+    monkeypatch.setattr(routes, "resolve_history_factory", lambda override=None: governance.factory)
+    try:
+        act_as(governance, governance.first)
+        response = governance.client.get(f"{BASE}/history/{student}")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["enabled"] is True
+        assert body["summaries"] == [
+            {
+                "semester": "2001-H1",
+                "course_id": str(course),
+                "sessions_attended": 2,
+                "questions_attempted": 4,
+                "questions_correct": 3,
+                "engagement_average": 0.5,
+                "gaze_average": None,
+            }
+        ]
+        async with governance.factory() as check:
+            entry = (
+                await check.scalars(
+                    select(AuditLog).where(
+                        AuditLog.action_type == "HISTORY_VIEWED", AuditLog.target_id == student
+                    )
+                )
+            ).first()
+        assert entry is not None
+        assert entry.user_id == governance.first
+        assert entry.details == {"rows": 1}
+    finally:
+        async with governance.factory() as cleanup:
+            await delete_student(cleanup, student)
+            await cleanup.commit()
+
+
+def test_a_lecturer_cannot_read_history(governance):
+    sign_in_as(governance.app, LECTURER_ID, Role.LECTURER)
+
+    assert governance.client.get(f"{BASE}/history/{uuid4()}").status_code == 403

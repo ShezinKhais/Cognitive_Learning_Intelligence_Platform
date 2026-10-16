@@ -93,6 +93,7 @@ AUDIENCE = {
     ("GET", "/api/v1/governance/audit-log"): ADMIN_ONLY,
     ("GET", "/api/v1/governance/retention/preview"): ADMIN_ONLY,
     ("POST", "/api/v1/governance/retention/run"): ADMIN_ONLY,
+    ("GET", "/api/v1/governance/history/{student_id}"): ADMIN_ONLY,
     ("GET", "/api/v1/me/data"): STUDENT_ONLY,
     ("POST", "/api/v1/me/deletion-request"): STUDENT_ONLY,
     ("GET", "/api/v1/me/deletion-request"): STUDENT_ONLY,

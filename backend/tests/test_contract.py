@@ -14,6 +14,7 @@ BACKEND = Path(__file__).resolve().parent.parent
 
 EXPECTED_PATHS = {
     # Phase 7 AI2: additive own-student review adapter; summary contract unchanged.
+    "/api/v1/governance/history/{student_id}",
     "/api/v1/me/data",
     "/api/v1/me/deletion-request",
     "/api/v1/student-reviews",

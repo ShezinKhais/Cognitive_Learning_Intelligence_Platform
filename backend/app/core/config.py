@@ -253,6 +253,9 @@ class Settings(BaseSettings):
     # may take. A run cut short carries on at the next.
     retention_purge_interval_hours: float = Field(default=24.0, gt=0)
     retention_purge_timeout_minutes: float = Field(default=30.0, gt=0)
+    # A second database for derived per-student summaries kept after the
+    # purge (app/history). Empty means history is off.
+    history_database_url: str = ""
 
     @field_validator("clip_env")
     @classmethod

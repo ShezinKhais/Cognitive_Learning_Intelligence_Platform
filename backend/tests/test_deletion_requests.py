@@ -293,3 +293,106 @@ async def test_an_unknown_request_is_not_found(db):
         await get_request(db, uuid.uuid4())
     with pytest.raises(RequestNotFound):
         await approve(db, uuid.uuid4(), admin_id=uuid.uuid4())
+
+
+# -- the history database --------------------------------------------------------------------
+
+
+@pytest.fixture
+async def lent_history(db, monkeypatch):
+    """The history tables inside this test's transaction, and a way to lend the
+    test's session to code that opens its own. A commit is only a flush."""
+    from contextlib import asynccontextmanager
+
+    from app.history import models  # noqa: F401
+    from app.history.database import HistoryBase
+
+    await db.run_sync(lambda session: HistoryBase.metadata.create_all(session.connection()))
+
+    async def flush_only():
+        await db.flush()
+
+    monkeypatch.setattr(db, "commit", flush_only)
+
+    @asynccontextmanager
+    async def session():
+        yield db
+
+    return lambda: session
+
+
+async def test_executing_a_student_request_also_erases_their_history(db, world, lent_history):
+    from app.history.repository import SemesterTotals, add_totals, list_for_student
+
+    other = uuid.uuid4()
+    await add_totals(
+        db,
+        [
+            SemesterTotals(world.student, uuid.uuid4(), "2001-H1", sessions_attended=1),
+            SemesterTotals(other, uuid.uuid4(), "2001-H1", sessions_attended=1),
+        ],
+    )
+    request = await create_request(
+        db, target_type="student", target_id=world.student, requested_by=world.first
+    )
+    await approve(db, request.request_id, admin_id=world.second)
+
+    done = await execute(db, request.request_id, admin_id=world.second, history=lent_history)
+
+    assert done.outcome["history_rows"] == 1
+    assert await list_for_student(db, world.student) == []
+    assert len(await list_for_student(db, other)) == 1
+
+
+async def test_a_history_failure_leaves_the_request_approved_and_the_student_in_place(
+    db, world, lent_history
+):
+    def broken():
+        raise RuntimeError("the history database is down")
+
+    request = await create_request(
+        db, target_type="student", target_id=world.student, requested_by=world.first
+    )
+    await approve(db, request.request_id, admin_id=world.second)
+
+    with pytest.raises(RuntimeError):
+        await execute(db, request.request_id, admin_id=world.second, history=lambda: broken)
+
+    assert (await get_request(db, request.request_id)).status == "approved"
+    assert await count(db, Student, Student.student_id, world.student) == 1
+
+
+async def test_the_students_export_includes_their_history(db, world, lent_history):
+    from app.history.repository import SemesterTotals, add_totals
+    from app.services.student_data import export_student_data
+
+    course = uuid.uuid4()
+    await add_totals(
+        db,
+        [
+            SemesterTotals(
+                world.student,
+                course,
+                "2001-H1",
+                sessions_attended=2,
+                questions_attempted=4,
+                questions_correct=3,
+                engagement_sum=1.0,
+                engagement_count=2,
+            )
+        ],
+    )
+
+    data = await export_student_data(db, world.learner, history=lent_history)
+
+    assert data["history"] == [
+        {
+            "semester": "2001-H1",
+            "course_id": str(course),
+            "sessions_attended": 2,
+            "questions_attempted": 4,
+            "questions_correct": 3,
+            "engagement_average": pytest.approx(0.5),
+            "gaze_average": None,
+        }
+    ]

@@ -382,3 +382,79 @@ def test_housekeeping_registers_the_database_purges():
         ]
     finally:
         get_purge_runner.cache_clear()
+
+
+# -- archiving into the history database -------------------------------------------------------
+
+
+@pytest.fixture
+async def history_tables(db):
+    """The history tables, made inside this test's transaction and rolled back."""
+    from app.history import models  # noqa: F401
+    from app.history.database import HistoryBase
+
+    await db.run_sync(lambda session: HistoryBase.metadata.create_all(session.connection()))
+
+
+async def student_of(db, run) -> uuid.UUID:
+    return await db.scalar(
+        select(StudentResponse.student_id).where(StudentResponse.response_id == run.response)
+    )
+
+
+async def test_archiving_a_session_adds_its_totals_to_the_semester_row(db, history, history_tables):
+    from app.history.repository import list_for_student, semester_label
+    from app.services.history_archive import archive_sessions
+
+    await archive_sessions(db, db, [history.expired.session])
+
+    [row] = await list_for_student(db, await student_of(db, history.expired))
+    assert row.semester == semester_label(days_ago(91))
+    assert (row.sessions_attended, row.questions_attempted, row.questions_correct) == (1, 1, 1)
+    assert (row.engagement_sum, row.engagement_count) == (pytest.approx(0.8), 1)
+    assert row.gaze_count == 0
+
+
+async def test_a_session_is_never_added_twice(db, history, history_tables):
+    from app.history.repository import list_for_student
+    from app.services.history_archive import archive_sessions
+
+    await archive_sessions(db, db, [history.expired.session])
+    assert await archive_sessions(db, db, [history.expired.session]) == 0
+
+    [row] = await list_for_student(db, await student_of(db, history.expired))
+    assert row.sessions_attended == 1
+
+
+async def test_the_purge_archives_a_session_before_deleting_it(
+    db, history, history_tables, borrowed
+):
+    from app.services.retention_tasks import SessionDataPurge
+
+    await SessionDataPurge(borrowed, history=borrowed).purge(days_ago(90), 500)
+
+    assert await holdings(db, history.expired) == dict.fromkeys(HOLDINGS, 0)
+    entry = (
+        await db.scalars(
+            select(AuditLog)
+            .where(AuditLog.action_type == RETENTION_ACTION)
+            .order_by(AuditLog.timestamp.desc())
+        )
+    ).first()
+    assert entry.details["archived_summaries"] >= 1
+
+
+async def test_nothing_is_deleted_when_the_archive_fails(
+    db, history, history_tables, borrowed, monkeypatch
+):
+    from app.services import retention_tasks
+
+    async def broken(*args, **kwargs):
+        raise RuntimeError("the history database is down")
+
+    monkeypatch.setattr(retention_tasks, "archive_sessions", broken)
+
+    with pytest.raises(RuntimeError):
+        await retention_tasks.SessionDataPurge(borrowed, history=borrowed).purge(days_ago(90), 500)
+
+    assert await holdings(db, history.expired) == dict.fromkeys(HOLDINGS, 1)

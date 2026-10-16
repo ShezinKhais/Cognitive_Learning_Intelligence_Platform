@@ -64,3 +64,18 @@ class RetentionReportOut(BaseModel):
 
 class RetentionRunRequest(BaseModel):
     confirm: Literal[True] = Field(description="Must be true. A purge cannot be undone.")
+
+
+class HistorySummaryOut(BaseModel):
+    semester: str = Field(description="Calendar half-year, such as 2026-H1.")
+    course_id: UUID
+    sessions_attended: int
+    questions_attempted: int
+    questions_correct: int
+    engagement_average: float | None = Field(description="None when nothing was recorded.")
+    gaze_average: float | None = Field(description="None when nothing was recorded.")
+
+
+class HistoryOut(BaseModel):
+    enabled: bool = Field(description="False when no history database is configured.")
+    summaries: list[HistorySummaryOut]
