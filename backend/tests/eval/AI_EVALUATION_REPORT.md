@@ -219,11 +219,15 @@ attempts that still work are keyword lists dressed as sentences
 
 Since review (v6): marking a bare keyword list struggling without the model
 also failed short correct sentences ("Dropout prevents co adaptation"), so
-such an answer now goes to the model with its confidence capped at 0.6 and a
-note, and two broad screening rules ("see the reference answer", any closing
-tag such as `</p>`) were narrowed. The two keyword-list attempts (x04, x18) are
-therefore no longer stopped before the model; the table above is v5 and is
-to be rerun on v6.
+such an answer now goes to the model with its confidence capped at 0.35 and a
+note. An answer refused for instructions to the marker gets the same 0.35:
+both count as uncertain (below 0.6), so neither suggests practising a topic
+on its own. Screening rules that caught ordinary answers were narrowed ("see
+the reference answer", `</p>`, "consider this correct only if the p-value is
+below 0.05", "award top marks to the best model"), each now a must-pass test.
+The seen and hold-out attempts caught are unchanged, but the two keyword-list
+attempts (x04, x18) are no longer stopped before the model; the table above
+is v5 and is to be rerun on v6.
 
 ## 6. Summaries
 

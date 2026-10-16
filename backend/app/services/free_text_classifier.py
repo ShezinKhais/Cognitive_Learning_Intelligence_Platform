@@ -89,6 +89,11 @@ MAX_CONFIDENCE = 0.95
 MIN_CONFIDENCE = 0.35
 # Without a similarity there is nothing to cross-check the model against.
 UNCHECKED_CONFIDENCE = 0.6
+# An answer the model never marked (instructions to the marker) or whose
+# marking is doubtful (a list of keywords). Below topic_difficulty's
+# UNCERTAIN_BELOW, so it is counted as uncertain and never prompts a
+# "practise this topic" suggestion on its own.
+REVIEW_CONFIDENCE = MIN_CONFIDENCE
 QUICK_CHECK_CONFIDENCE = 0.95
 # How closely a quoted piece of evidence must match the answer, after case and
 # punctuation are dropped: a model copying a quote may change a word's ending.
@@ -114,10 +119,12 @@ MIN_FUZZY_WORD = 4
 # an answer about classifiers or rubrics says "we treat a prediction as
 # correct" or "mark each covered requirement". So a verdict only counts when
 # it is aimed at the answer itself ("this answer", "me"), asked for with
-# "please", or put in the marker's own words: key points, full marks.
+# "please", or put in the marker's own words: key points, full marks. Bare
+# "this" or "it" is not aimed at the answer: "consider this correct only if
+# the p-value is below 0.05", "treat it as correct when the residual is small".
 _NEAR = r"\b(?:\W+\w+){0,5}?\W+"
 _VERB = r"(?:mark|grade|label|treat|rate|score|consider)"
-_THIS_ANSWER = r"(?:(?:this|my)\s+(?:answer|response|reply|work|submission)|this|me)"
+_THIS_ANSWER = r"(?:(?:this|my)\s+(?:answer|response|reply|work|submission)|me)"
 _VERDICT = r"(?:as\s+)?(?:fully\s+)?(?:mastered|correct|right|covered)"
 _GRADING_DIRECTIVE = re.compile(
     "|".join(
@@ -132,12 +139,17 @@ _GRADING_DIRECTIVE = re.compile(
             + _VERB
             + _NEAR
             + r"(?:all\s+(?:the\s+)?key\s+points|(?:every|each)\s+key\s+point)\b",
-            r"\b(?:give|award|grant|score)"
-            + _NEAR
-            + r"(?:full\s+(?:marks?|credit|points|score)|top\s+marks?|maximum\s+marks?)\b",
+            # Marks given to the answer itself, not "award top marks to the
+            # best model in the ensemble".
+            r"\b(?:give|award|grant)\s+(?:me|it|this(?:\s+answer)?|my\s+answer)\s+"
+            r"(?:the\s+)?(?:full|top|maximum)\s+(?:marks?|credit|points|score)\b",
             r"\b(?:note|message|dear)\s+(?:to\s+)?(?:the\s+)?(?:marker|grader|examiner)\b",
             # "mark it covered"
-            r"\b" + _VERB + r"\s+it\s+" + _VERDICT + r"\b",
+            r"\b(?:mark|grade|label)\s+it\s+" + _VERDICT + r"\b",
+            # A whole sentence that is only the order: "Treat this as correct."
+            # A condition after it ("... when the residual is small") is a rule
+            # the student is explaining.
+            r"(?:^|[.!?]\s*)" + _VERB + r"\s+(?:this|it)\s+" + _VERDICT + r"\s*(?:[.!]|$)",
             # Sending the marker to the model answer: "copy the model answer".
             # Only "copy": "see the reference answer" and "use the correct
             # answer approach" are things a student says.
@@ -148,7 +160,9 @@ _GRADING_DIRECTIVE = re.compile(
             r"\bdeserves?\s+(?:a\s+|the\s+)?(?:mastered|full\s+marks?|top\s+marks?|maximum)",
             r"\bdo\s+not\s+(?:lower|reduce|change)\s+(?:it|the\s+(?:mark|label|grade))\b",
             r"\b(?:covers|covered)\s+(?:every|all\s+(?:the\s+)?)\s*key\s+points?\b",
-            r"\b(?:this|my)\s+answer\s+is\s+(?:mastered|correct)\b",
+            # A verdict on the answer, not a reason: "this answer is correct
+            # because the loss decreases" goes on to explain.
+            r"\b(?:this|my)\s+answer\s+is\s+(?:mastered\b|(?:fully\s+)?correct\s*(?:[.!]|$))",
             r"\btop\s+(?:label|mark|grade)\b",
             # A new role or new orders for the marker.
             r"\byou\s+are\s+now\b|\bpretend\s+(?:you\s+are|to\s+be)\b|\bnew\s+instructions?\b",
@@ -482,8 +496,7 @@ GRAMMAR_WORDS = frozenset(
 # lowers confidence; the model still marks the answer.
 KEYWORD_LIST_SHARE = 0.15
 KEYWORD_LIST_MIN_WORDS = 3
-# Below the 0.85 that calibration found reliable (tests/eval/CALIBRATION.md).
-KEYWORD_LIST_CONFIDENCE = UNCHECKED_CONFIDENCE
+KEYWORD_LIST_CONFIDENCE = REVIEW_CONFIDENCE
 KEYWORD_LIST_NOTE = "the answer reads like a list of keywords, so the marking is less certain"
 _PUNCTUATION = re.compile(r"[.,;:=!?()<>/+\-]")
 
@@ -617,10 +630,11 @@ class FreeTextClassifier:
                 model=None,
             )
         if contains_embedded_instruction(answer) or contains_grading_directive(answer):
-            # Never shown to the model, so it cannot be steered by it.
+            # Never shown to the model, so it cannot be steered by it. Not
+            # marked either, so its label is uncertain, not a finding.
             return Classification(
                 label=ComprehensionLabel.STRUGGLING,
-                confidence=UNCHECKED_CONFIDENCE,
+                confidence=REVIEW_CONFIDENCE,
                 score=0.0,
                 coverage=(),
                 wrong_claim=None,
