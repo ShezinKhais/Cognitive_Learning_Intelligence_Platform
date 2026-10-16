@@ -25,7 +25,7 @@ from app.api.deps import (
 )
 from app.auth.service import granted_consents
 from app.core.audit import audit_action
-from app.core.errors import NotFoundError, not_implemented
+from app.core.errors import NotFoundError
 from app.realtime.classroom import classroom
 from app.repositories.session_repository import SessionRepository
 from app.repositories.student_repository import StudentRepository
