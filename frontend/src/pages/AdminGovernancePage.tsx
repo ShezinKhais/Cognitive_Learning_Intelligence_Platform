@@ -9,9 +9,7 @@ import {
   ShieldCheck,
   Trash2,
 } from 'lucide-react'
-import {
-  Link,
-} from 'react-router'
+import { Link } from 'react-router'
 
 import {
   ApiError,
@@ -25,6 +23,7 @@ import {
   canRejectDeletion,
   deletionStatusLabel,
   deletionTargetLabel,
+  isValidUuid,
   type AuditEntry,
   type DeletionRequest,
   type DeletionRequestStatus,
@@ -43,6 +42,7 @@ import {
 } from '../features/governance/governanceApi'
 
 const AUDIT_PAGE_SIZE = 50
+const DELETION_PAGE_SIZE = 50
 
 function dateLabel(
   value: string | null,
@@ -51,8 +51,7 @@ function dateLabel(
     return 'Unavailable'
   }
 
-  const parsed =
-    Date.parse(value)
+  const parsed = Date.parse(value)
 
   if (Number.isNaN(parsed)) {
     return 'Unavailable'
@@ -142,10 +141,30 @@ export default function AdminGovernancePage() {
   ] = useState('')
 
   const [
+    appliedAuditActionFilter,
+    setAppliedAuditActionFilter,
+  ] = useState('')
+
+  const [
+    appliedAuditTargetFilter,
+    setAppliedAuditTargetFilter,
+  ] = useState('')
+
+  const [
     deletionRequests,
     setDeletionRequests,
   ] =
     useState<DeletionRequest[]>([])
+
+  const [
+    deletionTotal,
+    setDeletionTotal,
+  ] = useState(0)
+
+  const [
+    deletionOffset,
+    setDeletionOffset,
+  ] = useState(0)
 
   const [
     deletionLoading,
@@ -163,6 +182,14 @@ export default function AdminGovernancePage() {
   const [
     deletionStatusFilter,
     setDeletionStatusFilter,
+  ] =
+    useState<
+      DeletionRequestStatus | ''
+    >('')
+
+  const [
+    appliedDeletionStatusFilter,
+    setAppliedDeletionStatusFilter,
   ] =
     useState<
       DeletionRequestStatus | ''
@@ -273,6 +300,10 @@ export default function AdminGovernancePage() {
 
   async function loadAudit(
     nextOffset = auditOffset,
+    actionFilter =
+      appliedAuditActionFilter,
+    targetFilter =
+      appliedAuditTargetFilter,
   ) {
     setAuditLoading(true)
     setAuditError(null)
@@ -282,10 +313,10 @@ export default function AdminGovernancePage() {
         await listAuditLog(
           {
             action_type:
-              auditActionFilter.trim() ||
+              actionFilter ||
               undefined,
             target_type:
-              auditTargetFilter.trim() ||
+              targetFilter ||
               undefined,
           },
           AUDIT_PAGE_SIZE,
@@ -322,19 +353,54 @@ export default function AdminGovernancePage() {
     }
   }
 
-  async function loadDeletionRequests() {
+  async function applyAuditFilters() {
+    const actionFilter =
+      auditActionFilter.trim()
+
+    const targetFilter =
+      auditTargetFilter.trim()
+
+    setAppliedAuditActionFilter(
+      actionFilter,
+    )
+
+    setAppliedAuditTargetFilter(
+      targetFilter,
+    )
+
+    await loadAudit(
+      0,
+      actionFilter,
+      targetFilter,
+    )
+  }
+
+  async function loadDeletionRequests(
+    nextOffset = deletionOffset,
+    status =
+      appliedDeletionStatusFilter,
+  ) {
     setDeletionLoading(true)
     setDeletionError(null)
 
     try {
       const result =
         await listDeletionRequests(
-          deletionStatusFilter ||
-            undefined,
+          status || undefined,
+          DELETION_PAGE_SIZE,
+          nextOffset,
         )
 
       setDeletionRequests(
         result.items,
+      )
+
+      setDeletionTotal(
+        result.total,
+      )
+
+      setDeletionOffset(
+        nextOffset,
       )
     } catch (
       caught: unknown
@@ -353,6 +419,20 @@ export default function AdminGovernancePage() {
     } finally {
       setDeletionLoading(false)
     }
+  }
+
+  async function applyDeletionFilter() {
+    const status =
+      deletionStatusFilter
+
+    setAppliedDeletionStatusFilter(
+      status,
+    )
+
+    await loadDeletionRequests(
+      0,
+      status,
+    )
   }
 
   async function loadRetention() {
@@ -383,7 +463,7 @@ export default function AdminGovernancePage() {
     }
   }
 
-    useEffect(() => {
+  useEffect(() => {
     let active = true
 
     function handleInitialError(
@@ -496,7 +576,11 @@ export default function AdminGovernancePage() {
 
       try {
         const result =
-          await listDeletionRequests()
+          await listDeletionRequests(
+            undefined,
+            DELETION_PAGE_SIZE,
+            0,
+          )
 
         if (!active) {
           return
@@ -505,6 +589,12 @@ export default function AdminGovernancePage() {
         setDeletionRequests(
           result.items,
         )
+
+        setDeletionTotal(
+          result.total,
+        )
+
+        setDeletionOffset(0)
       } catch (
         caught: unknown
       ) {
@@ -579,6 +669,18 @@ export default function AdminGovernancePage() {
       return
     }
 
+    if (
+      !isValidUuid(
+        cleanTargetId,
+      )
+    ) {
+      setError(
+        'Enter a valid UUID for the deletion target.',
+      )
+
+      return
+    }
+
     setBusyAction(
       'create-deletion',
     )
@@ -605,7 +707,7 @@ export default function AdminGovernancePage() {
       )
 
       await Promise.all([
-        loadDeletionRequests(),
+        loadDeletionRequests(0),
         loadAudit(0),
       ])
     } catch (
@@ -796,6 +898,31 @@ export default function AdminGovernancePage() {
       AUDIT_PAGE_SIZE <
     auditTotal
 
+  const deletionFirst =
+    deletionTotal === 0
+      ? 0
+      : deletionOffset + 1
+
+  const deletionLast =
+    Math.min(
+      deletionOffset +
+        deletionRequests.length,
+      deletionTotal,
+    )
+
+  const hasPreviousDeletionPage =
+    deletionOffset > 0
+
+  const hasNextDeletionPage =
+    deletionOffset +
+      DELETION_PAGE_SIZE <
+    deletionTotal
+
+  const retentionHeading =
+    retention
+      ? `${retention.retention_days}-day retention`
+      : 'Configured retention'
+
   if (identityLoading) {
     return (
       <main className="min-h-screen bg-background p-8">
@@ -889,7 +1016,7 @@ export default function AdminGovernancePage() {
 
             <div>
               <h2 className="text-lg font-semibold">
-                90-day retention
+                {retentionHeading}
               </h2>
 
               <p className="mt-1 text-sm text-muted-foreground">
@@ -1220,7 +1347,7 @@ export default function AdminGovernancePage() {
             <button
               type="button"
               onClick={() =>
-                void loadDeletionRequests()
+                void applyDeletionFilter()
               }
               disabled={
                 busyAction !== null ||
@@ -1232,6 +1359,58 @@ export default function AdminGovernancePage() {
                 ? 'Loading...'
                 : 'Apply filter'}
             </button>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">
+              Showing{' '}
+              {deletionFirst}
+              {deletionTotal > 0
+                ? `–${deletionLast}`
+                : ''}{' '}
+              of {deletionTotal} requests
+            </p>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={
+                  !hasPreviousDeletionPage ||
+                  deletionLoading ||
+                  busyAction !== null
+                }
+                onClick={() =>
+                  void loadDeletionRequests(
+                    Math.max(
+                      0,
+                      deletionOffset -
+                        DELETION_PAGE_SIZE,
+                    ),
+                  )
+                }
+                className="rounded-lg border border-border px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Previous
+              </button>
+
+              <button
+                type="button"
+                disabled={
+                  !hasNextDeletionPage ||
+                  deletionLoading ||
+                  busyAction !== null
+                }
+                onClick={() =>
+                  void loadDeletionRequests(
+                    deletionOffset +
+                      DELETION_PAGE_SIZE,
+                  )
+                }
+                className="rounded-lg border border-border px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
           </div>
 
           <div className="mt-5 space-y-3">
@@ -1536,7 +1715,7 @@ export default function AdminGovernancePage() {
                 auditLoading
               }
               onClick={() =>
-                void loadAudit(0)
+                void applyAuditFilters()
               }
               className="self-end rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50"
             >

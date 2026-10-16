@@ -7,6 +7,7 @@ import {
   canRejectDeletion,
   deletionStatusLabel,
   deletionTargetLabel,
+  isValidUuid,
   type DeletionRequest,
 } from '../src/features/governance/governance.ts'
 
@@ -16,14 +17,14 @@ function deletionRequest(
 ): DeletionRequest {
   return {
     request_id:
-      '00000000-0000-0000-0000-000000000001',
+      '00000000-0000-4000-8000-000000000001',
     target_type: 'session',
     target_id:
-      '00000000-0000-0000-0000-000000000002',
+      '00000000-0000-4000-8000-000000000002',
     status: 'requested',
     reason: null,
     requested_by:
-      '00000000-0000-0000-0000-000000000003',
+      '00000000-0000-4000-8000-000000000003',
     requested_at:
       '2026-10-14T10:00:00Z',
     decided_by: null,
@@ -152,6 +153,48 @@ test('only approved session requests can be executed', () => {
         status: 'approved',
         target_type: 'student',
       }),
+    ),
+    false,
+  )
+})
+
+test('deletion target ids must be UUIDs before submission', () => {
+  assert.equal(
+    isValidUuid(
+      '550e8400-e29b-41d4-a716-446655440000',
+    ),
+    true,
+  )
+
+  assert.equal(
+    isValidUuid(
+      '550E8400-E29B-41D4-A716-446655440000',
+    ),
+    true,
+  )
+
+  assert.equal(
+    isValidUuid(
+      '00000000-0000-0000-0000-000000000002',
+    ),
+    true,
+  )
+
+  assert.equal(
+    isValidUuid(
+      ' not-a-uuid ',
+    ),
+    false,
+  )
+
+  assert.equal(
+    isValidUuid(''),
+    false,
+  )
+
+  assert.equal(
+    isValidUuid(
+      '550e8400-e29b-11d4-a716',
     ),
     false,
   )

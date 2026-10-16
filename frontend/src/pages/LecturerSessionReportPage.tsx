@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useRef,
   useState,
 } from 'react'
 import {
@@ -20,6 +21,8 @@ import SignOutButton from '../components/SignOutButton'
 import {
   reportFailureMessage,
   reportIsReady,
+  reportPollDelayMs,
+  reportShouldRetryPolling,
   reportStatusLabel,
   type ReportJob,
   type ReportTopicDifficulty,
@@ -86,6 +89,14 @@ export default function LecturerSessionReportPage() {
       sessionId: string
     }>()
 
+  const sessionIdRef =
+    useRef<string | undefined>(
+      sessionId,
+    )
+
+  sessionIdRef.current =
+    sessionId
+
   const [
     job,
     setJob,
@@ -112,19 +123,52 @@ export default function LecturerSessionReportPage() {
       null,
     )
 
+  const [
+    automaticPollingStopped,
+    setAutomaticPollingStopped,
+  ] = useState(false)
+
+  const pollFailureCount =
+    useRef(0)
+
+  const activeJob =
+    job &&
+    job.session_id === sessionId
+      ? job
+      : null
+
+  useEffect(() => {
+    setJob(null)
+    setError(null)
+    setLoading(false)
+    setDownloading(false)
+
+    pollFailureCount.current = 0
+
+    setAutomaticPollingStopped(
+      false,
+    )
+  }, [sessionId])
+
   useEffect(() => {
     if (
-      !job ||
+      !activeJob ||
+      automaticPollingStopped ||
       (
-        job.status !== 'queued' &&
-        job.status !== 'running'
+        activeJob.status !==
+          'queued' &&
+        activeJob.status !==
+          'running'
       )
     ) {
       return
     }
 
     const reportId =
-      job.report_id
+      activeJob.report_id
+
+    const reportSessionId =
+      activeJob.session_id
 
     let active = true
 
@@ -132,7 +176,9 @@ export default function LecturerSessionReportPage() {
       | number
       | undefined
 
-    function scheduleNextPoll() {
+    function scheduleNextPoll(
+      delay: number,
+    ) {
       if (!active) {
         return
       }
@@ -142,12 +188,16 @@ export default function LecturerSessionReportPage() {
           () => {
             void pollReport()
           },
-          2000,
+          delay,
         )
     }
 
     async function pollReport() {
-      if (!active) {
+      if (
+        !active ||
+        sessionIdRef.current !==
+          reportSessionId
+      ) {
         return
       }
 
@@ -157,9 +207,15 @@ export default function LecturerSessionReportPage() {
             reportId,
           )
 
-        if (!active) {
+        if (
+          !active ||
+          sessionIdRef.current !==
+            reportSessionId
+        ) {
           return
         }
+
+        pollFailureCount.current = 0
 
         setJob(updated)
         setError(null)
@@ -170,12 +226,18 @@ export default function LecturerSessionReportPage() {
           updated.status ===
             'running'
         ) {
-          scheduleNextPoll()
+          scheduleNextPoll(
+            reportPollDelayMs(0),
+          )
         }
       } catch (
         caught: unknown
       ) {
-        if (!active) {
+        if (
+          !active ||
+          sessionIdRef.current !==
+            reportSessionId
+        ) {
           return
         }
 
@@ -198,6 +260,10 @@ export default function LecturerSessionReportPage() {
         ) {
           setJob(null)
 
+          setAutomaticPollingStopped(
+            true,
+          )
+
           setError(
             'This report is no longer available. It may have expired or the server may have restarted. Generate the report again.',
           )
@@ -209,8 +275,35 @@ export default function LecturerSessionReportPage() {
           caught instanceof ApiError &&
           caught.status === 403
         ) {
+          setAutomaticPollingStopped(
+            true,
+          )
+
           setError(
-            caught.message,
+            `${caught.message} Automatic status checks have stopped. Use Refresh if your access changes.`,
+          )
+
+          return
+        }
+
+        const failures =
+          pollFailureCount.current +
+          1
+
+        pollFailureCount.current =
+          failures
+
+        if (
+          !reportShouldRetryPolling(
+            failures,
+          )
+        ) {
+          setAutomaticPollingStopped(
+            true,
+          )
+
+          setError(
+            'The report status could not be refreshed after several attempts. Automatic status checks have stopped. Use Refresh to try again.',
           )
 
           return
@@ -218,15 +311,23 @@ export default function LecturerSessionReportPage() {
 
         setError(
           caught instanceof ApiError
-            ? `${caught.message} Automatic status checks will continue.`
-            : 'The report status could not be refreshed. Automatic status checks will continue.',
+            ? `${caught.message} The page will retry automatically.`
+            : 'The report status could not be refreshed. The page will retry automatically.',
         )
 
-        scheduleNextPoll()
+        scheduleNextPoll(
+          reportPollDelayMs(
+            failures,
+          ),
+        )
       }
     }
 
-    scheduleNextPoll()
+    scheduleNextPoll(
+      reportPollDelayMs(
+        pollFailureCount.current,
+      ),
+    )
 
     return () => {
       active = false
@@ -239,26 +340,56 @@ export default function LecturerSessionReportPage() {
         )
       }
     }
-  }, [job])
+  }, [
+    activeJob,
+    automaticPollingStopped,
+  ])
 
   async function generateReport() {
     if (!sessionId) {
       return
     }
 
+    const targetSessionId =
+      sessionId
+
     setLoading(true)
     setError(null)
+
+    pollFailureCount.current = 0
+
+    setAutomaticPollingStopped(
+      true,
+    )
 
     try {
       const requested =
         await requestSessionReport(
-          sessionId,
+          targetSessionId,
         )
 
+      if (
+        sessionIdRef.current !==
+        targetSessionId
+      ) {
+        return
+      }
+
       setJob(requested)
+
+      setAutomaticPollingStopped(
+        false,
+      )
     } catch (
       caught: unknown
     ) {
+      if (
+        sessionIdRef.current !==
+        targetSessionId
+      ) {
+        return
+      }
+
       if (
         caught instanceof ApiError &&
         caught.status === 401
@@ -278,28 +409,66 @@ export default function LecturerSessionReportPage() {
           : 'The session report could not be requested.',
       )
     } finally {
-      setLoading(false)
+      if (
+        sessionIdRef.current ===
+        targetSessionId
+      ) {
+        setLoading(false)
+      }
     }
   }
 
   async function refreshReport() {
-    if (!job) {
+    if (
+      !activeJob ||
+      !sessionId
+    ) {
       return
     }
+
+    const reportId =
+      activeJob.report_id
+
+    const targetSessionId =
+      sessionId
 
     setLoading(true)
     setError(null)
 
+    setAutomaticPollingStopped(
+      true,
+    )
+
+    pollFailureCount.current = 0
+
     try {
       const updated =
         await getSessionReport(
-          job.report_id,
+          reportId,
         )
 
+      if (
+        sessionIdRef.current !==
+        targetSessionId
+      ) {
+        return
+      }
+
       setJob(updated)
+
+      setAutomaticPollingStopped(
+        false,
+      )
     } catch (
       caught: unknown
     ) {
+      if (
+        sessionIdRef.current !==
+        targetSessionId
+      ) {
+        return
+      }
+
       if (
         caught instanceof ApiError &&
         caught.status === 401
@@ -326,23 +495,48 @@ export default function LecturerSessionReportPage() {
         return
       }
 
+      if (
+        caught instanceof ApiError &&
+        caught.status === 403
+      ) {
+        setError(
+          `${caught.message} Automatic status checks remain stopped.`,
+        )
+
+        return
+      }
+
       setError(
         caught instanceof ApiError
-          ? caught.message
-          : 'The report status could not be refreshed.',
+          ? `${caught.message} Automatic status checks remain stopped. Use Refresh to try again.`
+          : 'The report status could not be refreshed. Automatic status checks remain stopped. Use Refresh to try again.',
       )
     } finally {
-      setLoading(false)
+      if (
+        sessionIdRef.current ===
+        targetSessionId
+      ) {
+        setLoading(false)
+      }
     }
   }
 
   async function downloadPdf() {
     if (
-      !job ||
-      !reportIsReady(job)
+      !activeJob ||
+      !reportIsReady(
+        activeJob,
+      ) ||
+      !sessionId
     ) {
       return
     }
+
+    const reportId =
+      activeJob.report_id
+
+    const targetSessionId =
+      sessionId
 
     setDownloading(true)
     setError(null)
@@ -350,8 +544,15 @@ export default function LecturerSessionReportPage() {
     try {
       const download =
         await downloadSessionReportPdf(
-          job.report_id,
+          reportId,
         )
+
+      if (
+        sessionIdRef.current !==
+        targetSessionId
+      ) {
+        return
+      }
 
       const url =
         window.URL.createObjectURL(
@@ -380,6 +581,13 @@ export default function LecturerSessionReportPage() {
     } catch (
       caught: unknown
     ) {
+      if (
+        sessionIdRef.current !==
+        targetSessionId
+      ) {
+        return
+      }
+
       if (
         caught instanceof ApiError &&
         caught.status === 401
@@ -412,23 +620,28 @@ export default function LecturerSessionReportPage() {
           : 'The PDF could not be downloaded.',
       )
     } finally {
-      setDownloading(false)
+      if (
+        sessionIdRef.current ===
+        targetSessionId
+      ) {
+        setDownloading(false)
+      }
     }
   }
 
   const report =
-    job?.report ?? null
+    activeJob?.report ?? null
 
   const failure =
-    job
+    activeJob
       ? reportFailureMessage(
-          job,
+          activeJob,
         )
       : null
 
   const canGenerate =
-    !job ||
-    job.status === 'failed'
+    !activeJob ||
+    activeJob.status === 'failed'
 
   return (
     <main className="min-h-screen bg-background">
@@ -517,7 +730,7 @@ export default function LecturerSessionReportPage() {
               >
                 {loading
                   ? 'Requesting...'
-                  : job?.status ===
+                  : activeJob?.status ===
                       'failed'
                     ? 'Generate again'
                     : 'Generate report'}
@@ -550,7 +763,7 @@ export default function LecturerSessionReportPage() {
             </div>
           )}
 
-          {job && (
+          {activeJob && (
             <div className="mt-6 rounded-xl border border-border bg-background p-5">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
@@ -560,14 +773,14 @@ export default function LecturerSessionReportPage() {
 
                   <p className="mt-1 text-lg font-semibold">
                     {reportStatusLabel(
-                      job.status,
+                      activeJob.status,
                     )}
                   </p>
 
                   <p className="mt-1 text-xs text-muted-foreground">
                     Requested:{' '}
                     {dateLabel(
-                      job.requested_at,
+                      activeJob.requested_at,
                     )}
                   </p>
                 </div>
@@ -595,7 +808,7 @@ export default function LecturerSessionReportPage() {
                     type="button"
                     disabled={
                       !reportIsReady(
-                        job,
+                        activeJob,
                       ) ||
                       downloading
                     }
@@ -617,21 +830,18 @@ export default function LecturerSessionReportPage() {
               </div>
 
               {(
-                job.status ===
+                activeJob.status ===
                   'queued' ||
-                job.status ===
+                activeJob.status ===
                   'running'
               ) && (
                 <p
                   role="status"
                   className="mt-4 text-sm text-muted-foreground"
                 >
-                  The report is being
-                  generated. This page
-                  checks its status
-                  automatically. Temporary
-                  refresh failures are
-                  retried.
+                  {automaticPollingStopped
+                    ? 'Automatic status checks are stopped. Use Refresh to check the report again.'
+                    : 'The report is being generated. This page checks its status automatically. Temporary failures are retried with a bounded backoff.'}
                 </p>
               )}
 
