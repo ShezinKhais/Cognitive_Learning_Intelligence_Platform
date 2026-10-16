@@ -118,6 +118,7 @@ export function LiveSessionPanel({
             </div>
 
             <ConnectionBadge status={state.connection} />
+            {state.sessionStatus === 'ended' && <Link className="text-info underline" to={`/student/reviews/${session.id}`}>Review this session</Link>}
           </div>
 
           <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 border-t border-border pt-4 text-sm text-muted-foreground">

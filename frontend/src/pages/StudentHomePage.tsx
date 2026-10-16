@@ -84,6 +84,8 @@ export default function StudentHomePage() {
           </div>
         </header>
 
+        <Link to="/student/reviews" className="mt-6 inline-flex rounded-lg border border-border px-4 py-2 font-medium text-info">Review past sessions</Link>
+
         {!LIVE_SESSIONS_ENABLED && (
           <div
             role="status"
@@ -168,6 +170,8 @@ function SessionCard({
         >
           {session.status === 'active' ? 'Join live session' : 'Open waiting room'}
         </Link>
+      ) : session.status === 'ended' ? (
+        <Link to={`/student/reviews/${session.id}`} className="mt-5 inline-flex rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground">Review session</Link>
       ) : (
         <span className="mt-5 inline-flex rounded-lg bg-muted px-4 py-2 text-sm font-medium text-muted-foreground">
           Session {session.status}
