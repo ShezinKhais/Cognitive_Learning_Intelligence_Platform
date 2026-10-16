@@ -1,3 +1,4 @@
+
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
 import test, { beforeEach } from 'node:test'
@@ -50,7 +51,10 @@ type ResponseBody = {
   report_id: string
 }
 
-const body = (status: string, session_id = SESSION): ResponseBody => ({
+const body = (
+  status: string,
+  session_id = SESSION,
+): ResponseBody => ({
   status,
   session_id,
   report_id: REPORT,
@@ -97,7 +101,27 @@ function scenario(
     input: RequestInfo | URL,
     options?: RequestInit,
   ) => {
-    assert.equal(String(input), `/api/v1/reports/${REPORT}`)
+    const url = String(input)
+
+    // On the merged PR, authentication automatically attempts one token
+    // refresh after HTTP 401. Reject that refresh to simulate an expired
+    // session, allowing the report page's authentication handler to run.
+    // Older branches have no refresh request, so both implementations
+    // can be tested without changing production code.
+    if (url === '/api/v1/auth/refresh') {
+      assert.equal(options?.method, 'POST')
+      return response(
+        {
+          error: {
+            code: 'UNAUTHENTICATED',
+            message: 'Session expired.',
+          },
+        },
+        401,
+      )
+    }
+
+    assert.equal(url, `/api/v1/reports/${REPORT}`)
     assert.equal(
       new Headers(options?.headers).get('Authorization'),
       'Bearer test-token',
@@ -152,8 +176,8 @@ function scenario(
       pendingTimers.delete(id)
       callback()
 
-      // Let the fetch promise and response handling finish.
-      for (let i = 0; i < 12; i++) {
+      // Allow the report request and any token-refresh request to finish.
+      for (let i = 0; i < 30; i++) {
         await Promise.resolve()
       }
 
@@ -258,7 +282,7 @@ test('404 removes an expired report and stops polling', async () => {
   s.cancel()
 })
 
-test('401 invokes the page authentication handler without retrying', async () => {
+test('401 invokes the authentication handler after a rejected token refresh', async () => {
   const s = scenario([
     response({ error: { code: 'UNAUTHENTICATED' } }, 401),
   ])
@@ -266,6 +290,7 @@ test('401 invokes the page authentication handler without retrying', async () =>
   await s.runNext()
 
   assert.equal(s.unauthorized(), 1)
+  assert.equal(s.calls(), 1)
   assert.equal(s.pending(), 0)
   assert.equal(store.get('clip_access_token'), undefined)
 
@@ -286,7 +311,7 @@ test('a cancelled poll cannot process a late API response', async () => {
 
   resolveResponse(response(body('ready')))
 
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 30; i++) {
     await Promise.resolve()
   }
 
