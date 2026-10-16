@@ -9,12 +9,15 @@ name that passed text screening.
 What it will not do (see report_validation.py for the checks):
 
 * Engagement is reported only for a student who has consented to engagement
-  monitoring, and from the running class's scores only. Otherwise it reads
-  "insufficient data" with no signals, not zero.
+  monitoring, and only from the running class's live scores. The summary is
+  served after the session has ended, when those scores are gone (they are not
+  stored), so today it always reads "insufficient data" with no signals, not
+  zero. The path is kept for when scores are persisted.
 * Engagement never produces an action item.
-* A topic is labelled only when at least one of the student's answers on it was
-  classified with enough confidence; a topic whose every label is uncertain is
-  left out rather than reported as a weakness.
+* Every classified answer counts towards a topic's label, as in AI 1's
+  topic_difficulty and summariser. Classifier confidence only gates action
+  items: a topic is suggested for practice only when at least one of its
+  answers was classified with enough confidence.
 * A topic name that carries an instruction or markup is left out.
 """
 

@@ -208,7 +208,10 @@ async def test_a_session_that_does_not_exist_is_a_404(world: World) -> None:
 async def test_a_session_of_another_course_does_not_serve_a_students_summary(world: World) -> None:
     other = await add_course(world.factory, world.created)
     other_session = create_session(world.client, other)
-    assert world.get(session_id=UUID(other_session["id"])).status_code == 404
+    other_id = UUID(other_session["id"])
+    # Ended, so the only thing left to refuse it is the course check.
+    await world.set_status("ended", other_id)
+    assert world.get(session_id=other_id).status_code == 404
 
 
 async def test_without_signing_in_there_is_no_summary(world: World) -> None:
