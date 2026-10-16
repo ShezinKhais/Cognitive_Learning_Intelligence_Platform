@@ -22,6 +22,7 @@ export interface LiveSessionState {
   completedCheckpoint: CheckpointState | null
   attentionPrompt: AttentionPrompt | null
   error: LiveErrorEvent | null
+  attentionConsentRejected: number
 }
 
 export type LiveSessionAction =
@@ -44,6 +45,7 @@ export type LiveSessionAction =
   | { type: 'attention-prompt-cleared'; promptId: string }
   | { type: 'error'; payload: LiveErrorEvent }
   | { type: 'clear-error' }
+  | { type: 'attention-consent-rejected' }
 
 export function initialLiveSessionState(
   status: SessionStatus,
@@ -59,6 +61,7 @@ export function initialLiveSessionState(
     completedCheckpoint: null,
     attentionPrompt: null,
     error: null,
+    attentionConsentRejected: 0,
   }
 }
 
@@ -93,6 +96,8 @@ export function liveSessionReducer(
   action: LiveSessionAction,
 ): LiveSessionState {
   switch (action.type) {
+    case 'attention-consent-rejected':
+      return { ...state, attentionConsentRejected: state.attentionConsentRejected + 1 }
     case 'connection': {
       const connectionLost =
         action.status === 'offline' ||

@@ -13,15 +13,17 @@ from __future__ import annotations
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 
 from app.api.deps import (
+    AppSettings,
     CurrentUser,
     DbSession,
     Paginated,
     require_consents,
     require_roles,
 )
+from app.core.audit import audit_action
 from app.core.errors import NotFoundError, not_implemented
 from app.realtime.classroom import classroom
 from app.repositories.session_repository import SessionRepository
@@ -40,7 +42,8 @@ from app.schemas.session import (
     StudentSessionSummary,
     TopicDifficultyOut,
 )
-from app.services import alert_store, session_lifecycle
+from app.services import alert_store, session_lifecycle, session_reads
+from app.services.engagement_view import staff_confidence, staff_score, staff_signals
 from app.services.session_access import may_view_session_analytics
 
 # Running a session is staff work. Students reach a session over the socket.
@@ -61,9 +64,12 @@ router = APIRouter(
     status_code=status.HTTP_201_CREATED,
     dependencies=_staff,
 )
+@audit_action("SESSION_CREATED")
 async def create_session(
     payload: SessionCreateRequest,
     principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
     db: DbSession,
 ) -> SessionOut:
     """Prepare a session for a course. It starts once questions are staged."""
@@ -76,7 +82,9 @@ async def list_sessions(
     db: DbSession,
     page: Paginated,
 ) -> Page[SessionOut]:
-    raise not_implemented("BBIS", "Phase 3")
+    """The caller's sessions, newest first: a lecturer's own, a student's
+    courses', or every session for an admin."""
+    return await session_reads.list_sessions(db, principal, page.limit, page.offset)
 
 
 @router.get("/{session_id}", response_model=SessionOut)
@@ -85,7 +93,7 @@ async def get_session(
     principal: CurrentUser,
     db: DbSession,
 ) -> SessionOut:
-    raise not_implemented("BBIS", "Phase 3")
+    return await session_reads.get_session(db, principal, session_id)
 
 
 @router.get(
@@ -119,15 +127,18 @@ async def session_readiness(
     principal: CurrentUser,
     db: DbSession,
 ) -> SessionReadinessOut:
-    """Whether the session's material has processed and approved questions are
-    staged. Start is refused, with the same blockers, until ready is true."""
+    """What the session has to deliver: its material and staged questions.
+    Each issue is a warning; none of them stops the session from starting."""
     return await session_lifecycle.session_readiness(db, principal, session_id)
 
 
 @router.post("/{session_id}/start", response_model=SessionOut, dependencies=_staff)
+@audit_action("SESSION_STARTED")
 async def start_session(
     session_id: UUID,
     principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
     db: DbSession,
 ) -> SessionOut:
     """Blocked until the session is ready. GET /readiness says why it is not."""
@@ -135,9 +146,12 @@ async def start_session(
 
 
 @router.post("/{session_id}/pause", response_model=SessionOut, dependencies=_staff)
+@audit_action("SESSION_PAUSED")
 async def pause_session(
     session_id: UUID,
     principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
     db: DbSession,
 ) -> SessionOut:
     """Holds the question cycle of an active session until it resumes. A question
@@ -146,9 +160,12 @@ async def pause_session(
 
 
 @router.post("/{session_id}/resume", response_model=SessionOut, dependencies=_staff)
+@audit_action("SESSION_RESUMED")
 async def resume_session(
     session_id: UUID,
     principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
     db: DbSession,
 ) -> SessionOut:
     """Resumes a paused session. The next scheduled question comes after whatever
@@ -157,9 +174,12 @@ async def resume_session(
 
 
 @router.post("/{session_id}/end", response_model=SessionOut, dependencies=_staff)
+@audit_action("SESSION_ENDED")
 async def end_session(
     session_id: UUID,
     principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
     db: DbSession,
 ) -> SessionOut:
     """Ends an active session, or cancels one that has not started."""
@@ -171,10 +191,13 @@ async def end_session(
     status_code=status.HTTP_202_ACCEPTED,
     dependencies=_staff,
 )
+@audit_action("QUESTION_DELIVERED")
 async def deliver_question(
     session_id: UUID,
     question_id: UUID,
     principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
     db: DbSession,
 ) -> dict[str, str]:
     """Lecturer's manual trigger. The scheduler uses the same internal path."""
@@ -188,7 +211,9 @@ async def list_responses(
     db: DbSession,
     page: Paginated,
 ) -> Page[ResponseOut]:
-    raise not_implemented("BBIS", "Phase 3")
+    """Every response in the session for its lecturer or an admin, and a
+    student's own for a student."""
+    return await session_reads.list_responses(db, principal, session_id, page.limit, page.offset)
 
 
 @router.get("/{session_id}/engagement", response_model=list[EngagementOut], dependencies=_staff)
@@ -200,7 +225,7 @@ async def session_engagement(
     """Engagement only. Comprehension is served separately and the two are never
     combined into one figure. Scores live with the running session, so a
     session this process is not running reports none."""
-    await _analytics_session(db, principal, session_id)
+    await require_analytics_access(db, principal, session_id)
     scored = classroom.engagement(session_id)
     # The classroom knows students by user id; the contract speaks in
     # student.student_id, the id ResponseOut and the student table use.
@@ -209,10 +234,11 @@ async def session_engagement(
         EngagementOut(
             student_id=student_ids[s.user_id],
             session_id=session_id,
-            score=s.engagement.score,
+            score=staff_score(s.engagement.score),
             status=s.engagement.status,
-            confidence=s.engagement.confidence,
-            signals_available=s.engagement.signals_available,
+            # The same view for every student: see services/engagement_view.py.
+            confidence=staff_confidence(s.engagement.signals_available),
+            signals_available=staff_signals(s.engagement.signals_available),
             computed_at=s.scored_at,
         )
         for s in scored
@@ -235,7 +261,7 @@ async def session_alerts(
 
     Read from the stored alerts, so it works during and after a session and
     after a refresh."""
-    await _analytics_session(db, principal, session_id)
+    await require_analytics_access(db, principal, session_id)
     return await alert_store.list_session_alerts(db, session_id, status=status_filter)
 
 
@@ -244,10 +270,13 @@ async def session_alerts(
     response_model=AlertOut,
     dependencies=_staff,
 )
+@audit_action("ALERT_ACKNOWLEDGED")
 async def acknowledge_session_alert(
     session_id: UUID,
     alert_id: UUID,
     principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
     db: DbSession,
 ) -> AlertOut:
     """Mark an alert as seen. The lecturer who runs the session, or an admin.
@@ -255,7 +284,7 @@ async def acknowledge_session_alert(
     The first acknowledgement is kept: acknowledging an alert again, as
     anyone, returns it unchanged. An alert from another session is reported as
     missing."""
-    await _analytics_session(db, principal, session_id)
+    await require_analytics_access(db, principal, session_id)
     return await alert_store.acknowledge_session_alert(db, session_id, alert_id, principal.user_id)
 
 
@@ -268,12 +297,12 @@ async def session_topics(
     """How hard the class found each topic, hardest first. Read from stored
     comprehension labels, so it works during and after a session. Topics with
     too few answers for a level come last."""
-    await _analytics_session(db, principal, session_id)
+    await require_analytics_access(db, principal, session_id)
     topics = await DatabaseTopicAnswers(db).session_topics(session_id)
     return [TopicDifficultyOut.model_validate(topic) for topic in topics]
 
 
-async def _analytics_session(db: DbSession, principal: CurrentUser, session_id: UUID) -> None:
+async def require_analytics_access(db: DbSession, principal: CurrentUser, session_id: UUID) -> None:
     """Another lecturer's session is reported as missing, as it is for the
     lifecycle routes, so a session id cannot be probed for existence."""
     row = await SessionRepository(db).get(session_id)

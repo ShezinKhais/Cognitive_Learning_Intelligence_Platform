@@ -3,7 +3,8 @@
 AI 1 scores answers and works out reveals (live_recorder.py), BBIS stores
 answers, closes, prompt outcomes and attendance (LiveEventRepository), and
 Cyber 1 reads comprehension (DatabaseComprehensionSource) and keeps the
-lecturer's alerts (alert_store.py). main.py calls
+lecturer's alerts (alert_store.py), and each student's attention signals are
+summarised per minute into BBIS's attention_signal_summary. main.py calls
 install_live_store() in its lifespan, before classroom.check_wiring() reports
 anything still missing.
 
@@ -12,23 +13,38 @@ The classroom calls these concurrently, so every call opens its own session.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+import logging
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 from uuid import UUID
+
+from sqlalchemy.exc import IntegrityError
 
 from app.core.database import get_session_factory
 from app.models.question import Question
 from app.models.student_response import StudentResponse
 from app.realtime.classroom import Classroom
-from app.realtime.recorders import Attendance, ClosedQuestion, PromptOutcome
+from app.realtime.recorders import (
+    Attendance,
+    AttentionWindow,
+    ClosedQuestion,
+    PromptOutcome,
+    RoomAlert,
+)
+from app.repositories import attention_signal_repository
 from app.repositories.comprehension_repository import DatabaseComprehensionSource
 from app.repositories.live_event_repository import LiveEventRepository
 from app.repositories.question_repository import QuestionRepository
+from app.repositories.student_repository import StudentRepository
 from app.schemas.session import ClassComprehensionAlert
-from app.services.alert_store import store_comprehension_alert
+from app.services import free_text_marking
+from app.services.alert_store import store_comprehension_alert, store_room_alert
+from app.services.comprehension_refresh import refresh
 from app.services.comprehension_writer import label_response
 from app.services.live_recorder import LiveCloseRecorder, LiveResponseRecorder
+
+log = logging.getLogger("clip.classroom")
 
 
 @asynccontextmanager
@@ -54,7 +70,10 @@ async def _store_response(**response: Any) -> StudentResponse:
         stored = await events.record_response(**response)
         # In the answer's transaction: stored together or not at all.
         await label_response(events.session, stored)
-        return stored
+    if stored.free_text is not None and stored.is_correct is None:
+        # Marked once stored, without keeping the student waiting.
+        free_text_marking.mark_later(stored.response_id, stored.question_id, stored.free_text)
+    return stored
 
 
 async def _store_close(closed: ClosedQuestion) -> None:
@@ -67,6 +86,9 @@ async def _store_close(closed: ClosedQuestion) -> None:
             reason=closed.reason,
             closed_at=closed.closed_at,
         )
+    from app.realtime.classroom import classroom
+
+    await classroom.refresh_comprehension(closed.session_id, closed.question_id)
 
 
 class _Engagement:
@@ -104,6 +126,43 @@ class _Alerts:
     async def record_alert(self, alert: ClassComprehensionAlert) -> None:
         await store_comprehension_alert(alert)
 
+    async def record_room_alert(self, alert: RoomAlert) -> None:
+        await store_room_alert(alert)
+
+
+class _AttentionSummaries:
+    """BBIS's per-minute attention summaries, for the analytics layer."""
+
+    async def record_windows(self, windows: Sequence[AttentionWindow]) -> None:
+        async with get_session_factory()() as db:
+            # The classroom knows students by user id; the table, like the
+            # rest of the contract, by student.student_id.
+            student_ids = await StudentRepository(db).student_ids_by_user(
+                list({w.user_id for w in windows})
+            )
+            for window in windows:
+                student_id = student_ids.get(window.user_id)
+                if student_id is None:
+                    continue
+                # Each in a savepoint of its own, so a minute already stored
+                # (a retry, or a restart mid-minute) costs only that minute.
+                try:
+                    async with db.begin_nested():
+                        await attention_signal_repository.save_summary(
+                            db,
+                            session_id=window.session_id,
+                            student_id=student_id,
+                            window_start=window.window_start,
+                            summary=attention_signal_repository.summarise(window.signals),
+                        )
+                except IntegrityError:
+                    log.info(
+                        "attention minute %s in session %s was already stored",
+                        window.window_start,
+                        window.session_id,
+                    )
+            await db.commit()
+
 
 def install_live_store(room: Classroom) -> None:
     room.recorder = LiveResponseRecorder(get_question=_get_question, store_response=_store_response)
@@ -112,4 +171,6 @@ def install_live_store(room: Classroom) -> None:
     )
     room.prompt_recorder = room.participant_recorder = _Engagement()
     room.comprehension_source = DatabaseComprehensionSource()
+    room.comprehension_refresher = refresh
     room.alert_recorder = _Alerts()
+    room.attention_recorder = _AttentionSummaries()

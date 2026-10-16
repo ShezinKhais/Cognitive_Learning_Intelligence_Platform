@@ -43,13 +43,10 @@ class EngagementStatus(StrEnum):
 
 
 class ReadinessIssueCode(StrEnum):
-    """Why a session is not ready to start, or what the lecturer should know.
+    """What the lecturer should know before starting a session.
 
-    Only NO_APPROVED_QUESTIONS always blocks the start. NO_MATERIAL and
-    MATERIAL_PROCESSING explain why there is no question to deliver, so they
-    block alongside it and are warnings when one is staged. MATERIAL_FAILED is
-    only ever a warning: one broken upload should not hold back a class whose
-    other material is fine.
+    Each one is a warning. None of them stops the start: a session may begin
+    with no staged question and have one staged while it is live.
     """
 
     NO_MATERIAL = "no_material"
@@ -160,11 +157,19 @@ class EngagementOut(BaseModel):
     confidence: float = Field(
         ge=0.0,
         le=1.0,
-        description="Low confidence renders as 'insufficient data', never as 'disengaged'.",
+        description=(
+            "Whether participation evidence backs the score: 1 when it does, 0 when it does "
+            "not, worked out the same way for every student. It is not a probability. "
+            "No evidence renders as 'insufficient data', never as 'disengaged'."
+        ),
     )
     signals_available: list[str] = Field(
         default_factory=list,
-        description="Which signals contributed. Missing signals are renormalised, not zeroed.",
+        description=(
+            "['participation'] when questions attempted, answer timing or attention prompt "
+            "responses backed the score, otherwise empty. The same view for every student; "
+            "camera and microphone detail is not reported."
+        ),
     )
     computed_at: datetime
 

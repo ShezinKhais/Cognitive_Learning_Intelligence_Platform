@@ -1,7 +1,7 @@
 """extend audit log for governance
 
 Revision ID: b8e4d1a67c35
-Revises: a3f6c8d2e591
+Revises: c5d8e2f71a40
 Create Date: 2026-10-13 14:00:00.000000
 
 """
@@ -14,7 +14,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "b8e4d1a67c35"
-down_revision: str | Sequence[str] | None = "a3f6c8d2e591"
+down_revision: str | Sequence[str] | None = "c5d8e2f71a40"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

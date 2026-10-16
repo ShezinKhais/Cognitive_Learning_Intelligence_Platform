@@ -3,6 +3,16 @@
 export const API_BASE = '/api/v1'
 
 const ACCESS_TOKEN_KEY = 'clip_access_token'
+const ACCESS_TOKEN_EXPIRES_KEY = 'clip_access_token_expires_at'
+
+// A token is swapped for a fresh one this long before it expires, so a class
+// that runs past the token's lifetime is not ended by a sign-in. The sign-in
+// itself still ends when the backend's cap says so.
+const REFRESH_BEFORE_MS = 5 * 60 * 1000
+// A refresh that failed for any reason but a refused token (offline, a
+// restart) is tried again this often until the token expires. Once it has
+// expired the backend will not renew it, so waiting for a 401 is too late.
+const REFRESH_RETRY_MS = 30 * 1000
 
 export type Role = 'student' | 'lecturer' | 'admin'
 
@@ -56,14 +66,117 @@ export function getAccessToken(): string | null {
   return window.localStorage.getItem(ACCESS_TOKEN_KEY)
 }
 
-export function saveAccessToken(token: string): void {
+export function saveAccessToken(token: string, expiresIn?: number): void {
   forgetCurrentUser()
   window.localStorage.setItem(ACCESS_TOKEN_KEY, token)
+  if (expiresIn === undefined) {
+    window.localStorage.removeItem(ACCESS_TOKEN_EXPIRES_KEY)
+  } else {
+    window.localStorage.setItem(ACCESS_TOKEN_EXPIRES_KEY, String(Date.now() + expiresIn * 1000))
+  }
+  scheduleRefresh()
 }
 
 export function clearAccessToken(): void {
   forgetCurrentUser()
   window.localStorage.removeItem(ACCESS_TOKEN_KEY)
+  window.localStorage.removeItem(ACCESS_TOKEN_EXPIRES_KEY)
+  scheduleRefresh()
+}
+
+let refreshTimer: ReturnType<typeof setTimeout> | undefined
+
+function scheduleRefresh(retry = false): void {
+  if (refreshTimer !== undefined) clearTimeout(refreshTimer)
+  refreshTimer = undefined
+  const expiresAt = Number(window.localStorage.getItem(ACCESS_TOKEN_EXPIRES_KEY))
+  if (!getAccessToken() || !expiresAt) return
+  const left = expiresAt - Date.now()
+  if (retry && left <= 0) return
+  const wait = retry
+    ? Math.min(REFRESH_RETRY_MS, left)
+    : Math.max(0, left - REFRESH_BEFORE_MS)
+  refreshTimer = setTimeout(() => void refreshAccessToken(), wait)
+}
+
+let refreshing: Promise<string | null> | null = null
+
+/**
+ * Swap the current token for a fresh one, and return it, or null when the
+ * user has to sign in again. Every caller waiting at once shares one request,
+ * so the live page's polls do not each refresh, and tabs take turns, so two
+ * never send the same token.
+ */
+export function refreshAccessToken(): Promise<string | null> {
+  refreshing ??= renewToken().finally(() => {
+    refreshing = null
+  })
+  return refreshing
+}
+
+async function renewToken(): Promise<string | null> {
+  const before = getAccessToken()
+  const exchange = async (): Promise<string | null> => {
+    const current = getAccessToken()
+    // Another tab refreshed while this one waited its turn.
+    if (!current || current !== before) return current
+    let response: Response
+    try {
+      response = await fetch(apiUrl('/auth/refresh'), {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${current}` },
+      })
+    } catch {
+      // Offline for a moment: the token is kept and the refresh tried again.
+      scheduleRefresh(true)
+      return null
+    }
+    if (response.status === 401) {
+      clearAccessToken()
+      return null
+    }
+    if (!response.ok) {
+      scheduleRefresh(true)
+      return null
+    }
+    const renewed = (await response.json()) as LoginResponse
+    saveAccessToken(renewed.access_token, renewed.expires_in)
+    return renewed.access_token
+  }
+  const locks = typeof navigator === 'undefined' ? undefined : navigator.locks
+  return locks ? locks.request('clip-token-refresh', exchange) : exchange()
+}
+
+// Another tab's refresh moves this tab's timer too.
+window.addEventListener?.('storage', (event) => {
+  if (event.key === ACCESS_TOKEN_KEY || event.key === ACCESS_TOKEN_EXPIRES_KEY) scheduleRefresh()
+})
+scheduleRefresh()
+
+/**
+ * fetch with the caller's token. A 401 is answered by one refresh and one
+ * retry, since the token may have run out while the tab slept, before the
+ * user is sent to sign in. The retry sends the body again, which holds for
+ * every caller today (JSON and FormData); a stream could not be re-sent.
+ */
+export async function authenticatedFetch(
+  path: string,
+  options: RequestInit = {},
+): Promise<Response> {
+  const token = getAccessToken()
+  if (!token) {
+    throw new ApiError(401, 'UNAUTHENTICATED', 'Login is required.')
+  }
+  const send = (bearer: string) => {
+    const headers = new Headers(options.headers)
+    headers.set('Authorization', `Bearer ${bearer}`)
+    return fetch(apiUrl(path), { ...options, headers })
+  }
+  const response = await send(token)
+  if (response.status !== 401) return response
+  const latest = getAccessToken()
+  const renewed = latest && latest !== token ? latest : await refreshAccessToken()
+  return renewed ? send(renewed) : response
 }
 
 // Landing on / checks who the user is, then the page it redirects to checks
@@ -118,20 +231,6 @@ async function request<T>(
 ): Promise<T> {
   const headers = new Headers(options.headers)
 
-  if (authenticated) {
-    const token = getAccessToken()
-
-    if (!token) {
-      throw new ApiError(
-        401,
-        'UNAUTHENTICATED',
-        'Login is required.',
-      )
-    }
-
-    headers.set('Authorization', `Bearer ${token}`)
-  }
-
   if (
     options.body &&
     !(options.body instanceof FormData) &&
@@ -140,10 +239,9 @@ async function request<T>(
     headers.set('Content-Type', 'application/json')
   }
 
-  const response = await fetch(apiUrl(path), {
-    ...options,
-    headers,
-  })
+  const response = authenticated
+    ? await authenticatedFetch(path, { ...options, headers })
+    : await fetch(apiUrl(path), { ...options, headers })
 
   if (!response.ok) {
     const error = await readErrorEnvelope(response)

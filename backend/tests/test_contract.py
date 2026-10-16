@@ -13,9 +13,14 @@ from fastapi.testclient import TestClient
 BACKEND = Path(__file__).resolve().parent.parent
 
 EXPECTED_PATHS = {
+    # Phase 7 AI2: additive own-student review adapter; summary contract unchanged.
+    "/api/v1/student-reviews",
+    "/api/v1/student-reviews/{session_id}",
+    "/api/v1/student-reviews/{session_id}/responses/{response_id}/sources",
     "/api/v1/health",
     "/api/v1/ready",
     "/api/v1/auth/login",
+    "/api/v1/auth/refresh",
     "/api/v1/auth/me",
     "/api/v1/auth/consent",
     "/api/v1/admin/timetable",
@@ -62,6 +67,10 @@ EXPECTED_PATHS = {
     "/api/v1/governance/audit-log",
     "/api/v1/governance/retention/preview",
     "/api/v1/governance/retention/run",
+    # Added in Phase 7 for session reports and their PDF (General CS). Additive.
+    "/api/v1/sessions/{session_id}/reports",
+    "/api/v1/reports/{report_id}",
+    "/api/v1/reports/{report_id}/pdf",
 }
 
 

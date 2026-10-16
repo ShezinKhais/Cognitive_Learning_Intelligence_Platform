@@ -9,6 +9,13 @@ import {
 
 import { ApiError } from '../api'
 import SignOutButton from '../components/SignOutButton'
+import LecturerAttentionPanel from '../features/attention/LecturerAttentionPanel'
+import type {
+  LecturerEngagement,
+} from '../features/attention/lecturerAttention'
+import {
+  getSessionEngagement,
+} from '../features/attention/lecturerAttentionApi'
 import TopicRecoveryPanel from '../features/intelligence/TopicRecoveryPanel'
 import type {
   TopicDifficulty,
@@ -204,6 +211,27 @@ export default function LecturerLiveSessionPage() {
       null,
     )
 
+  const [
+    engagement,
+    setEngagement,
+  ] =
+    useState<LecturerEngagement[]>(
+      [],
+    )
+
+  const [
+    engagementLoading,
+    setEngagementLoading,
+  ] = useState(false)
+
+  const [
+    engagementError,
+    setEngagementError,
+  ] =
+    useState<string | null>(
+      null,
+    )
+
   useEffect(() => {
     setSecondsRemaining(
       secondsUntilClose(
@@ -349,6 +377,90 @@ export default function LecturerLiveSessionPage() {
   }, [
     sessionId,
     closedQuestion,
+  ])
+
+  useEffect(() => {
+    if (
+      !sessionId ||
+      sessionState?.status !==
+        'active'
+    ) {
+      setEngagement([])
+      setEngagementError(null)
+      setEngagementLoading(false)
+      return
+    }
+
+    const currentSessionId =
+      sessionId
+
+    let active = true
+
+    let refreshTimer:
+      | number
+      | undefined
+
+    async function loadEngagement() {
+      if (!active) {
+        return
+      }
+
+      setEngagementLoading(true)
+
+      try {
+        const result =
+          await getSessionEngagement(
+            currentSessionId,
+          )
+
+        if (!active) {
+          return
+        }
+
+        setEngagement(result)
+        setEngagementError(null)
+      } catch (error: unknown) {
+        if (!active) {
+          return
+        }
+
+        setEngagementError(
+          error instanceof ApiError
+            ? error.message
+            : 'Attention and engagement indicators could not be loaded.',
+        )
+      } finally {
+        if (active) {
+          setEngagementLoading(false)
+
+          refreshTimer =
+            window.setTimeout(
+              () => {
+                void loadEngagement()
+              },
+              10_000,
+            )
+        }
+      }
+    }
+
+    void loadEngagement()
+
+    return () => {
+      active = false
+
+      if (
+        refreshTimer !==
+        undefined
+      ) {
+        window.clearTimeout(
+          refreshTimer,
+        )
+      }
+    }
+  }, [
+    sessionId,
+    sessionState?.status,
   ])
 
   async function refreshReadiness() {
@@ -634,7 +746,9 @@ export default function LecturerLiveSessionPage() {
 
                       <p className="mt-1 text-sm text-muted-foreground">
                         {readiness.ready
-                          ? 'The session has approved content available for delivery.'
+                          ? readiness.deliverable_questions > 0
+                            ? 'The session has approved content available for delivery.'
+                            : 'You can start now and stage questions during the session.'
                           : 'Resolve the blockers below before starting the session.'}
                       </p>
                     </div>
@@ -876,6 +990,15 @@ export default function LecturerLiveSessionPage() {
                   '—')}
             </p>
           </section>
+
+          <LecturerAttentionPanel
+            students={engagement}
+            loading={engagementLoading}
+            error={engagementError}
+            sessionStatus={
+              sessionState?.status
+            }
+          />
 
           <section className="rounded-xl border border-border bg-card p-6 lg:col-span-2">
             <div className="flex flex-wrap items-start justify-between gap-4">

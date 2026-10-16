@@ -17,6 +17,7 @@ from app.api.deps import AppSettings, DbSession
 from app.core.errors import ServiceUnavailableError
 from app.schemas.meetings import TeamsActivity
 from app.services import teams_bot
+from app.services.teams_notifications import remember_reference
 
 router = APIRouter(prefix="/teams", tags=["teams"])
 
@@ -55,4 +56,7 @@ async def bot_messages(
         request.headers.get("Authorization"), activity.service_url, activity.channel_id
     )
     authenticator.authorize(activity)
+    # Before the activity is applied, so a refusal there still leaves the
+    # meeting reachable for checkpoint notifications.
+    await remember_reference(db, activity, settings)
     await teams_bot.handle_activity(db, activity, settings)

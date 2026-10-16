@@ -103,6 +103,13 @@ def make_room(
     rng: object | None = None,
     production: bool = False,
     consents: ConsentRegistry | None = None,
+    watch: float = 3600.0,
+    refocus_after: float = 45.0,
+    refocus_cooldown: float = 300.0,
+    voice_fresh: float = 20.0,
+    quiet_after: float = 60.0,
+    needs_attention_after: float = 180.0,
+    max_rooms: int = 50,
 ) -> tuple[Classroom, SessionHub]:
     """interval alone fixes the wait between questions, so timing tests are
     exact; interval_max makes it the random range the cycle draws from.
@@ -120,6 +127,15 @@ def make_room(
         is_production=production,
         comprehension_alert_threshold=0.5,
         comprehension_alert_min_respondents=5,
+        # The watch is an hour away unless a test asks for it, so a test
+        # drives it with watch_once() and timing tests stay exact.
+        signal_watch_seconds=watch,
+        refocus_min_signal_seconds=refocus_after,
+        refocus_cooldown_seconds=refocus_cooldown,
+        room_voice_fresh_seconds=voice_fresh,
+        room_quiet_after_seconds=quiet_after,
+        room_needs_attention_after_seconds=needs_attention_after,
+        max_rooms_per_session=max_rooms,
     )
     room = Classroom(
         events=events,

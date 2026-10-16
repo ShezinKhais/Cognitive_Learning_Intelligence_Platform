@@ -31,6 +31,7 @@ from typing import Literal
 from app.schemas.events import AlertKind
 from app.schemas.session import ComprehensionLabel, EngagementStatus
 from app.services.engagement import EngagementComputation
+from app.services.engagement_view import staff_confidence, staff_score
 from app.services.text_screening import safe_display_text
 
 MAX_TOPIC_CHARS = 80
@@ -43,16 +44,6 @@ LOW_CLASSIFIER_CONFIDENCE = 0.6
 # At least this share of the classified answers struggling means the idea did
 # not land, rather than landing only in part.
 STRUGGLING_MAJORITY = 0.5
-
-# What each engagement signal is called to a lecturer. Keys are the names
-# engagement.py scores; a test keeps the two in step.
-SIGNAL_LABELS = {
-    "attempt_rate": "questions attempted",
-    "response_timing": "how quickly answers arrived",
-    "prompt_response": "responses to attention prompts",
-    "gaze": "gaze on screen",
-    "face_presence": "face presence",
-}
 
 ExplanationSource = Literal["ai", "fallback"]
 
@@ -201,28 +192,21 @@ def explain_topic_difficulty(
 def explain_student_engagement(
     computation: EngagementComputation, *, model_explanation: str | None = None
 ) -> AlertExplanation:
-    """Explain why one student was flagged, from the signals that scored them.
+    """Explain why one student was flagged, for the lecturer.
 
-    Only the signals in computation.signals_available are named: the classroom
-    already drops the ones a student has not consented to, so an explanation
-    can never mention a camera or microphone signal that was not collected.
+    Says how much participation evidence there was and nothing finer. Which
+    individual signals scored a student is not told to staff: for a student with
+    an accommodation some are never scored, and naming the ones that were would
+    reveal it (see engagement_view.py). Camera readings are never named: they
+    only add to a score, and the classroom has already dropped any a student did
+    not consent to.
     """
-    used = [SIGNAL_LABELS.get(name, name) for name in computation.signals_available]
-    missing = [
-        label for name, label in SIGNAL_LABELS.items() if name not in computation.signals_available
-    ]
-    total = len(SIGNAL_LABELS)
-    count = len(used)
-    confidence = max(0.0, min(1.0, computation.confidence))
+    evidence = staff_confidence(computation.signals_available)
+    level = "some" if evidence else "no"
+    confidence = evidence
 
-    reasons: list[str] = [
-        f"{count} of {total} engagement signals were available"
-        + (f": {', '.join(used)}." if used else ".")
-    ]
-    if missing:
-        reasons.append(f"Not available: {', '.join(missing)}.")
-    if count < 3:
-        reasons.append("With so few signals, treat this as an early indication, not a finding.")
+    reasons: list[str] = [f"There was {level} participation evidence for this student."]
+    reasons.append("Treat this as an early indication, not a finding.")
 
     if computation.score is None or computation.status is EngagementStatus.INSUFFICIENT_DATA:
         reason = "There is not enough evidence yet to say how engaged this student is."
@@ -233,7 +217,10 @@ def explain_student_engagement(
         fallback = reason
     else:
         status = computation.status.value.replace("_", " ")
-        reason = f"Engagement score {_percent(computation.score)}% ({status}) from {count} signals."
+        reason = (
+            f"Engagement score {_percent(staff_score(computation.score) or 0.0)}% ({status}) "
+            "from participation evidence."
+        )
         fallback = (
             f"{reason} A low score reflects participation the server observed, "
             "such as questions attempted and answer timing. It is not a judgement of the student."

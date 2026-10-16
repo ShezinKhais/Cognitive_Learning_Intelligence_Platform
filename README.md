@@ -240,15 +240,17 @@ See [docs/governance.md](docs/governance.md).
 |   |   +-- schemas/         request, response and event contracts
 |   |   +-- services/        extraction, storage, jobs, pipeline, lifecycle, Teams bot
 |   +-- migrations/          Alembic migrations
-|   +-- scripts/             contract export, Teams packaging, mock meeting driver
+|   +-- scripts/             contract export, Teams packaging, mock meeting driver,
+|   |                        load test (scripts/loadtest/), deployment smoke test
 |   +-- tests/               pytest, mirroring the app layout
 |   +-- openapi.json         REST contract, generated
 |   +-- events.schema.json   WebSocket contract, generated
 +-- frontend/                React app: student, lecturer and admin interfaces
 +-- teams-app/               Teams manifest, icons and packaging notes
 +-- samples/                 example timetable and roster CSVs
-+-- docs/images/             architecture and design diagrams
++-- docs/                    reference documents; docs/images/ has the diagrams
 +-- docker-compose.yml       PostgreSQL with pgvector
++-- docker-compose.demo.yml  database, backend and web on one machine, see docs/deployment.md
 ```
 
 ## Features
@@ -259,9 +261,16 @@ See [docs/governance.md](docs/governance.md).
 - Answer live checkpoints in the Teams meeting side panel
 - Private feedback on each answer, and the correct answer when the question closes
 - Private attention prompts, answered with "I'm here" or dismissed
+- Attention signals, worked out on the device and sent as numbers, each kind only with
+  its own consent (accepted by the backend; the student app does not send them yet)
+- A private prompt when those signals stay low, and a way to say which breakout room
+  they are in (backend only)
 - Classes resume where they left off after a dropped connection
-- Personal performance summary after the session (planned, Phase 7)
-- Socratic chatbot that gives hints rather than answers (planned, Phase 5)
+- Free-text answers marked against the question's key points, in the background
+- Socratic chatbot that gives hints rather than answers, with the slides it used
+- Optional attention indicators worked out on the student's own device, and only the
+  derived figures sent (Phase 6)
+- Personal performance summary after the session (Phase 7, in review)
 
 ### Lecturer
 
@@ -271,27 +280,30 @@ See [docs/governance.md](docs/governance.md).
 - Send a question manually at any point
 - Live view of who is present, who answered and how the class is doing
 - Class comprehension alerts with the reason for each
-- Link a session to a Teams meeting so the meeting starts and ends it (Phase 4)
-- Breakout room facilitation (planned, Phase 6)
+- Link a session to a Teams meeting so the meeting starts and ends it
+- A session report with a PDF, built from what the session stored
+- Breakout room status and silence alerts (Phase 6, in review)
 
 ### Administrator
 
-- Import the timetable and student rosters from CSV, which create courses, users and
-  enrolments
+- Import the timetable and student rosters from CSV or XLSX: clashes are found and
+  names matched against existing accounts. Storing what was imported is not built yet
 - System status: database and model availability
-- Audit logs and data retention governance (planned, Phase 7)
+- An audit record of every change made on a user's behalf
+- Data retention governance (Phase 7, in progress)
 
 ## API Endpoints
 
 All routes are under `/api/v1`. Interactive documentation is served at `/docs` in
-development. Routes marked **501** have an agreed contract and name the workstream that
-will implement them.
+development. A route marked **501** has an agreed contract and names the workstream that
+will implement it.
 
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
 | GET | `/health` | none | Liveness, and whether Teams is configured |
 | GET | `/ready` | none | Whether PostgreSQL and Ollama are reachable |
 | POST | `/auth/login` | none | Sign in and receive an access token |
+| POST | `/auth/refresh` | any | Swap a still-valid token for a fresh one, within 12 hours of signing in |
 | GET | `/auth/me` | any | The signed-in user, with role and consents |
 | POST | `/auth/consent` | any | Grant or withdraw one kind of consent |
 | POST | `/admin/timetable` | admin | Import the timetable CSV |
@@ -304,17 +316,24 @@ will implement them.
 | POST | `/materials/{material_id}/questions/{question_id}:regenerate` | lecturer, admin | Generate a replacement question |
 | POST | `/materials/{material_id}/questions:bulk` | lecturer, admin | Review several questions at once |
 | POST | `/sessions` | lecturer, admin | Create a session for a course |
-| GET | `/sessions` | any | List sessions (**501**, BBIS, Phase 3) |
-| GET | `/sessions/{session_id}` | any | One session (**501**, BBIS, Phase 3) |
+| GET | `/sessions` | any | The caller's sessions: a lecturer's own, a student's courses' |
+| GET | `/sessions/{session_id}` | any | One session the caller may see |
+| GET | `/sessions/{session_id}/readiness` | lecturer, admin | Whether the session has anything to deliver |
 | POST | `/sessions/{session_id}/start` | lecturer, admin | Start the class |
 | POST | `/sessions/{session_id}/pause` | lecturer, admin | Pause the class and its question timer |
 | POST | `/sessions/{session_id}/resume` | lecturer, admin | Resume the class |
 | POST | `/sessions/{session_id}/end` | lecturer, admin | End the class |
 | GET | `/sessions/{session_id}/questions` | lecturer, admin | Approved questions that can be delivered |
 | POST | `/sessions/{session_id}/questions/{question_id}:deliver` | lecturer, admin | Send a question now |
-| GET | `/sessions/{session_id}/responses` | lecturer, admin | Answers received (**501**, BBIS, Phase 3) |
+| GET | `/sessions/{session_id}/responses` | any | Answers received; a student sees only their own |
 | GET | `/sessions/{session_id}/engagement` | lecturer, admin | Engagement score per student |
+| GET | `/sessions/{session_id}/topics` | lecturer, admin | How each topic went |
 | GET | `/sessions/{session_id}/alerts` | lecturer, admin | Class comprehension alerts |
+| POST | `/sessions/{session_id}/alerts/{alert_id}/acknowledge` | lecturer, admin | Mark an alert as seen |
+| POST | `/sessions/{session_id}/chat` | student | Ask the Socratic tutor, streamed |
+| POST | `/sessions/{session_id}/reports` | lecturer, admin | Build the session report |
+| GET | `/reports/{report_id}` | lecturer, admin | The report, once built |
+| GET | `/reports/{report_id}/pdf` | lecturer, admin | The report as a PDF |
 | GET | `/sessions/{session_id}/summary/{student_id}` | student, staff | Performance summary (**501**, Cyber 1, Phase 7) |
 | POST | `/governance/deletion-requests` | admin | Ask for a session's or student's data to be erased |
 | GET | `/governance/deletion-requests` | admin | List deletion requests, by status |
@@ -328,7 +347,7 @@ will implement them.
 | WS | `/ws/session` | token | Live classroom events, see `events.schema.json` |
 
 The Teams meeting routes (`/meetings/{meeting_id}`, `/meetings/events`) and the bot
-endpoint (`/teams/messages`) are added in Phase 4.
+endpoint (`/teams/messages`) are described in `teams-app/README.md`.
 
 ## Getting Started
 
@@ -442,6 +461,9 @@ After changing any schema, regenerate the contract with
 
 ### Troubleshooting
 
+For shared ports, frontend/backend connection configuration and outstanding
+cross-phase PR dependencies, see [the integration checkpoint](docs/phase-integration.md).
+
 | Problem | Cause | Fix |
 |---|---|---|
 | `/ready` reports the database unavailable | The container is not running | `docker compose up -d`, and check Docker Desktop is started |
@@ -501,12 +523,12 @@ rather than a component, so every phase ends with something that runs end to end
 | 0 | Repository, CI, database and feasibility spikes | Done |
 | 1 | Data and API spine: authentication, RBAC, consent, the API contract | Done |
 | 2 | Content and question pipeline | Done |
-| 3 | Live session core: WebSocket hub, question cycle, session lifecycle | In progress |
-| 4 | Microsoft Teams integration | In progress |
-| 5 | AI intelligence layer: free-text classification, Socratic chatbot | Planned |
-| 6 | Attention signals and breakout groups | Planned |
-| 7 | Reporting, retention and governance | Planned |
-| 8 | Hardening, load testing and delivery | Planned |
+| 3 | Live session core: WebSocket hub, question cycle, session lifecycle | Done |
+| 4 | Microsoft Teams integration | Done |
+| 5 | AI intelligence layer: free-text classification, Socratic chatbot | Done |
+| 6 | Attention signals and breakout groups | In progress |
+| 7 | Reporting, retention and governance | In progress |
+| 8 | Hardening, load testing and delivery | In progress |
 
 ![Project timeline](docs/images/gantt.png)
 
@@ -521,8 +543,24 @@ rather than a component, so every phase ends with something that runs end to end
 | Requirements Analysis (SRS) | `TBD` |
 | Design Document | `TBD` |
 | Test Plan | `TBD` |
+| Security and privacy reviews | [docs/security](docs/security/README.md) |
 | Final Report | `TBD` |
 | Poster | `TBD` |
+
+### Reference documents
+
+Written alongside the code, in `docs/`:
+
+| Document | Covers |
+|---|---|
+| [AI gateway](docs/ai-gateway.md) | The one route every model call takes: queue, deadlines, retries, fallback |
+| [Tutor chat](docs/tutor-chat.md) | `POST /sessions/{session_id}/chat` and what the tutor may be told |
+| [Attention signals](docs/attention-signals.md) | How `signal.attention` becomes per-minute summaries for the analytics layer |
+| [Attention signals and breakout rooms](docs/signals-and-rooms.md) | `signal.attention`, `room.confirm`, `room.status`, private refocus prompts and room alerts |
+| [Reports and scheduled jobs](docs/reports.md) | The session report and its PDF, the scheduler and the retention purge |
+| [Deployment](docs/deployment.md) | Running the stack outside development |
+| [Load and recovery](docs/load-and-recovery.md) | The load-test harness and how the system behaves under failure |
+| [Teams frontend security](docs/teams-frontend-security.md) | Deployment security requirements for the Teams tab |
 
 ## Team
 

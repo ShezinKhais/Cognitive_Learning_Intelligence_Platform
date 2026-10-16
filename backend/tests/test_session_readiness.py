@@ -27,11 +27,12 @@ def _codes(issues) -> list[str]:
     return [issue.code.value for issue in issues]
 
 
-def test_nothing_uploaded_is_not_ready() -> None:
+def test_nothing_uploaded_still_starts_with_warnings() -> None:
     report = assess(uuid4(), [], 0)
 
-    assert report.ready is False
-    assert _codes(report.blockers) == ["no_material", "no_approved_questions"]
+    assert report.ready is True
+    assert report.blockers == []
+    assert _codes(report.warnings) == ["no_material", "no_approved_questions"]
 
 
 def test_no_material_is_a_warning_when_a_question_is_staged() -> None:
@@ -61,9 +62,10 @@ def test_material_still_processing_explains_why_there_are_no_questions() -> None
 
     report = assess(uuid4(), [processing], 0)
 
-    assert report.ready is False
-    assert _codes(report.blockers) == ["material_processing", "no_approved_questions"]
-    assert report.blockers[0].material_id == processing.id
+    assert report.ready is True
+    assert report.blockers == []
+    assert _codes(report.warnings) == ["material_processing", "no_approved_questions"]
+    assert report.warnings[0].material_id == processing.id
 
 
 def test_a_failed_material_is_a_warning_not_a_blocker() -> None:
@@ -78,11 +80,12 @@ def test_a_failed_material_is_a_warning_not_a_blocker() -> None:
     assert report.materials_failed == 1
 
 
-def test_processed_material_without_approved_questions_is_not_ready() -> None:
+def test_processed_material_without_approved_questions_warns_but_is_ready() -> None:
     report = assess(uuid4(), [_file("completed")], 0)
 
-    assert report.ready is False
-    assert _codes(report.blockers) == ["no_approved_questions"]
+    assert report.ready is True
+    assert report.blockers == []
+    assert _codes(report.warnings) == ["no_approved_questions"]
 
 
 def test_processed_material_and_a_staged_question_is_ready() -> None:
@@ -129,7 +132,7 @@ async def test_a_session_with_a_staged_question_reports_ready(db, app) -> None:
     assert body["deliverable_questions"] == 1
 
 
-async def test_processing_material_refuses_the_start_and_says_why(db, app) -> None:
+async def test_a_session_with_no_staged_question_starts_and_says_why(db, app) -> None:
     client, factory, created = db
     course = await add_course(factory, created)
     processing = await _material(db, course, "processing")
@@ -139,17 +142,14 @@ async def test_processing_material_refuses_the_start_and_says_why(db, app) -> No
     readiness = client.get(f"/api/v1/sessions/{session['id']}/readiness").json()
     start = client.post(f"/api/v1/sessions/{session['id']}/start")
 
-    assert readiness["ready"] is False
-    assert start.status_code == 409
-    blockers = start.json()["error"]["detail"]["blockers"]
-    assert [b["code"] for b in blockers] == ["material_processing", "no_approved_questions"]
-    assert blockers[0]["material_id"] == str(processing)
-    # The same blockers on both, so the page and the button agree.
-    assert blockers == readiness["blockers"]
-    # A refused start leaves the session prepared: ending it now cancels it,
-    # which only happens to a session that never started.
-    ended = client.post(f"/api/v1/sessions/{session['id']}/end")
-    assert ended.json()["status"] == "cancelled"
+    assert readiness["ready"] is True
+    assert readiness["blockers"] == []
+    warnings = readiness["warnings"]
+    assert [w["code"] for w in warnings] == ["material_processing", "no_approved_questions"]
+    assert warnings[0]["material_id"] == str(processing)
+    assert start.status_code == 200, start.text
+    assert start.json()["status"] == "active"
+    client.post(f"/api/v1/sessions/{session['id']}/end")
 
 
 async def test_processing_material_does_not_hold_back_a_class_with_questions(db, app) -> None:

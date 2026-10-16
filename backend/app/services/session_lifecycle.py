@@ -91,7 +91,7 @@ async def create_session(
 
 
 async def start_session(db: AsyncSession, principal: Principal, session_id: UUID) -> SessionOut:
-    """Blocked until the session's content is ready. See session_readiness."""
+    """Start a prepared session. Readiness only warns; see session_readiness."""
     repo = SessionRepository(db)
     row = await owned_session(repo, principal, session_id)
     _require(row, SessionStatus.PREPARED, "start")
@@ -388,7 +388,7 @@ async def handle_meeting_event(
             await end_session(db, principal, created.id)
         else:
             # Committed and linked before the start, which may be refused: the
-            # meeting keeps its session, and starts it once a question is staged.
+            # meeting keeps its session, so the next start event finds it.
             await link_meeting(db, principal, event.meeting_id, created.id)
 
     row = await owned_session(SessionRepository(db), principal, session_id, for_update=False)

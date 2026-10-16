@@ -19,7 +19,7 @@ import pytest
 from app.realtime.hub import SessionHub
 from app.schemas.content import Difficulty, QuestionType
 from app.schemas.events import MaterialProgressPayload, MaterialStage, ServerEventType
-from app.services.extraction import ProcessingResult
+from app.services.extraction import ExtractedElement, Extraction
 from app.services.jobs import INTERNAL_ERROR, JobStatus
 from app.services.material_seams import CompletedMaterial, DraftQuestion, EmbeddingBatch
 from app.services.pipeline import NO_QUESTIONS_WARNING
@@ -323,13 +323,13 @@ async def test_extraction_does_not_run_on_the_event_loop(
     seen_request: list[str] = []
     REQUEST.set("upload-42")
 
-    def record(path: str, material_id: UUID, max_bytes: int) -> ProcessingResult:
+    def record(path: str, max_bytes: int, *, with_images: bool = False, ocr=None) -> Extraction:
         ran_on.append(threading.get_ident())
         thread.append(threading.current_thread())
         seen_request.append(REQUEST.get())
-        return ProcessingResult(material_id=material_id, parser_used="stub")
+        return Extraction([ExtractedElement("text", "Hello.", 1)], "stub")
 
-    monkeypatch.setattr("app.services.pipeline.process_material", record)
+    monkeypatch.setattr("app.services.pipeline.extract_material", record)
     pipeline, storage, _ = build(tmp_path)
 
     await pipeline.job(await stored_text(storage), uuid4()).run()
@@ -608,3 +608,23 @@ async def test_the_lecturer_is_told_when_sections_are_held_back(tmp_path: Path) 
     assert len(held_back) == 1
     # Every section was held back, so that is the reason, not thin material.
     assert NO_QUESTIONS_WARNING not in written.warnings
+
+
+async def test_a_scanned_pdf_is_read_when_the_pipeline_has_ocr(tmp_path: Path) -> None:
+    from .test_ocr import PAGE_TEXT, FakeOcr, scanned_pdf
+
+    class Reader:
+        def __init__(self) -> None:
+            self.read = FakeOcr()
+
+    store = Store()
+    pipeline, storage, _ = build(tmp_path, store=store, ocr=Reader())
+    scan = scanned_pdf(tmp_path / "scan.pdf")
+    stored = await storage.save(uuid4(), "Week 4 scan.pdf", feed(read(scan)))
+
+    result = await pipeline.job(stored, uuid4()).run()
+
+    assert result is not None
+    assert result.parser_used == "pypdf+ocr"
+    assert PAGE_TEXT in store.completed[0].result.chunks[0].chunk_text
+    assert any("read with OCR" in w for w in store.completed[0].warnings)

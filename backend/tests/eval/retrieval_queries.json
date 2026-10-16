@@ -1,0 +1,194 @@
+[
+  {
+    "material": "lecture.pptx",
+    "kind": "image",
+    "query": "What goes wrong when a straight regression line is fitted to 0/1 gender data against height?",
+    "pages": [9]
+  },
+  {
+    "material": "lecture.pptx",
+    "kind": "image",
+    "query": "Plot of the logit function y = exp(b0 + b1 x) / (1 + exp(b0 + b1 x))",
+    "pages": [12]
+  },
+  {
+    "material": "lecture.pptx",
+    "kind": "image",
+    "query": "Fitted probabilities from the logistic model plotted against height",
+    "pages": [15, 16]
+  },
+  {
+    "material": "lecture.pptx",
+    "kind": "image",
+    "query": "S-shaped logistic curve drawn over the jittered gender points",
+    "pages": [16]
+  },
+  {
+    "material": "lecture.pptx",
+    "kind": "image",
+    "query": "At around what height does the predicted probability of being female fall to one half?",
+    "pages": [15, 16]
+  },
+  {
+    "material": "lecture.pptx",
+    "kind": "text",
+    "query": "What are the three types of logistic regression?",
+    "pages": [5]
+  },
+  {
+    "material": "lecture.pptx",
+    "kind": "text",
+    "query": "Why are the beta estimates exponentiated into odds ratios?",
+    "pages": [4]
+  },
+  {
+    "material": "lecture.pptx",
+    "kind": "text",
+    "query": "Is logistic regression a discriminative or a generative model?",
+    "pages": [6]
+  },
+  {
+    "material": "lecture.pptx",
+    "kind": "text",
+    "query": "Examples of categorical response variables",
+    "pages": [7]
+  },
+  {
+    "material": "lecture.pptx",
+    "kind": "text",
+    "query": "What is the mean of a 0/1 indicator variable?",
+    "pages": [10]
+  },
+  {
+    "material": "lecture.pptx",
+    "kind": "text",
+    "query": "R output of glm(Gender ~ Hgt, family = binomial) with its coefficients",
+    "pages": [13, 14]
+  },
+  {
+    "material": "cnn_lecture.pptx",
+    "kind": "text",
+    "query": "Why would a fully connected network on megapixel photos need around a billion parameters?",
+    "pages": [2]
+  },
+  {
+    "material": "cnn_lecture.pptx",
+    "kind": "text",
+    "query": "What does translation invariance mean for the first layers of a vision network?",
+    "pages": [3]
+  },
+  {
+    "material": "cnn_lecture.pptx",
+    "kind": "text",
+    "query": "How is each output value of a 2D cross-correlation computed from the input window and the kernel?",
+    "pages": [4]
+  },
+  {
+    "material": "cnn_lecture.pptx",
+    "kind": "text",
+    "query": "What shape is the output when a kh by kw kernel is applied to an nh by nw image without padding?",
+    "pages": [5]
+  },
+  {
+    "material": "cnn_lecture.pptx",
+    "kind": "text",
+    "query": "Which kernel finds vertical edges, and what does it output at an edge from white to black?",
+    "pages": [6]
+  },
+  {
+    "material": "cnn_lecture.pptx",
+    "kind": "text",
+    "query": "How do extra zero pixels around the border stop the image shrinking after many convolutions?",
+    "pages": [7]
+  },
+  {
+    "material": "cnn_lecture.pptx",
+    "kind": "text",
+    "query": "Why do CNN designers prefer kernel sizes like 3, 5 or 7?",
+    "pages": [8]
+  },
+  {
+    "material": "cnn_lecture.pptx",
+    "kind": "text",
+    "query": "What happens when the convolution window moves more than one pixel at a time?",
+    "pages": [9]
+  },
+  {
+    "material": "cnn_lecture.pptx",
+    "kind": "text",
+    "query": "What is the difference between max pooling and average pooling?",
+    "pages": [10]
+  },
+  {
+    "material": "cnn_lecture.pptx",
+    "kind": "text",
+    "query": "Does a pooling layer have any learnable weights?",
+    "pages": [10]
+  },
+  {
+    "material": "cnn_lecture.pptx",
+    "kind": "text",
+    "query": "How many output channels does pooling give for an input with several channels?",
+    "pages": [11]
+  },
+  {
+    "material": "linear_regression_notes.pdf",
+    "kind": "text",
+    "query": "In the house price example, what are the features and what is the label?",
+    "pages": [1]
+  },
+  {
+    "material": "linear_regression_notes.pdf",
+    "kind": "text",
+    "query": "What does linear regression assume about the noise in the target?",
+    "pages": [2]
+  },
+  {
+    "material": "linear_regression_notes.pdf",
+    "kind": "text",
+    "query": "Why does the model need a bias term and not only weights?",
+    "pages": [3]
+  },
+  {
+    "material": "linear_regression_notes.pdf",
+    "kind": "text",
+    "query": "Why is the squared error loss sensitive to outliers?",
+    "pages": [4]
+  },
+  {
+    "material": "linear_regression_notes.pdf",
+    "kind": "text",
+    "query": "When is the closed-form least squares solution unique?",
+    "pages": [5]
+  },
+  {
+    "material": "linear_regression_notes.pdf",
+    "kind": "text",
+    "query": "What minibatch size is a sensible starting point for SGD?",
+    "pages": [6]
+  },
+  {
+    "material": "linear_regression_notes.pdf",
+    "kind": "text",
+    "query": "Are the learning rate and the batch size learned during training?",
+    "pages": [6]
+  },
+  {
+    "material": "linear_regression_notes.pdf",
+    "kind": "text",
+    "query": "Why is one vectorised addition faster than a Python for-loop over the elements?",
+    "pages": [7]
+  },
+  {
+    "material": "linear_regression_notes.pdf",
+    "kind": "text",
+    "query": "Why does minimising squared error give the maximum likelihood estimate?",
+    "pages": [8]
+  },
+  {
+    "material": "linear_regression_notes.pdf",
+    "kind": "text",
+    "query": "How many layers does linear regression have when drawn as a neural network?",
+    "pages": [9]
+  }
+]

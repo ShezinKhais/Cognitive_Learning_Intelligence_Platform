@@ -41,6 +41,9 @@ class TokenClaims:
     user_id: UUID
     role: Role
     email: str
+    # When the user typed their password. A refreshed token keeps the time of
+    # the sign-in it came from, so the sign-in as a whole can be capped.
+    auth_time: datetime
 
 
 def hash_password(password: str) -> str:
@@ -98,12 +101,20 @@ def create_access_token(
     email: str,
     settings: Settings,
     expires_delta: timedelta | None = None,
+    auth_time: datetime | None = None,
 ) -> tuple[str, int]:
-    """Create a signed JWT and return it with its lifetime in seconds."""
+    """Create a signed JWT and return it with its lifetime in seconds.
+
+    `auth_time` is the sign-in the token belongs to, now for a login. No token
+    outlives that sign-in by more than max_sign_in_hours, so a refreshed token
+    is cut short when the cap is near.
+    """
     lifetime = expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
 
     now = datetime.now(UTC)
-    expires_at = now + lifetime
+    signed_in = auth_time or now
+    expires_at = min(now + lifetime, signed_in + timedelta(hours=settings.max_sign_in_hours))
+    lifetime = expires_at - now
 
     payload = {
         "sub": str(user_id),
@@ -111,6 +122,7 @@ def create_access_token(
         "email": email,
         "iat": now,
         "exp": expires_at,
+        "auth_time": int(signed_in.timestamp()),
     }
 
     token = jwt.encode(
@@ -135,6 +147,9 @@ def decode_access_token(token: str, settings: Settings) -> TokenClaims:
         user_id = UUID(str(payload["sub"]))
         role = Role(str(payload["role"]))
         email = str(payload["email"]).strip().lower()
+        # Tokens issued before auth_time was added began their sign-in when
+        # they were issued.
+        auth_time = datetime.fromtimestamp(int(payload.get("auth_time", payload["iat"])), UTC)
 
         if not email:
             raise ValueError("empty email")
@@ -146,6 +161,7 @@ def decode_access_token(token: str, settings: Settings) -> TokenClaims:
         user_id=user_id,
         role=role,
         email=email,
+        auth_time=auth_time,
     )
 
 

@@ -22,6 +22,7 @@ from app.core.config import get_settings
 from app.core.errors import NotFoundError
 from app.models.ai_alert import AIAlert
 from app.models.session import Session as SessionModel
+from app.realtime.recorders import RoomAlert
 from app.repositories import alert_repository
 from app.schemas.identity import Role
 from app.schemas.session import ClassComprehensionAlert
@@ -645,3 +646,43 @@ async def test_every_session_alert_query_is_scoped_to_its_session(db, lecturer_s
         total = (await check.scalars(select(AIAlert.alert_id))).all()
 
     assert len(mine_only) == 1 and len(total) >= 2
+
+
+async def test_a_breakout_room_alert_is_stored_and_listed_with_its_room(
+    db, lecturer_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """General CS, Phase 6: a room silent too long is kept like any other
+    alert, so the lecturer still has it after a refresh."""
+    client, factory, _ = db
+    monkeypatch.setattr(alert_store, "get_session_factory", lambda: factory)
+    session = await lecturer_session()
+    live = RoomAlert(
+        alert_id=uuid4(),
+        session_id=UUID(session["id"]),
+        room_label="Room 2",
+        members=4,
+        silence_seconds=200,
+        raised_at=datetime.now(UTC),
+        message="Room 2 has been quiet for 3 minutes.",
+        reason="No voice activity from 4 members for 200 seconds.",
+        confidence=0.5,
+        explanation="Nobody in this room has had voice activity for that long.",
+        explanation_source="fallback",
+        confidence_reasons=["2 of the room's 4 members are reporting voice activity."],
+        recommendation="Visit the room.",
+    )
+
+    await alert_store.store_room_alert(live)
+
+    [alert] = client.get(alerts_path(session["id"])).json()
+    assert alert["alert_id"] == str(live.alert_id)
+    assert alert["kind"] == "breakout_inactive" and alert["status"] == "open"
+    for name in ("message", "reason", "explanation", "recommendation", "explanation_source"):
+        assert alert[name] == getattr(live, name), name
+    assert alert["confidence"] == 0.5
+    assert alert["question_id"] is None and alert["topic"] is None
+    async with factory() as check:
+        row = await check.get(AIAlert, live.alert_id)
+    assert row is not None
+    assert row.details == {"room_label": "Room 2", "members": 4, "silence_seconds": 200}
+    assert row.student_id is None

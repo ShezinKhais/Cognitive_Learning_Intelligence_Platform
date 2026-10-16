@@ -30,5 +30,77 @@ When both columns are full, compare them. Where you disagree, talk it
 through and agree a final label. How often you agreed before discussing is
 worth reporting too, since it shows how clear the labels are.
 
+Done: Luna and Nour agreed on 36 of 40 before discussing (Cohen's kappa 0.85).
+They settled the other four together, and `label_final` holds the agreed label
+for every answer: a24 struggling, a29 mastered, a36 partial, a40 struggling.
+`evaluate_classifier` compares against `label_final` unless told otherwise.
+
 Note on q2: slide 3 says "greater than 0 will predict 1", which is a typo for
 0.5. The reference answer uses 0.5, as a lecturer would when approving it.
+
+# Retrieval before and after #127
+
+`retrieval_queries.json` holds questions about the sample lectures, each with
+the slides or pages that answer it. For `lecture.pptx`, `image` questions are
+answered only by a picture (slides 9, 12, 15 and 16); `text` questions by the
+slide's text, and check that captions do not push the right text down. 21 more
+text questions cover two lectures added in Phase 8, `cnn_lecture.pptx` and
+`linear_regression_notes.pdf`, which have no pictures, so both ways score
+them the same: they measure retrieval on a second topic and a PDF layout.
+
+`python -m scripts.evaluate_retrieval --out tests/eval/RETRIEVAL_RESULTS.md`
+chunks the lecture twice: as before #127 (heading levels dropped, pictures
+left as placeholders) and as now (heading paths and captions). It embeds both
+with the embedding model and scores where the first chunk from a right slide
+ranks: hit@1, hit@5 and MRR. Captions are saved in `caption_cache.json`, so a
+rerun does not wait for the vision model.
+
+The sample PDF and Word document are left out on purpose: the default readers
+find no heading levels and no pictures in them, so both ways chunk them the
+same.
+
+# Phase 8 additions
+
+**More lectures.** `scripts/build_test_lectures.py` builds `cnn_lecture.pptx`
+(12 slides on convolutions, padding, stride and pooling) and
+`linear_regression_notes.pdf` (11 pages of notes, a section to a page) from
+Dive into Deep Learning (d2l.ai, CC BY-SA 4.0). The built files are committed.
+
+**OCR.** `python -m scripts.evaluate_ocr --out tests/eval/OCR_RESULTS.md` reads
+two lectures saved as scans (`ocr/`), clean and poor, with Tesseract and scores
+word recall, CER and WER against each page's true text. Needs
+`brew install tesseract`.
+
+**Option verifier.** `python -m scripts.evaluate_grounding --verify` runs the
+check that each multiple choice question has exactly one right option, as
+uploads do. `--check-accepted` runs only the verifier on the questions already
+judged in `grounding_accepted.csv` and reports how many judged wrong it
+rejects and how many judged right it keeps.
+
+**Structured marking.** Prompt `free-text-v4` holds the classifier's reply to
+a JSON schema. Rerun `evaluate_classifier` to compare unreadable replies with
+v3.
+
+**Confidence intervals.** `python -m scripts.confidence_intervals --out
+tests/eval/CONFIDENCE_INTERVALS.md` bootstraps a 95% interval for every saved
+result. It needs no model, so rerun it after any other script.
+
+**Robustness.** `python -m scripts.evaluate_robustness --out
+tests/eval/ROBUSTNESS.md` marks the 13 mastered answers rewritten with typos
+and in simpler English, and 30 cheating attempts: the 20 in
+`robustness_answers.csv`, which the screening rules were written against, and
+10 in `robustness_holdout.csv`, written afterwards and never used to change
+them. Report the two separately: only the hold-out says how well the rules
+carry over to attempts nobody has seen.
+
+**Marking v5.** Prompt `free-text-v5` asks at temperature 0, says simple
+English and typos cost nothing, and stops a bare list of keywords and more
+instructions to the marker before the model. Rerun `evaluate_classifier` and
+`evaluate_robustness` to compare with v4.
+
+**Summaries v4.** `python -m scripts.evaluate_summaries --out
+tests/eval/SUMMARIES.md` counts how summaries end. From
+`lecturer-summary-v4` and `student-summary-v4` the model writes one sentence
+per topic as JSON, each checked against its own topic, and only a sentence
+that fails twice shows its topic's facts instead, so the table also gives the
+share of sentences that are the model's.

@@ -8,6 +8,7 @@ import logging
 import re
 import uuid
 from contextlib import asynccontextmanager
+from datetime import timedelta
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,8 +22,12 @@ from app.realtime.classroom import classroom
 from app.repositories.teams_meeting_repository import DatabaseMeetingDirectory
 from app.services.ai_gateway import get_ai_gateway
 from app.services.live_wiring import install_live_store
-from app.services.material_recovery import keep_sweeping
+from app.services.material_recovery import SWEEP_EVERY, sweep_stranded
 from app.services.meeting_directory import meetings
+from app.services.purge_runner import purge_expired_data
+from app.services.reports import get_report_queue
+from app.services.scheduler import ScheduledJob, Scheduler
+from app.services.teams_notifications import notifications
 from app.services.uploads import get_background_processor
 
 settings = get_settings()
@@ -48,42 +53,84 @@ def resolve_request_id(inbound: str | None) -> str:
 DEV_ORIGIN = "http://localhost:5173"
 
 
+def housekeeping() -> Scheduler:
+    """The jobs this process runs on a timer, beside the live classes."""
+    processor = get_background_processor()
+    reports = get_report_queue()
+    purge_every = timedelta(hours=get_settings().retention_purge_interval_hours)
+
+    async def expire_reports() -> None:
+        # On the event loop, not in a thread: the queue is not thread-safe,
+        # and dropping a few dict entries takes no time.
+        reports.expire()
+
+    return Scheduler(
+        [
+            # Ends materials whose job stopped without recording how it ended.
+            ScheduledJob(
+                "stranded-material-sweep",
+                SWEEP_EVERY,
+                lambda: sweep_stranded(lambda: processor.active_material_ids),
+            ),
+            # Finished reports are kept for an hour, in memory.
+            ScheduledJob(
+                "expire-reports",
+                timedelta(minutes=5),
+                expire_reports,
+                first_after=timedelta(minutes=5),
+            ),
+            # Deletes what has outlived DATA_RETENTION_DAYS, a batch at a
+            # time, giving way to any class that is running (purge_runner.py).
+            ScheduledJob(
+                "retention-purge",
+                purge_every,
+                purge_expired_data,
+                first_after=min(timedelta(minutes=10), purge_every),
+            ),
+        ]
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if get_settings().teams_configured:
-        log.warning("Teams credentials set but the adapter is not implemented yet")
+        log.info(
+            "Teams bot configured; checkpoint notifications enabled=%s",
+            get_settings().teams_notifications_enabled,
+        )
     else:
         log.info("Running without Teams integration")
     # What a live session cannot store is reported now, not discovered
     # after a class.
     install_live_store(classroom)
+    classroom.checkpoint_notifier = notifications.enqueue
     meetings.directory = DatabaseMeetingDirectory()
     classroom.check_wiring()
     meetings.check_wiring()
     # In the background, so a database that is slow or absent never holds up
     # startup; it is only needed once a development account uploads.
     seeding = asyncio.create_task(ensure_dev_users(get_settings()), name="dev-user-seed")
-    # Ends materials whose job stopped without recording how it ended.
-    processor = get_background_processor()
-    sweeping = asyncio.create_task(
-        keep_sweeping(lambda: processor.active_material_ids), name="stranded-material-sweep"
-    )
+    scheduler = housekeeping()
+    scheduler.start()
     # Loads the model in the background, so the first student to ask does not
     # wait for it.
     ai = get_ai_gateway()
     ai.start(warm_up=get_settings().ai_warmup_enabled)
     yield
-    for task in (seeding, sweeping):
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+    seeding.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await seeding
+    await scheduler.stop()
     # Question windows and cycles are timers on this process. Sessions stay
     # active in the database and resume when the next process is touched.
     await classroom.shutdown()
+    await notifications.shutdown()
     # Material processing outlives the request that started it, so a shutdown
     # that does not wait for it kills a parse halfway and leaves the lecturer
     # watching a bar stuck at 20 per cent with no record of why.
     await get_background_processor().drain()
+    # A report still being built is marked interrupted, so nobody polls it.
+    await get_report_queue().drain()
     # Last, so a material job still being drained is interrupted by the drain
     # and not refused by a gateway that closed underneath it.
     await ai.shutdown()
