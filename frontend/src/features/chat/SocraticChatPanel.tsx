@@ -40,7 +40,8 @@ export function SocraticChatPanel({
   const active = Boolean(state.activeId)
 
   useEffect(() => {
-    end.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    end.current?.scrollIntoView({ behavior: reducedMotion ? 'instant' : 'smooth', block: 'nearest' })
   }, [state.exchanges])
 
   function onSubmit(event: FormEvent) {
@@ -67,7 +68,7 @@ export function SocraticChatPanel({
             </p>
           </div>
         </div>
-        <p className="mt-3 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+      <p className="mt-3 rounded-lg bg-muted px-3 py-2 text-xs text-foreground">
           This assistant helps you reason through a topic. It will guide you instead of giving a final answer.
         </p>
       </header>
@@ -115,7 +116,7 @@ export function SocraticChatPanel({
           value={state.draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
+            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault()
               event.currentTarget.form?.requestSubmit()
             }
