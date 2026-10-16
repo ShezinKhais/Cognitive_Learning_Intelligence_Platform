@@ -1,9 +1,13 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { AnimatePresence, LayoutGroup, motion } from 'motion/react'
 import { LogOut, Menu, X } from 'lucide-react'
 import { Link, useLocation } from 'react-router'
 
 import { clearAccessToken, type CurrentUser } from '../../api'
+import { Wordmark as Brand } from '../brand/ClipMark'
 import { cn } from '../ui/cn'
+import IntroOverlay from './IntroOverlay'
+import { introPlayed, takeIntro } from './intro'
 import { currentItem, NAVIGATION, ROLE_NAME, type NavItem } from './navigation'
 
 /**
@@ -16,6 +20,12 @@ export default function AppShell({ user, children }: { user: CurrentUser; childr
   const [open, setOpen] = useState(false)
   const items = NAVIGATION[user.role] ?? []
   const current = currentItem(user.role, pathname)
+  const [intro, setIntro] = useState(takeIntro)
+  const [entered, setEntered] = useState(!intro)
+  const finishIntro = useCallback(() => {
+    introPlayed()
+    setIntro(false)
+  }, [])
 
   // Close the phone menu when a link in it is followed.
   useEffect(() => setOpen(false), [pathname])
@@ -33,6 +43,10 @@ export default function AppShell({ user, children }: { user: CurrentUser; childr
   )
 
   return (
+    <LayoutGroup>
+    <AnimatePresence onExitComplete={() => setEntered(true)}>
+      {intro && <IntroOverlay firstName={user.full_name.split(' ')[0]} onDone={finishIntro} />}
+    </AnimatePresence>
     <div className="min-h-screen bg-background lg:grid lg:grid-cols-[15rem_1fr]">
       <a
         href="#content"
@@ -63,27 +77,36 @@ export default function AppShell({ user, children }: { user: CurrentUser; childr
       )}
 
       <aside className="sticky top-0 hidden h-screen flex-col gap-8 border-r border-border bg-card px-3 py-6 lg:flex">
-        <div className="px-3">
-          <Wordmark />
+        <div className="h-[2.6rem] px-3">
+          {/* The intro's mark lands here. */}
+          {!intro && (
+            <motion.span layoutId="clip-brand" className="inline-flex" transition={{ type: 'spring', stiffness: 170, damping: 24 }}>
+              <Wordmark />
+            </motion.span>
+          )}
         </div>
         {menu}
         <Account user={user} />
       </aside>
 
-      <main id="content" className="min-w-0">
+      <motion.main
+        id="content"
+        className="min-w-0"
+        initial={false}
+        animate={entered ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
+        transition={{ duration: 0.4, ease: [0.2, 0, 0, 1] }}
+      >
         {children}
-      </main>
+      </motion.main>
     </div>
+    </LayoutGroup>
   )
 }
 
 function Wordmark() {
   return (
-    <Link to="/" className="group inline-flex flex-col leading-none">
-      <span className="text-xl font-extrabold tracking-tight text-foreground">C.L.I.P</span>
-      <span className="mt-1 text-[0.7rem] text-muted-foreground">
-        Cognitive Learning Intelligence Platform
-      </span>
+    <Link to="/" aria-label="C.L.I.P home" className="inline-flex">
+      <Brand />
     </Link>
   )
 }
