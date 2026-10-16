@@ -87,6 +87,11 @@ export interface ReportJob {
   report: SessionReport | null
 }
 
+export const REPORT_POLL_MAX_FAILURES = 4
+
+const REPORT_POLL_BASE_DELAY_MS = 2000
+const REPORT_POLL_MAX_DELAY_MS = 10000
+
 export function reportStatusLabel(
   status: ReportStatus,
 ): string {
@@ -129,4 +134,31 @@ export function reportFailureMessage(
   }
 
   return 'The report could not be generated.'
+}
+
+export function reportPollDelayMs(
+  consecutiveFailures: number,
+): number {
+  const safeFailures =
+    Math.max(
+      0,
+      Math.floor(
+        consecutiveFailures,
+      ),
+    )
+
+  return Math.min(
+    REPORT_POLL_BASE_DELAY_MS *
+      2 ** safeFailures,
+    REPORT_POLL_MAX_DELAY_MS,
+  )
+}
+
+export function reportShouldRetryPolling(
+  consecutiveFailures: number,
+): boolean {
+  return (
+    consecutiveFailures <
+    REPORT_POLL_MAX_FAILURES
+  )
 }

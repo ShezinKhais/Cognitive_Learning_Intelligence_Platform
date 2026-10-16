@@ -2,8 +2,11 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  REPORT_POLL_MAX_FAILURES,
   reportFailureMessage,
   reportIsReady,
+  reportPollDelayMs,
+  reportShouldRetryPolling,
   reportStatusLabel,
   type ReportJob,
 } from '../src/features/reports/sessionReports.ts'
@@ -162,5 +165,60 @@ test('non-failed jobs do not invent an error message', () => {
       }),
     ),
     null,
+  )
+})
+
+test('report polling backs off after consecutive failures', () => {
+  assert.equal(
+    reportPollDelayMs(0),
+    2000,
+  )
+
+  assert.equal(
+    reportPollDelayMs(1),
+    4000,
+  )
+
+  assert.equal(
+    reportPollDelayMs(2),
+    8000,
+  )
+
+  assert.equal(
+    reportPollDelayMs(3),
+    10000,
+  )
+
+  assert.equal(
+    reportPollDelayMs(10),
+    10000,
+  )
+})
+
+test('report polling stops after the configured failure limit', () => {
+  assert.equal(
+    reportShouldRetryPolling(0),
+    true,
+  )
+
+  assert.equal(
+    reportShouldRetryPolling(
+      REPORT_POLL_MAX_FAILURES - 1,
+    ),
+    true,
+  )
+
+  assert.equal(
+    reportShouldRetryPolling(
+      REPORT_POLL_MAX_FAILURES,
+    ),
+    false,
+  )
+
+  assert.equal(
+    reportShouldRetryPolling(
+      REPORT_POLL_MAX_FAILURES + 1,
+    ),
+    false,
   )
 })
