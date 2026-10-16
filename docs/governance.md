@@ -62,6 +62,44 @@ The account row stays so the audit log and consent records keep a valid referenc
 it identifies nobody: the name becomes "Deleted student", the email a placeholder, and
 sign-in is disabled. Audit entries and consent records are never touched.
 
+## The history database
+
+Session data is deleted after `DATA_RETENTION_DAYS`. What is kept longer, until the
+student graduates, is a **summary per student, course and semester**: sessions attended,
+questions attempted and correct, and engagement and gaze as a sum and a count so an
+average stays exact. It holds no answers, free text, names or emails.
+
+It lives in its own database, named by `HISTORY_DATABASE_URL`. Empty means history is
+off and nothing else changes. Create the empty database, then
+`PYTHONPATH=. python scripts/init_history_db.py` creates the tables. Its code is in
+`backend/app/history/`; it has its own declarative base, so the main migrations never
+see it.
+
+- **Semester label:** calendar half-years, `2026-H1` for January to June and
+  `2026-H2` for the rest (`semester_label` in `app/history/repository.py`).
+- **Archiving:** each purge batch is added to the summaries and committed in the history
+  database *before* anything is deleted. If that fails, the batch is not deleted, the
+  failure is logged, and the next run tries the same sessions. A session is added once:
+  its id is recorded in `archived_session`, so a retried batch never counts twice.
+- **Erasure:** executing a student deletion request erases the student's history rows
+  first, then their main data. If the history database is down the request stays
+  `approved` and can be executed again. The outcome counts `history_rows`.
+- **Reading:** `GET /governance/history/{student_id}` (admin only, audited as
+  `HISTORY_VIEWED`), and the student's own export.
+- **Never purged automatically.** Rows are removed only by erasing the student.
+
+## A student's own data
+
+Under `/api/v1/me`, students only, accepted terms required:
+
+| Method | Route | Does |
+|---|---|---|
+| GET | `/me/data` | The student's own data as a JSON download: account, profile, answers with their labels, prompts, engagement, attention summaries, missed responses, deletion requests and history. The accessibility note is not included. |
+| POST | `/me/deletion-request` | Ask for their own data to be erased. Body `{"confirm": true, "reason": "..."}`; `confirm` must be `true` so the front end shows the warning first. A different admin must approve it. |
+| GET | `/me/deletion-request` | Where the latest request stands: status and dates only |
+
+Each export is audited as `STUDENT_DATA_EXPORTED`, with counts.
+
 ## The audit log
 
 Every deletion step and every purge writes an entry: who did it (empty for a
@@ -75,7 +113,9 @@ into it by accident.
 | `DELETION_APPROVED` | An admin approves it |
 | `DELETION_REJECTED` | An admin rejects it |
 | `DELETION_EXECUTED` | A request is carried out, with counts |
-| `RETENTION_PURGE` | A real purge runs, with counts |
+| `RETENTION_PURGE` | A purge runs, by an admin or the scheduler (no user), with counts |
+| `STUDENT_DATA_EXPORTED` | A student downloads their own data, with counts |
+| `HISTORY_VIEWED` | An admin reads a student's history, with the row count |
 
 Nothing deletes audit entries: not retention, and not a deletion request.
 
@@ -94,6 +134,7 @@ All under `/api/v1/governance`, admin role and accepted terms required.
 | GET | `/audit-log` | Newest first. Filters: `action_type`, `user_id`, `target_type`, `target_id`, `since`, `until` |
 | GET | `/retention/preview` | What a purge would delete now |
 | POST | `/retention/run` | Run the purge. Body `{"confirm": true}` |
+| GET | `/history/{student_id}` | A student's kept summaries. Audited |
 
 | Status | When |
 |---|---|
@@ -123,5 +164,7 @@ by hand, after `GET /retention/preview`. The audit log is never purged.
 ## Tests
 
 `backend/tests/test_audit_repository.py`, `test_retention.py`,
-`test_deletion_requests.py` and `test_governance_routes.py`. The retention and
+`test_deletion_requests.py`, `test_governance_routes.py`,
+`test_history_repository.py` and `test_my_data_routes.py`. The purge tasks and the
+archive are tested at the end of `test_retention.py`. The retention and
 deletion tests roll back at the end, so what they delete is never saved.

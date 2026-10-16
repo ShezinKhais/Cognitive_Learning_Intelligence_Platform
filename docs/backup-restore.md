@@ -11,7 +11,9 @@ From `backend/`, with the usual `.env`:
 This dumps the main database, and the history database when `HISTORY_DATABASE_URL` is
 set, to `backups/clip-<time>.dump` and `backups/clip_history-<time>.dump`, then keeps the
 newest 30 of each. Run it once a day from the host's scheduler (cron or a systemd timer).
-It needs the PostgreSQL client tools (`pg_dump`, `pg_restore`, `createdb`), best of\nthe same major version as the database server. A newer client works: its extra\n`transaction_timeout` setting is the one restore error the script accepts.
+It needs the PostgreSQL client tools (`pg_dump`, `pg_restore`, `createdb`), best of
+the same major version as the database server. A newer client works: its extra
+`transaction_timeout` setting is the one restore error the script accepts.
 
 A dump is created readable by its owner only, and `backups/` is git-ignored. Store the
 folder on an encrypted volume and copy it off the machine: a backup on the same disk is

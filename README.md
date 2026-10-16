@@ -344,6 +344,10 @@ will implement it.
 | GET | `/governance/audit-log` | admin | Browse the audit log |
 | GET | `/governance/retention/preview` | admin | What the retention purge would delete |
 | POST | `/governance/retention/run` | admin | Run the purge (needs `"confirm": true`) |
+| GET | `/governance/history/{student_id}` | admin | A student's kept summaries (audited) |
+| GET | `/me/data` | student | Download your own data as JSON |
+| POST | `/me/deletion-request` | student | Ask for your own data to be erased (needs `"confirm": true`) |
+| GET | `/me/deletion-request` | student | Where your latest request stands |
 | WS | `/ws/session` | token | Live classroom events, see `events.schema.json` |
 
 The Teams meeting routes (`/meetings/{meeting_id}`, `/meetings/events`) and the bot
