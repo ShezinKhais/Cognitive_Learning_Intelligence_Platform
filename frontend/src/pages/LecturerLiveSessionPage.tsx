@@ -10,6 +10,8 @@ import {
 import { ApiError } from '../api'
 import { buttonStyles } from '../components/ui/button'
 import { PageHeader, Tag } from '../components/ui/primitives'
+import LiveResults from '../features/live/LiveResults'
+import ReadinessChecklist from '../features/live/ReadinessChecklist'
 import RoomsPanel from '../features/live/RoomsPanel'
 import { statusLabel, statusTone } from '../features/sessions/format'
 import { getSession, type SessionSummary } from '../features/sessions/sessionsApi'
@@ -642,9 +644,9 @@ export default function LecturerLiveSessionPage() {
       <div className="mx-auto max-w-7xl px-5 py-8 sm:px-8">
 
         <div className="grid gap-6 lg:grid-cols-2">
-          <section className="rounded-xl border border-border bg-card p-6">
-            <h2 className="text-lg font-semibold">
-              Session Controls
+          <section className="rounded-lg border border-border bg-card p-6">
+            <h2 className="text-lg font-bold">
+              Class
             </h2>
 
             <div className="mt-4">
@@ -672,177 +674,14 @@ export default function LecturerLiveSessionPage() {
               </p>
             </div>
 
-            {sessionState?.status ===
-              'prepared' && (
-              <div className="mt-5 rounded-xl border border-border bg-muted/20 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h3 className="font-semibold">
-                      Content readiness
-                    </h3>
-
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Check that the session has usable material and approved questions before starting.
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void refreshReadiness()
-                    }
-                    disabled={
-                      readinessLoading ||
-                      isBusy
-                    }
-                    className="rounded-md border border-border px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {readinessLoading
-                      ? 'Checking...'
-                      : 'Check again'}
-                  </button>
-                </div>
-
-                {readinessLoading &&
-                  !readiness && (
-                    <p
-                      role="status"
-                      className="mt-4 text-sm text-muted-foreground"
-                    >
-                      Checking session readiness...
-                    </p>
-                  )}
-
-                {readinessError && (
-                  <div
-                    role="alert"
-                    className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-                  >
-                    {readinessError}
-                  </div>
-                )}
-
-                {readiness && (
-                  <div className="mt-4">
-                    <div
-                      role="status"
-                      className={
-                        readiness.ready
-                          ? 'rounded-md border border-border bg-background px-4 py-3'
-                          : 'rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3'
-                      }
-                    >
-                      <p className="font-medium">
-                        {readiness.ready
-                          ? 'Ready to start'
-                          : 'Not ready to start'}
-                      </p>
-
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {readiness.ready
-                          ? 'The session has approved content available for delivery.'
-                          : 'Resolve the blockers below before starting the session.'}
-                      </p>
-                    </div>
-
-                    <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-md border border-border bg-background p-3">
-                        <dt className="text-xs font-medium text-muted-foreground">
-                          Materials
-                        </dt>
-
-                        <dd className="mt-1 text-xl font-semibold">
-                          {readiness.materials_total}
-                        </dd>
-                      </div>
-
-                      <div className="rounded-md border border-border bg-background p-3">
-                        <dt className="text-xs font-medium text-muted-foreground">
-                          Deliverable questions
-                        </dt>
-
-                        <dd className="mt-1 text-xl font-semibold">
-                          {readiness.deliverable_questions}
-                        </dd>
-                      </div>
-
-                      <div className="rounded-md border border-border bg-background p-3">
-                        <dt className="text-xs font-medium text-muted-foreground">
-                          Processing
-                        </dt>
-
-                        <dd className="mt-1 text-xl font-semibold">
-                          {readiness.materials_processing}
-                        </dd>
-                      </div>
-
-                      <div className="rounded-md border border-border bg-background p-3">
-                        <dt className="text-xs font-medium text-muted-foreground">
-                          Failed materials
-                        </dt>
-
-                        <dd className="mt-1 text-xl font-semibold">
-                          {readiness.materials_failed}
-                        </dd>
-                      </div>
-                    </dl>
-
-                    {readiness.blockers.length >
-                      0 && (
-                      <div className="mt-4">
-                        <h4 className="text-sm font-semibold">
-                          Blocking issues
-                        </h4>
-
-                        <ul className="mt-2 space-y-2">
-                          {readiness.blockers.map(
-                            (
-                              issue,
-                              index,
-                            ) => (
-                              <li
-                                key={`${issue.code}-${issue.material_id ?? 'session'}-${index}`}
-                                className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm"
-                              >
-                                {issue.message}
-                              </li>
-                            ),
-                          )}
-                        </ul>
-                      </div>
-                    )}
-
-                    {readiness.warnings.length >
-                      0 && (
-                      <div className="mt-4">
-                        <h4 className="text-sm font-semibold">
-                          Warnings
-                        </h4>
-
-                        <ul className="mt-2 space-y-2">
-                          {readiness.warnings.map(
-                            (
-                              issue,
-                              index,
-                            ) => (
-                              <li
-                                key={`${issue.code}-${issue.material_id ?? 'session'}-${index}`}
-                                className="rounded-md border border-border bg-background px-4 py-3 text-sm"
-                              >
-                                {issue.message}
-                              </li>
-                            ),
-                          )}
-                        </ul>
-                      </div>
-                    )}
-
-                    <p className="mt-4 text-xs text-muted-foreground">
-                      Readiness is checked again by the server when the session starts.
-                    </p>
-                  </div>
-                )}
-              </div>
+            {sessionState?.status === 'prepared' && (
+              <ReadinessChecklist
+                readiness={readiness}
+                loading={readinessLoading}
+                error={readinessError}
+                busy={isBusy}
+                onRefresh={() => void refreshReadiness()}
+              />
             )}
 
             {actionError && (
@@ -873,8 +712,8 @@ export default function LecturerLiveSessionPage() {
                   'start'
                     ? 'Starting...'
                     : readinessLoading
-                      ? 'Checking readiness...'
-                      : 'Start Session'}
+                      ? 'Checking…'
+                      : 'Start the class'}
                 </button>
               )}
 
@@ -896,7 +735,7 @@ export default function LecturerLiveSessionPage() {
                     {actionInProgress ===
                     'pause'
                       ? 'Pausing...'
-                      : 'Pause Session'}
+                      : 'Pause'}
                   </button>
                 )}
 
@@ -918,7 +757,7 @@ export default function LecturerLiveSessionPage() {
                     {actionInProgress ===
                     'resume'
                       ? 'Resuming...'
-                      : 'Resume Session'}
+                      : 'Resume'}
                   </button>
                 )}
 
@@ -941,7 +780,7 @@ export default function LecturerLiveSessionPage() {
                   {actionInProgress ===
                   'end'
                     ? 'Ending...'
-                    : 'End Session'}
+                    : 'End the class'}
                 </button>
               )}
 
@@ -957,7 +796,7 @@ export default function LecturerLiveSessionPage() {
             </div>
           </section>
 
-          <section className="rounded-xl border border-border bg-card p-6">
+          <section className="rounded-lg border border-border bg-card p-6">
             <h2 className="text-lg font-semibold">
               Participants
             </h2>
@@ -1132,35 +971,13 @@ export default function LecturerLiveSessionPage() {
             />
           </section>
 
-          <section className="rounded-xl border border-border bg-card p-6">
-            <h2 className="text-lg font-semibold">
-              Live Results
-            </h2>
-
-            <p className="mt-2 text-sm text-muted-foreground">
-              Detailed response results
-              will appear when response
-              persistence is available.
-            </p>
-
-            {closedQuestion && (
-              <div className="mt-5">
-                <p className="text-3xl font-semibold">
-                  {
-                    closedQuestion.respondents
-                  }
-                  /
-                  {
-                    closedQuestion.eligible
-                  }
-                </p>
-
-                <p className="mt-1 text-sm text-muted-foreground">
-                  students responded
-                </p>
-              </div>
-            )}
-          </section>
+          {sessionId && (
+            <LiveResults
+              sessionId={sessionId}
+              openQuestionId={activeQuestion?.question_id ?? null}
+              closedQuestionId={closedQuestion?.question_id ?? null}
+            />
+          )}
 
           <div>
             {topicsLoading && (

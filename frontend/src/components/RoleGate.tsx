@@ -3,6 +3,7 @@ import { Navigate, useLocation } from 'react-router'
 
 import { ApiError, getAccessToken, getCurrentUser, type CurrentUser, type Role } from '../api'
 import { accessFor } from '../authRouting'
+import PageLoader from './brand/PageLoader'
 
 type State =
   | { status: 'loading' }
@@ -57,7 +58,7 @@ export default function RoleGate({ allow, children }: Props) {
   }, [])
 
   if (state.status === 'loading') {
-    return <main className="min-h-screen grid place-items-center">Checking access...</main>
+    return <PageLoader />
   }
   if (state.status === 'unauthenticated') {
     return <Navigate to="/login" replace state={{ from: requestedPath }} />

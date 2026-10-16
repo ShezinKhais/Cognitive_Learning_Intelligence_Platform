@@ -4,6 +4,7 @@ import {
   useLocation,
 } from 'react-router'
 
+import PageLoader from '../components/brand/PageLoader'
 import AppShell from '../components/shell/AppShell'
 import { useStudentApp } from '../features/student/StudentAppContext'
 import { accessFor } from '../authRouting'
@@ -21,12 +22,7 @@ export default function ProtectedStudentPage({ withShell = false }: { withShell?
   } = useStudentApp()
 
   if (authStatus === 'checking') {
-    return (
-      <StatusPanel
-        title="Loading student workspace"
-        message="Checking your account and permissions..."
-      />
-    )
+    return <PageLoader />
   }
 
   if (authStatus === 'error') {
