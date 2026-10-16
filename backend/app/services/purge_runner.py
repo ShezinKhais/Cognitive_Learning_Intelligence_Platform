@@ -46,6 +46,10 @@ BATCH_PAUSE_SECONDS = 0.05
 # is a quarter of a million items, far more than a day accumulates, and it
 # stops a task that never reports itself empty.
 MAX_BATCHES_PER_TASK = 500
+# A scheduled run that gave way to a class tries again this often, until the
+# next scheduled run is near. Without it a class that is always live when the
+# run is due would postpone every purge, indefinitely.
+RETRY_AFTER_CLASS = timedelta(minutes=15)
 # An upload still under its temporary name after this long was abandoned by a
 # request that died: a whole upload takes seconds.
 STALE_PARTIAL_AFTER = timedelta(hours=24)
@@ -74,6 +78,8 @@ class PurgeReport:
     failed: tuple[str, ...] = ()
     # Stopped before every task was empty: a session started, or time ran out.
     interrupted: bool = False
+    # Stopped because a class was running, rather than at the batch limit.
+    gave_way: bool = False
 
     @property
     def total(self) -> int:
@@ -130,6 +136,7 @@ class PurgeRunner:
         deleted: dict[str, int] = {}
         failed: list[str] = []
         interrupted = False
+        gave_way = False
         for name in self.task_names:
             task = self._tasks[name]
             count = 0
@@ -154,10 +161,14 @@ class PurgeRunner:
             deleted[name] = count
             if yielded:
                 # A class has started. Nothing more is deleted in this run.
-                interrupted = True
+                interrupted = gave_way = True
                 break
         report = PurgeReport(
-            cutoff=cutoff, deleted=deleted, failed=tuple(failed), interrupted=interrupted
+            cutoff=cutoff,
+            deleted=deleted,
+            failed=tuple(failed),
+            interrupted=interrupted,
+            gave_way=gave_way,
         )
         # One line a governance review can find: what was deleted, and when.
         log.info("retention_purge %s", report.summary())
@@ -231,10 +242,23 @@ def get_purge_runner() -> PurgeRunner:
 async def purge_expired_data() -> PurgeReport | None:
     """One scheduled run, held to RETENTION_PURGE_TIMEOUT_MINUTES. A run cut
     off by the limit has deleted only whole batches, and the next carries on,
-    so running out of time is reported and is not a failure. None then."""
-    minutes = get_settings().retention_purge_timeout_minutes
-    try:
-        return await asyncio.wait_for(get_purge_runner().run(), timeout=minutes * 60)
-    except TimeoutError:
-        log.warning("retention_purge stopped after %.0f minutes; the next run continues", minutes)
-        return None
+    so running out of time is reported and is not a failure. None then.
+
+    A run that gave way to a class is tried again every RETRY_AFTER_CLASS,
+    in the gaps between classes, until the next scheduled run is near. The
+    last report is returned."""
+    settings = get_settings()
+    minutes = settings.retention_purge_timeout_minutes
+    retry = RETRY_AFTER_CLASS.total_seconds()
+    give_up_at = time.monotonic() + settings.retention_purge_interval_hours * 3600 - retry
+    while True:
+        try:
+            report = await asyncio.wait_for(get_purge_runner().run(), timeout=minutes * 60)
+        except TimeoutError:
+            log.warning(
+                "retention_purge stopped after %.0f minutes; the next run continues", minutes
+            )
+            return None
+        if not report.gave_way or time.monotonic() + retry >= give_up_at:
+            return report
+        await asyncio.sleep(retry)

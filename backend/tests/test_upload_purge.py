@@ -248,6 +248,67 @@ async def test_a_scheduled_run_that_runs_out_of_time_is_reported_not_raised(
     assert "the next run continues" in caplog.text
 
 
+async def test_a_scheduled_run_that_gave_way_to_a_class_tries_again_after_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A class live every time the run is due must not postpone the purge
+    for good: the run retries in the gap after it."""
+    put(tmp_path, "old.pdf", 400)
+    live = iter([True, True])
+    runner = PurgeRunner(
+        retention=lambda: RETENTION,
+        busy=lambda: next(live, False),
+        clock=lambda: NOW,
+        pause=0,
+    )
+    runner.register(StoredUploadPurge(tmp_path))
+    monkeypatch.setattr(purge_runner, "get_purge_runner", lambda: runner)
+    monkeypatch.setattr(purge_runner, "RETRY_AFTER_CLASS", timedelta(0))
+
+    report = await purge_expired_data()
+
+    assert report is not None
+    assert (report.deleted, report.gave_way) == ({"stored-uploads": 1}, False)
+    assert list(tmp_path.iterdir()) == []
+
+
+async def test_retrying_after_classes_stops_before_the_next_scheduled_run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    put(tmp_path, "old.pdf", 400)
+    runs = 0
+
+    def busy() -> bool:
+        nonlocal runs
+        runs += 1
+        return True
+
+    runner = PurgeRunner(retention=lambda: RETENTION, busy=busy, clock=lambda: NOW, pause=0)
+    runner.register(StoredUploadPurge(tmp_path))
+    monkeypatch.setattr(purge_runner, "get_purge_runner", lambda: runner)
+    # Hourly runs and a 20 minute retry: the first run and one retry fit
+    # before the 40 minute mark, when the next run is a retry away.
+    monkeypatch.setattr(
+        purge_runner,
+        "get_settings",
+        lambda: Settings(_env_file=None, retention_purge_interval_hours=1.0),
+    )
+    monkeypatch.setattr(purge_runner, "RETRY_AFTER_CLASS", timedelta(minutes=20))
+    clock = [0.0]
+    monkeypatch.setattr(purge_runner.time, "monotonic", lambda: clock[0])
+
+    async def sleep(seconds: float) -> None:
+        clock[0] += seconds
+
+    monkeypatch.setattr(purge_runner.asyncio, "sleep", sleep)
+
+    report = await purge_expired_data()
+
+    assert report is not None and report.gave_way
+    assert runs == 2
+    assert [p.name for p in tmp_path.iterdir()] == ["old.pdf"]
+
+
 async def test_a_scheduled_run_returns_what_it_deleted(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

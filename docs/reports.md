@@ -99,10 +99,13 @@ How a run goes:
 2. Tasks run in name order. Each is called with the cutoff and a limit of 500,
    and called again until it returns fewer than 500.
 3. Before each batch the runner checks whether a session is running. If one
-   is, the whole run stops, and the next carries on because every task deletes
-   oldest first. A class that is on when a run starts therefore stops it
-   before anything is deleted. After a full batch the runner pauses for 0.05
-   seconds, so the database lock and the event loop are never held for long.
+   is, the whole run stops, and every task deletes oldest first, so the next
+   attempt carries on. A run that gave way to a class is tried again every 15
+   minutes (`RETRY_AFTER_CLASS`), in the gaps between classes, until the next
+   scheduled run is 15 minutes away, so a class that is always on when the
+   run is due cannot postpone the purge for good. After a full batch the
+   runner pauses for 0.05 seconds, so the database lock and the event loop
+   are never held for long.
 4. A task gets at most 500 batches in a run. One that is still not empty is
    marked stopped early, and the other tasks still run.
 5. A task that raises is logged, listed as failed and skipped. What it deleted
@@ -115,7 +118,7 @@ counted as a failure.
 A run that finishes logs one line that a governance review can find, for
 example `retention_purge deleted 12 item(s) older than 2025-12-02 (stored-uploads: 12)`.
 A run that gave way to a class ends the line with `stopped early, the next run
-continues`.
+continues`, and logs again on each retry.
 
 The one task the application registers is `stored-uploads`
 (`StoredUploadPurge`). It deletes lecture files left in `UPLOAD_STORAGE_DIR`
@@ -126,7 +129,20 @@ failed in a way that might have been temporary.
 
 **What is not purged yet.** No database table is purged. Those tasks are BBIS's
 to register. Until they are, `DATA_RETENTION_DAYS` is kept for upload files and
-not for the database.
+not for the database, and these tables keep their rows indefinitely:
+
+| Table | What it holds |
+|---|---|
+| `student_response`, `comprehension_result`, `missed_response` | Answers, their labels, and questions a student did not answer |
+| `engagement_record`, `attention_signal_summary`, `dynamic_prompt` | Engagement scores, attention summaries and the prompts sent |
+| `ai_alert`, `ai_recommendation` | Comprehension and room alerts, and what was suggested |
+| `delivered_question`, `session_activity`, `session_participant`, `breakout_room` | What each session delivered, its timeline, who joined, and rooms |
+| `teams_roster_sync`, `teams_participant_mapping` | Teams roster snapshots and meeting participants |
+
+`audit_log` is excluded on purpose: it is the record that the purge ran.
+BBIS's session purge (`Nour-Phase-7`, `services/retention.py`) deletes
+expired sessions and roster syncs when an administrator runs it; registering
+it here as batched tasks puts those tables on the daily run.
 
 ### Registering a purge task (BBIS)
 
