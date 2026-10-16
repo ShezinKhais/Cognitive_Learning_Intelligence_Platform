@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useParams } from 'react-router'
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react'
+import { ArrowLeft } from 'lucide-react'
+import { Link, useParams } from 'react-router'
 
 import {
   ApiError,
@@ -12,6 +13,19 @@ import {
   type QuestionStatus,
   type ReviewDecision,
 } from '../api'
+import { buttonStyles } from '../components/ui/button'
+import { EmptyState, PageBody, PageHeader, Tag, type Tone } from '../components/ui/primitives'
+import { getMaterial } from '../features/materials/materialApi'
+import type { Material } from '../features/materials/types'
+import { sourceName } from '../features/materials/upload'
+import {
+  countByFilter,
+  FILTERS,
+  inFilter,
+  shortcutFor,
+  startingFilter,
+  type ReviewFilter,
+} from '../features/review/reviewState'
 
 const PAGE_SIZE = 50
 
@@ -20,20 +34,20 @@ type LoadState =
   | { status: 'ready'; questions: Question[]; total: number; offset: number; loadingMore: boolean }
   | { status: 'error'; message: string }
 
-const STATUS_TONE: Record<QuestionStatus, 'success' | 'warning' | 'critical' | 'muted'> = {
-  draft: 'muted',
-  approved: 'success',
-  rejected: 'critical',
-  staged: 'success',
-  delivered: 'success',
+const STATUS_TONE: Record<QuestionStatus, Tone> = {
+  draft: 'neutral',
+  approved: 'info',
+  rejected: 'poor',
+  staged: 'good',
+  delivered: 'good',
 }
 
 const STATUS_LABEL: Record<QuestionStatus, string> = {
-  draft: 'Draft',
+  draft: 'To review',
   approved: 'Approved',
   rejected: 'Rejected',
-  staged: 'Staged',
-  delivered: 'Delivered',
+  staged: 'Ready to send',
+  delivered: 'Sent',
 }
 
 export default function QuestionReview() {
@@ -205,106 +219,203 @@ export default function QuestionReview() {
     }
   }
 
-  if (!materialId) {
-    return <main className="p-8 text-critical">No material selected.</main>
+  // Which questions are on screen, and which one the keyboard is on.
+  const questions = state.status === 'ready' ? state.questions : []
+  const counts = countByFilter(questions)
+  const [filter, setFilter] = useState<ReviewFilter | null>(null)
+  const shownFilter = filter ?? startingFilter(questions)
+  const shown = questions.filter((question) => inFilter(question, shownFilter))
+  const approvedIds = questions.filter((question) => question.status === 'approved').map((question) => question.id)
+
+  const [material, setMaterial] = useState<Material | null>(null)
+  useEffect(() => {
+    if (!materialId) return
+    getMaterial(materialId).then(setMaterial, () => undefined)
+  }, [materialId])
+  const source = material ? sourceName(material) : 'Page'
+
+  async function stageAllApproved() {
+    if (!materialId || approvedIds.length === 0) return
+    setBulkBusy(true)
+    setBulkError(null)
+    try {
+      const result = await bulkReviewQuestions(materialId, approvedIds, 'staged')
+      result.updated.forEach(updateQuestion)
+    } catch (err) {
+      setBulkError(err instanceof ApiError ? err.message : 'Could not make the approved questions ready.')
+    } finally {
+      setBulkBusy(false)
+    }
   }
 
+  if (!materialId) {
+    return <PageBody><p className="text-critical">No material selected.</p></PageBody>
+  }
+
+  const reviewed = counts.all - counts.review
+
   return (
-    <div className="px-5 py-8 sm:px-8">
-      <div className="mx-auto max-w-3xl">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-bold text-foreground">Question review</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Approve, edit or reject generated questions. Nothing reaches a student until it's
-              approved here.
+    <>
+      <PageHeader
+        title="Review questions"
+        description={
+          <>
+            {material ? <strong className="font-semibold text-foreground">{material.filename}</strong> : 'This material'}
+            . A question reaches a class only once you approve it and make it ready to send.
+          </>
+        }
+        actions={
+          <Link to="/lecturer/materials" className={buttonStyles({ intent: 'quiet' })}>
+            <ArrowLeft size={16} aria-hidden />
+            Materials
+          </Link>
+        }
+      >
+        {counts.all > 0 && (
+          <div className="mt-4 max-w-md">
+            <div className="flex h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
+              <span className="bg-success transition-[width] duration-500" style={{ width: `${(counts.staged / counts.all) * 100}%` }} />
+              <span className="bg-success/50 transition-[width] duration-500" style={{ width: `${(counts.approved / counts.all) * 100}%` }} />
+              <span className="bg-critical/50 transition-[width] duration-500" style={{ width: `${(counts.rejected / counts.all) * 100}%` }} />
+            </div>
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              {reviewed} of {counts.all} decided, {counts.staged} ready to send
             </p>
           </div>
-          {draftQuestions.length > 0 && (
-            <div className="flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                onClick={selectAllDrafts}
-                disabled={selected.size === draftQuestions.length}
-                className="rounded-lg border border-border px-4 py-2 text-sm font-medium disabled:opacity-50"
-              >
-                Select all ({draftQuestions.length})
-              </button>
-              <button
-                type="button"
-                onClick={handleApproveAll}
-                disabled={selected.size === 0 || bulkBusy}
-                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
-              >
-                {bulkBusy ? 'Approving...' : `Approve selected (${selected.size})`}
+        )}
+      </PageHeader>
+
+      <PageBody>
+        <div className="mx-auto max-w-3xl">
+          {state.status === 'ready' && counts.all > 0 && (
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <div role="tablist" aria-label="Show" className="flex flex-wrap gap-1 rounded-lg border border-border bg-card p-1">
+                {FILTERS.map(({ key, label }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    role="tab"
+                    aria-selected={shownFilter === key}
+                    onClick={() => setFilter(key)}
+                    className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
+                      shownFilter === key ? 'bg-primary font-semibold text-primary-foreground' : 'hover:bg-muted'
+                    }`}
+                  >
+                    {label} <span className={shownFilter === key ? 'opacity-80' : 'text-muted-foreground'}>{counts[key]}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {shownFilter === 'review' && draftQuestions.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={selectAllDrafts}
+                      disabled={selected.size === draftQuestions.length}
+                      className={buttonStyles({ intent: 'quiet' })}
+                    >
+                      Select all
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleApproveAll}
+                      disabled={selected.size === 0 || bulkBusy}
+                      className={buttonStyles()}
+                    >
+                      {bulkBusy ? 'Approving…' : selected.size ? `Approve ${selected.size} selected` : 'Approve selected'}
+                    </button>
+                  </>
+                )}
+                {shownFilter === 'approved' && approvedIds.length > 0 && (
+                  <button type="button" onClick={stageAllApproved} disabled={bulkBusy} className={buttonStyles()}>
+                    {bulkBusy ? 'Working…' : `Make all ${approvedIds.length} ready to send`}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {bulkError && (
+            <p role="alert" className="mb-4 rounded-md border border-critical/30 bg-critical/5 px-4 py-3 text-sm text-critical">
+              {bulkError}
+            </p>
+          )}
+
+          {state.status === 'loading' && <p role="status" className="text-muted-foreground">Loading questions…</p>}
+          {state.status === 'error' && (
+            <p role="alert" className="rounded-md border border-critical/30 bg-critical/5 px-4 py-3 text-critical">{state.message}</p>
+          )}
+          {state.status === 'ready' && counts.all === 0 && (
+            <EmptyState title="No questions yet">
+              Questions appear here once the material has been processed. If it has, it may have had too little text
+              to draw questions from.
+            </EmptyState>
+          )}
+          {state.status === 'ready' && counts.all > 0 && shown.length === 0 && (
+            <EmptyState title={shownFilter === 'review' ? 'Everything is decided' : 'Nothing here'}>
+              {shownFilter === 'review'
+                ? 'Every question has been approved or rejected. Make the approved ones ready to send under Approved.'
+                : 'No question is in this list.'}
+            </EmptyState>
+          )}
+
+          {shown.length > 0 && (
+            <>
+              <p className="mb-3 hidden text-xs text-muted-foreground sm:block">
+                Shortcuts on a selected question: J and K to move, A approve, R reject, E edit, S make ready.
+              </p>
+              <ol className="space-y-3" onKeyDown={moveFocus}>
+                {shown.map((question) => (
+                  <li key={question.id}>
+                    <QuestionCard
+                      materialId={materialId}
+                      question={question}
+                      source={source}
+                      selected={selected.has(question.id)}
+                      onToggleSelected={() => toggleSelected(question.id)}
+                      onUpdated={updateQuestion}
+                      onReplaced={replaceQuestion}
+                    />
+                  </li>
+                ))}
+              </ol>
+            </>
+          )}
+
+          {state.status === 'ready' && state.questions.length < state.total && (
+            <div className="mt-6 flex flex-col items-center gap-2">
+              <p className="text-xs text-muted-foreground">
+                Showing {state.questions.length} of {state.total}
+              </p>
+              <button type="button" onClick={loadMore} disabled={state.loadingMore} className={buttonStyles({ intent: 'secondary' })}>
+                {state.loadingMore ? 'Loading…' : 'Load more'}
               </button>
             </div>
           )}
         </div>
-
-        {bulkError && (
-          <div className="mt-4 rounded-lg bg-critical/10 p-4 text-sm text-critical">
-            {bulkError}
-          </div>
-        )}
-
-        {state.status === 'loading' && (
-          <p className="mt-8 text-sm text-muted-foreground">Loading questions...</p>
-        )}
-
-        {state.status === 'error' && (
-          <div className="mt-8 rounded-lg bg-critical/10 p-4 text-sm text-critical">
-            {state.message}
-          </div>
-        )}
-
-        {state.status === 'ready' && state.questions.length === 0 && (
-          <p className="mt-8 text-sm text-muted-foreground">
-            No questions have been generated for this material yet.
-          </p>
-        )}
-
-        {state.status === 'ready' && state.questions.length > 0 && (
-          <>
-            <div className="mt-8 space-y-4">
-              {state.questions.map((question) => (
-                <QuestionCard
-                  key={question.id}
-                  materialId={materialId}
-                  question={question}
-                  selected={selected.has(question.id)}
-                  onToggleSelected={() => toggleSelected(question.id)}
-                  onUpdated={updateQuestion}
-                  onReplaced={replaceQuestion}
-                />
-              ))}
-            </div>
-
-            {state.questions.length < state.total && (
-              <div className="mt-6 flex flex-col items-center gap-2">
-                <p className="text-xs text-muted-foreground">
-                  Showing {state.questions.length} of {state.total}
-                </p>
-                <button
-                  type="button"
-                  onClick={loadMore}
-                  disabled={state.loadingMore}
-                  className="rounded-lg border border-border px-4 py-2 text-sm font-medium disabled:opacity-50"
-                >
-                  {state.loadingMore ? 'Loading...' : 'Load more'}
-                </button>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
+      </PageBody>
+    </>
   )
+}
+
+/** J and K (or the arrow keys) move between questions. */
+function moveFocus(event: KeyboardEvent<HTMLOListElement>) {
+  const action = shortcutFor(event.key)
+  if (action !== 'next' && action !== 'previous') return
+  if ((event.target as HTMLElement).closest('input, textarea')) return
+  const cards = [...event.currentTarget.querySelectorAll<HTMLElement>('[data-question-card]')]
+  const index = cards.findIndex((card) => card.contains(document.activeElement))
+  const next = cards[action === 'next' ? Math.min(cards.length - 1, index + 1) : Math.max(0, index - 1)]
+  if (next) {
+    event.preventDefault()
+    next.focus()
+  }
 }
 
 function QuestionCard({
   materialId,
   question,
+  source,
   selected,
   onToggleSelected,
   onUpdated,
@@ -312,6 +423,7 @@ function QuestionCard({
 }: {
   materialId: string
   question: Question
+  source: 'Page' | 'Slide'
   selected: boolean
   onToggleSelected: () => void
   onUpdated: (q: Question) => void
@@ -327,13 +439,6 @@ function QuestionCard({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const tone = STATUS_TONE[question.status]
-  const toneClass = {
-    success: 'bg-success/10 text-success',
-    warning: 'bg-warning/10 text-warning',
-    critical: 'bg-critical/10 text-critical',
-    muted: 'bg-muted text-muted-foreground',
-  }[tone]
 
   function startEditing() {
     // Reset the draft fields from the current question every time editing
@@ -400,8 +505,27 @@ function QuestionCard({
     )
   }
 
+  function onShortcut(event: KeyboardEvent<HTMLElement>) {
+    if (editing || busy || event.target !== event.currentTarget) return
+    const action = shortcutFor(event.key)
+    if (action === 'approve' && question.status === 'draft') void act('approved')
+    else if (action === 'reject' && question.status === 'draft') void act('rejected')
+    else if (action === 'edit' && question.status === 'draft') startEditing()
+    else if (action === 'stage' && question.status === 'approved') void act('staged')
+    else return
+    event.preventDefault()
+  }
+
   return (
-    <div className="rounded-xl border border-border bg-card p-5">
+    <article
+      data-question-card
+      tabIndex={0}
+      onKeyDown={onShortcut}
+      aria-label={question.prompt}
+      className={`rounded-lg border bg-card p-5 outline-none transition-[border-color,box-shadow] focus-visible:border-primary focus-visible:shadow-[0_0_0_3px_var(--accent)] ${
+        question.status === 'rejected' ? 'border-border opacity-70' : 'border-border'
+      }`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           {question.status === 'draft' && (
@@ -414,17 +538,13 @@ function QuestionCard({
             />
           )}
           <div>
-            <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${toneClass}`}>
-              {STATUS_LABEL[question.status]}
-            </span>
-            {question.topic && (
-              <span className="ml-2 text-xs text-muted-foreground">{question.topic}</span>
-            )}
+            <Tag tone={STATUS_TONE[question.status]}>{STATUS_LABEL[question.status]}</Tag>
+            {question.topic && <span className="ml-2 text-sm text-muted-foreground">{question.topic}</span>}
           </div>
         </div>
         {question.source_slide != null && (
-          <span className="shrink-0 text-xs text-muted-foreground">
-            Slide {question.source_slide}
+          <span className="shrink-0 text-sm text-muted-foreground">
+            {source} {question.source_slide}
           </span>
         )}
       </div>
@@ -439,7 +559,7 @@ function QuestionCard({
             aria-label="Question prompt"
           />
         ) : (
-          <p className="text-sm text-card-foreground">{question.prompt}</p>
+          <p className="text-[1.05rem] font-semibold">{question.prompt}</p>
         )}
       </div>
 
@@ -501,9 +621,9 @@ function QuestionCard({
       )}
 
       {question.source_excerpt && (
-        <p className="mt-3 rounded-lg bg-muted p-3 text-xs text-muted-foreground">
-          "{question.source_excerpt}"
-        </p>
+        <blockquote className="mt-3 border-l-[3px] border-highlight pl-3 text-sm text-muted-foreground">
+          {question.source_excerpt}
+        </blockquote>
       )}
 
       {error && <p className="mt-2 text-xs text-critical">{error}</p>}
@@ -515,7 +635,7 @@ function QuestionCard({
               type="button"
               disabled={busy}
               onClick={saveAndApprove}
-              className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
+              className={buttonStyles()}
             >
               Save and approve
             </button>
@@ -523,7 +643,7 @@ function QuestionCard({
               type="button"
               disabled={busy}
               onClick={cancelEditing}
-              className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium"
+              className={buttonStyles({ intent: 'secondary' })}
             >
               Cancel
             </button>
@@ -536,7 +656,7 @@ function QuestionCard({
                   type="button"
                   disabled={busy}
                   onClick={() => act('approved')}
-                  className="rounded-lg bg-success px-3 py-1.5 text-xs font-medium text-success-foreground disabled:opacity-50"
+                  className={buttonStyles()}
                 >
                   Approve
                 </button>
@@ -544,7 +664,7 @@ function QuestionCard({
                   type="button"
                   disabled={busy}
                   onClick={startEditing}
-                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium"
+                  className={buttonStyles({ intent: 'secondary' })}
                 >
                   Edit
                 </button>
@@ -552,7 +672,7 @@ function QuestionCard({
                   type="button"
                   disabled={busy}
                   onClick={() => act('rejected')}
-                  className="rounded-lg border border-critical/30 px-3 py-1.5 text-xs font-medium text-critical"
+                  className={buttonStyles({ intent: 'danger' })}
                 >
                   Reject
                 </button>
@@ -561,7 +681,7 @@ function QuestionCard({
                   disabled={busy}
                   onClick={regenerate}
                   title="Replace this draft with a new question from the same page"
-                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium disabled:opacity-50"
+                  className={buttonStyles({ intent: 'quiet' })}
                 >
                   {busy ? 'Working...' : 'Regenerate'}
                 </button>
@@ -572,14 +692,14 @@ function QuestionCard({
                 type="button"
                 disabled={busy}
                 onClick={() => act('staged')}
-                className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
+                className={buttonStyles()}
               >
-                Stage for delivery
+                Make ready to send
               </button>
             )}
           </>
         )}
       </div>
-    </div>
+    </article>
   )
 }
