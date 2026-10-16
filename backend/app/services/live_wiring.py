@@ -32,6 +32,7 @@ from app.repositories.live_event_repository import LiveEventRepository
 from app.repositories.question_repository import QuestionRepository
 from app.repositories.student_repository import StudentRepository
 from app.schemas.session import ClassComprehensionAlert
+from app.services import free_text_marking
 from app.services.alert_store import store_comprehension_alert
 from app.services.comprehension_writer import label_response
 from app.services.live_recorder import LiveCloseRecorder, LiveResponseRecorder
@@ -62,7 +63,10 @@ async def _store_response(**response: Any) -> StudentResponse:
         stored = await events.record_response(**response)
         # In the answer's transaction: stored together or not at all.
         await label_response(events.session, stored)
-        return stored
+    if stored.free_text is not None and stored.is_correct is None:
+        # Marked once stored, without keeping the student waiting.
+        free_text_marking.mark_later(stored.response_id, stored.question_id, stored.free_text)
+    return stored
 
 
 async def _store_close(closed: ClosedQuestion) -> None:

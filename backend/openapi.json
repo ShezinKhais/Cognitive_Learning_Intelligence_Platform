@@ -2876,6 +2876,7 @@
     },
     "/api/v1/sessions": {
       "get": {
+        "description": "The caller's sessions, newest first: a lecturer's own, a student's\ncourses', or every session for an admin.",
         "operationId": "list_sessions_api_v1_sessions_get",
         "parameters": [
           {
@@ -3547,6 +3548,7 @@
     },
     "/api/v1/sessions/{session_id}/responses": {
       "get": {
+        "description": "Every response in the session for its lecturer or an admin, and a\nstudent's own for a student.",
         "operationId": "list_responses_api_v1_sessions__session_id__responses_get",
         "parameters": [
           {

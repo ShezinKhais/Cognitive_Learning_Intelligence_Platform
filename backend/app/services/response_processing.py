@@ -73,8 +73,9 @@ def process_submission(
 ) -> FeedbackResultPayload:
     """Route one accepted live-session answer to the correct AI 1 processor.
 
-    MCQ responses are scored in Phase 3. Free-text responses are recorded
-    unscored (correct=None) until Phase 5's classifier is available.
+    MCQ responses are scored here. A free-text response is returned unscored
+    (correct=None) and marked once stored (free_text_marking.py), so the
+    student's receipt does not wait for the model.
     """
 
     if selected_option is not None and free_text is not None:

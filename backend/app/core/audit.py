@@ -92,6 +92,8 @@ def audit_action(
 
             return result
 
+        # Read by the test that every state-changing route is audited.
+        wrapper.audit_action_type = action_type  # type: ignore[attr-defined]
         return wrapper
 
     return decorator
