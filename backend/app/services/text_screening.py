@@ -17,7 +17,11 @@ import re
 import unicodedata
 
 from app.services.generation import contains_embedded_instruction, ungrounded_links
-from app.services.text_variants import fold_confusables, normalise_for_screening, screening_variants
+from app.services.text_variants import (
+    fold_confusables,
+    normalise_for_screening,
+    screening_variants,
+)
 
 __all__ = [
     "contains_embedded_instruction",
@@ -52,6 +56,8 @@ _UNSAFE_CATEGORIES = frozenset({"Cc", "Cs", "Co", "Cn"})
 
 def looks_like_instruction(text: str) -> bool:
     """Whether text, however disguised, carries an instruction aimed at a model."""
+    # generation's check reads every screening variant (rot13, base64, dotted
+    # letters, lookalikes) against its patterns and the shared set-aside one.
     return contains_embedded_instruction(text)
 
 

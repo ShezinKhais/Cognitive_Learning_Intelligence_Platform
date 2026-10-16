@@ -16,7 +16,7 @@ from app.schemas.content import Difficulty, QuestionType
 from app.services.extraction import ContentChunk
 from app.services.material_seams import DraftQuestion
 from app.services.retrieval import RetrievedChunk
-from app.services.text_variants import normalise_for_screening, screening_variants
+from app.services.text_variants import SET_ASIDE, normalise_for_screening, screening_variants
 
 OPTION_COUNT = 4
 GROUNDING_THRESHOLD = 80
@@ -136,7 +136,10 @@ def question_coverage(question: str, material_text: str) -> float:
 
 def contains_embedded_instruction(text: str) -> bool:
     """Whether text contains an instruction aimed at the model, however disguised."""
-    return any(_INSTRUCTION.search(variant) for variant in screening_variants(text))
+    return any(
+        _INSTRUCTION.search(variant) or SET_ASIDE.search(variant)
+        for variant in screening_variants(text)
+    )
 
 
 def ungrounded_links(text: str, material_text: str) -> list[str]:

@@ -24,6 +24,7 @@ from weakref import WeakValueDictionary
 
 from fastapi import WebSocket
 
+from app.realtime.event_limit import CLOSE_RATE_LIMITED
 from app.schemas.events import ReadyPayload, ServerEvent, ServerEventType
 from app.schemas.identity import Role
 
@@ -167,8 +168,15 @@ class SessionHub:
         last_seq: int | None = None,
         generation: UUID | None = None,
         welcome: Welcome | None = None,
+        max_per_user: int | None = None,
     ) -> bool:
         """Send READY, join, replay what the client missed, then the welcome.
+
+        With max_per_user, a user who already holds that many sockets on the
+        channel is refused (closed with CLOSE_RATE_LIMITED, nothing joined).
+        The count and the join happen under the channel's delivery lock, so
+        concurrent attempts cannot all see room and then all join. This holds
+        for a session's channel and for a user's own channel alike.
 
         Delivery on the connection's channel is held for the whole of it, so
         no event can arrive before READY, slip between READY and the join, or
@@ -176,33 +184,65 @@ class SessionHub:
         when READY could not be delivered, in which case the socket has been
         closed and nothing was joined.
         """
+        refused = False
         async with self._delivering(connection.channel):
             stream = self._stream(connection.channel)
-            resumed = stream.resume_point(last_seq, generation)
-            ready = ServerEvent(
-                type=ServerEventType.READY,
-                seq=0,
-                ts=datetime.now(UTC),
-                data=ReadyPayload(
-                    user_id=connection.user_id,
-                    session_id=connection.session_id,
-                    resumed_from_seq=resumed,
-                    stream_id=stream.generation,
-                ).model_dump(mode="json"),
+            held = sum(1 for c in stream.members if c.user_id == connection.user_id)
+            if max_per_user is not None and held >= max_per_user:
+                refused = True
+            else:
+                # Counted and joined in the same hold of the lock.
+                return await self._handshake(connection, stream, last_seq, generation, welcome)
+        if refused:
+            log.warning(
+                "security_event=ACCESS_DENIED transport=websocket user_id=%s "
+                "channel=%s reason=too_many_sockets",
+                connection.user_id,
+                connection.channel,
             )
-            if not await self._send(connection, ready.model_dump(mode="json"), "ready"):
-                return False
-            await self.join(connection)
-            if resumed is not None:
-                for event in stream.missed_since(resumed):
-                    if not await self._send(connection, event.model_dump(mode="json"), "replay"):
-                        return True
-            if welcome is not None:
-                for event_type, data in await welcome():
-                    if not await self._send(
-                        connection, _unsequenced(event_type, data), event_type.value
-                    ):
-                        break
+            # Closed outside the lock and bounded, like every other close here.
+            with contextlib.suppress(Exception):
+                async with asyncio.timeout(CLOSE_TIMEOUT_SECONDS):
+                    await connection.websocket.close(
+                        code=CLOSE_RATE_LIMITED, reason="too many connections"
+                    )
+        return False
+
+    async def _handshake(
+        self,
+        connection: Connection,
+        stream: _Stream,
+        last_seq: int | None,
+        generation: UUID | None,
+        welcome: Welcome | None,
+    ) -> bool:
+        """READY, join, replay and welcome. Called with the channel's delivery
+        lock held."""
+        resumed = stream.resume_point(last_seq, generation)
+        ready = ServerEvent(
+            type=ServerEventType.READY,
+            seq=0,
+            ts=datetime.now(UTC),
+            data=ReadyPayload(
+                user_id=connection.user_id,
+                session_id=connection.session_id,
+                resumed_from_seq=resumed,
+                stream_id=stream.generation,
+            ).model_dump(mode="json"),
+        )
+        if not await self._send(connection, ready.model_dump(mode="json"), "ready"):
+            return False
+        await self.join(connection)
+        if resumed is not None:
+            for event in stream.missed_since(resumed):
+                if not await self._send(connection, event.model_dump(mode="json"), "replay"):
+                    return True
+        if welcome is not None:
+            for event_type, data in await welcome():
+                if not await self._send(
+                    connection, _unsequenced(event_type, data), event_type.value
+                ):
+                    break
         return True
 
     async def join(self, connection: Connection) -> None:
