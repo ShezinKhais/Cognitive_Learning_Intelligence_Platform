@@ -418,6 +418,9 @@ After changing any schema, regenerate the contract with
 
 ### Troubleshooting
 
+For shared ports, frontend/backend connection configuration and outstanding
+cross-phase PR dependencies, see [the integration checkpoint](docs/phase-integration.md).
+
 | Problem | Cause | Fix |
 |---|---|---|
 | `/ready` reports the database unavailable | The container is not running | `docker compose up -d`, and check Docker Desktop is started |
