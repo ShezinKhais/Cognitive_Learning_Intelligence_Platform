@@ -870,6 +870,37 @@
         "title": "Page[ResponseOut]",
         "type": "object"
       },
+      "Page_ReviewSession_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewSession"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[ReviewSession]",
+        "type": "object"
+      },
       "Page_SessionOut_": {
         "properties": {
           "items": {
@@ -1402,6 +1433,85 @@
         "title": "ResponseOut",
         "type": "object"
       },
+      "ReviewAnswer": {
+        "properties": {
+          "answer": {
+            "title": "Answer",
+            "type": "string"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_correct": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Correct"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComprehensionLabel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "submitted_at": {
+            "format": "date-time",
+            "title": "Submitted At",
+            "type": "string"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic"
+          }
+        },
+        "required": [
+          "id",
+          "question",
+          "topic",
+          "answer",
+          "is_correct",
+          "label",
+          "confidence",
+          "submitted_at"
+        ],
+        "title": "ReviewAnswer",
+        "type": "object"
+      },
       "ReviewDecision": {
         "description": "The statuses a lecturer may set through the review routes.\n\nEvery QuestionStatus except DELIVERED. A question becomes delivered when\nthe session actually sends it to students; set by hand, it would freeze a\nquestion as \"already asked\" when no student ever saw it.",
         "enum": [
@@ -1412,6 +1522,130 @@
         ],
         "title": "ReviewDecision",
         "type": "string"
+      },
+      "ReviewEngagement": {
+        "properties": {
+          "explanation": {
+            "default": "A verified post-session engagement record with confidence and signal availability is not available. Missing readings are not zero and do not indicate understanding.",
+            "title": "Explanation",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "null"
+          },
+          "status": {
+            "const": "unavailable",
+            "default": "unavailable",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "ReviewEngagement",
+        "type": "object"
+      },
+      "ReviewSession": {
+        "properties": {
+          "course_code": {
+            "title": "Course Code",
+            "type": "string"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "course_code",
+          "ended_at"
+        ],
+        "title": "ReviewSession",
+        "type": "object"
+      },
+      "ReviewSource": {
+        "properties": {
+          "chunk_id": {
+            "format": "uuid",
+            "title": "Chunk Id",
+            "type": "string"
+          },
+          "match": {
+            "enum": [
+              "excerpt",
+              "page"
+            ],
+            "title": "Match",
+            "type": "string"
+          },
+          "material_title": {
+            "title": "Material Title",
+            "type": "string"
+          },
+          "source_page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Page"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chunk_id",
+          "material_title",
+          "source_page",
+          "text",
+          "match"
+        ],
+        "title": "ReviewSource",
+        "type": "object"
+      },
+      "ReviewSources": {
+        "properties": {
+          "has_more": {
+            "default": false,
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewSource"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ReviewSources",
+        "type": "object"
       },
       "Role": {
         "enum": [
@@ -1696,6 +1930,54 @@
         ],
         "title": "SessionStatus",
         "type": "string"
+      },
+      "StudentReview": {
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewAnswer"
+            },
+            "title": "Answers",
+            "type": "array"
+          },
+          "engagement": {
+            "$ref": "#/components/schemas/ReviewEngagement"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "questions_attempted": {
+            "title": "Questions Attempted",
+            "type": "integer"
+          },
+          "questions_missed": {
+            "title": "Questions Missed",
+            "type": "integer"
+          },
+          "session": {
+            "$ref": "#/components/schemas/ReviewSession"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session",
+          "questions_attempted",
+          "questions_missed",
+          "answers",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "StudentReview",
+        "type": "object"
       },
       "StudentSessionSummary": {
         "properties": {
@@ -3821,6 +4103,181 @@
         "summary": "Session Topics",
         "tags": [
           "sessions"
+        ]
+      }
+    },
+    "/api/v1/student-reviews": {
+      "get": {
+        "operationId": "list_reviews_api_v1_student_reviews_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ReviewSession_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Reviews",
+        "tags": [
+          "student-review"
+        ]
+      }
+    },
+    "/api/v1/student-reviews/{session_id}": {
+      "get": {
+        "operationId": "review_api_v1_student_reviews__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentReview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review",
+        "tags": [
+          "student-review"
+        ]
+      }
+    },
+    "/api/v1/student-reviews/{session_id}/responses/{response_id}/sources": {
+      "get": {
+        "operationId": "sources_api_v1_student_reviews__session_id__responses__response_id__sources_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "response_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Response Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewSources"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sources",
+        "tags": [
+          "student-review"
         ]
       }
     },

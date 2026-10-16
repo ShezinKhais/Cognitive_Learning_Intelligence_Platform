@@ -17,7 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 from fastapi.websockets import WebSocketDisconnect
 from pydantic import ValidationError
-from sqlalchemy import LargeBinary
+from sqlalchemy import Float, LargeBinary
 
 import app.models  # noqa: F401  (registers every table on Base)
 from app.api.v1 import ws as ws_module
@@ -161,42 +161,45 @@ def test_no_table_has_a_binary_column() -> None:
     assert binary == []
 
 
-# The one place per-minute attention figures are kept (BBIS, Phase 6): ratios of
-# a student's own five-second windows, null when a sensor was off. Listed in full
-# so a new column here is a decision someone makes on purpose.
-ATTENTION_SUMMARY_COLUMNS = {
-    "summary_id",
-    "session_id",
-    "student_id",
-    "window_start",
-    "window_seconds",
-    "sample_count",
-    "gaze_on_screen_ratio",
-    "face_present_ratio",
-    "speaking_ratio",
-    "recorded_at",
-}
-
-
 def test_no_table_stores_a_raw_attention_reading() -> None:
-    """A score, a label and per-minute ratios are kept; no table has a raw
-    reading, landmark, frame or audio column, so there is no record of where
-    anyone looked from moment to moment."""
-    for table in Base.metadata.tables.values():
-        if table.name == "attention_signal_summary":
-            continue
-        for column in table.columns:
-            for forbidden in ("gaze", "face_present", "landmark", "frame", "audio"):
-                assert forbidden not in column.name, f"{table.name}.{column.name}"
+    """Only the explicitly approved minute aggregates may use visual names.
+
+    These derived ratios are not raw frames, landmarks or per-frame readings.
+    No other table (or newly added column) receives a blanket exemption.
+    """
+    aggregates = {
+        "attention_signal_summary.gaze_on_screen_ratio",
+        "attention_signal_summary.face_present_ratio",
+    }
+    names = {
+        f"{table.name}.{column.name}"
+        for table in Base.metadata.tables.values()
+        for column in table.columns
+    }
+    assert aggregates <= names
+    for forbidden in ("gaze", "face_present", "landmark", "frame", "audio", "transcript_audio"):
+        assert not [n for n in names - aggregates if forbidden in n.split(".")[1]], forbidden
 
 
-def test_the_attention_summary_table_holds_only_derived_ratios() -> None:
-    table = Base.metadata.tables["attention_signal_summary"]
-    assert {c.name for c in table.columns} == ATTENTION_SUMMARY_COLUMNS
+def test_attention_summary_is_a_bounded_schema_of_derived_scalars() -> None:
+    from app.models.attention_signal_summary import AttentionSignalSummary
+
+    columns = AttentionSignalSummary.__table__.columns
+    assert set(columns.keys()) == {
+        "summary_id",
+        "session_id",
+        "student_id",
+        "window_start",
+        "window_seconds",
+        "sample_count",
+        "gaze_on_screen_ratio",
+        "face_present_ratio",
+        "speaking_ratio",
+        "recorded_at",
+    }
     for name in ("gaze_on_screen_ratio", "face_present_ratio", "speaking_ratio"):
-        column = table.columns[name]
-        assert column.nullable, name  # a missing sensor is null, never zero
-        assert type(column.type).__name__ == "Float", name
+        assert isinstance(columns[name].type, Float)
+        assert columns[name].nullable  # Unavailable signals are not forced to zero.
 
 
 def test_the_stored_engagement_record_is_derived_data_only() -> None:
@@ -266,7 +269,7 @@ def test_no_module_that_handles_attention_logs_a_reading() -> None:
 def test_the_accessibility_need_is_read_in_one_place_only() -> None:
     root = Path(inspect.getfile(ws_module)).parents[2]
     users = sorted(
-        p.relative_to(root).as_posix()
+        str(p.relative_to(root))
         for p in root.rglob("*.py")
         if "accessibility_need" in p.read_text(encoding="utf-8")
     )
