@@ -156,10 +156,22 @@ deletes Teams roster syncs on their own received date. Each batch writes one
 `POST /api/v1/governance/retention/run` stays for an admin to run the same rule
 by hand, after `GET /retention/preview`. The audit log is never purged.
 
-## Not done yet
+## Consent records and the account row
 
-- Consent records and the `user` row are not touched by any of this yet.
-- Unresolved Teams user mappings also hold personal data and are not purged yet.
+Erasing a student keeps their consent records and an anonymised account row, so the audit
+log and past sessions still point at something. After the erasure they identify nobody:
+the account says "Deleted student", has a placeholder email and no password, and is
+inactive; a consent record holds only that account's id, the consent type, yes or no, and
+a date. For that reason they are not purged. Our tutor also questioned whether consent
+records need keeping long at all, since consent here is a tick on the terms. If a rule is
+wanted later, the age of an erasure would have to be recorded first; it is not stored today.
+
+## Teams ids
+
+A Teams user mapping that was never matched to an account holds Teams ids and belongs to
+nobody. The `teams-unresolved-mappings` purge task deletes them once they are past
+`DATA_RETENTION_DAYS`. A mapping to a live account is kept, and is cleared if that student
+is erased. Roster participant rows go with their roster sync.
 
 ## Tests
 

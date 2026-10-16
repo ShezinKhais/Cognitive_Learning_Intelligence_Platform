@@ -365,7 +365,11 @@ def test_the_tasks_are_registered_once():
     register_database_purges(runner)
     register_database_purges(runner)
 
-    assert runner.task_names == ["session-data", "teams-roster-syncs"]
+    assert runner.task_names == [
+        "session-data",
+        "teams-roster-syncs",
+        "teams-unresolved-mappings",
+    ]
 
 
 def test_housekeeping_registers_the_database_purges():
@@ -379,6 +383,7 @@ def test_housekeeping_registers_the_database_purges():
             "session-data",
             "stored-uploads",
             "teams-roster-syncs",
+            "teams-unresolved-mappings",
         ]
     finally:
         get_purge_runner.cache_clear()
@@ -458,3 +463,37 @@ async def test_nothing_is_deleted_when_the_archive_fails(
         await retention_tasks.SessionDataPurge(borrowed, history=borrowed).purge(days_ago(90), 500)
 
     assert await holdings(db, history.expired) == dict.fromkeys(HOLDINGS, 1)
+
+
+async def test_only_unresolved_old_teams_mappings_are_purged(db, borrowed):
+    from app.models.teams_user_mapping import TeamsUserMapping
+    from app.services.retention_tasks import TeamsMappingPurge
+
+    owner = User(name="Mapped Student", role="student", email=f"m-{uuid.uuid4()}@example.com")
+    db.add(owner)
+    await db.flush()
+
+    def mapping(user_id, age_days):
+        return TeamsUserMapping(
+            tenant_id=f"t-{uuid.uuid4().hex}",
+            teams_user_id=f"u-{uuid.uuid4().hex}",
+            user_id=user_id,
+            updated_at=days_ago(age_days),
+        )
+
+    rows = {
+        "old_unresolved": mapping(None, 200),
+        "new_unresolved": mapping(None, 10),
+        "old_resolved": mapping(owner.user_id, 200),
+    }
+    db.add_all(rows.values())
+    await db.flush()
+    ids = {name: row.mapping_id for name, row in rows.items()}
+
+    await TeamsMappingPurge(borrowed).purge(days_ago(120), 500)
+
+    remaining = {
+        name: await db.get(TeamsUserMapping, mapping_id) is not None
+        for name, mapping_id in ids.items()
+    }
+    assert remaining == {"old_unresolved": False, "new_unresolved": True, "old_resolved": True}

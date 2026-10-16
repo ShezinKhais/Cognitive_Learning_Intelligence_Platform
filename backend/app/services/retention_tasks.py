@@ -22,6 +22,7 @@ from app.history.database import resolve_history_factory
 from app.models.session import Session
 from app.models.student_response import StudentResponse
 from app.models.teams_roster_sync import TeamsRosterSync
+from app.models.teams_user_mapping import TeamsUserMapping
 from app.repositories.audit_repository import record_event
 from app.services.history_archive import archive_sessions
 from app.services.purge_runner import PurgeRunner
@@ -134,8 +135,46 @@ class RosterSyncPurge:
             return len(ids)
 
 
+class TeamsMappingPurge:
+    """Deletes Teams user mappings that were never matched to an account, once
+    they are past the retention period. They hold Teams ids and belong to nobody.
+    A mapping to a live account is kept, and cleared if that student is erased."""
+
+    name = "teams-unresolved-mappings"
+
+    def __init__(self, sessions: SessionFactory = get_session_factory) -> None:
+        self._sessions = sessions
+
+    async def purge(self, cutoff: datetime, limit: int) -> int:
+        async with self._sessions()() as db:
+            ids = list(
+                await db.scalars(
+                    select(TeamsUserMapping.mapping_id)
+                    .where(TeamsUserMapping.user_id.is_(None), TeamsUserMapping.updated_at < cutoff)
+                    .order_by(TeamsUserMapping.updated_at)
+                    .limit(limit)
+                )
+            )
+            if not ids:
+                return 0
+            await db.execute(delete(TeamsUserMapping).where(TeamsUserMapping.mapping_id.in_(ids)))
+            await record_event(
+                db,
+                action_type=RETENTION_ACTION,
+                user_id=None,
+                target_type="retention",
+                details={
+                    "task": self.name,
+                    "unresolved_mappings": len(ids),
+                    "cutoff": cutoff.isoformat(),
+                },
+            )
+            await db.commit()
+            return len(ids)
+
+
 def register_database_purges(runner: PurgeRunner) -> None:
     """Add the database purge tasks to the runner. Safe to call again."""
-    for task in (SessionDataPurge(), RosterSyncPurge()):
+    for task in (SessionDataPurge(), RosterSyncPurge(), TeamsMappingPurge()):
         if task.name not in runner.task_names:
             runner.register(task)
