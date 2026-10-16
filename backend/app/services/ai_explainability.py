@@ -31,7 +31,7 @@ from typing import Literal
 from app.schemas.events import AlertKind
 from app.schemas.session import ComprehensionLabel, EngagementStatus
 from app.services.engagement import EngagementComputation
-from app.services.engagement_view import staff_confidence
+from app.services.engagement_view import staff_confidence, staff_score
 from app.services.text_screening import safe_display_text
 
 MAX_TOPIC_CHARS = 80
@@ -218,7 +218,7 @@ def explain_student_engagement(
     else:
         status = computation.status.value.replace("_", " ")
         reason = (
-            f"Engagement score {_percent(computation.score)}% ({status}) "
+            f"Engagement score {_percent(staff_score(computation.score) or 0.0)}% ({status}) "
             "from participation evidence."
         )
         fallback = (

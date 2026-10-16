@@ -26,7 +26,7 @@ Branch `hunain-phase-6`, built on `main`.
   never stored, never compared between students.
 * `realtime/accommodations.py`. Looked up once at join (`ws.py`). Only the boolean is kept;
   the text of `accessibility_need` is never read into scoring, logged, or sent. For an
-  accommodated student: answer speed, gaze and face presence are not scored, a prompt left
+  accommodated student: gaze and face presence are not scored, and answer speed counts as a neutral typical value, a prompt left
   to expire is not held against them, they are never `disengaged` and never auto-prompted.
   A record that cannot be read counts as accommodated (the safe mistake is to flag less).
 * Camera consent withdrawal now also purges the camera-derived baseline (`purge_visual`).
@@ -65,7 +65,7 @@ face-rate threshold, baseline wiring, error-text logging, join-time lookup).
 
 | # | Risk |
 |---|---|
-| R14 | **Resolved after review (Aliyeh, Luna).** `signals_available` and `confidence` per student would have let a lecturer tell who has an accommodation, because answer speed, gaze and face presence are never scored for them. Staff now see one view computed the same way for every student, from whether any participation signal backed the score (`engagement_view.py`): `signals_available` is `['participation']` or empty, `confidence` is 0 or 1, camera detail is never named. The scorer keeps the detail internally. What remains: `score` and `status` are still shown, and an accommodated student cannot be `disengaged` or prompted, so a lecturer who watches one student's status over a whole class could still form a suspicion; that is the price of not penalising them |
+| R14 | **Resolved after review (Aliyeh, Luna, Shezin).** Per-student detail would have let a lecturer tell who has an accommodation. Staff now see one view, computed the same way for every student (`engagement_view.py`): `signals_available` is `['participation']` or empty, `confidence` is 0 or 1, camera detail is never named, and the **score is shown in quarter steps**. Shezin showed the raw score still gave it away: with answer speed absent, an accommodated student who answered both of their first two questions scored exactly 1.0 (nobody else can; the highest was 0.991) and one of two scored exactly 0.5. Answer speed for an accommodated student is therefore a neutral typical value (`NEUTRAL_TIMING` = 0.75) wherever another student would have an answer-speed term, and a test enumerates questions shown and answered to show every banded score an accommodated student can show is one others can too. What remains: `status` is still shown and an accommodated student cannot be `disengaged` or prompted, so a lecturer watching one student's status over a whole class could still form a suspicion; and their score now includes a neutral term rather than the true (unmeasured) speed |
 | R15 | Accommodation is read at join; a change mid-class applies at the next join |
 | R16 | The baseline learns one reading per closed question (the latest signal), not every signal |
 | R17 | Engagement scores are still in memory only (no `engagement_record` writer); a restart loses them |
