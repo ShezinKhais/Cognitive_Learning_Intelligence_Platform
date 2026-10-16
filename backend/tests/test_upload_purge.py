@@ -269,7 +269,7 @@ async def test_a_scheduled_run_that_gave_way_to_a_class_tries_again_after_it(
 
     assert report is not None
     assert (report.deleted, report.gave_way) == ({"stored-uploads": 1}, False)
-    assert list(tmp_path.iterdir()) == []
+    assert remaining(tmp_path) == []
 
 
 async def test_retrying_after_classes_stops_before_the_next_scheduled_run(
@@ -306,7 +306,7 @@ async def test_retrying_after_classes_stops_before_the_next_scheduled_run(
 
     assert report is not None and report.gave_way
     assert runs == 2
-    assert [p.name for p in tmp_path.iterdir()] == ["old.pdf"]
+    assert remaining(tmp_path) == ["old.pdf"]
 
 
 async def test_a_scheduled_run_returns_what_it_deleted(

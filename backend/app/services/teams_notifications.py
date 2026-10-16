@@ -16,7 +16,8 @@ from urllib.parse import quote, urlencode, urlsplit
 from uuid import UUID
 
 import httpx
-from sqlalchemy import select, update
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 
 from app.core.config import Settings, get_settings
 from app.core.database import get_session_factory
@@ -24,7 +25,8 @@ from app.models.course import Course
 from app.models.delivered_question import DeliveredQuestion
 from app.models.session import Session
 from app.models.student import Student
-from app.models.teams_meeting_link import TeamsMeetingLink
+from app.models.teams_meeting_link import MAX_TEAMS_MEETING_ID_LENGTH, TeamsMeetingLink
+from app.models.teams_meeting_reference import TeamsMeetingReference
 from app.models.teams_user_mapping import TeamsUserMapping
 from app.models.user import User
 from app.schemas.meetings import TeamsActivity
@@ -106,7 +108,13 @@ def meeting_deep_link(settings: Settings, conversation_id: str, target: str) -> 
 
 
 async def remember_reference(db, activity: TeamsActivity, settings: Settings) -> None:
-    """Called only after BotAuthenticator.verify AND authorize succeeded."""
+    """Keep where the bot can post into this activity's meeting.
+
+    Called only after BotAuthenticator.verify AND authorize succeeded, for
+    every activity, not only a meeting's start and end: a lecturer often links
+    the session after the meeting has started, and the reference is kept per
+    meeting so it is there whenever the link is made.
+    """
     if not settings.teams_notifications_enabled:
         return
     data = activity.channel_data or {}
@@ -118,6 +126,8 @@ async def remember_reference(db, activity: TeamsActivity, settings: Settings) ->
     tenant_id = tenant.get("id") if isinstance(tenant, dict) else None
     if (
         not isinstance(meeting_id, str)
+        or not meeting_id
+        or len(meeting_id) > MAX_TEAMS_MEETING_ID_LENGTH
         or not isinstance(conversation_id, str)
         or not conversation_id
         or len(conversation_id) > 512
@@ -130,13 +140,17 @@ async def remember_reference(db, activity: TeamsActivity, settings: Settings) ->
     except ValueError:
         log.warning("Teams notification reference rejected: unsupported connector")
         return
+    reference = {
+        "service_url": service,
+        "conversation_id": conversation_id,
+        "tenant_id": tenant_id,
+    }
     await db.execute(
-        update(TeamsMeetingLink)
-        .where(TeamsMeetingLink.meeting_id == meeting_id)
-        .values(
-            bot_service_url=service,
-            bot_conversation_id=conversation_id,
-            bot_tenant_id=tenant_id,
+        insert(TeamsMeetingReference)
+        .values(meeting_id=meeting_id, **reference)
+        .on_conflict_do_update(
+            index_elements=[TeamsMeetingReference.meeting_id],
+            set_={**reference, "seen_at": func.now()},
         )
     )
     await db.commit()
@@ -225,8 +239,12 @@ class TeamsNotifications:
         async with get_session_factory()() as db:
             row = (
                 await db.execute(
-                    select(TeamsMeetingLink, Session, Course)
+                    select(TeamsMeetingLink, Session, Course, TeamsMeetingReference)
                     .join(Session, Session.session_id == TeamsMeetingLink.session_id)
+                    .join(
+                        TeamsMeetingReference,
+                        TeamsMeetingReference.meeting_id == TeamsMeetingLink.meeting_id,
+                    )
                     .join(Course, Course.id == Session.course_id)
                     .join(DeliveredQuestion, DeliveredQuestion.session_id == Session.session_id)
                     .where(
@@ -241,14 +259,10 @@ class TeamsNotifications:
             ).first()
             if row is None:
                 return
-            link, session, course = row
-            if (
-                not link.bot_service_url
-                or not link.bot_conversation_id
-                or link.bot_tenant_id != settings.tenant_id
-            ):
+            link, session, course, reference = row
+            if reference.tenant_id != settings.tenant_id:
                 return
-            base = connector_url(link.bot_service_url)
+            base = connector_url(reference.service_url)
             students = set(
                 (
                     await db.scalars(
@@ -265,7 +279,7 @@ class TeamsNotifications:
                 ).all()
             )
             title, code = session.title, course.code
-            meeting_id, conversation_id = link.meeting_id, link.bot_conversation_id
+            meeting_id, conversation_id = link.meeting_id, reference.conversation_id
         async with httpx.AsyncClient(timeout=4, follow_redirects=False) as client:
             token = await self.access_token(client, settings)
             headers = {"Authorization": f"Bearer {token}"}

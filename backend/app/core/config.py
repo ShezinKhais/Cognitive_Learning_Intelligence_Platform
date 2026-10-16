@@ -253,7 +253,10 @@ class Settings(BaseSettings):
                 )
             from uuid import UUID
 
-            UUID(self.teams_app_id)
+            try:
+                UUID(self.teams_app_id)
+            except ValueError as exc:
+                raise ValueError("TEAMS_APP_ID must be the Teams app's id, a UUID") from exc
             target = urlparse(self.teams_app_base_url)
             if (
                 target.scheme != "https"

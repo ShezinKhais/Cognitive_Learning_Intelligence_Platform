@@ -56,6 +56,7 @@ async def bot_messages(
         request.headers.get("Authorization"), activity.service_url, activity.channel_id
     )
     authenticator.authorize(activity)
+    # Before the activity is applied, so a refusal there still leaves the
+    # meeting reachable for checkpoint notifications.
+    await remember_reference(db, activity, settings)
     await teams_bot.handle_activity(db, activity, settings)
-    if teams_bot.meeting_event(activity) is not None:
-        await remember_reference(db, activity, settings)

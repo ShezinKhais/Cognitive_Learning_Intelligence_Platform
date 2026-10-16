@@ -95,11 +95,11 @@ async def test_token_is_cached_and_secrets_do_not_enter_connector_payloads() -> 
 
 async def test_send_targets_only_mapped_students_and_batches_fifty(monkeypatch, caplog) -> None:
     session_id = uuid4()
-    link = SimpleNamespace(
-        bot_service_url="https://smba.trafficmanager.net/emea/",
-        bot_conversation_id="chat/id",
-        bot_tenant_id="tenant",
-        meeting_id="meeting/id",
+    link = SimpleNamespace(meeting_id="meeting/id")
+    reference = SimpleNamespace(
+        service_url="https://smba.trafficmanager.net/emea/",
+        conversation_id="chat/id",
+        tenant_id="tenant",
     )
     session = SimpleNamespace(title="Class", course_id=uuid4())
 
@@ -111,7 +111,9 @@ async def test_send_targets_only_mapped_students_and_batches_fifty(monkeypatch, 
             pass
 
         async def execute(self, statement):
-            return SimpleNamespace(first=lambda: (link, session, SimpleNamespace(code="CS101")))
+            return SimpleNamespace(
+                first=lambda: (link, session, SimpleNamespace(code="CS101"), reference)
+            )
 
         async def scalars(self, statement):
             return SimpleNamespace(all=lambda: [f"aad-{i}" for i in range(51)])
@@ -251,6 +253,40 @@ def test_endpoint_saves_no_reference_before_authentication(app, client, monkeypa
         app.dependency_overrides.pop(teams.get_bot_authenticator, None)
 
 
+def test_any_verified_meeting_activity_saves_the_reference(app, client, monkeypatch) -> None:
+    """A lecturer who links the session after the meeting started has missed
+    its start event; the bot's next message from the meeting still counts."""
+    from app.api.v1 import teams
+
+    auth = SimpleNamespace(verify=AsyncMock(), authorize=lambda activity: None)
+    reference = AsyncMock()
+    monkeypatch.setattr(teams, "remember_reference", reference)
+    monkeypatch.setattr(teams.teams_bot, "handle_activity", AsyncMock())
+    app.dependency_overrides[teams.get_bot_authenticator] = lambda: auth
+    message = {
+        "type": "message",
+        "text": "hello",
+        "serviceUrl": "https://smba.trafficmanager.net/emea/",
+        "channelId": "msteams",
+        "channelData": {"tenant": {"id": "tenant"}, "meeting": {"id": "meeting"}},
+        "conversation": {"id": "chat"},
+    }
+    try:
+        assert client.post("/api/v1/teams/messages", json=message).status_code == 200
+        reference.assert_awaited_once()
+    finally:
+        app.dependency_overrides.pop(teams.get_bot_authenticator, None)
+
+
+def test_a_teams_app_id_that_is_not_a_uuid_is_named_in_the_error() -> None:
+    from pydantic import ValidationError
+
+    settings = configured().model_dump()
+    settings["teams_app_id"] = "not-a-uuid"
+    with pytest.raises(ValidationError, match="TEAMS_APP_ID"):
+        Settings(**settings)
+
+
 @pytest.mark.usefixtures("fake_session_repository")
 async def test_delivery_enqueues_after_commit_for_manual_and_scheduled_path() -> None:
     from .classroom_support import FakeDb, FakeRepository, deliver_next, make_room, make_row
@@ -301,6 +337,7 @@ async def test_persisted_reference_and_course_recipient_filter_against_database(
     from app.models.session import Session
     from app.models.student import Student
     from app.models.teams_meeting_link import TeamsMeetingLink
+    from app.models.teams_meeting_reference import TeamsMeetingReference
     from app.models.teams_user_mapping import TeamsUserMapping
     from app.models.user import User
     from app.schemas.identity import Role
@@ -327,7 +364,6 @@ async def test_persisted_reference_and_course_recipient_filter_against_database(
                 window_seconds=30,
             )
         )
-        seed.add(TeamsMeetingLink(meeting_id=meeting_id, session_id=session_id))
         for name, role, active, course_id in [
             ("eligible", "student", True, course.id),
             ("inactive", "student", False, course.id),
@@ -364,12 +400,17 @@ async def test_persisted_reference_and_course_recipient_filter_against_database(
         channelData={"meeting": {"id": meeting_id}, "tenant": {"id": "tenant"}},
         conversation={"id": "chat"},
     )
+    # The bot hears from the meeting before the lecturer links it, as when the
+    # meeting has already started, and the link is made afterwards.
     async with factory() as session:
         await remember_reference(session, activity, configured())
+    async with factory() as seed:
+        seed.add(TeamsMeetingLink(meeting_id=meeting_id, session_id=session_id))
+        await seed.commit()
     async with factory() as session:
-        saved = await session.get(TeamsMeetingLink, meeting_id)
-        assert saved.bot_conversation_id == "chat"
-        assert saved.bot_service_url == "https://smba.trafficmanager.net/emea/"
+        saved = await session.get(TeamsMeetingReference, meeting_id)
+        assert saved.conversation_id == "chat"
+        assert saved.service_url == "https://smba.trafficmanager.net/emea/"
     monkeypatch.setattr(module, "get_session_factory", lambda: factory)
     sent = []
 
