@@ -154,6 +154,9 @@ class Settings(BaseSettings):
     client_id: str = ""
     client_secret: str = ""
     tenant_id: str = ""
+    teams_notifications_enabled: bool = False
+    teams_app_base_url: str = ""
+    teams_app_id: str = ""
 
     # Session behaviour. Once a question closes, the next is due after a fresh
     # random wait between these two, so the class cannot predict it. Both 0
@@ -239,6 +242,29 @@ class Settings(BaseSettings):
             raise ValueError(
                 "ROOM_NEEDS_ATTENTION_AFTER_SECONDS must be greater than ROOM_QUIET_AFTER_SECONDS"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _check_teams_notifications(self) -> "Settings":
+        if self.teams_notifications_enabled:
+            if not self.teams_configured:
+                raise ValueError(
+                    "Teams notifications require CLIENT_ID, CLIENT_SECRET and TENANT_ID"
+                )
+            from uuid import UUID
+
+            UUID(self.teams_app_id)
+            target = urlparse(self.teams_app_base_url)
+            if (
+                target.scheme != "https"
+                or not target.hostname
+                or target.username
+                or target.password
+                or target.query
+                or target.fragment
+                or target.path not in ("", "/")
+            ):
+                raise ValueError("TEAMS_APP_BASE_URL must be a public HTTPS origin")
         return self
 
     @model_validator(mode="after")

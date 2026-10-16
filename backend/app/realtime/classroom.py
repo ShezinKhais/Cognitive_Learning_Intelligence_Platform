@@ -244,6 +244,7 @@ class Classroom:
         self.comprehension_source: ComprehensionSource | None = None
         self.alert_recorder: AlertRecorder | None = None
         self.attention_recorder: AttentionRecorder | None = None
+        self.checkpoint_notifier: Callable[[UUID, UUID, float], None] | None = None
 
     def _next_wait(self) -> timedelta | None:
         """A fresh random wait before the next scheduled question, or None
@@ -653,6 +654,13 @@ class Classroom:
                 self._close_when_due(live, live.open),
                 name=f"response-window-{question.question_id}",
             )
+            if self.checkpoint_notifier is not None:
+                try:
+                    self.checkpoint_notifier(
+                        row.session_id, question.question_id, closes_at.timestamp()
+                    )
+                except Exception:
+                    log.warning("Could not enqueue Teams checkpoint notification")
         return payload
 
     async def _close_when_due(self, live: LiveSession, open_: _OpenQuestion) -> None:

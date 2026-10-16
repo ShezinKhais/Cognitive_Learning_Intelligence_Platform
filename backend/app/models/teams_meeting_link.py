@@ -27,6 +27,9 @@ class TeamsMeetingLink(Base):
         String(MAX_TEAMS_MEETING_ID_LENGTH),
         primary_key=True,
     )
+    bot_service_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    bot_conversation_id: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    bot_tenant_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
 
     session_id: Mapped[UUID] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
