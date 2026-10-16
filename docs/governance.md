@@ -7,10 +7,11 @@ Owner: BBIS, Phase 7. Code: `backend/app/services/retention.py`,
 Everything here is admin only. The rules live in the services, so a scheduled job and
 the routes behave the same way.
 
-## The 90-day retention purge
+## The retention purge
 
 A session ages from the day it ended (`ended_at`), or its scheduled end, or its start
-when it never formally ended. When it is older than `DATA_RETENTION_DAYS` (default 90),
+when it never formally ended. When it is older than `DATA_RETENTION_DAYS` (default 120,
+a semester),
 the session row is deleted and the database removes everything it holds:
 
 | Removed with the session | Kept |

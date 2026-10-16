@@ -196,7 +196,7 @@ and the correct answer is revealed when the window closes.
 
 ### Phase 7 - Retention, deletion requests and the audit log
 
-- **90-day retention.** A session is purged 90 days after the day it ended. The purge
+- **Retention.** A session is purged 120 days (a semester) after it ended. The purge
   removes everything the session holds: answers and their labels, engagement, prompts,
   alerts and attention summaries. Lecturer questions and uploaded material stay. Teams
   roster syncs hold participant names, so they are purged on their own received date.
@@ -323,7 +323,7 @@ will implement them.
 | POST | `/governance/deletion-requests/{request_id}/reject` | admin | Reject it |
 | POST | `/governance/deletion-requests/{request_id}/execute` | admin | Carry out an approved request (sessions only, for now) |
 | GET | `/governance/audit-log` | admin | Browse the audit log |
-| GET | `/governance/retention/preview` | admin | What the 90-day purge would delete |
+| GET | `/governance/retention/preview` | admin | What the retention purge would delete |
 | POST | `/governance/retention/run` | admin | Run the purge (needs `"confirm": true`) |
 | WS | `/ws/session` | token | Live classroom events, see `events.schema.json` |
 
@@ -487,7 +487,7 @@ These are enforced in code, not only promised in documentation.
   never lowers a student's score.
 - Engagement and comprehension are measured separately, and neither is an assessment.
 - Every role is checked on the server; Teams context is never trusted for authorisation.
-- Session data is deleted after 90 days, in line with UAE Federal Decree-Law No. 45 of
+- Session data is deleted after a semester (120 days), in line with UAE Federal Decree-Law No. 45 of
   2021 on the Protection of Personal Data.
 
 ## Project Status

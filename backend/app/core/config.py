@@ -182,7 +182,8 @@ class Settings(BaseSettings):
     max_material_chunks: int = 5000
 
     # Retention (UAE PDPL)
-    data_retention_days: int = 90
+    # A semester, so the live database only holds the current one.
+    data_retention_days: int = 120
 
     @property
     def is_production(self) -> bool:

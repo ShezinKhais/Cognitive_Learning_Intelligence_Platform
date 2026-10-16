@@ -1,4 +1,4 @@
-"""The 90-day retention purge, against a real database.
+"""The retention purge, against a real database.
 
 Every test runs in a transaction that is rolled back at the end, so what the
 purge deletes (including any old data already in a development database) is

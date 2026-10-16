@@ -1,4 +1,4 @@
-"""The 90-day retention rule: delete what a session left behind once it is old.
+"""The retention rule: delete what a session left behind once it is old.
 
 Owner: BBIS, Phase 7. A session ages from the day it ended (or, when it never
 formally ended, its scheduled end or start). Once it is older than the retention

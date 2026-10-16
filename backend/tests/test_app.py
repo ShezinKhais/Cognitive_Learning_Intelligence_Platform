@@ -58,4 +58,4 @@ def test_session_defaults() -> None:
     settings = Settings()
     assert settings.checkpoint_response_window_seconds == 30
     assert settings.comprehension_alert_threshold == 0.50
-    assert settings.data_retention_days == 90
+    assert settings.data_retention_days == 120
