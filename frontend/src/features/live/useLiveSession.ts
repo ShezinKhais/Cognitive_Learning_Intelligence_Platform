@@ -8,6 +8,7 @@ import {
   getAccessToken,
 } from '../../api'
 import { actionForClose } from '../materials/closeCodes'
+import { isRoomStatus, updateRooms, type RoomStatus } from './rooms'
 import {
   acknowledgeSessionAlert,
   getOpenSessionAlerts,
@@ -105,6 +106,7 @@ interface UseLiveSessionResult {
   acknowledgeAlert: (
     alertId: string,
   ) => Promise<void>
+  rooms: RoomStatus[]
 }
 
 function liveSocketUrl(): string {
@@ -357,6 +359,8 @@ export function useLiveSession(
   ] = useState<LiveSessionNotice | null>(
     null,
   )
+
+  const [rooms, setRooms] = useState<RoomStatus[]>([])
 
   useEffect(() => {
     if (!sessionId) {
@@ -671,6 +675,12 @@ setAlerts((current) => {
             return
           }
 
+          if (message.type === 'room.status' && isRoomStatus(message.data)) {
+            const update = message.data
+            setRooms((current) => updateRooms(current, update))
+            return
+          }
+
           if (
             message.type === 'error' &&
             isLiveSessionNotice(
@@ -804,6 +814,7 @@ setAlerts((current) => {
     closedQuestion,
     alerts,
     sessionNotice,
+    rooms,
     acknowledgeAlert,
   }
 }

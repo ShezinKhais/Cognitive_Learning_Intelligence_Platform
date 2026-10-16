@@ -8,82 +8,93 @@
 
 :root {
   --font-size: 16px;
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  /* Atkinson Hyperlegible: drawn for low-vision readers by the Braille
+     Institute. Legibility is the brief: a student glancing at a checkpoint,
+     a lecturer reading an alert mid-sentence. Bundled, so it loads inside
+     Teams and under the deployment's content security policy. */
+  --font-sans: 'Atkinson Hyperlegible Next Variable', 'Segoe UI', system-ui, sans-serif;
 
-  /* Background & surface */
-  --background: #f4f5fb;
-  --foreground: #0f0f1a;
+  /* Slate paper and ink. */
+  --background: #f4f6f8;
+  --foreground: #18212b;
   --card: #ffffff;
-  --card-foreground: #0f0f1a;
+  --card-foreground: #18212b;
   --popover: #ffffff;
-  --popover-foreground: #0f0f1a;
+  --popover-foreground: #18212b;
 
-  /* Brand */
-  --primary: #1a1a2e;
+  /* Lecture blue carries actions and where you are. */
+  --primary: #1f4e79;
   --primary-foreground: #ffffff;
-  --secondary: #ededf7;
-  --secondary-foreground: #1a1a2e;
+  --secondary: #e9eef3;
+  --secondary-foreground: #18212b;
 
-  /* Neutral */
-  --muted: #ededf7;
-  --muted-foreground: #6b6b85;
-  --accent: #e8eaf6;
-  --accent-foreground: #1a1a2e;
+  --muted: #eef1f4;
+  --muted-foreground: #56616d;
+  --accent: #e3ecf5;
+  --accent-foreground: #163a5c;
 
-  /* Engagement and comprehension states. Pair with a text label; colour alone
-     fails the accessibility requirement. */
-  --destructive: #dc2626;
+  /* The highlighter: only for what is live or new. */
+  --highlight: #ffe066;
+  --highlight-foreground: #3d3200;
+
+  /* Comprehension and engagement states. Always beside a text label; colour
+     alone fails the accessibility requirement. */
+  --destructive: #b3261e;
   --destructive-foreground: #ffffff;
-  --success: #059669;          /* Mastered / Engaged */
+  --success: #1e7a4c;          /* Mastered / Engaged */
   --success-foreground: #ffffff;
-  --warning: #d97706;          /* Partial / At risk */
+  --warning: #a15c00;          /* Partial / At risk */
   --warning-foreground: #ffffff;
-  --info: #2563eb;
+  --info: #2b6cb0;
   --info-foreground: #ffffff;
-  --critical: #dc2626;         /* Struggling / Disengaged */
+  --critical: #b3261e;         /* Struggling / Disengaged */
   --critical-foreground: #ffffff;
 
-  /* Structure */
-  --border: rgba(99, 102, 241, 0.1);
-  --input: transparent;
-  --input-background: #f0f1f9;
-  --switch-background: #c4c7d8;
-  --ring: #6366f1;
+  /* Structure: rules, not shadows. */
+  --border: #d5dbe1;
+  --input: #c3cbd3;
+  --input-background: #ffffff;
+  --switch-background: #b6c0ca;
+  --ring: #1f4e79;
 
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
+  --chart-1: #1f4e79;
+  --chart-2: #1e7a4c;
+  --chart-3: #a15c00;
+  --chart-4: #6b4c9a;
+  --chart-5: #b3261e;
 
-  --radius: 0.75rem;
+  --radius: 0.5rem;
 
-  --shadow-card: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(99,102,241,0.06);
-  --shadow-card-hover: 0 4px 12px rgba(0,0,0,0.06), 0 8px 32px rgba(99,102,241,0.1);
+  --shadow-card: 0 1px 0 rgba(24, 33, 43, 0.04);
+  --shadow-card-hover: 0 1px 0 rgba(24, 33, 43, 0.06), 0 6px 18px rgba(24, 33, 43, 0.06);
 }
 
 .dark {
-  --background: #0d0d1a;
-  --foreground: #f0f0ff;
-  --card: #13132a;
-  --card-foreground: #f0f0ff;
-  --popover: #13132a;
-  --popover-foreground: #f0f0ff;
-  --primary: #f0f0ff;
-  --primary-foreground: #0d0d1a;
-  --secondary: #1e1e3a;
-  --secondary-foreground: #f0f0ff;
-  --muted: #1e1e3a;
-  --muted-foreground: #8080aa;
-  --accent: #1e1e3a;
-  --accent-foreground: #f0f0ff;
-  --destructive: #ef4444;
-  --success: #34d399;
-  --warning: #fbbf24;
-  --critical: #ef4444;
-  --border: rgba(255,255,255,0.07);
-  --input: rgba(255,255,255,0.07);
-  --ring: #818cf8;
+  --background: #10161d;
+  --foreground: #e6ebf0;
+  --card: #17202a;
+  --card-foreground: #e6ebf0;
+  --popover: #17202a;
+  --popover-foreground: #e6ebf0;
+  --primary: #8db8e8;
+  --primary-foreground: #0d1b2a;
+  --secondary: #1f2a36;
+  --secondary-foreground: #e6ebf0;
+  --muted: #1c2632;
+  --muted-foreground: #9aa7b4;
+  --accent: #1d3147;
+  --accent-foreground: #cfe2f6;
+  --highlight: #e9c949;
+  --highlight-foreground: #2b2300;
+  --destructive: #f2867e;
+  --success: #6fcf9b;
+  --warning: #f0b45c;
+  --info: #8db8e8;
+  --critical: #f2867e;
+  --border: #2a3644;
+  --input: #3a4757;
+  --input-background: #121a22;
+  --ring: #8db8e8;
 }
 
 /* Teams high-contrast theme. */
@@ -102,6 +113,8 @@
   --muted-foreground: #ffffff;
   --accent: #1aebff;
   --accent-foreground: #000000;
+  --highlight: #ffff00;
+  --highlight-foreground: #000000;
   --destructive: #ff0000;
   --success: #00ff00;
   --warning: #ffff00;
@@ -134,6 +147,8 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-highlight: var(--highlight);
+  --color-highlight-foreground: var(--highlight-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
@@ -174,7 +189,20 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.55;
     margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  h1, h2, h3 {
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
   }
 }
 

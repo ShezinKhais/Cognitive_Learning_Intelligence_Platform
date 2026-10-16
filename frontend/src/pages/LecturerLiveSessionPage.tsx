@@ -8,7 +8,11 @@ import {
 } from 'react-router'
 
 import { ApiError } from '../api'
-import SignOutButton from '../components/SignOutButton'
+import { buttonStyles } from '../components/ui/button'
+import { PageHeader, Tag } from '../components/ui/primitives'
+import RoomsPanel from '../features/live/RoomsPanel'
+import { statusLabel, statusTone } from '../features/sessions/format'
+import { getSession, type SessionSummary } from '../features/sessions/sessionsApi'
 import LecturerAttentionPanel from '../features/attention/LecturerAttentionPanel'
 import type {
   LecturerEngagement,
@@ -47,14 +51,14 @@ function connectionLabel(
   }
 
   if (status === 'connecting') {
-    return 'Connecting...'
+    return 'Connecting…'
   }
 
   if (status === 'unavailable') {
-    return 'Unavailable'
+    return 'Live updates are not reaching this page'
   }
 
-  return 'Disconnected'
+  return 'Reconnecting…'
 }
 
 function sessionLabel(
@@ -145,8 +149,21 @@ export default function LecturerLiveSessionPage() {
     closedQuestion,
     alerts,
     sessionNotice,
+    rooms,
     acknowledgeAlert,
   } = useLiveSession(sessionId)
+
+  // The session's title and course, for the header. The socket carries its
+  // live state; this is only what it is called.
+  const [details, setDetails] = useState<SessionSummary | null>(null)
+  useEffect(() => {
+    if (!sessionId) return
+    let cancelled = false
+    getSession(sessionId).then((found) => !cancelled && setDetails(found), () => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId])
 
   const [
     actionInProgress,
@@ -594,60 +611,37 @@ export default function LecturerLiveSessionPage() {
     activeQuestion === null
 
   return (
-    <main className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              C.L.I.P lecturer workspace
-            </p>
+    <div>
 
-            <h1 className="mt-1 text-xl font-bold text-card-foreground">
-              Live Session
-            </h1>
+      <PageHeader
+        title={details?.title ?? 'Live session'}
+        description={details ? details.course_code : undefined}
+        actions={
+          <>
+            {connectionStatus !== 'connected' && (
+              <span role="status" className="text-sm text-muted-foreground">
+                {connectionLabel(connectionStatus)}
+              </span>
+            )}
+            {sessionId && (
+              <Link to={`/lecturer/sessions/${sessionId}/report`} className={buttonStyles({ intent: 'secondary' })}>
+                Report
+              </Link>
+            )}
+          </>
+        }
+      >
+        {details && (
+          <div className="mt-3">
+            <Tag tone={statusTone({ status: sessionState?.status ?? details.status, paused: sessionState?.paused ?? details.paused })}>
+              {statusLabel({ status: sessionState?.status ?? details.status, paused: sessionState?.paused ?? details.paused })}
+            </Tag>
           </div>
-
-          <div className="flex items-center gap-3">
-            <Link
-              to="/lecturer/materials"
-              className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
-            >
-              Materials
-            </Link>
-
-            <SignOutButton />
-          </div>
-        </div>
-      </header>
-
+        )}
+      </PageHeader>
       <div className="mx-auto max-w-7xl px-5 py-8 sm:px-8">
-        <section className="rounded-xl border border-border bg-card p-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">
-                Session
-              </p>
 
-              <h2 className="mt-1 text-2xl font-semibold">
-                Lecturer Live Panel
-              </h2>
-
-              <p className="mt-2 text-sm text-muted-foreground">
-                Session ID:{' '}
-                {sessionId ??
-                  'Unavailable'}
-              </p>
-            </div>
-
-            <div className="rounded-full border border-border px-3 py-1 text-sm">
-              {connectionLabel(
-                connectionStatus,
-              )}
-            </div>
-          </div>
-        </section>
-
-        <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-6 lg:grid-cols-2">
           <section className="rounded-xl border border-border bg-card p-6">
             <h2 className="text-lg font-semibold">
               Session Controls
@@ -753,7 +747,7 @@ export default function LecturerLiveSessionPage() {
 
                     <dl className="mt-4 grid gap-3 sm:grid-cols-2">
                       <div className="rounded-md border border-border bg-background p-3">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        <dt className="text-xs font-medium text-muted-foreground">
                           Materials
                         </dt>
 
@@ -763,7 +757,7 @@ export default function LecturerLiveSessionPage() {
                       </div>
 
                       <div className="rounded-md border border-border bg-background p-3">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        <dt className="text-xs font-medium text-muted-foreground">
                           Deliverable questions
                         </dt>
 
@@ -773,7 +767,7 @@ export default function LecturerLiveSessionPage() {
                       </div>
 
                       <div className="rounded-md border border-border bg-background p-3">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        <dt className="text-xs font-medium text-muted-foreground">
                           Processing
                         </dt>
 
@@ -783,7 +777,7 @@ export default function LecturerLiveSessionPage() {
                       </div>
 
                       <div className="rounded-md border border-border bg-background p-3">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        <dt className="text-xs font-medium text-muted-foreground">
                           Failed materials
                         </dt>
 
@@ -1017,7 +1011,7 @@ export default function LecturerLiveSessionPage() {
                   aria-live="polite"
                   className="rounded-md border border-border px-4 py-2 text-center"
                 >
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  <p className="text-xs font-medium text-muted-foreground">
                     Response window
                   </p>
 
@@ -1032,7 +1026,7 @@ export default function LecturerLiveSessionPage() {
               <div className="mt-6 rounded-xl border border-border bg-muted/30 p-5">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-info">
+                    <p className="text-xs font-semibold text-info">
                       Checkpoint in progress
                     </p>
 
@@ -1192,6 +1186,8 @@ export default function LecturerLiveSessionPage() {
             />
           </div>
 
+          <RoomsPanel rooms={rooms} />
+
           <LiveAlertsPanel
             alerts={alerts}
             sessionNotice={sessionNotice}
@@ -1201,6 +1197,6 @@ export default function LecturerLiveSessionPage() {
           />
         </div>
       </div>
-    </main>
+    </div>
   )
 }

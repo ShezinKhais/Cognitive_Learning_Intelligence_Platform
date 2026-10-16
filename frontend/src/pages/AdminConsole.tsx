@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { apiUploadFile, ApiError, clearAccessToken, type TimetableImportResult } from '../api'
-import SignOutButton from '../components/SignOutButton'
+import { PageBody, PageHeader } from '../components/ui/primitives'
 
 type UploadKind = 'timetable' | 'roster'
 
@@ -28,25 +28,18 @@ const KIND_CONFIG: Record<UploadKind, { title: string; path: string; hint: strin
 
 export default function AdminConsole() {
   return (
-    <main className="min-h-screen p-8">
-      <div className="mx-auto max-w-3xl">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-bold text-foreground">Administrator console</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Import timetables and student rosters. Only .csv and .xlsx are accepted; every row is
-              read as structured data, never guessed at from an image.
-            </p>
-          </div>
-          <SignOutButton />
-        </div>
-
-        <div className="mt-8 space-y-6">
+    <>
+      <PageHeader
+        title="Imports"
+        description="Bring in the term's timetable and each course's students from a spreadsheet. Every row is read as data and checked; nothing is guessed."
+      />
+      <PageBody>
+        <div className="grid max-w-3xl gap-6">
           <UploadPanel kind="timetable" />
           <UploadPanel kind="roster" />
         </div>
-      </div>
-    </main>
+      </PageBody>
+    </>
   )
 }
 

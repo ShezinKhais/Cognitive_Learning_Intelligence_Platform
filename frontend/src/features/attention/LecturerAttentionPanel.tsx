@@ -123,7 +123,7 @@ export default function LecturerAttentionPanel({
         <>
           <dl className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <div className="rounded-md border border-border bg-background p-3">
-              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <dt className="text-xs font-medium text-muted-foreground">
                 Students with indicators
               </dt>
 
@@ -133,7 +133,7 @@ export default function LecturerAttentionPanel({
             </div>
 
             <div className="rounded-md border border-border bg-background p-3">
-              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <dt className="text-xs font-medium text-muted-foreground">
                 Engaged
               </dt>
 
@@ -143,7 +143,7 @@ export default function LecturerAttentionPanel({
             </div>
 
             <div className="rounded-md border border-border bg-background p-3">
-              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <dt className="text-xs font-medium text-muted-foreground">
                 At risk
               </dt>
 
@@ -153,7 +153,7 @@ export default function LecturerAttentionPanel({
             </div>
 
             <div className="rounded-md border border-border bg-background p-3">
-              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <dt className="text-xs font-medium text-muted-foreground">
                 Needs attention
               </dt>
 
@@ -163,7 +163,7 @@ export default function LecturerAttentionPanel({
             </div>
 
             <div className="rounded-md border border-border bg-background p-3">
-              <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <dt className="text-xs font-medium text-muted-foreground">
                 Insufficient data
               </dt>
 
@@ -194,7 +194,7 @@ export default function LecturerAttentionPanel({
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      <p className="text-xs font-medium text-muted-foreground">
                         Student
                       </p>
 

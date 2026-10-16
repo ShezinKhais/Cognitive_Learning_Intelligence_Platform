@@ -4,10 +4,13 @@ import {
   useLocation,
 } from 'react-router'
 
+import AppShell from '../components/shell/AppShell'
 import { useStudentApp } from '../features/student/StudentAppContext'
 import { accessFor } from '../authRouting'
 
-export default function ProtectedStudentPage() {
+/** `withShell` frames the pages in the side menu; the Teams meeting panel
+ * uses this guard too, and has no room for one. */
+export default function ProtectedStudentPage({ withShell = false }: { withShell?: boolean }) {
   const location = useLocation()
   const requestedPath = `${location.pathname}${location.search}`
 
@@ -77,7 +80,13 @@ export default function ProtectedStudentPage() {
     )
   }
 
-  return <Outlet />
+  return withShell ? (
+    <AppShell user={currentUser}>
+      <Outlet />
+    </AppShell>
+  ) : (
+    <Outlet />
+  )
 }
 
 function StatusPanel({

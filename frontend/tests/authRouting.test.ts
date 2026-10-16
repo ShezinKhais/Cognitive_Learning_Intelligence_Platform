@@ -73,7 +73,7 @@ test('administrators return only to admin pages', () => {
 test('lecturers return only to lecturer pages', () => {
   assert.equal(
     intendedPathForRole('lecturer'),
-    '/lecturer/materials',
+    '/lecturer/sessions',
   )
   assert.equal(
     intendedPathForRole('lecturer', '/lecturer/materials'),
@@ -81,7 +81,7 @@ test('lecturers return only to lecturer pages', () => {
   )
   assert.equal(
     intendedPathForRole('lecturer', '/admin'),
-    '/lecturer/materials',
+    '/lecturer/sessions',
   )
 })
 

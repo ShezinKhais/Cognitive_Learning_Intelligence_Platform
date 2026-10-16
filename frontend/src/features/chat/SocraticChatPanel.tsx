@@ -216,7 +216,7 @@ function Exchange({
 
         {exchange.citations.length > 0 && (
           <div className="mt-4 border-t border-border pt-3">
-            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <p className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
               <BookOpen aria-hidden="true" size={15} /> Sources
             </p>
             <ul className="mt-2 space-y-2">

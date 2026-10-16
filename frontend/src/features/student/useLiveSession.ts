@@ -670,8 +670,20 @@ export function useLiveSession(
     [send, state.attentionPrompt],
   )
 
+  // The student's own answer to "which room are you in"; the lecturer sees
+  // the room's activity, never what is said in it.
+  const confirmRoom = useCallback(
+    (label: string): boolean => {
+      const room_label = label.trim()
+      if (!room_label) return false
+      return send('room.confirm', { room_label })
+    },
+    [send],
+  )
+
   return {
     state,
+    confirmRoom,
     attentionConsentRejected: state.attentionConsentRejected,
     sendAttention: (value: AttentionSummary) => {
       const socket = socketRef.current

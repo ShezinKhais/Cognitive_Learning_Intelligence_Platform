@@ -7,19 +7,25 @@ import {
 
 import { defaultPathForRole } from './authRouting'
 import RoleGate from './components/RoleGate'
+import ShellOutlet from './components/shell/ShellOutlet'
 import StaffTeamsBoundary from './components/StaffTeamsBoundary'
 import { StudentAppProvider } from './features/student/StudentAppContext'
 import AccessDeniedPage from './pages/AccessDeniedPage'
 import AdminConsole from './pages/AdminConsole'
+import AdminStatusPage from './pages/AdminStatusPage'
 import ConsentPage from './pages/ConsentPage'
 import LecturerLiveSessionPage from './pages/LecturerLiveSessionPage'
 import LecturerMaterialsPage from './pages/LecturerMaterialsPage'
 import LecturerSessionsPage from './pages/LecturerSessionsPage'
 import LoginPage from './pages/LoginPage'
+import PlannedFeaturePage from './pages/PlannedFeaturePage'
+import { PLANNED } from './pages/plannedFeatures'
 import ProtectedStudentPage from './pages/ProtectedStudentPage'
 import QuestionReview from './pages/QuestionReview'
+import SessionReportPage from './pages/SessionReportPage'
 import StudentHomePage from './pages/StudentHomePage'
 import StudentLiveSessionPage from './pages/StudentLiveSessionPage'
+import StudentSummaryPage from './pages/StudentSummaryPage'
 import SystemStatusPage from './pages/SystemStatusPage'
 import TeamsConfigPage from './pages/TeamsConfigPage'
 import TeamsLecturerMeetingPage from './pages/TeamsLecturerMeetingPage'
@@ -70,7 +76,7 @@ export default function App() {
         path="/student"
         element={
           <StudentAppProvider>
-            <ProtectedStudentPage />
+            <ProtectedStudentPage withShell />
           </StudentAppProvider>
         }
       >
@@ -81,6 +87,14 @@ export default function App() {
         <Route
           path="session/:sessionId"
           element={<StudentLiveSessionPage />}
+        />
+        <Route
+          path="session/:sessionId/summary"
+          element={<StudentSummaryPage />}
+        />
+        <Route
+          path="progress"
+          element={<PlannedFeaturePage feature={PLANNED.progress} />}
         />
       </Route>
 
@@ -113,14 +127,24 @@ export default function App() {
       <Route
         element={
           <RoleGate allow={['admin']}>
-            {() => <Outlet />}
+            {(user) => <Outlet context={user} />}
           </RoleGate>
         }
       >
-        <Route
-          path="/admin"
-          element={<AdminConsole />}
-        />
+        <Route element={<ShellOutlet />}>
+          <Route
+            path="/admin"
+            element={<AdminConsole />}
+          />
+          <Route
+            path="/admin/status"
+            element={<AdminStatusPage />}
+          />
+          <Route
+            path="/admin/governance"
+            element={<PlannedFeaturePage feature={PLANNED.governance} />}
+          />
+        </Route>
       </Route>
 
       {/* Lecturers, and admins who can review on any lecturer's behalf per
@@ -135,46 +159,64 @@ export default function App() {
           <RoleGate allow={['lecturer', 'admin']}>
             {(user) => (
               <StaffTeamsBoundary user={user}>
-                <Outlet />
+                <Outlet context={user} />
               </StaffTeamsBoundary>
             )}
           </RoleGate>
         }
       >
-        <Route
-          path="/lecturer"
-          element={
-            <Navigate
-              to="/lecturer/materials"
-              replace
-            />
-          }
-        />
-
-        <Route
-          path="/lecturer/materials"
-          element={<LecturerMaterialsPage />}
-        />
-
-        <Route
-          path="/lecturer/sessions"
-          element={<LecturerSessionsPage />}
-        />
-
-        <Route
-          path="/lecturer/sessions/:sessionId/live"
-          element={<LecturerLiveSessionPage />}
-        />
-
+        {/* The meeting side panel is too narrow for the shell. */}
         <Route
           path="/lecturer/teams/meeting"
           element={<TeamsLecturerMeetingPage />}
         />
 
-        <Route
-          path="/materials/:materialId/review"
-          element={<QuestionReview />}
-        />
+        <Route element={<ShellOutlet />}>
+          <Route
+            path="/lecturer"
+            element={
+              <Navigate
+                to="/lecturer/sessions"
+                replace
+              />
+            }
+          />
+
+          <Route
+            path="/lecturer/materials"
+            element={<LecturerMaterialsPage />}
+          />
+
+          <Route
+            path="/lecturer/sessions"
+            element={<LecturerSessionsPage />}
+          />
+
+          <Route
+            path="/lecturer/sessions/:sessionId/live"
+            element={<LecturerLiveSessionPage />}
+          />
+
+          <Route
+            path="/lecturer/sessions/:sessionId/report"
+            element={<SessionReportPage />}
+          />
+
+          <Route
+            path="/lecturer/groups"
+            element={<PlannedFeaturePage feature={PLANNED.groups} />}
+          />
+
+          <Route
+            path="/lecturer/engagement"
+            element={<PlannedFeaturePage feature={PLANNED.engagement} />}
+          />
+
+          <Route
+            path="/materials/:materialId/review"
+            element={<QuestionReview />}
+          />
+        </Route>
       </Route>
 
       <Route

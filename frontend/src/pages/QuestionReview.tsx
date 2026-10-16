@@ -12,7 +12,6 @@ import {
   type QuestionStatus,
   type ReviewDecision,
 } from '../api'
-import SignOutButton from '../components/SignOutButton'
 
 const PAGE_SIZE = 50
 
@@ -211,11 +210,8 @@ export default function QuestionReview() {
   }
 
   return (
-    <main className="min-h-screen p-8">
+    <div className="px-5 py-8 sm:px-8">
       <div className="mx-auto max-w-3xl">
-        <div className="mb-6 flex justify-end">
-          <SignOutButton />
-        </div>
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold text-foreground">Question review</h1>
@@ -302,7 +298,7 @@ export default function QuestionReview() {
           </>
         )}
       </div>
-    </main>
+    </div>
   )
 }
 

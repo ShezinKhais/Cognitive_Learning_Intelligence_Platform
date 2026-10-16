@@ -6,8 +6,6 @@ import {
   MessagesSquare,
   RefreshCw,
   Users,
-  Wifi,
-  WifiOff,
   XCircle,
 } from 'lucide-react'
 import {
@@ -27,6 +25,7 @@ import type {
   LiveConnectionStatus,
 } from '../features/student/liveSessionTypes'
 import type { StudentSession } from '../features/student/types'
+import RoomConfirm from '../features/student/RoomConfirm'
 import { useLiveSession } from '../features/student/useLiveSession'
 import { AttentionControls } from '../features/attention/AttentionControls'
 
@@ -79,6 +78,7 @@ export function LiveSessionPanel({
     clearError,
     sendAttention,
     attentionConsentRejected,
+    confirmRoom,
   } = useLiveSession(session.id, session.status, session.paused ?? false)
 
   const now = useCurrentTime(
@@ -117,7 +117,6 @@ export function LiveSessionPanel({
               </h1>
             </div>
 
-            <ConnectionBadge status={state.connection} />
           </div>
 
           <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 border-t border-border pt-4 text-sm text-muted-foreground">
@@ -140,6 +139,7 @@ export function LiveSessionPanel({
               </strong>
             </span>
           </div>
+          {state.sessionStatus === 'active' && !compact && <RoomConfirm onConfirm={confirmRoom} />}
         </header>
 
         <ConnectionNotice status={state.connection} />
@@ -253,7 +253,7 @@ export function LiveSessionPanel({
             aria-describedby="attention-prompt-message"
             className="fixed inset-x-4 bottom-4 z-20 mx-auto max-w-md rounded-xl border-2 border-warning bg-card p-5 shadow-2xl"
           >
-            <p className="text-xs font-semibold uppercase tracking-wide text-warning">
+            <p className="text-xs font-semibold text-warning">
               Private check-in
             </p>
 
@@ -359,7 +359,7 @@ function CheckpointCard({
     <article className="overflow-hidden rounded-xl border border-border bg-card shadow-[var(--shadow-card)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4 sm:px-7">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-info">
+          <p className="text-xs font-semibold text-info">
             Live checkpoint
           </p>
 
@@ -663,35 +663,6 @@ function WaitingCard({
   )
 }
 
-function ConnectionBadge({
-  status,
-}: {
-  status: LiveConnectionStatus
-}) {
-  const connected = status === 'connected'
-  const ended = status === 'ended'
-
-  return (
-    <span
-      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${
-        connected
-          ? 'bg-success/10 text-success'
-          : ended
-            ? 'bg-muted text-muted-foreground'
-            : 'bg-warning/10 text-warning'
-      }`}
-    >
-      {connected ? (
-        <Wifi aria-hidden="true" size={15} />
-      ) : (
-        <WifiOff aria-hidden="true" size={15} />
-      )}
-
-      {connectionLabel(status)}
-    </span>
-  )
-}
-
 function ConnectionNotice({
   status,
 }: {
@@ -747,21 +718,6 @@ function ConnectionNotice({
       )}
     </div>
   )
-}
-
-function connectionLabel(
-  status: LiveConnectionStatus,
-): string {
-  return {
-    connecting: 'Connecting',
-    connected: 'Live',
-    recovering: 'Recovering',
-    reconnecting: 'Reconnecting',
-    offline: 'Offline',
-    forbidden: 'Access denied',
-    ended: 'Ended',
-    disconnected: 'Disconnected',
-  }[status]
 }
 
 function useCurrentTime(enabled: boolean): number {
