@@ -68,7 +68,7 @@ PR's CI run; do not extrapolate them from the focused/local results above.
 | Staff reporting/governance UI | Aliyeh's #146 remains open, with #151 staff hardening evidence also open. Recheck against Nour's final API before merging. |
 | Database governance | Nour's remaining Phase 7/8 work has no open PR at this snapshot. Database retention/deletion/cascade/backup/restore evidence and governance endpoints must arrive and be integrated. The purge runner currently registers upload-file cleanup, not a complete database-retention implementation. |
 | Timetable/roster persistence | `backend/app/api/v1/identity.py` still parses/matches uploads without saving dated sessions or enrolments (`sessions_created=0`). Agree enrolment cardinality and timetable-to-date behaviour before implementing; do not silently move a student between courses. |
-| Breakout workflow | Backend `room.confirm`/`room.status` exist, but the frontend has no handlers or connected group-confirmation/status/formation interface. Group recommendation and lecturer final control still need a UI/API contract and an end-to-end test. This is separate from the merged attention-indicator display. |
+| Breakout workflow | The AI2 follow-up adds student room-selection submission over the existing `room.confirm` event, with active/connected/paused checks and explicit error/unacknowledged states. It does not create Teams rooms or automatically assign students. Lecturer `room.status` presentation, recommendation review and final group controls remain separate work; no full group-formation claim is made. |
 | Historical engagement | Student review/summary intentionally report unavailable/insufficient data. No verified persisted record with confidence and signal availability is supplied; do not replace it with zero or infer comprehension from it. |
 | Real Teams | Tenant permissions/registration, identity mappings, actual notification delivery and meeting lifecycle need a real tenant and HTTPS deployment. Mock bot/connector tests do not establish this. |
 | Physical devices and live models | Teams webview, real OS permission behaviour, weaker hardware and screen-reader use need human checks. Synthetic camera/audio are not gaze/VAD accuracy evidence; fake LLMs are not live Ollama grounding/quality evaluation. |
@@ -80,3 +80,35 @@ The historical `phase-integration.md` and `integration-candidate.md` record
 earlier snapshots; their old “not yet merged” statements are not current PR
 status. This audit is the newer checkpoint, not a replacement for the pending
 workstreams or a final acceptance decision.
+
+## Agreed follow-up boundaries
+
+The user confirmed **multiple-course enrolment** and **120-day retention** on
+2026-10-17, and explicitly asked not to implement Aliyeh's or Nour's work.
+These are integration targets, not schema changes delivered by this PR.
+
+- Nour's `Nour-Phase-7` branch already adds governance, student export/erasure,
+  cascading deletion and database purge registration, and changes the default
+  retention to 120 days. Do not duplicate or cherry-pick that work here. The
+  90-day default on current main is not changed by this AI2 follow-up.
+- Multi-course persistence needs Nour's agreed profile/enrolment schema and
+  updated authorisation queries. Admin timetable imports also need explicit
+  dates/timezone; no dated sessions or enrolments are fabricated here.
+- Historical engagement needs a verified snapshot contract with confidence,
+  availability, timestamps and consent rules, plus Nour's export/erasure/purge
+  coverage. No new history table, sensor-data persistence or invented score is
+  added here. The student review continues to show unavailable honestly.
+- Aliyeh retains lecturer room/group and reporting/governance screens. This
+  follow-up changes only the student-side room-selection component and hook,
+  its tests, and integration documentation. The existing backend event has no
+  success receipt, so the UI reports **sent**, never **confirmed**. Selection
+  is not automatically replayed after reconnect; students can send it again.
+
+The remaining three gaps are therefore **not all completed by #161**. The
+safe AI2 connection is implemented without taking over the other workstreams.
+
+Student-room follow-up validation: 107 frontend unit/proxy tests passed, lint
+had no warnings, and build/browser type-check passed. The Docker Chromium
+suite passed 31 tests; after adding reconnect/no-auto-replay and automated
+accessibility assertions, both room tests passed again. The final branded
+Chrome/Edge results are recorded in this PR's CI, not inferred from Chromium.

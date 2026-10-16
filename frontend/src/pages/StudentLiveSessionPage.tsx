@@ -29,6 +29,7 @@ import type {
 import type { StudentSession } from '../features/student/types'
 import { useLiveSession } from '../features/student/useLiveSession'
 import { AttentionControls } from '../features/attention/AttentionControls'
+import { BreakoutRoomSelection } from '../features/student/BreakoutRoomSelection'
 
 const SOCRATIC_CHAT_ENABLED =
   import.meta.env.VITE_SOCRATIC_CHAT_ENABLED === 'true'
@@ -79,6 +80,7 @@ export function LiveSessionPanel({
     clearError,
     sendAttention,
     attentionConsentRejected,
+    selectRoom,
   } = useLiveSession(session.id, session.status, session.paused ?? false)
 
   const now = useCurrentTime(
@@ -144,6 +146,10 @@ export function LiveSessionPanel({
         </header>
 
         <ConnectionNotice status={state.connection} />
+
+        <BreakoutRoomSelection key={`${session.id}:${state.connection}`} onSelect={selectRoom}
+          serverError={state.error}
+          enabled={state.connection === 'connected' && state.sessionStatus === 'active' && !state.paused} />
 
         {LOCAL_ATTENTION_ENABLED && (
           <AttentionControls key={session.id} onSignal={sendAttention}

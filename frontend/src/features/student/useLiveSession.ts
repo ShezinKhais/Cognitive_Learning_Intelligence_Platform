@@ -33,6 +33,7 @@ import {
 } from '../materials/closeCodes'
 import type { SessionStatus } from './types'
 import type { AttentionSummary } from '../attention/signals'
+import { roomSelection } from './breakoutRoom'
 
 interface AnswerSubmission {
   selected_option?: number
@@ -677,6 +678,12 @@ export function useLiveSession(
 
   return {
     state,
+    selectRoom: (label: string): boolean => {
+      const selection = roomSelection(label)
+      if (!selection || state.connection !== 'connected' || state.sessionStatus !== 'active' || state.paused) return false
+      dispatch({ type: 'clear-error' })
+      return send('room.confirm', selection)
+    },
     attentionConsentRejected: state.attentionConsentRejected,
     sendAttention: (value: AttentionSummary) => {
       const socket = socketRef.current

@@ -29,6 +29,57 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/e2e/harness/index.html')
 })
 
+test('student room selection uses only the existing event and respects live session state', async ({ page }) => {
+  let connection: WebSocketRoute | undefined
+  let connected = 0
+  const selections: unknown[] = []
+  await page.routeWebSocket('**/ws/session', ws => {
+    connection = ws
+    connected++
+    ws.onMessage(message => {
+      const event = JSON.parse(String(message))
+      if (event.type === 'auth') ws.send(JSON.stringify({
+        type: 'ready', seq: 0, ts: new Date().toISOString(), data: {
+          user_id: 'student', session_id: 'refresh-session',
+          resumed_from_seq: null, stream_id: 'room-test',
+        },
+      }))
+      if (event.type === 'room.confirm') selections.push(event.data)
+    })
+  })
+  await page.goto('/e2e/harness/index.html?socket=student')
+  const send = page.getByRole('button', { name: 'Send room selection' })
+  await expect(send).toBeEnabled()
+  await page.getByLabel('Assigned room name').fill('  Room   2  ')
+  await send.click()
+  await expect.poll(() => selections).toEqual([{ room_label: 'Room 2' }])
+  await expect(page.getByRole('status')).toContainText('Room selection sent: Room 2')
+  expect(await page.evaluate(() => (window as any).probe.requests)).toBe(0)
+  expect((await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([])
+  connection!.close({ code: 1012, reason: 'service restart' })
+  await expect.poll(() => connected).toBe(2)
+  await expect(send).toBeEnabled()
+  expect(selections).toEqual([{ room_label: 'Room 2' }]) // Never silently replay a selection.
+  connection!.send(JSON.stringify({ type: 'error', seq: 0, ts: new Date().toISOString(),
+    data: { code: 'ROOM_LIMIT', detail: 'No more rooms can be added.' } }))
+  await expect(page.getByRole('status')).toContainText('may not have been accepted')
+  for (const [seq, status, paused] of [[1, 'active', true], [2, 'ended', false]] as const) {
+    connection!.send(JSON.stringify({ type: 'session.state', seq, ts: new Date().toISOString(), data: {
+      session_id: 'refresh-session', status, paused, participant_count: 1,
+      active_question_id: null, questions_delivered: 0,
+    } }))
+    await expect(send).toBeDisabled()
+  }
+  expect(selections).toEqual([{ room_label: 'Room 2' }])
+})
+
+test('room selection is unavailable without a ready live connection', async ({ page }) => {
+  await page.routeWebSocket('**/ws/session', () => {})
+  await page.goto('/e2e/harness/index.html?socket=student')
+  await expect(page.getByRole('button', { name: 'Send room selection' })).toBeDisabled()
+  await expect(page.getByLabel('Assigned room name')).toBeDisabled()
+})
+
 for (const socket of ['student', 'lecturer', 'progress']) {
   test(`${socket} socket reconnect authenticates with the refreshed token`, async ({ page }) => {
     const tokens: string[] = []
