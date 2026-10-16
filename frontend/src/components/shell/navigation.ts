@@ -23,6 +23,7 @@ export const NAVIGATION: Record<Role, readonly NavItem[]> = {
   student: [
     { to: '/student', label: 'My sessions', matches: ['/student/session/'] },
     { to: '/student/progress', label: 'Progress over time', planned: true },
+    { to: '/student/consideration', label: 'Special consideration', planned: true },
   ],
   admin: [
     { to: '/admin', label: 'Imports' },

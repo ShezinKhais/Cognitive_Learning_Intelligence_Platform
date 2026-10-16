@@ -8,6 +8,7 @@ import {
   Users,
   XCircle,
 } from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
 import {
   useEffect,
   useState,
@@ -25,6 +26,7 @@ import type {
   LiveConnectionStatus,
 } from '../features/student/liveSessionTypes'
 import type { StudentSession } from '../features/student/types'
+import ParticipationGauge from '../features/student/ParticipationGauge'
 import RoomConfirm from '../features/student/RoomConfirm'
 import { useLiveSession } from '../features/student/useLiveSession'
 import { AttentionControls } from '../features/attention/AttentionControls'
@@ -132,11 +134,8 @@ export function LiveSessionPanel({
               </strong>
             </span>
 
-            <span>
-              Checkpoints delivered:{' '}
-              <strong className="font-medium text-foreground">
-                {state.questionsDelivered}
-              </strong>
+            <span className="ml-auto">
+              <ParticipationGauge answered={state.answeredIds.length} delivered={state.questionsDelivered} />
             </span>
           </div>
           {state.sessionStatus === 'active' && !compact && <RoomConfirm onConfirm={confirmRoom} />}
@@ -213,25 +212,35 @@ export function LiveSessionPanel({
           aria-live="polite"
           hidden={SOCRATIC_CHAT_ENABLED && activeView !== 'class' && !state.checkpoint}
         >
-          {state.checkpoint ? (
-            <CheckpointCard
-              checkpoint={state.checkpoint}
-              secondsRemaining={secondsRemaining}
-              connected={state.connection === 'connected'}
-              onSelectOption={selectOption}
-              onSetFreeText={setFreeText}
-              onSubmit={submitAnswer}
-            />
-          ) : state.completedCheckpoint ? (
-            <CompletedCheckpointCard
-              checkpoint={state.completedCheckpoint}
-            />
-          ) : (
-            <WaitingCard
-              sessionStatus={state.sessionStatus}
-              paused={state.paused}
-            />
-          )}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={state.checkpoint ? `ask-${state.checkpoint.question.question_id}` : state.completedCheckpoint ? 'done' : 'wait'}
+              initial={{ opacity: 0, y: -14, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, transition: { duration: 0.15 } }}
+              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+            >
+              {state.checkpoint ? (
+                <CheckpointCard
+                  checkpoint={state.checkpoint}
+                  secondsRemaining={secondsRemaining}
+                  connected={state.connection === 'connected'}
+                  onSelectOption={selectOption}
+                  onSetFreeText={setFreeText}
+                  onSubmit={submitAnswer}
+                />
+              ) : state.completedCheckpoint ? (
+                <CompletedCheckpointCard
+                  checkpoint={state.completedCheckpoint}
+                />
+              ) : (
+                <WaitingCard
+                  sessionStatus={state.sessionStatus}
+                  paused={state.paused}
+                />
+              )}
+            </motion.div>
+          </AnimatePresence>
         </section>
 
         {SOCRATIC_CHAT_ENABLED && (
@@ -356,10 +365,14 @@ function CheckpointCard({
   )
 
   return (
-    <article className="overflow-hidden rounded-xl border border-border bg-card shadow-[var(--shadow-card)]">
+    <article className="overflow-hidden rounded-lg border-2 border-primary/40 bg-card shadow-[var(--shadow-card-hover)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4 sm:px-7">
         <div>
-          <p className="text-xs font-semibold text-info">
+          <p className="inline-flex items-center gap-2 text-sm font-semibold text-primary">
+            <span aria-hidden className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+            </span>
             Live checkpoint
           </p>
 
@@ -384,20 +397,22 @@ function CheckpointCard({
       </div>
 
       <div
-        className="h-1 bg-muted"
+        className="h-1.5 bg-muted"
         role="progressbar"
         aria-valuemin={0}
         aria-valuemax={question.window_seconds}
         aria-valuenow={secondsRemaining}
         aria-label="Response time remaining"
       >
-        <div
-          className={`h-full transition-[width] ${
-            secondsRemaining <= 5
-              ? 'bg-critical'
-              : 'bg-info'
+        {/* Glides between ticks rather than stepping; turns amber, then red,
+            as time runs out. */}
+        <motion.div
+          className={`h-full ${
+            secondsRemaining <= 5 ? 'bg-critical' : secondsRemaining <= 10 ? 'bg-warning' : 'bg-primary'
           }`}
-          style={{ width: `${progress}%` }}
+          initial={false}
+          animate={{ width: `${progress}%` }}
+          transition={{ duration: 0.9, ease: 'linear' }}
         />
       </div>
 

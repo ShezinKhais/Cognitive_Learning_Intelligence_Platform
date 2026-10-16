@@ -15,23 +15,24 @@
   --font-sans: 'Atkinson Hyperlegible Next Variable', 'Segoe UI', system-ui, sans-serif;
 
   /* Slate paper and ink. */
-  --background: #f4f6f8;
-  --foreground: #18212b;
+  --background: #f5f5f9;
+  --foreground: #1b1c2b;
   --card: #ffffff;
-  --card-foreground: #18212b;
+  --card-foreground: #1b1c2b;
   --popover: #ffffff;
-  --popover-foreground: #18212b;
+  --popover-foreground: #1b1c2b;
 
-  /* Lecture blue carries actions and where you are. */
-  --primary: #1f4e79;
+  /* Teams indigo carries actions and where you are, so C.L.I.P sits
+     naturally inside a Teams meeting. */
+  --primary: #5b5fc7;
   --primary-foreground: #ffffff;
-  --secondary: #e9eef3;
-  --secondary-foreground: #18212b;
+  --secondary: #ebebf6;
+  --secondary-foreground: #1b1c2b;
 
-  --muted: #eef1f4;
-  --muted-foreground: #56616d;
-  --accent: #e3ecf5;
-  --accent-foreground: #163a5c;
+  --muted: #eff0f5;
+  --muted-foreground: #565b6e;
+  --accent: #e8e8f7;
+  --accent-foreground: #3d3e8f;
 
   /* The highlighter: only for what is live or new. */
   --highlight: #ffe066;
@@ -51,16 +52,16 @@
   --critical-foreground: #ffffff;
 
   /* Structure: rules, not shadows. */
-  --border: #d5dbe1;
-  --input: #c3cbd3;
+  --border: #dcdde8;
+  --input: #c6c8d8;
   --input-background: #ffffff;
   --switch-background: #b6c0ca;
-  --ring: #1f4e79;
+  --ring: #5b5fc7;
 
   /* Two series on one chart, checked for colour-blind separation. */
   --series-1: #2f6fc4;
   --series-2: #c2417f;
-  --chart-1: #1f4e79;
+  --chart-1: #5b5fc7;
   --chart-2: #1e7a4c;
   --chart-3: #a15c00;
   --chart-4: #6b4c9a;
@@ -68,25 +69,25 @@
 
   --radius: 0.5rem;
 
-  --shadow-card: 0 1px 0 rgba(24, 33, 43, 0.04);
-  --shadow-card-hover: 0 1px 0 rgba(24, 33, 43, 0.06), 0 6px 18px rgba(24, 33, 43, 0.06);
+  --shadow-card: 0 1px 0 rgba(27, 28, 43, 0.04);
+  --shadow-card-hover: 0 1px 0 rgba(27, 28, 43, 0.05), 0 8px 24px rgba(91, 95, 199, 0.12);
 }
 
 .dark {
-  --background: #10161d;
+  --background: #121320;
   --foreground: #e6ebf0;
-  --card: #17202a;
+  --card: #1b1c2b;
   --card-foreground: #e6ebf0;
-  --popover: #17202a;
+  --popover: #1b1c2b;
   --popover-foreground: #e6ebf0;
-  --primary: #8db8e8;
-  --primary-foreground: #0d1b2a;
-  --secondary: #1f2a36;
+  --primary: #9ea2ff;
+  --primary-foreground: #1a1b3d;
+  --secondary: #252638;
   --secondary-foreground: #e6ebf0;
-  --muted: #1c2632;
-  --muted-foreground: #9aa7b4;
-  --accent: #1d3147;
-  --accent-foreground: #cfe2f6;
+  --muted: #23243a;
+  --muted-foreground: #a3a6bd;
+  --accent: #2a2b4f;
+  --accent-foreground: #d9daff;
   --highlight: #e9c949;
   --series-1: #3d86dc;
   --series-2: #d0629a;
@@ -94,12 +95,12 @@
   --destructive: #f2867e;
   --success: #6fcf9b;
   --warning: #f0b45c;
-  --info: #8db8e8;
+  --info: #9ec3f0;
   --critical: #f2867e;
-  --border: #2a3644;
-  --input: #3a4757;
-  --input-background: #121a22;
-  --ring: #8db8e8;
+  --border: #303248;
+  --input: #40435e;
+  --input-background: #15162a;
+  --ring: #9ea2ff;
 }
 
 /* Teams high-contrast theme. */

@@ -7,7 +7,7 @@ export interface PlannedFeature {
   today: readonly string[]
   owner: string
   /** The working preview shown on its page. */
-  demo: 'groups' | 'engagement' | 'progress' | 'governance'
+  demo: 'groups' | 'engagement' | 'progress' | 'governance' | 'consideration'
 }
 
 export const PLANNED: Record<string, PlannedFeature> = {
@@ -65,5 +65,20 @@ export const PLANNED: Record<string, PlannedFeature> = {
     ],
     owner: 'BBIS (retention and deletion requests), Cyber 2 (this console)',
     demo: 'governance',
+  },
+  consideration: {
+    title: 'Special consideration',
+    summary: 'Ask for C.L.I.P to treat you differently in class, without having to explain why to your lecturer.',
+    will: [
+      'Choose what you need: no camera, no eye-tracking, more time, or no check-in prompts',
+      'Say for how long, with an optional supporting document',
+      'An administrator approves it, and your lecturer only learns that you have one',
+    ],
+    today: [
+      'An accommodated student is never prompted and never marked disengaged',
+      'Their answer speed is counted as typical, so their score cannot give them away',
+    ],
+    owner: 'Cyber 1 (fairness rules), Cyber 2 (the request and review screens)',
+    demo: 'consideration',
   },
 }

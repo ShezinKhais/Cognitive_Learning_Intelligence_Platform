@@ -96,6 +96,10 @@ export default function App() {
           path="progress"
           element={<PlannedFeaturePage feature={PLANNED.progress} />}
         />
+        <Route
+          path="consideration"
+          element={<PlannedFeaturePage feature={PLANNED.consideration} />}
+        />
       </Route>
 
       {/* Shared Teams meeting entry point. RoleGate first verifies the
