@@ -49,6 +49,10 @@ jobs:
             -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" \
             -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
 
+      - name: Install Tesseract
+        # So test_real_tesseract_reads_a_scanned_page runs the real OCR path
+        # here instead of skipping it.
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr
       - run: pip install -e ".[dev]"
       - name: Apply database migrations
         run: alembic upgrade head

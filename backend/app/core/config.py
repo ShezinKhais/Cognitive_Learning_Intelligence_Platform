@@ -132,6 +132,10 @@ class Settings(BaseSettings):
     # three. Off until the question table stores reference answers and key
     # points: one saved without them has nothing to be marked against.
     free_text_questions_enabled: bool = False
+    # A second model call per multiple choice question that passes the
+    # grounding checks, rejecting one whose cited slide makes another option
+    # right too or contradicts the answer (generation.verify_draft).
+    question_verification_enabled: bool = True
 
     # Describing the pictures in uploaded material with a local vision model,
     # so diagrams can be searched and asked about. Off by default: on a laptop
@@ -149,6 +153,13 @@ class Settings(BaseSettings):
     # which can only be described once converted. Empty finds it on the PATH
     # or in /Applications; without it those images are reported, not described.
     libreoffice_path: str = ""
+    # OCR for scanned PDF pages, with Tesseract when it is installed (see
+    # app/services/ocr.py). Empty finds it on the PATH or in /opt/homebrew;
+    # without it scanned pages are skipped with a warning. The language is a
+    # Tesseract language code, such as "eng" or "eng+ara".
+    ocr_enabled: bool = True
+    tesseract_path: str = ""
+    ocr_language: str = "eng"
 
     # Written by `teams app create --env .env`
     client_id: str = ""
