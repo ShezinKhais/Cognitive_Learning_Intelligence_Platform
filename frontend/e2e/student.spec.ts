@@ -51,6 +51,12 @@ for (const socket of ['student', 'lecturer', 'progress']) {
   test(`${socket} socket never reuses a token removed before reconnect`, async ({ page }) => {
     const tokens: string[] = []
     const connections: WebSocketRoute[] = []
+    // This isolated build contains only the harness, not the production login
+    // entry. Serve the redirect target so branded browsers do not show their
+    // own error document for the harness server's 404.
+    await page.route('**/login', route => route.fulfill({
+      contentType: 'text/html', body: '<!doctype html><title>Sign in</title><h1>Sign in</h1>',
+    }))
     await page.routeWebSocket('**/ws/session', ws => {
       connections.push(ws)
       ws.onMessage(message => {
@@ -63,6 +69,7 @@ for (const socket of ['student', 'lecturer', 'progress']) {
     await page.evaluate(() => localStorage.removeItem('clip_access_token'))
     connections[0].close({ code: 1012, reason: 'service restart' })
     await expect(page).toHaveURL(/\/login$/)
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
     expect(tokens).toEqual(['test-only'])
   })
 }
