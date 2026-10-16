@@ -311,10 +311,53 @@ def test_an_accommodated_student_is_not_scored_on_how_they_interact() -> None:
             attention=camera(0.0, False),
         )
     )
-    assert result.signals_available == ["attempt_rate"]
-    assert result.score == 1.0
+    # Answer speed (0.99 of the window used, which would score low) is not
+    # measured; it counts as the neutral typical value instead.
+    assert result.signals_available == ["attempt_rate", "response_timing"]
+    assert result.score == pytest.approx((1.0 + engagement_module.NEUTRAL_TIMING) / 2)
     for name in ACCOMMODATED_UNSCORED:
         assert result.unavailable[name] == engagement_module.REASON_ACCOMMODATION
+    assert "response_timing" not in result.unavailable
+
+
+def test_answer_speed_for_an_accommodated_student_is_neutral_not_a_reward_or_penalty() -> None:
+    fast = compute_engagement(
+        accommodated(questions_shown=4, questions_answered=4, response_times=(0.0, 0.0))
+    )
+    slow = compute_engagement(
+        accommodated(questions_shown=4, questions_answered=4, response_times=(1.0, 1.0))
+    )
+    assert fast.score == slow.score
+    # Nothing to be neutral about before they have answered anything.
+    none = compute_engagement(accommodated(questions_shown=4, questions_answered=0))
+    assert "response_timing" not in none.signals_available
+    assert none.unavailable["response_timing"] == engagement_module.REASON_NO_ANSWERS
+
+
+def test_an_accommodated_score_is_never_a_figure_nobody_else_can_have() -> None:
+    """The score staff see for a student who answered both of their first two
+    questions used to be exactly 1.0 only for accommodated students (no answer
+    speed term), and one of two exactly 0.5."""
+    for answered in (1, 2):
+        acc = compute_engagement(
+            accommodated(
+                questions_shown=2,
+                questions_answered=answered,
+                response_times=(0.5,) * answered,
+            )
+        ).score
+        others = {
+            compute_engagement(
+                EngagementInputs(
+                    questions_shown=2,
+                    questions_answered=answered,
+                    response_times=(t / 20,) * answered,
+                )
+            ).score
+            for t in range(21)
+        }
+        assert min(others) <= acc <= max(others)
+        assert acc not in others or acc == pytest.approx(0.5 * (answered / 2 + 0.75))
 
 
 def test_an_expired_prompt_is_not_held_against_an_accommodated_student() -> None:
@@ -364,8 +407,9 @@ def test_an_unaccommodated_student_in_the_same_position_is_prompted() -> None:
 
 def test_accommodated_confidence_is_judged_against_what_could_apply() -> None:
     result = compute_engagement(accommodated(questions_shown=4, questions_answered=4))
-    # attempt_rate (1.0) of attempt_rate + prompt_response (2.0)
-    assert result.confidence == pytest.approx(0.5)
+    # attempt_rate (1.0) of attempt_rate + response_timing + prompt_response (3.0):
+    # answer speed is neutral, not absent, so it applies to them too.
+    assert result.confidence == pytest.approx(1.0 / 3.0)
     assert (
         result.confidence
         > compute_engagement(EngagementInputs(questions_shown=4, questions_answered=4)).confidence
@@ -442,3 +486,8 @@ def test_two_readings_are_too_few_to_call_a_camera_unreliable() -> None:
         )
     )
     assert "face_presence" in result.signals_available
+
+
+def test_the_neutral_answer_speed_is_the_middle_of_what_others_score() -> None:
+    # Others' answer-speed term runs from 0.5 (always at the deadline) to 1.0.
+    assert engagement_module.NEUTRAL_TIMING == pytest.approx((0.5 + 1.0) / 2)

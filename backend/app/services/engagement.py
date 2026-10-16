@@ -28,10 +28,11 @@ Fairness (Phase 6), the judgment calls:
   (EngagementComputation.unavailable), so "no data" is never mistaken for
   "low". Reasons are for the classroom and explanations, not a public field.
 * Accessibility. For a student with a recorded accommodation, signals that
-  assume a particular way of interacting (answer speed, gaze, face presence)
-  are not scored, a prompt left to expire is not held against them, they are
-  never classed DISENGAGED and never sent an automatic prompt. Only the fact
-  that an accommodation exists is used, never what it says.
+  assume a particular way of interacting (gaze, face presence) are not scored,
+  and answer speed counts as a neutral typical value (NEUTRAL_TIMING), a prompt
+  left to expire is not held against them, they are never classed DISENGAGED
+  and never sent an automatic prompt. Only the fact that an accommodation
+  exists is used, never what it says.
 
 A student who has been shown fewer than MIN_QUESTIONS_SHOWN questions has no
 attempt rate at all, so a late joiner is "insufficient data", not "at risk".
@@ -69,7 +70,15 @@ _WEIGHTS = {
 
 # Signals that assume a particular way of interacting, and so are not scored
 # for a student with an accommodation.
-ACCOMMODATED_UNSCORED = ("response_timing", "gaze", "face_presence")
+ACCOMMODATED_UNSCORED = ("gaze", "face_presence")
+
+# Answer speed for a student with an accommodation. It is not measured, but
+# leaving the term out would make their score a different shape from everyone
+# else's (a student who answered both of their first two questions would score
+# exactly 1.0 where nobody else can), and staff see the score. So where another
+# student would have an answer-speed term, theirs is this typical value: neither
+# a reward nor a penalty. Staff see the score banded as well (engagement_view.py).
+NEUTRAL_TIMING = 0.75
 
 ENGAGED_THRESHOLD = 0.6
 AT_RISK_THRESHOLD = 0.3
@@ -163,12 +172,12 @@ def compute_engagement(inputs: EngagementInputs) -> EngagementComputation:
     else:
         unavailable["attempt_rate"] = REASON_TOO_FEW_QUESTIONS
 
-    if accommodated:
-        unavailable["response_timing"] = REASON_ACCOMMODATION
-    elif inputs.response_times:
-        values["response_timing"] = _timing_component(inputs.response_times)
-    else:
+    if not inputs.response_times:
         unavailable["response_timing"] = REASON_NO_ANSWERS
+    elif accommodated:
+        values["response_timing"] = NEUTRAL_TIMING
+    else:
+        values["response_timing"] = _timing_component(inputs.response_times)
 
     prompts = inputs.prompt_responses
     if accommodated:
