@@ -96,12 +96,22 @@ class FakeTutorModel:
         self.connections_in_use = lambda: 0
 
     async def complete(
-        self, model: str, messages: Sequence[Message], *, max_tokens: int | None
+        self,
+        model: str,
+        messages: Sequence[Message],
+        *,
+        max_tokens: int | None,
+        options: object = None,
     ) -> str:
         raise AssertionError("the tutor streams its replies")
 
     async def stream(
-        self, model: str, messages: Sequence[Message], *, max_tokens: int | None
+        self,
+        model: str,
+        messages: Sequence[Message],
+        *,
+        max_tokens: int | None,
+        options: object = None,
     ) -> AsyncIterator[str]:
         self.prompts.append((model, messages))
         self.connections_held.append(self.connections_in_use())
