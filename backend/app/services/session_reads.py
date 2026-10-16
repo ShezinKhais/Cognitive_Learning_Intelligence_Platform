@@ -85,7 +85,12 @@ async def list_responses(
     db: AsyncSession, principal: Principal, session_id: UUID, limit: int, offset: int
 ) -> Page[ResponseOut]:
     """The responses in a session the caller may see, in the order they
-    arrived. A student is given their own."""
+    arrived. A student is given their own.
+
+    A student's own is_correct is given while the question is still open, on
+    purpose: the live feedback.result event has already told them, as soon as
+    the answer was stored. What stays withheld until the window closes is the
+    correct option, and no response carries that."""
     await visible_session(db, principal, session_id)
     where = [StudentResponse.session_id == session_id]
     if principal.is_(Role.STUDENT):

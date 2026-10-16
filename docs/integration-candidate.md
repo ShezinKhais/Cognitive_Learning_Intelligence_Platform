@@ -1,11 +1,13 @@
-# Phases 1–6: combined integration candidate
+# Combined integration candidate
 
 This branch is a **candidate for review, not a bug-free or production-ready
 sign-off**. It combines the existing work from #147 (`28f180b`), #154
 (`6ec052d`), #155 (`a5c5d3c`) and connection groundwork #157 (`702e96f`).
 Original commits and authors are preserved. Main and the original PR branches
-are untouched. Those PRs mix some Phase 7/8 infrastructure with Phase 1–6
-wiring; that supporting code is retained rather than selectively broken apart.
+are untouched. It carries work from Phases 3 to 8: the session routes and free-text marking
+(Phases 3 and 5), breakout rooms and refocus prompts (Phase 6), the purge
+runner (Phase 7), and the load test, the polish and Teams notifications
+(Phase 8).
 The Phase 7 student-review PR #140 and browser evidence PR #150 are not merged
 into this candidate. Coordinate the overlapping original PRs before merging
 this umbrella PR; it is not an additional independent implementation.

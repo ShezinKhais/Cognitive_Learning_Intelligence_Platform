@@ -1,7 +1,7 @@
 # Cross-phase integration checkpoint
 
 For the combined branch and its remaining release gates, see
-[the phases 1–6 integration candidate](phases-1-6-integration-candidate.md).
+[the combined integration candidate](integration-candidate.md).
 The main-only inventory below records the earlier baseline, not this branch.
 
 Checked against `main` at `aa79ed7` on 2026-10-16. This is an integration
