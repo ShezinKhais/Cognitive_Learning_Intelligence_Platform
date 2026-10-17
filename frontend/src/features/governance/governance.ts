@@ -115,8 +115,7 @@ export function canExecuteDeletion(
   request: DeletionRequest,
 ): boolean {
   return (
-    request.status === 'approved' &&
-    request.target_type === 'session'
+    request.status === 'approved'
   )
 }
 

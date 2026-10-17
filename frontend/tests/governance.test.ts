@@ -126,7 +126,7 @@ test('only requested deletions can be rejected', () => {
   )
 })
 
-test('only approved session requests can be executed', () => {
+test('only approved deletion requests can be executed', () => {
   assert.equal(
     canExecuteDeletion(
       deletionRequest({
@@ -154,7 +154,7 @@ test('only approved session requests can be executed', () => {
         target_type: 'student',
       }),
     ),
-    false,
+    true,
   )
 })
 
