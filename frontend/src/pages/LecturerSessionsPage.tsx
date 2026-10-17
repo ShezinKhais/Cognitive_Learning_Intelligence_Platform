@@ -5,7 +5,7 @@ import { Link, useNavigate } from 'react-router'
 import { ApiError, clearAccessToken } from '../api'
 import { cn } from '../components/ui/cn'
 import { buttonStyles } from '../components/ui/button'
-import { EmptyState, PageBody, PageHeader, Panel, Tag } from '../components/ui/primitives'
+import { EmptyState, PageBody, PageHeader, Panel, Tag, SkeletonRows } from '../components/ui/primitives'
 import { createSession } from '../features/live/sessionActions'
 import { formatWhen, groupSessions, statusLabel, statusTone } from '../features/sessions/format'
 import { listSessions, type SessionSummary } from '../features/sessions/sessionsApi'
@@ -56,7 +56,7 @@ export default function LecturerSessionsPage() {
       <PageBody>
         {creating && <CreateSession onCancel={() => setCreating(false)} />}
 
-        {load.state === 'loading' && <p className="text-muted-foreground" role="status">Loading your sessions…</p>}
+        {load.state === 'loading' && <SkeletonRows label="Loading your sessions" />}
         {load.state === 'error' && (
           <p role="alert" className="rounded-md border border-critical/30 bg-critical/5 px-4 py-3 text-critical">
             {load.message}

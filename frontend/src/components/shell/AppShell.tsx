@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react'
-import { LogOut, Menu, X } from 'lucide-react'
+import { LogOut, Menu, Search, X } from 'lucide-react'
 import { Link, useLocation } from 'react-router'
 
 import { clearAccessToken, type CurrentUser } from '../../api'
@@ -8,9 +8,11 @@ import { Wordmark as Brand } from '../brand/ClipMark'
 import { cn } from '../ui/cn'
 import NotificationBell from '../../features/notifications/NotificationBell'
 import IntroOverlay from './IntroOverlay'
-import ThemeSwitch from './ThemeSwitch'
 import { introPlayed, takeIntro } from './intro'
 import { currentItem, NAVIGATION, ROLE_NAME, type NavItem } from './navigation'
+import QuickJump from './QuickJump'
+import { shortcutLabel, useQuickJumpShortcut } from './quickJumpKeys'
+import ThemeSwitch from './ThemeSwitch'
 
 /**
  * The frame around every signed-in page outside Teams: a side menu for the
@@ -20,6 +22,7 @@ import { currentItem, NAVIGATION, ROLE_NAME, type NavItem } from './navigation'
 export default function AppShell({ user, children }: { user: CurrentUser; children: ReactNode }) {
   const { pathname } = useLocation()
   const [open, setOpen] = useState(false)
+  const [jumping, setJumping] = useState(false)
   const items = NAVIGATION[user.role] ?? []
   const current = currentItem(user.role, pathname)
   const [intro, setIntro] = useState(takeIntro)
@@ -28,6 +31,9 @@ export default function AppShell({ user, children }: { user: CurrentUser; childr
     introPlayed()
     setIntro(false)
   }, [])
+  const openJump = useCallback(() => setJumping(true), [])
+  useQuickJumpShortcut(openJump)
+  useRouteAnnouncement(current?.label)
 
   // Close the phone menu when a link in it is followed.
   useEffect(() => setOpen(false), [pathname])
@@ -44,65 +50,137 @@ export default function AppShell({ user, children }: { user: CurrentUser; childr
     </nav>
   )
 
+  const jumpButton = (
+    <button
+      type="button"
+      onClick={openJump}
+      className="flex w-full items-center gap-2.5 rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-input hover:text-foreground"
+    >
+      <Search size={15} aria-hidden />
+      <span className="flex-1 text-left">Go to…</span>
+      <kbd className="rounded border border-border px-1.5 text-xs" aria-label={`Shortcut ${shortcutLabel()}`}>
+        {shortcutLabel()}
+      </kbd>
+    </button>
+  )
+
   return (
     <LayoutGroup>
-    <AnimatePresence onExitComplete={() => setEntered(true)}>
-      {intro && <IntroOverlay firstName={user.full_name.split(' ')[0]} onDone={finishIntro} />}
-    </AnimatePresence>
-    <div className="min-h-screen bg-background lg:grid lg:grid-cols-[15rem_1fr]">
-      <a
-        href="#content"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-card focus:px-3 focus:py-2"
-      >
-        Skip to content
-      </a>
-
-      <header className="flex items-center justify-between border-b border-border bg-card px-4 py-3 lg:hidden">
-        <Wordmark />
-        <button
-          type="button"
-          onClick={() => setOpen((value) => !value)}
-          aria-expanded={open}
-          aria-controls="phone-menu"
-          className="rounded-md p-2 hover:bg-muted"
+      <AnimatePresence onExitComplete={() => setEntered(true)}>
+        {intro && <IntroOverlay firstName={user.full_name.split(' ')[0]} onDone={finishIntro} />}
+      </AnimatePresence>
+      <QuickJump user={user} open={jumping} onClose={() => setJumping(false)} />
+      <div className="min-h-screen bg-background lg:grid lg:grid-cols-[15rem_1fr]">
+        <a
+          href="#content"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-card focus:px-3 focus:py-2"
         >
-          {open ? <X size={20} aria-hidden /> : <Menu size={20} aria-hidden />}
-          <span className="sr-only">{open ? 'Close menu' : 'Open menu'}</span>
-        </button>
-      </header>
+          Skip to content
+        </a>
 
-      {open && (
-        <div id="phone-menu" className="border-b border-border bg-card px-3 py-4 lg:hidden">
+        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-card/95 px-4 py-3 backdrop-blur lg:hidden">
+          <Wordmark />
+          <div className="flex items-center gap-1">
+            <button type="button" onClick={openJump} className="rounded-md p-2 hover:bg-muted">
+              <Search size={20} aria-hidden />
+              <span className="sr-only">Go to</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setOpen((value) => !value)}
+              aria-expanded={open}
+              aria-controls="phone-menu"
+              className="rounded-md p-2 hover:bg-muted"
+            >
+              {open ? <X size={20} aria-hidden /> : <Menu size={20} aria-hidden />}
+              <span className="sr-only">{open ? 'Close menu' : 'Open menu'}</span>
+            </button>
+          </div>
+        </header>
+
+        <AnimatePresence initial={false}>
+          {open && (
+            <motion.div
+              id="phone-menu"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0, transition: { duration: 0.15 } }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="overflow-hidden border-b border-border bg-card lg:hidden"
+            >
+              <div className="flex flex-col gap-6 px-3 py-4">
+                {menu}
+                <Account user={user} />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <aside className="sticky top-0 hidden h-screen flex-col gap-6 overflow-y-auto border-r border-border bg-card px-3 py-6 lg:flex">
+          <div className="h-[2.6rem] px-3">
+            {/* The intro's mark lands here. */}
+            {!intro && (
+              <motion.span layoutId="clip-brand" className="inline-flex" transition={{ type: 'spring', stiffness: 170, damping: 24 }}>
+                <Wordmark />
+              </motion.span>
+            )}
+          </div>
+          {jumpButton}
           {menu}
           <Account user={user} />
-        </div>
-      )}
+        </aside>
 
-      <aside className="sticky top-0 hidden h-screen flex-col gap-8 border-r border-border bg-card px-3 py-6 lg:flex">
-        <div className="h-[2.6rem] px-3">
-          {/* The intro's mark lands here. */}
-          {!intro && (
-            <motion.span layoutId="clip-brand" className="inline-flex" transition={{ type: 'spring', stiffness: 170, damping: 24 }}>
-              <Wordmark />
-            </motion.span>
-          )}
-        </div>
-        {menu}
-        <Account user={user} />
-      </aside>
-
-      <motion.main
-        id="content"
-        className="min-w-0"
-        initial={false}
-        animate={entered ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
-        transition={{ duration: 0.4, ease: [0.2, 0, 0, 1] }}
-      >
-        {children}
-      </motion.main>
-    </div>
+        <motion.main
+          id="content"
+          tabIndex={-1}
+          className="min-w-0 outline-none"
+          initial={false}
+          animate={entered ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
+          transition={{ duration: 0.4, ease: [0.2, 0, 0, 1] }}
+        >
+          {/* A quick fade between pages, so a change of page reads as one. */}
+          <motion.div
+            key={pathname}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+          >
+            {children}
+          </motion.div>
+        </motion.main>
+      </div>
     </LayoutGroup>
   )
+}
+
+/**
+ * After moving to another page: name it in the tab title, and put focus at
+ * the top of the new page so a screen reader starts reading there and Tab
+ * goes on from it. Not on the first load, where focus belongs to the browser.
+ */
+function useRouteAnnouncement(label: string | undefined) {
+  const { pathname } = useLocation()
+  const first = useRef(true)
+
+  useEffect(() => {
+    document.title = label ? `${label} · C.L.I.P` : 'C.L.I.P'
+  }, [label])
+
+  useEffect(() => {
+    if (first.current) {
+      first.current = false
+      return
+    }
+    const main = document.getElementById('content')
+    const heading = main?.querySelector<HTMLElement>('h1')
+    window.scrollTo({ top: 0 })
+    if (heading) {
+      heading.tabIndex = -1
+      heading.focus({ preventScroll: true })
+    } else {
+      main?.focus({ preventScroll: true })
+    }
+  }, [pathname])
 }
 
 function Wordmark() {
@@ -114,28 +192,44 @@ function Wordmark() {
 }
 
 function MenuGroup({ items, current }: { items: NavItem[]; current?: NavItem }) {
+  // One marker per menu (the phone and desktop menus are both mounted).
+  const marker = useId()
   return (
     <ul className="flex flex-col gap-0.5">
       {items.map((item) => {
         const active = item === current
+        const Icon = item.icon
         return (
           <li key={item.to}>
             <Link
               to={item.to}
               aria-current={active ? 'page' : undefined}
               className={cn(
-                'relative flex items-center rounded-md px-3 py-2 text-[0.95rem] transition-colors',
-                active
-                  ? 'bg-accent font-semibold text-accent-foreground'
-                  : 'text-foreground hover:bg-muted',
+                'group relative flex items-center gap-3 rounded-md px-3 py-2 text-[0.95rem] transition-colors',
+                active ? 'font-semibold text-accent-foreground' : 'text-foreground hover:bg-muted',
                 item.planned && !active && 'text-muted-foreground',
               )}
             >
-              {/* The highlighter marks where you are. */}
+              {/* Where you are: the fill and the highlighter slide to the new item. */}
               {active && (
-                <span aria-hidden className="absolute inset-y-1.5 left-0 w-1 rounded-full bg-highlight" />
+                <motion.span
+                  layoutId={`${marker}-fill`}
+                  aria-hidden
+                  className="absolute inset-0 rounded-md bg-accent"
+                  transition={{ type: 'spring', stiffness: 420, damping: 36 }}
+                >
+                  <span className="absolute inset-y-1.5 left-0 w-1 rounded-full bg-highlight" />
+                </motion.span>
               )}
-              {item.label}
+              <Icon
+                size={17}
+                aria-hidden
+                className={cn(
+                  'relative shrink-0 transition-transform duration-150 group-hover:scale-110 motion-reduce:group-hover:scale-100',
+                  !active && 'text-muted-foreground group-hover:text-foreground',
+                )}
+              />
+              <span className="relative">{item.label}</span>
             </Link>
           </li>
         )

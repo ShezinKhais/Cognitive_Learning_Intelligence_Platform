@@ -71,7 +71,11 @@ export function saveTheme(choice: ThemeChoice): void {
     // Private windows can refuse storage; the choice still holds for this page.
   }
   if (following) paint(choice)
+  // The switch in this tab; other tabs hear the storage event.
+  window.dispatchEvent(new CustomEvent<ThemeChoice>(CHANGED, { detail: choice }))
 }
+
+const CHANGED = 'clip-theme-change'
 
 export function useThemeChoice(): [ThemeChoice, (choice: ThemeChoice) => void] {
   const [choice, setChoice] = useState<ThemeChoice>(storedTheme)
@@ -83,14 +87,16 @@ export function useThemeChoice(): [ThemeChoice, (choice: ThemeChoice) => void] {
       setChoice(next)
       if (following) paint(next)
     }
+    const onChanged = (event: Event) => setChoice((event as CustomEvent<ThemeChoice>).detail)
     window.addEventListener('storage', onStorage)
-    return () => window.removeEventListener('storage', onStorage)
+    window.addEventListener(CHANGED, onChanged)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener(CHANGED, onChanged)
+    }
   }, [])
   return [
     choice,
-    (next) => {
-      setChoice(next)
-      saveTheme(next)
-    },
+    (next) => saveTheme(next),
   ]
 }

@@ -67,6 +67,8 @@ export default function NotificationBell({ user }: { user: CurrentUser }) {
   const [read, setRead] = useState(() => loadRead(user))
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
+  const bell = useRef<HTMLButtonElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
   const unread = unreadCount(items, read)
 
   const markAllRead = useCallback(() => {
@@ -81,14 +83,20 @@ export default function NotificationBell({ user }: { user: CurrentUser }) {
 
   useEffect(() => {
     if (!open) return
+    const frame = requestAnimationFrame(() => panel.current?.focus())
     const close = (event: MouseEvent | KeyboardEvent) => {
-      if (event instanceof KeyboardEvent ? event.key === 'Escape' : !root.current?.contains(event.target as Node)) {
+      if (event instanceof KeyboardEvent) {
+        if (event.key !== 'Escape') return
+        setOpen(false)
+        bell.current?.focus()
+      } else if (!root.current?.contains(event.target as Node)) {
         setOpen(false)
       }
     }
     window.addEventListener('mousedown', close)
     window.addEventListener('keydown', close)
     return () => {
+      cancelAnimationFrame(frame)
       window.removeEventListener('mousedown', close)
       window.removeEventListener('keydown', close)
     }
@@ -97,6 +105,7 @@ export default function NotificationBell({ user }: { user: CurrentUser }) {
   return (
     <div ref={root} className="relative">
       <button
+        ref={bell}
         type="button"
         onClick={() => {
           setOpen((value) => !value)
@@ -125,6 +134,8 @@ export default function NotificationBell({ user }: { user: CurrentUser }) {
       <AnimatePresence>
         {open && (
           <motion.div
+            ref={panel}
+            tabIndex={-1}
             role="dialog"
             aria-label="Notifications"
             initial={{ opacity: 0, y: 6, scale: 0.98 }}

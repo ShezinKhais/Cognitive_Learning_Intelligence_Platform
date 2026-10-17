@@ -5,6 +5,7 @@ import { Send } from 'lucide-react'
 import { ApiError } from '../../api'
 import { buttonStyles } from '../../components/ui/button'
 import { cn } from '../../components/ui/cn'
+import { useToast } from '../../components/ui/toast'
 import {
   deliverQuestion,
   loadStagedQuestions,
@@ -27,6 +28,7 @@ export default function ManualQuestionTrigger({ sessionId, enabled }: ManualQues
   const [loading, setLoading] = useState(false)
   const [delivering, setDelivering] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const notify = useToast()
 
   async function openSelector() {
     if (!enabled || !sessionId) return
@@ -50,6 +52,7 @@ export default function ManualQuestionTrigger({ sessionId, enabled }: ManualQues
     setDelivering(true)
     try {
       await deliverQuestion(sessionId, selectedQuestionId)
+      notify('Question sent to the class')
       setQuestions((current) => current.filter((question) => question.id !== selectedQuestionId))
       setSelectedQuestionId('')
       setSelectorOpen(false)

@@ -1,3 +1,17 @@
+import {
+  Activity,
+  BookOpen,
+  CalendarClock,
+  FileText,
+  HeartHandshake,
+  LineChart,
+  ShieldCheck,
+  TrendingUp,
+  Upload,
+  Users,
+  type LucideIcon,
+} from 'lucide-react'
+
 import type { Role } from '../../api'
 
 /**
@@ -8,6 +22,7 @@ import type { Role } from '../../api'
 export interface NavItem {
   to: string
   label: string
+  icon: LucideIcon
   planned?: boolean
   /** Paths that also mark this item as the current page. */
   matches?: readonly string[]
@@ -15,20 +30,20 @@ export interface NavItem {
 
 export const NAVIGATION: Record<Role, readonly NavItem[]> = {
   lecturer: [
-    { to: '/lecturer/sessions', label: 'Sessions', matches: ['/lecturer/sessions'] },
-    { to: '/lecturer/materials', label: 'Materials', matches: ['/lecturer/materials', '/materials/'] },
-    { to: '/lecturer/groups', label: 'Breakout groups', planned: true },
-    { to: '/lecturer/engagement', label: 'Engagement history', planned: true },
+    { to: '/lecturer/sessions', label: 'Sessions', icon: CalendarClock, matches: ['/lecturer/sessions'] },
+    { to: '/lecturer/materials', label: 'Materials', icon: FileText, matches: ['/lecturer/materials', '/materials/'] },
+    { to: '/lecturer/groups', label: 'Breakout groups', icon: Users, planned: true },
+    { to: '/lecturer/engagement', label: 'Engagement history', icon: LineChart, planned: true },
   ],
   student: [
-    { to: '/student', label: 'My sessions', matches: ['/student/session/'] },
-    { to: '/student/progress', label: 'Progress over time', planned: true },
-    { to: '/student/consideration', label: 'Special consideration', planned: true },
+    { to: '/student', label: 'My sessions', icon: BookOpen, matches: ['/student/session/'] },
+    { to: '/student/progress', label: 'Progress over time', icon: TrendingUp, planned: true },
+    { to: '/student/consideration', label: 'Special consideration', icon: HeartHandshake, planned: true },
   ],
   admin: [
-    { to: '/admin', label: 'Imports' },
-    { to: '/admin/status', label: 'System status' },
-    { to: '/admin/governance', label: 'Data governance', planned: true },
+    { to: '/admin', label: 'Imports', icon: Upload },
+    { to: '/admin/status', label: 'System status', icon: Activity },
+    { to: '/admin/governance', label: 'Data governance', icon: ShieldCheck, planned: true },
   ],
 }
 

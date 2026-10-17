@@ -112,3 +112,26 @@ export function EmptyState({
     </div>
   )
 }
+
+/**
+ * Grey shapes where rows are about to appear, so the page keeps its layout
+ * while it loads. The label is what a screen reader hears instead.
+ */
+export function SkeletonRows({ label, rows = 3 }: { label: string; rows?: number }) {
+  return (
+    <div role="status" aria-label={label} className="space-y-2">
+      {Array.from({ length: rows }, (_, index) => (
+        <div
+          key={index}
+          aria-hidden
+          className="rounded-lg border border-border bg-card px-5 py-4"
+          style={{ opacity: 1 - index * 0.22 }}
+        >
+          <div className="skeleton h-3.5 w-24 rounded" />
+          <div className="skeleton mt-3 h-4 w-2/3 max-w-md rounded" />
+          <div className="skeleton mt-2 h-3 w-1/3 max-w-48 rounded" />
+        </div>
+      ))}
+    </div>
+  )
+}

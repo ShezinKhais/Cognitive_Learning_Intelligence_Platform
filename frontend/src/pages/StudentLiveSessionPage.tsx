@@ -9,6 +9,8 @@ import {
   XCircle,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
+
+import SegmentedTabs from '../components/ui/SegmentedTabs'
 import {
   useEffect,
   useState,
@@ -150,36 +152,25 @@ export function LiveSessionPanel({
         )}
 
         {SOCRATIC_CHAT_ENABLED && (
-          <nav
-            aria-label="Student session tools"
-            className="mt-5 flex rounded-xl border border-border bg-card p-1"
-          >
-            <button
-              type="button"
-              aria-current={activeView === 'class' ? 'page' : undefined}
-              onClick={() => setActiveView('class')}
-              className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${
-                activeView === 'class'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-muted'
-              }`}
-            >
-              Live class
-            </button>
-            <button
-              type="button"
-              aria-current={activeView === 'chat' ? 'page' : undefined}
-              onClick={() => setActiveView('chat')}
-              className={`inline-flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
-                activeView === 'chat'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-muted'
-              }`}
-            >
-              <MessagesSquare aria-hidden="true" size={17} />
-              Learning assistant
-            </button>
-          </nav>
+          <SegmentedTabs
+            label="Student session tools"
+            value={activeView}
+            onChange={setActiveView}
+            stretch
+            className="mt-5 rounded-xl"
+            segments={[
+              { key: 'class', label: 'Live class' },
+              {
+                key: 'chat',
+                label: (
+                  <>
+                    <MessagesSquare aria-hidden="true" size={17} />
+                    Learning assistant
+                  </>
+                ),
+              },
+            ]}
+          />
         )}
 
         {state.error && (

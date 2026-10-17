@@ -212,11 +212,61 @@
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
+
+  /* Headings and regions focused by the app after a page change are a
+     reading position, not a control: no ring. */
+  h1[tabindex="-1"]:focus, main[tabindex="-1"]:focus, [role="dialog"][tabindex="-1"]:focus {
+    outline: none;
+  }
+
+  /* The parts the browser draws, in the palette rather than its defaults. */
+  ::selection {
+    background: var(--highlight);
+    color: var(--highlight-foreground);
+  }
+
+  input, textarea, select {
+    caret-color: var(--primary);
+  }
+
+  input[type="checkbox"], input[type="radio"], input[type="range"], progress {
+    accent-color: var(--primary);
+  }
+
+  * {
+    scrollbar-color: var(--input) transparent;
+    scrollbar-width: thin;
+  }
+
+  a {
+    text-underline-offset: 0.18em;
+  }
+
+  /* Phones and tablets: every control at least 44px to hit with a thumb. */
+  @media (pointer: coarse) {
+    button, [role="button"], [role="radio"], [role="tab"], [role="menuitem"], a[href], select, input:not([type="checkbox"]):not([type="radio"]) {
+      min-height: 44px;
+    }
+  }
 }
 
 @layer utilities {
   .animate-in-up { animation: fadeInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
   .animate-in-fade { animation: fadeIn 0.25s ease both; }
+}
+
+/* Loading placeholders: a slow sheen across the shape. Still, not hidden, when
+   motion is reduced. */
+.skeleton {
+  background: linear-gradient(90deg, var(--muted) 0%, var(--secondary) 45%, var(--muted) 90%) 0 0 / 220% 100%;
+  animation: sheen 1.6s ease-in-out infinite;
+}
+@keyframes sheen {
+  from { background-position: 100% 0; }
+  to   { background-position: -100% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
 }
 
 @keyframes fadeInUp {
@@ -228,10 +278,14 @@
   to   { opacity: 1; }
 }
 
+/* Reduced motion keeps fades and colour changes, which carry state, and
+   drops travel: nothing slides, scales, pulses or loops. JS animations follow
+   the same rule through MotionConfig in main.tsx. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
-    animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
+  .animate-in-up { animation-name: fadeIn; }
+  .animate-ping, .animate-pulse, .animate-spin { animation: none !important; }
 }

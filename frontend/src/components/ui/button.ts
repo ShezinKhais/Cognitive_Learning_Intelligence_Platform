@@ -2,7 +2,7 @@ import { cva, type VariantProps } from 'class-variance-authority'
 
 /** Buttons and links that act like them share one look per intent. */
 export const buttonStyles = cva(
-  'inline-flex items-center justify-center gap-2 rounded-md text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+  'inline-flex items-center justify-center gap-2 rounded-md text-sm font-semibold transition-[color,background-color,border-color,transform] duration-150 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100',
   {
     variants: {
       intent: {

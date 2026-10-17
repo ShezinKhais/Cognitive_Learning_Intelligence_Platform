@@ -14,7 +14,9 @@ import {
   type ReviewDecision,
 } from '../api'
 import { buttonStyles } from '../components/ui/button'
-import { EmptyState, PageBody, PageHeader, Tag, type Tone } from '../components/ui/primitives'
+import SegmentedTabs from '../components/ui/SegmentedTabs'
+import { useToast } from '../components/ui/toast'
+import { EmptyState, PageBody, PageHeader, Tag, type Tone, SkeletonRows } from '../components/ui/primitives'
 import { getMaterial } from '../features/materials/materialApi'
 import type { Material } from '../features/materials/types'
 import { sourceName } from '../features/materials/upload'
@@ -50,11 +52,19 @@ const STATUS_LABEL: Record<QuestionStatus, string> = {
   delivered: 'Sent',
 }
 
+const DONE: Record<ReviewDecision, string> = {
+  draft: 'Back to draft',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  staged: 'Ready to send',
+}
+
 export default function QuestionReview() {
   const { materialId } = useParams<{ materialId: string }>()
   const [state, setState] = useState<LoadState>({ status: 'loading' })
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
+  const notify = useToast()
   const [bulkError, setBulkError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -206,6 +216,7 @@ export default function QuestionReview() {
           : prev,
       )
       setSelected(new Set())
+      if (result.updated.length > 0) notify(`${result.updated.length} approved`)
       if (result.skipped_ids.length > 0) {
         setBulkError(
           `${result.updated.length} approved, ${result.skipped_ids.length} skipped ` +
@@ -241,6 +252,7 @@ export default function QuestionReview() {
     try {
       const result = await bulkReviewQuestions(materialId, approvedIds, 'staged')
       result.updated.forEach(updateQuestion)
+      notify(`${result.updated.length} ready to send`)
     } catch (err) {
       setBulkError(err instanceof ApiError ? err.message : 'Could not make the approved questions ready.')
     } finally {
@@ -289,22 +301,20 @@ export default function QuestionReview() {
         <div className="mx-auto max-w-3xl">
           {state.status === 'ready' && counts.all > 0 && (
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-              <div role="tablist" aria-label="Show" className="flex flex-wrap gap-1 rounded-lg border border-border bg-card p-1">
-                {FILTERS.map(({ key, label }) => (
-                  <button
-                    key={key}
-                    type="button"
-                    role="tab"
-                    aria-selected={shownFilter === key}
-                    onClick={() => setFilter(key)}
-                    className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
-                      shownFilter === key ? 'bg-primary font-semibold text-primary-foreground' : 'hover:bg-muted'
-                    }`}
-                  >
-                    {label} <span className={shownFilter === key ? 'opacity-80' : 'text-muted-foreground'}>{counts[key]}</span>
-                  </button>
-                ))}
-              </div>
+              <SegmentedTabs
+                label="Show"
+                value={shownFilter}
+                onChange={setFilter}
+                className="flex-wrap"
+                segments={FILTERS.map(({ key, label }) => ({
+                  key,
+                  label: (
+                    <>
+                      {label} <span className={shownFilter === key ? 'opacity-80' : 'text-muted-foreground'}>{counts[key]}</span>
+                    </>
+                  ),
+                }))}
+              />
               <div className="flex flex-wrap gap-2">
                 {shownFilter === 'review' && draftQuestions.length > 0 && (
                   <>
@@ -341,7 +351,7 @@ export default function QuestionReview() {
             </p>
           )}
 
-          {state.status === 'loading' && <p role="status" className="text-muted-foreground">Loading questions…</p>}
+          {state.status === 'loading' && <SkeletonRows label="Loading questions" rows={4} />}
           {state.status === 'error' && (
             <p role="alert" className="rounded-md border border-critical/30 bg-critical/5 px-4 py-3 text-critical">{state.message}</p>
           )}
@@ -437,6 +447,7 @@ function QuestionCard({
   const [correctOption, setCorrectOption] = useState(question.correct_option ?? 0)
   const [difficulty, setDifficulty] = useState<Difficulty>(question.difficulty)
   const [busy, setBusy] = useState(false)
+  const notify = useToast()
   const [error, setError] = useState<string | null>(null)
 
 
@@ -485,6 +496,7 @@ function QuestionCard({
       const updated = await reviewQuestion(materialId, question.id, { status, ...extra })
       onUpdated(updated)
       setEditing(false)
+      notify(DONE[status])
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Action failed.')
     } finally {

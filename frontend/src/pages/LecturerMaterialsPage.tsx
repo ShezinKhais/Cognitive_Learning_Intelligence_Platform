@@ -6,7 +6,7 @@ import { Link } from 'react-router'
 import { ApiError, clearAccessToken } from '../api'
 import { cn } from '../components/ui/cn'
 import { buttonStyles } from '../components/ui/button'
-import { EmptyState, PageBody, PageHeader, Tag } from '../components/ui/primitives'
+import { EmptyState, PageBody, PageHeader, Tag, SkeletonRows } from '../components/ui/primitives'
 import { MaterialActionForm, MaterialMenu, type MaterialActionMode } from '../features/materials/MaterialActions'
 import MaterialDetails from '../features/materials/MaterialDetails'
 import { getMaterial, listMaterials, uploadMaterial } from '../features/materials/materialApi'
@@ -174,7 +174,7 @@ export default function LecturerMaterialsPage() {
           </p>
         )}
 
-        {materials === null && <p role="status" className="text-muted-foreground">Loading your materials…</p>}
+        {materials === null && <SkeletonRows label="Loading your materials" />}
 
         {empty && (
           <EmptyState
