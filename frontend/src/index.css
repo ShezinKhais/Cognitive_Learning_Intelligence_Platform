@@ -255,6 +255,22 @@
   .animate-in-fade { animation: fadeIn 0.25s ease both; }
 }
 
+/* Text links: the underline draws in from the left on hover or focus and
+   leaves to the right, so it reads as a pen stroke rather than a flicker.
+   Reduced motion shows it at once. */
+.link-sweep {
+  background: linear-gradient(currentColor, currentColor) no-repeat right bottom / 0% 1.5px;
+  padding-bottom: 1px;
+  transition: background-size 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.link-sweep:hover, .link-sweep:focus-visible {
+  background-position: left bottom;
+  background-size: 100% 1.5px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .link-sweep { transition: none; }
+}
+
 /* Loading placeholders: a slow sheen across the shape. Still, not hidden, when
    motion is reduced. */
 .skeleton {

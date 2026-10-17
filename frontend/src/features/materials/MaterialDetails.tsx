@@ -91,7 +91,7 @@ export default function MaterialDetails({ material }: { material: Material }) {
                   <AlertTriangle size={15} aria-hidden className="mt-0.5 shrink-0 text-warning" />
                   <span>
                     {warning.source_page !== undefined && (
-                      <button type="button" className="font-semibold underline-offset-2 hover:underline" onClick={() => setSelected(Math.max(0, pages.findIndex((p) => p.page_number === warning.source_page)))}>
+                      <button type="button" className="font-semibold link-sweep" onClick={() => setSelected(Math.max(0, pages.findIndex((p) => p.page_number === warning.source_page)))}>
                         {label} {warning.source_page}:{' '}
                       </button>
                     )}

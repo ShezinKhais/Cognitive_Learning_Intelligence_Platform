@@ -10,10 +10,17 @@ import { requestIntro } from '../components/shell/intro'
 import { buttonStyles } from '../components/ui/button'
 import { cn } from '../components/ui/cn'
 
-// A class answering a run of questions: the share right, then wrong.
-const STRIP = [
-  [0.8, 0.15], [0.62, 0.3], [0.9, 0.08], [0.45, 0.45], [0.7, 0.22], [0.86, 0.1], [0.58, 0.3], [0.93, 0.05],
-] as const
+// How a class did on each question of a lecture so far, and what each was on.
+const RESULTS = [
+  { label: 'Q1', right: 0.82, topic: 'Assets and entry points' },
+  { label: 'Q2', right: 0.68, topic: 'Trust boundaries' },
+  { label: 'Q3', right: 0.9, topic: 'STRIDE categories' },
+  { label: 'Q4', right: 0.46, topic: 'Token signing' },
+  { label: 'Q5', right: 0.74, topic: 'Data flow diagrams' },
+  { label: 'Q6', right: 0.86, topic: 'Spoofing' },
+  { label: 'Q7', right: 0.61, topic: 'Repudiation' },
+  { label: 'Q8', right: 0.93, topic: 'Mitigations' },
+]
 
 const EASE = [0.16, 1, 0.3, 1] as const
 
@@ -87,7 +94,7 @@ export default function LoginPage() {
         >
           <div className="mb-10 lg:hidden">
             <Wordmark />
-            <PhoneStrip />
+            <p className="mt-3 max-w-xs text-sm text-muted-foreground">Know how the class is doing while you are still teaching it.</p>
           </div>
           <h2 className="text-2xl font-bold">Sign in</h2>
           <p className="mt-1 text-muted-foreground">With your C.L.I.P account.</p>
@@ -187,12 +194,13 @@ export default function LoginPage() {
 }
 
 /**
- * The left half on a wide screen: one lecture, told in a few seconds. The
- * headline's last words get the highlighter, the class answers question by
- * question, and the open checkpoint counts its answers in. It plays once.
+ * The left half on a wide screen: one live lecture, as the lecturer sees it.
+ * The headline's last words get the highlighter, then a preview of the live
+ * page builds itself: the open question counting its answers in, how the
+ * class did on each question so far, and the topic worth going over again.
+ * It plays once.
  */
 function Story() {
-  const reduced = useReducedMotion()
   return (
     <section className="relative hidden flex-col justify-between overflow-hidden border-r border-border bg-card px-14 py-12 lg:flex">
       {/* A faint grid of ruled lines, like the page of a notebook. */}
@@ -200,6 +208,9 @@ function Story() {
         aria-hidden
         className="pointer-events-none absolute inset-0 opacity-[0.5] [background-image:linear-gradient(to_bottom,var(--border)_1px,transparent_1px)] [background-size:100%_2.25rem] [mask-image:linear-gradient(to_bottom,transparent,black_30%,black_70%,transparent)]"
       />
+      {/* Two soft lights behind the preview, in the brand indigo and the highlighter. */}
+      <div aria-hidden className="pointer-events-none absolute -bottom-24 -right-24 h-[26rem] w-[26rem] rounded-full bg-primary/15 blur-3xl" />
+      <div aria-hidden className="pointer-events-none absolute bottom-40 -left-16 h-56 w-56 rounded-full bg-highlight/20 blur-3xl" />
       <div className="relative">
         <Wordmark />
       </div>
@@ -234,54 +245,7 @@ function Story() {
           Questions drawn from your slides, answered live, and the topics that tripped the room up, before the lecture ends.
         </p>
 
-        <div className="mt-10 flex items-end gap-6">
-          <ol className="flex h-28 items-end gap-2" aria-hidden>
-            {STRIP.map(([right, wrong], index) => (
-              <li key={index} className="flex h-full w-5 flex-col-reverse overflow-hidden rounded bg-muted">
-                <motion.span
-                  className="block bg-success"
-                  initial={{ height: 0 }}
-                  animate={{ height: `${right * 100}%` }}
-                  transition={{ delay: 0.9 + index * 0.08, duration: 0.6, ease: EASE }}
-                />
-                <motion.span
-                  className="block bg-critical/80"
-                  initial={{ height: 0 }}
-                  animate={{ height: `${wrong * 100}%` }}
-                  transition={{ delay: 1 + index * 0.08, duration: 0.6, ease: EASE }}
-                />
-              </li>
-            ))}
-            <motion.li
-              className="ml-1 h-full w-5 rounded border border-highlight-foreground/20 bg-highlight"
-              initial={{ opacity: 0, scaleY: 0.3 }}
-              animate={{ opacity: 1, scaleY: 1 }}
-              style={{ originY: 1 }}
-              transition={{ delay: 1.7, duration: 0.5, ease: EASE }}
-            />
-          </ol>
-
-          <motion.div
-            aria-hidden
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.9, duration: 0.5, ease: EASE }}
-            className="w-56 rounded-lg border border-border bg-background px-4 py-3"
-          >
-            <p className="flex items-center gap-2 text-xs font-semibold text-primary">
-              <span className="relative flex h-2 w-2">
-                {!reduced && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60 [animation-iteration-count:3]" />}
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
-              </span>
-              Question 9 is open
-            </p>
-            <p className="mt-1.5 text-sm font-semibold leading-snug">Which control stops tampering with a signed token?</p>
-            <p className="mt-2 text-xs text-muted-foreground">
-              <CountUp to={24} delay={2.2} /> of 28 answered
-            </p>
-          </motion.div>
-        </div>
-        <p className="mt-3 text-sm text-muted-foreground">Each tick is a question; the yellow one is still open.</p>
+        <LivePreview />
       </div>
 
       <p className="relative text-sm text-muted-foreground">Works in the browser and inside Microsoft Teams.</p>
@@ -289,26 +253,96 @@ function Story() {
   )
 }
 
-/** On a phone the story is too long; the ticks alone carry it. */
-function PhoneStrip() {
+/** A picture of the lecturer's live page, labelled so it explains itself. */
+function LivePreview() {
+  const reduced = useReducedMotion()
+  const weakest = RESULTS.reduce((low, result) => (result.right < low.right ? result : low))
   return (
-    <ol className="mt-6 flex h-10 items-end gap-1.5" aria-hidden>
-      {STRIP.map(([right], index) => (
-        <motion.li
-          key={index}
-          className="w-3 rounded-sm bg-primary/80"
-          initial={{ height: 0 }}
-          animate={{ height: `${right * 100}%` }}
-          transition={{ delay: 0.2 + index * 0.06, duration: 0.5, ease: EASE }}
-        />
-      ))}
-      <motion.li
-        className="w-3 rounded-sm bg-highlight"
-        initial={{ height: 0 }}
-        animate={{ height: '100%' }}
-        transition={{ delay: 0.75, duration: 0.5, ease: EASE }}
-      />
-    </ol>
+    <motion.figure
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.8, duration: 0.6, ease: EASE }}
+      className="mt-10 max-w-md overflow-hidden rounded-xl border border-border bg-background shadow-[0_24px_60px_-24px_rgba(27,28,43,0.35)]"
+    >
+      <div aria-hidden>
+        <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
+          <p className="text-sm font-semibold">Week 7, Threat modelling</p>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+            <span className="relative flex h-1.5 w-1.5">
+              {!reduced && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60 [animation-iteration-count:3]" />}
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
+            </span>
+            Live
+          </span>
+        </div>
+
+        {/* The open question. */}
+        <div className="border-b border-border px-4 py-3.5">
+          <p className="text-xs font-semibold text-muted-foreground">Question 9, open now</p>
+          <p className="mt-1 text-[0.95rem] font-semibold leading-snug">Which control stops tampering with a signed token?</p>
+          <div className="mt-3 flex items-center gap-3">
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+              <motion.div
+                className="h-full rounded-full bg-primary"
+                initial={{ width: 0 }}
+                animate={{ width: `${(24 / 28) * 100}%` }}
+                transition={{ delay: 1.3, duration: 1.4, ease: EASE }}
+              />
+            </div>
+            <p className="shrink-0 text-xs text-muted-foreground">
+              <CountUp to={24} delay={1.3} /> of 28 answered
+            </p>
+          </div>
+        </div>
+
+        {/* How the class did on each question so far. */}
+        <div className="px-4 pb-3 pt-3.5">
+          <p className="text-xs font-semibold text-muted-foreground">Answered right, by question</p>
+          <ol className="mt-3 flex h-20 items-end gap-1.5">
+            {RESULTS.map((result, index) => {
+              const low = result === weakest
+              return (
+                <li key={result.label} className="flex h-full flex-1 flex-col items-center gap-1">
+                  <div className="flex w-full flex-1 items-end overflow-hidden rounded-[3px] bg-muted">
+                    <motion.div
+                      className={cn('w-full rounded-[3px]', low ? 'bg-warning' : 'bg-success/85')}
+                      initial={{ height: 0 }}
+                      animate={{ height: `${result.right * 100}%` }}
+                      transition={{ delay: 1.1 + index * 0.06, duration: 0.6, ease: EASE }}
+                    />
+                  </div>
+                  <span className={cn('text-[0.68rem] tabular-nums', low ? 'font-bold text-foreground' : 'text-muted-foreground')}>
+                    {result.label}
+                  </span>
+                </li>
+              )
+            })}
+            {/* The open question has no result yet. */}
+            <li className="flex h-full flex-1 flex-col items-center gap-1">
+              <div className="w-full flex-1 rounded-[3px] border border-dashed border-primary/50 bg-primary/5" />
+              <span className="text-[0.68rem] font-semibold text-primary">Q9</span>
+            </li>
+          </ol>
+        </div>
+
+        {/* The topic the chart points at. */}
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 2, duration: 0.5, ease: EASE }}
+          className="mx-4 mb-4 flex items-center justify-between gap-3 rounded-lg bg-warning/15 px-3 py-2"
+        >
+          <p className="text-sm">
+            <span className="font-semibold">Go over again:</span> {weakest.topic}
+          </p>
+          <p className="shrink-0 text-xs font-semibold tabular-nums">{Math.round(weakest.right * 100)}% right</p>
+        </motion.div>
+      </div>
+      <figcaption className="sr-only">
+        A live lecture in C.L.I.P: question 9 is open with 24 of 28 students answered, and {weakest.topic} is the topic the class
+        found hardest so far.
+      </figcaption>
+    </motion.figure>
   )
 }
 

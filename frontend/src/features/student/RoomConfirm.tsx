@@ -32,7 +32,7 @@ export default function RoomConfirm({ onConfirm }: { onConfirm: (label: string) 
         <span>
           You are in <strong>{room}</strong>.
         </span>
-        <button type="button" className="font-semibold text-primary underline-offset-2 hover:underline" onClick={() => setEditing(true)}>
+        <button type="button" className="font-semibold text-primary link-sweep" onClick={() => setEditing(true)}>
           Change room
         </button>
       </p>

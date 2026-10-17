@@ -105,7 +105,7 @@ export function LiveSessionPanel({
               {!compact && (
                 <Link
                   to="/student"
-                  className="inline-flex items-center gap-1 text-sm font-medium text-info hover:underline"
+                  className="inline-flex items-center gap-1 text-sm font-medium text-info link-sweep"
                 >
                   <ChevronLeft aria-hidden="true" size={17} />
                   All sessions

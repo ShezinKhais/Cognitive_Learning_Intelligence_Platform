@@ -37,7 +37,7 @@ export default function EngagementDemo() {
               {series.label}
             </span>
           ))}
-          <button type="button" className="font-semibold text-primary hover:underline" onClick={() => setTable((value) => !value)} aria-pressed={table}>
+          <button type="button" className="font-semibold text-primary link-sweep" onClick={() => setTable((value) => !value)} aria-pressed={table}>
             {table ? 'Show chart' : 'Show as table'}
           </button>
         </div>

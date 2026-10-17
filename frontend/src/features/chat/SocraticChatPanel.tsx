@@ -97,7 +97,7 @@ export function SocraticChatPanel({
             <button
               type="button"
               onClick={clearError}
-              className="mt-2 font-medium text-info hover:underline"
+              className="mt-2 font-medium text-info link-sweep"
             >
               Dismiss
             </button>

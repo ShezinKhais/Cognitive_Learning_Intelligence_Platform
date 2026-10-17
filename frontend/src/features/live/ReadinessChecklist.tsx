@@ -62,7 +62,7 @@ export default function ReadinessChecklist({
                 <span className="block text-sm text-muted-foreground">{item.detail}</span>
               </span>
               {item.link && (
-                <Link to={item.link.to} className="shrink-0 text-sm font-semibold text-primary hover:underline">
+                <Link to={item.link.to} className="shrink-0 text-sm font-semibold text-primary link-sweep">
                   {item.link.label}
                 </Link>
               )}

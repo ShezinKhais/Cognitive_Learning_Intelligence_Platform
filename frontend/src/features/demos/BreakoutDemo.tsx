@@ -161,7 +161,7 @@ export default function BreakoutDemo() {
                         {room.answers > 0 && `, ${room.answers} ${room.answers === 1 ? 'answer' : 'answers'}`}
                       </p>
                       {state !== 'active' && (
-                        <button type="button" className="mt-2 text-sm font-semibold text-primary hover:underline" onClick={() => nudge(room.label)}>
+                        <button type="button" className="mt-2 text-sm font-semibold text-primary link-sweep" onClick={() => nudge(room.label)}>
                           Drop in on {room.label}
                         </button>
                       )}
