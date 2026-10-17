@@ -1,11 +1,14 @@
 import { useEffect, useId, useRef } from 'react'
 import { X } from 'lucide-react'
 
+import type { Role } from '../../api'
 import { shortcutLabel } from './quickJumpKeys'
 
 type Shortcut = { keys: string[]; does: string }
 
-const GROUPS: { title: string; where?: string; items: Shortcut[] }[] = [
+/** A group with roles is shown only to them: the review keys work on a page
+ * students cannot open. */
+const GROUPS: { title: string; where?: string; roles?: readonly Role[]; items: Shortcut[] }[] = [
   {
     title: 'Anywhere',
     items: [
@@ -17,6 +20,7 @@ const GROUPS: { title: string; where?: string; items: Shortcut[] }[] = [
   {
     title: 'Reviewing questions',
     where: 'with a question selected',
+    roles: ['lecturer', 'admin'],
     items: [
       { keys: ['J', 'K'], does: 'Next and previous question' },
       { keys: ['A'], does: 'Approve' },
@@ -29,7 +33,7 @@ const GROUPS: { title: string; where?: string; items: Shortcut[] }[] = [
 
 /** Every keyboard shortcut the app has, so they can be found rather than
  * guessed. */
-export default function ShortcutsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+export default function ShortcutsSheet({ open, role, onClose }: { open: boolean; role: Role; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const titleId = useId()
 
@@ -63,7 +67,7 @@ export default function ShortcutsSheet({ open, onClose }: { open: boolean; onClo
         </button>
       </div>
       <div className="max-h-[70vh] space-y-6 overflow-auto px-6 py-5">
-        {GROUPS.map((group) => (
+        {GROUPS.filter((group) => !group.roles || group.roles.includes(role)).map((group) => (
           <section key={group.title}>
             <h3 className="text-sm font-semibold">
               {group.title}

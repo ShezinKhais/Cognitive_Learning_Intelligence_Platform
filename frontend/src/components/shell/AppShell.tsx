@@ -75,7 +75,7 @@ export default function AppShell({ user, children }: { user: CurrentUser; childr
         {intro && <IntroOverlay firstName={user.full_name.split(' ')[0]} onDone={finishIntro} />}
       </AnimatePresence>
       <QuickJump user={user} open={jumping} onClose={() => setJumping(false)} />
-      <ShortcutsSheet open={shortcuts} onClose={() => setShortcuts(false)} />
+      <ShortcutsSheet open={shortcuts} role={user.role} onClose={() => setShortcuts(false)} />
       <div className="min-h-screen bg-background lg:grid lg:grid-cols-[15rem_1fr]">
         <a
           href="#content"
