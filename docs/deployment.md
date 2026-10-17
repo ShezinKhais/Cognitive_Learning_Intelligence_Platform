@@ -104,9 +104,11 @@ Other behaviour:
 
 - `X-Request-ID` from the caller is passed on; if absent, nginx makes one. The backend
   puts it in every log line for the request.
-- `X-Forwarded-For` is set and uvicorn is started with `--proxy-headers`, so audit and
-  login-lockout records carry the client's address and not the proxy's. The backend
-  trusts any sender (`FORWARDED_ALLOW_IPS=*`), which is safe only because its port is
+- `X-Forwarded-For` is replaced, not appended to, and uvicorn is started with
+  `--proxy-headers`, so audit, login-lockout and sign-in limit records carry the
+  client's address and not the proxy's. With `FORWARDED_ALLOW_IPS=*` uvicorn believes
+  the first address in the header, so an appended header would let a client name any
+  address it liked. The backend trusting any sender is safe only because its port is
   not published.
 - Uploads: nginx allows bodies up to 60 MB. The backend limit is 50 MB.
 - Compression: gzip for scripts, styles, JSON, SVG and wasm over 1 KB. The tutor's
@@ -236,7 +238,7 @@ Also, the things the backend does not check:
 
 | Not covered | Notes |
 |---|---|
-| TLS | The stack serves plain HTTP. Teams requires HTTPS for tab pages. Terminate TLS in front of `web` (a reverse proxy, a load balancer, or a tunnel) and keep the `Upgrade` headers on `/ws/`. |
+| TLS | The stack serves plain HTTP. Teams requires HTTPS for tab pages. Terminate TLS in front of `web` (a reverse proxy, a load balancer, or a tunnel) and keep the `Upgrade` headers on `/ws/`. It must send `X-Forwarded-For`. nginx believes it from loopback and the Docker network only; a proxy anywhere else needs a `set_real_ip_from` line in `frontend/nginx.conf`, or every user shares its address for the sign-in limit. |
 | Teams app registration and tunnel | See `teams-app/README.md`. The manifest needs the public HTTPS host that serves this stack. |
 | More than one host | The backend is one process and its live state is in memory. |
 | Backups | The database volume is not backed up. Use `pg_dump` against the `db` container. |
