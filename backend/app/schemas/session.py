@@ -48,13 +48,10 @@ class EngagementStatus(StrEnum):
 
 
 class ReadinessIssueCode(StrEnum):
-    """Why a session is not ready to start, or what the lecturer should know.
+    """What the lecturer should know before starting a session.
 
-    Only NO_APPROVED_QUESTIONS always blocks the start. NO_MATERIAL and
-    MATERIAL_PROCESSING explain why there is no question to deliver, so they
-    block alongside it and are warnings when one is staged. MATERIAL_FAILED is
-    only ever a warning: one broken upload should not hold back a class whose
-    other material is fine.
+    Each one is a warning. None of them stops the start: a session may begin
+    with no staged question and have one staged while it is live.
     """
 
     NO_MATERIAL = "no_material"
@@ -182,13 +179,33 @@ class EngagementOut(BaseModel):
     computed_at: datetime
 
 
+class ActionItem(BaseModel):
+    """One thing a student could do next, worked out from their marked answers.
+
+    Only comprehension and missed questions give rise to one. Engagement never
+    does: how someone's camera or click rate read says nothing about what they
+    should study.
+    """
+
+    kind: Literal["revisit_topic", "review_missed"]
+    text: ShownText
+    topic: str | None = None
+
+
 class StudentSessionSummary(BaseModel):
+    """What one student did in one session. Engagement and comprehension sit in
+    separate fields and are never combined into one figure."""
+
     student_id: UUID
     session_id: UUID
     questions_attempted: int
     questions_missed: int
     engagement: EngagementOut
     comprehension_by_topic: dict[str, ComprehensionLabel] = Field(default_factory=dict)
+    action_items: list[ActionItem] = Field(
+        default_factory=list,
+        description="Suggested next steps from comprehension and missed questions only.",
+    )
 
 
 class AlertOut(BaseModel):

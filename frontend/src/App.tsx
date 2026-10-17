@@ -33,6 +33,10 @@ const QuestionReview = lazy(() => import('./pages/QuestionReview'))
 const SessionReportPage = lazy(() => import('./pages/SessionReportPage'))
 const StudentHomePage = lazy(() => import('./pages/StudentHomePage'))
 const StudentLiveSessionPage = lazy(() => import('./pages/StudentLiveSessionPage'))
+const StudentReviewPage = lazy(() => import('./pages/StudentReviewPage'))
+const StudentReviewHistoryPage = lazy(() =>
+  import('./pages/StudentReviewPage').then((page) => ({ default: page.StudentReviewHistoryPage })),
+)
 const StudentSummaryPage = lazy(() => import('./pages/StudentSummaryPage'))
 const SystemStatusPage = lazy(() => import('./pages/SystemStatusPage'))
 const TeamsConfigPage = lazy(() => import('./pages/TeamsConfigPage'))
@@ -103,6 +107,14 @@ export default function App() {
             <Route
               path="session/:sessionId/summary"
               element={<StudentSummaryPage />}
+            />
+            <Route
+              path="reviews"
+              element={<StudentReviewHistoryPage />}
+            />
+            <Route
+              path="reviews/:sessionId"
+              element={<StudentReviewPage />}
             />
             <Route
               path="progress"

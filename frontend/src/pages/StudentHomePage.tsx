@@ -50,6 +50,12 @@ export default function StudentHomePage() {
         {groups.live.length > 0 && <Group heading="Live now" sessions={groups.live} />}
         {groups.prepared.length > 0 && <Group heading="Coming up" sessions={groups.prepared} />}
         {groups.finished.length > 0 && <Group heading="Finished" sessions={groups.finished} />}
+
+        {!LIVE_SESSIONS_ENABLED && (
+          <Link to="/student/reviews" className={buttonStyles({ intent: 'secondary' })}>
+            Go over past sessions
+          </Link>
+        )}
       </PageBody>
     </>
   )
@@ -91,9 +97,14 @@ function SessionCard({ session }: { session: StudentSession & { paused: boolean 
           </Link>
         )}
         {finished && (
-          <Link to={`/student/session/${session.id}/summary`} className={buttonStyles({ intent: 'secondary' })}>
-            See how you did
-          </Link>
+          <span className="flex flex-wrap gap-2">
+            <Link to={`/student/session/${session.id}/summary`} className={buttonStyles({ intent: 'secondary' })}>
+              See how you did
+            </Link>
+            <Link to={`/student/reviews/${session.id}`} className={buttonStyles({ intent: 'quiet' })}>
+              Your answers
+            </Link>
+          </span>
         )}
       </div>
     </article>

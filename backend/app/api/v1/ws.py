@@ -51,6 +51,7 @@ from app.auth.service import granted_consents, user_from_token
 from app.core.security import TokenValidationError
 from app.realtime.accommodations import has_accommodation
 from app.realtime.classroom import classroom
+from app.realtime.event_limit import CLOSE_RATE_LIMITED, MAX_SOCKETS_PER_USER, EventLimit
 from app.realtime.hub import CLOSE_TRY_AGAIN_LATER, Connection, hub
 from app.realtime.rooms import Refusal
 from app.realtime.signals import Throttle
@@ -362,7 +363,9 @@ async def session_socket(
     rooms = Throttle(ROOM_CONFIRM_EVERY_SECONDS, ROOM_CONFIRM_BURST, time.monotonic)
 
     try:
-        if not await hub.connect(connection, last_seq, stream_id, welcome):
+        if not await hub.connect(
+            connection, last_seq, stream_id, welcome, max_per_user=MAX_SOCKETS_PER_USER
+        ):
             return
         if session_id is not None and ConsentType.TERMS not in classroom.consents.granted(user_id):
             # Withdrawn while this socket was being admitted, too late for the
@@ -373,8 +376,14 @@ async def session_socket(
             seat = (session_id, recorded)
             await classroom.arrived(session_id, user_id, role, recorded)
 
+        limit = EventLimit()
         while True:
             raw = await _receive_event(websocket)
+
+            if not limit.allow():
+                log.warning("security_event=RATE_LIMITED transport=websocket user_id=%s", user_id)
+                await websocket.close(code=CLOSE_RATE_LIMITED, reason="too many events")
+                return
 
             if raw is None:
                 await _send(

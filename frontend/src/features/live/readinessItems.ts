@@ -31,7 +31,8 @@ export function readinessItems(readiness: SessionReadiness): ReadinessItem[] {
       detail:
         readiness.deliverable_questions > 0
           ? `${readiness.deliverable_questions} ready to send in class.`
-          : 'Approve questions, then make them ready to send.',
+          : // Not a blocker: a class may start with none and have one made ready while it runs.
+            'None yet. You can start, and make questions ready during the class.',
       link: readiness.deliverable_questions > 0 ? undefined : { to: '/lecturer/materials', label: 'Review questions' },
     },
   ]

@@ -194,15 +194,25 @@ def create_app() -> FastAPI:
         finally:
             request_id_var.reset(token)
         response.headers["X-Request-ID"] = rid
-        # nginx adds the page's headers in a deployment (frontend/nginx.conf).
-        # These hold when the API is reached any other way. An API answer is
-        # data, never a page: nothing may frame it or run from it.
+        return response
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        """Headers every response should carry.
+
+        No X-Frame-Options or frame-ancestors: a Teams tab is this app in an
+        iframe, so framing is deliberate. API replies hold student data and
+        are never cached; a route that sets its own Cache-Control keeps it.
+        """
+        response = await call_next(request)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
-        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        # nginx adds the page's own policy in a deployment (frontend/nginx.conf).
+        # An API answer is data, never a page, so nothing in it may load or run.
         if not request.url.path.startswith(("/docs", "/redoc")):
-            response.headers.setdefault(
-                "Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'"
-            )
+            response.headers.setdefault("Content-Security-Policy", "default-src 'none'")
+        if request.url.path.startswith(API_V1):
+            response.headers.setdefault("Cache-Control", "no-store")
         return response
 
     register_error_handlers(app)

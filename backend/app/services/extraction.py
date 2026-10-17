@@ -17,9 +17,10 @@ extraction upgrades to docling. When docling is absent, the pypdf result is
 kept but flagged as "pypdf-low-quality" with an honest warning, so corrupted
 text never flows silently into the embedding model.
 
-OCR stays off because it added 6 headings out of 116 and returned empty results
-on most images of a normal text-layer PDF. It is worth its cost only on scanned
-pages, which is a later phase.
+OCR stays off in docling because it added 6 headings out of 116 and returned
+empty results on most images of a normal text-layer PDF. It is worth its cost
+only on scanned pages: a PDF page with no text layer is read with Tesseract
+when it is installed (see ocr.py), and skipped with a warning when it is not.
 """
 
 from __future__ import annotations
@@ -27,7 +28,9 @@ from __future__ import annotations
 import io
 import logging
 import re
+import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -132,7 +135,7 @@ class ProcessingResult:
     # always report 1 because Word/plain-text have no fixed pagination without
     # rendering. BBIS persists this as-is - it is a known format limitation.
     page_count: int = 0
-    parser_used: str = ""  # "pypdf" | "docling" | "pypdf-low-quality" | "python-pptx" | ...
+    parser_used: str = ""  # "pypdf" | "pypdf+ocr" | "docling" | "pypdf-low-quality" | ...
     warnings: list[str] = field(default_factory=list)
 
 
@@ -282,7 +285,9 @@ def looks_letter_spaced(text: str) -> bool:
     return singles / len(words) > 0.4
 
 
-def read_pdf_pypdf(path: str, with_images: bool = False) -> list[ExtractedElement]:
+def read_pdf_pypdf(
+    path: str, with_images: bool = False, ocr: Callable[[bytes], str] | None = None
+) -> list[ExtractedElement]:
     """Default PDF reader (Option B). Lightweight, installs everywhere.
 
     Known to mangle designed decks (letter-spacing), so callers should run
@@ -291,13 +296,24 @@ def read_pdf_pypdf(path: str, with_images: bool = False) -> list[ExtractedElemen
     With `with_images`, a page's embedded images come too, so they can be
     captioned: a page with no text is recorded as its largest image, and a
     page with text gains its largest few after the text.
+
+    With `ocr`, a page with no text layer, such as a scanned one, is read from
+    its largest image instead, and kept as text when that finds some.
     """
     from pypdf import PdfReader
+
+    from app.services.ocr import has_text
 
     els = []
     for i, page in enumerate(PdfReader(path).pages):
         txt = page.extract_text() or ""
-        images = _pypdf_images(page) if with_images else []
+        scanned = not txt.strip()
+        images = _pypdf_images(page) if with_images or (scanned and ocr) else []
+        if scanned and ocr and images:
+            read = ocr(images[0])
+            if has_text(read):
+                els.append(ExtractedElement("text", clean_text(read), i + 1))
+                continue
         if txt.strip():
             els.append(ExtractedElement("text", clean_text(txt), i + 1))
             els.extend(
@@ -310,7 +326,7 @@ def read_pdf_pypdf(path: str, with_images: bool = False) -> list[ExtractedElemen
                     "image",
                     IMAGE_ONLY_PAGE,
                     i + 1,
-                    image=images[0] if images else None,
+                    image=images[0] if images and with_images else None,
                     whole_page=True,
                 )
             )
@@ -749,20 +765,98 @@ def _run_reader(reader, path: str, **options) -> list[ExtractedElement]:
         ) from exc
 
 
+class OcrBudget:
+    """Reads at most MAX_OCR_PAGES pages with OCR, within MAX_OCR_SECONDS per
+    material, and counts what it did."""
+
+    def __init__(
+        self,
+        read: Callable[[bytes], str],
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        from app.services.ocr import MAX_OCR_PAGES, MAX_OCR_SECONDS, has_text
+
+        self._read = read
+        self._has_text = has_text
+        self._limit = MAX_OCR_PAGES
+        self._seconds = MAX_OCR_SECONDS
+        self._clock = clock
+        self._deadline: float | None = None
+        self.read_pages = 0
+        self.attempted = 0
+        self.over_limit = 0
+        self.over_time = 0
+
+    def __call__(self, image: bytes) -> str:
+        if self.attempted >= self._limit:
+            self.over_limit += 1
+            return ""
+        now = self._clock()
+        if self._deadline is None:
+            self._deadline = now + self._seconds
+        elif now >= self._deadline:
+            self.over_time += 1
+            return ""
+        self.attempted += 1
+        text = self._read(image)
+        if self._has_text(text):
+            self.read_pages += 1
+        return text
+
+    def notes(self) -> list[str]:
+        notes = []
+        if self.read_pages:
+            notes.append(
+                f"{self.read_pages} scanned page(s) were read with OCR; "
+                "check them for misread words."
+            )
+        unread = self.attempted - self.read_pages
+        if unread:
+            # OCR failed or timed out, or the page is a picture with no text:
+            # either way the lecturer should know it was tried.
+            notes.append(
+                f"{unread} scanned page(s) were tried with OCR but no text was found; "
+                "check that they are readable."
+            )
+        if self.over_limit:
+            notes.append(
+                f"{self.over_limit} scanned page(s) were not read: only the first "
+                f"{self._limit} are, per material."
+            )
+        if self.over_time:
+            notes.append(
+                f"{self.over_time} scanned page(s) were not read: OCR stops after "
+                f"{self._seconds:.0f} seconds per material."
+            )
+        return notes
+
+
+NO_OCR_NOTE = (
+    "Scanned pages have no text to read. Installing Tesseract on the server "
+    "lets them be read with OCR."
+)
+
+
 def extract(
-    path: str, ext: str, with_images: bool = False
+    path: str,
+    ext: str,
+    with_images: bool = False,
+    ocr: Callable[[bytes], str] | None = None,
 ) -> tuple[list[ExtractedElement], str, list[str]]:
     """Pick a reader for the format. Returns elements, parser name, warnings.
 
     `with_images` keeps each image's bytes on its element, for captioning.
-    Word documents do not supply them yet.
+    Word documents do not supply them yet. `ocr` reads the scanned pages of a
+    PDF (see ocr.py); without it they are skipped.
     """
     warnings: list[str] = []
     images = {"with_images": with_images}
 
     if ext == "pdf":
         # Option B: pypdf is the default (light, installs everywhere).
-        elements = _run_reader(read_pdf_pypdf, path, **images)
+        budget = OcrBudget(ocr) if ocr else None
+        scans = {"ocr": budget} if budget else {}
+        elements = _run_reader(read_pdf_pypdf, path, **images, **scans)
         joined = " ".join(e.content for e in elements if e.el_type != "image")
 
         # quality guard: if pypdf produced letter-spaced garbage, try to
@@ -784,6 +878,12 @@ def extract(
                 )
                 return elements, "pypdf-low-quality", warnings
 
+        if budget:
+            warnings.extend(budget.notes())
+            if budget.read_pages:
+                return elements, "pypdf+ocr", warnings
+        elif any(e.content == IMAGE_ONLY_PAGE for e in elements):
+            warnings.append(NO_OCR_NOTE)
         return elements, "pypdf", warnings
 
     if ext == "pptx":
@@ -838,16 +938,22 @@ def require_readable_content(elements: list[ExtractedElement], details: dict) ->
         raise ValidationError("No readable text found in this file", details)
 
 
-def extract_material(path: str, max_bytes: int, *, with_images: bool = False) -> Extraction:
+def extract_material(
+    path: str,
+    max_bytes: int,
+    *,
+    with_images: bool = False,
+    ocr: Callable[[bytes], str] | None = None,
+) -> Extraction:
     """Validate the file and read it into elements. The slow part: run it off
     the event loop.
 
     `with_images` keeps image bytes on the elements for captioning
     (image_captioning.add_captions), which runs between this and
-    finish_material.
+    finish_material. `ocr` reads scanned PDF pages (see ocr.py).
     """
     ext = validate_file(path, max_bytes)
-    elements, parser, warnings = extract(path, ext, with_images=with_images)
+    elements, parser, warnings = extract(path, ext, with_images=with_images, ocr=ocr)
     # Images that will be captioned may be all there is, as in a scanned PDF:
     # finish_material decides once they are described.
     if not any(e.image for e in elements):
@@ -884,9 +990,13 @@ def finish_material(extraction: Extraction, material_id: uuid.UUID) -> Processin
 
 
 def process_material(
-    path: str, material_id: uuid.UUID, max_bytes: int = 52_428_800
+    path: str,
+    material_id: uuid.UUID,
+    max_bytes: int = 52_428_800,
+    *,
+    ocr: Callable[[bytes], str] | None = None,
 ) -> ProcessingResult:
     """Entry point when images are not captioned: validate, extract, clean,
     chunk. The pipeline calls extract_material and finish_material itself, so
     it can caption in between."""
-    return finish_material(extract_material(path, max_bytes), material_id)
+    return finish_material(extract_material(path, max_bytes, ocr=ocr), material_id)

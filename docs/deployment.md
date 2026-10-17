@@ -122,9 +122,10 @@ Other behaviour:
   requires.
 - HSTS is ignored over plain http, so a local demo is unaffected. It takes effect once
   TLS is terminated in front of nginx.
-- The API sets `nosniff`, `Referrer-Policy` and `Content-Security-Policy: default-src
-  'none'; frame-ancestors 'none'` on its own answers, for any route to it that does not
-  pass through nginx.
+- The API sets `nosniff`, `Referrer-Policy: no-referrer` and `Content-Security-Policy:
+  default-src 'none'` on its own answers, for any route to it that does not pass through
+  nginx. It sets no `frame-ancestors`: framing is decided by nginx for the pages Teams
+  loads.
 
 ## Sign-in
 

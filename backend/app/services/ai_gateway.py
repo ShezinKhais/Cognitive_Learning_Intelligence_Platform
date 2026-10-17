@@ -57,8 +57,8 @@ import itertools
 import logging
 import random
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
-from dataclasses import dataclass
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum
 from functools import lru_cache
 from types import SimpleNamespace
@@ -73,6 +73,11 @@ from app.core.errors import ServiceUnavailableError
 log = logging.getLogger("clip.ai")
 
 Message = dict[str, str]
+# Model settings a caller may set on one request, passed to the model as they
+# are: sampling for repeatable marking, a JSON schema for the reply. Anything
+# else is refused, so a misspelt option fails loudly instead of being dropped.
+MODEL_OPTIONS = frozenset({"temperature", "seed", "top_p", "response_format"})
+ModelOptions = Mapping[str, object]
 T = TypeVar("T")
 
 # What the warm-up sends. One token of output is enough to make the model
@@ -156,11 +161,21 @@ class ModelClient(Protocol):
     """One attempt at the model. No queueing, retrying or timing of its own."""
 
     async def complete(
-        self, model: str, messages: Sequence[Message], *, max_tokens: int | None
+        self,
+        model: str,
+        messages: Sequence[Message],
+        *,
+        max_tokens: int | None,
+        options: ModelOptions | None = None,
     ) -> str: ...
 
     def stream(
-        self, model: str, messages: Sequence[Message], *, max_tokens: int | None
+        self,
+        model: str,
+        messages: Sequence[Message],
+        *,
+        max_tokens: int | None,
+        options: ModelOptions | None = None,
     ) -> AsyncIterator[str]: ...
 
     async def embed(self, model: str, texts: Sequence[str]) -> list[list[float]]: ...
@@ -190,22 +205,35 @@ class OpenAIModelClient:
         self._client = client
 
     async def complete(
-        self, model: str, messages: Sequence[Message], *, max_tokens: int | None
+        self,
+        model: str,
+        messages: Sequence[Message],
+        *,
+        max_tokens: int | None,
+        options: ModelOptions | None = None,
     ) -> str:
         try:
             response = await self._client.chat.completions.create(
-                model=model, messages=list(messages), **_options(max_tokens)
+                model=model, messages=list(messages), **_options(max_tokens, options)
             )
         except openai.OpenAIError as exc:
             raise _translated(exc) from exc
         return response.choices[0].message.content or ""
 
     async def stream(
-        self, model: str, messages: Sequence[Message], *, max_tokens: int | None
+        self,
+        model: str,
+        messages: Sequence[Message],
+        *,
+        max_tokens: int | None,
+        options: ModelOptions | None = None,
     ) -> AsyncIterator[str]:
         try:
             response = await self._client.chat.completions.create(
-                model=model, messages=list(messages), stream=True, **_options(max_tokens)
+                model=model,
+                messages=list(messages),
+                stream=True,
+                **_options(max_tokens, options),
             )
         except openai.OpenAIError as exc:
             raise _translated(exc) from exc
@@ -230,8 +258,11 @@ class OpenAIModelClient:
         return [item.embedding for item in sorted(response.data, key=lambda item: item.index)]
 
 
-def _options(max_tokens: int | None) -> dict[str, int]:
-    return {} if max_tokens is None else {"max_tokens": max_tokens}
+def _options(max_tokens: int | None, options: ModelOptions | None = None) -> dict[str, object]:
+    sent: dict[str, object] = dict(options or {})
+    if max_tokens is not None:
+        sent["max_tokens"] = max_tokens
+    return sent
 
 
 # -- requests and results -----------------------------------------------------------
@@ -299,6 +330,13 @@ class AiRequest:
     max_attempts: int | None = None
     queue_timeout: float | None = None
     fallback: str | None = None
+    # Passed to the model as they are; only names in MODEL_OPTIONS.
+    options: ModelOptions = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        unknown = set(self.options) - MODEL_OPTIONS
+        if unknown:
+            raise TypeError(f"unsupported model options: {', '.join(sorted(unknown))}")
 
 
 @dataclass(frozen=True)
@@ -560,7 +598,10 @@ class AiGateway:
         async def attempt(model: str) -> str:
             async with asyncio.timeout(request.timeout or self._limits.request_timeout):
                 return await self._client.complete(
-                    model, request.messages, max_tokens=request.max_tokens
+                    model,
+                    request.messages,
+                    max_tokens=request.max_tokens,
+                    options=request.options,
                 )
 
         try:
@@ -664,7 +705,12 @@ class AiGateway:
             delivered = False
             wait = self._limits.first_token_timeout
             try:
-                pieces = self._client.stream(model, request.messages, max_tokens=request.max_tokens)
+                pieces = self._client.stream(
+                    model,
+                    request.messages,
+                    max_tokens=request.max_tokens,
+                    options=request.options,
+                )
                 async with contextlib.aclosing(pieces):
                     source = aiter(pieces)
                     while True:
@@ -963,13 +1009,16 @@ class AiGateway:
         max_attempts: int | None = None,
         queue_timeout: float | None = None,
     ) -> SimpleNamespace:
-        """An object with the one OpenAI method the question generator uses,
-        `chat.completions.create(model=..., messages=...)`, routed through
-        the gateway. It lets that code keep its shape while its calls take
-        their turn with everyone else's."""
+        """An object with the one OpenAI method the AI code uses,
+        `chat.completions.create(model=..., messages=..., **options)`, routed
+        through the gateway. It lets that code keep its shape while its calls
+        take their turn with everyone else's. The options in MODEL_OPTIONS
+        (sampling, a reply schema) reach the model; any other is a TypeError."""
         gateway = self
 
-        async def create(*, model: str, messages: Sequence[Message]) -> SimpleNamespace:
+        async def create(
+            *, model: str, messages: Sequence[Message], **options: object
+        ) -> SimpleNamespace:
             result = await gateway.complete(
                 AiRequest(
                     messages=messages,
@@ -979,6 +1028,7 @@ class AiGateway:
                     timeout=timeout,
                     max_attempts=max_attempts,
                     queue_timeout=queue_timeout,
+                    options=options,
                 )
             )
             message = SimpleNamespace(content=result.text)

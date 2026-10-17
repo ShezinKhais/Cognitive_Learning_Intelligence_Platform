@@ -4,10 +4,17 @@ import logging
 from functools import lru_cache
 from urllib.parse import unquote, urlparse, urlsplit
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 INSECURE_SECRET_KEY = "change-me-in-production"
+
+# The environments the application knows. Anything else is refused at startup:
+# an unrecognised name ("Production " with a stray space, "prod-eu", "staging")
+# used to count as development, which opens the interactive docs, CORS for the
+# dev server and the well-known development accounts on a deployed host.
+PRODUCTION_ENVIRONMENTS = frozenset({"production", "prod"})
+KNOWN_ENVIRONMENTS = PRODUCTION_ENVIRONMENTS | {"development", "dev", "local", "test", "testing"}
 DEV_DATABASE_PASSWORD = "clip_dev_password"
 
 # A signing key is only as strong as its entropy. Thirty-two characters is the
@@ -153,6 +160,10 @@ class Settings(BaseSettings):
     # three. Off until the question table stores reference answers and key
     # points: one saved without them has nothing to be marked against.
     free_text_questions_enabled: bool = False
+    # A second model call per multiple choice question that passes the
+    # grounding checks, rejecting one whose cited slide makes another option
+    # right too or contradicts the answer (generation.verify_draft).
+    question_verification_enabled: bool = True
 
     # Describing the pictures in uploaded material with a local vision model,
     # so diagrams can be searched and asked about. Off by default: on a laptop
@@ -170,6 +181,13 @@ class Settings(BaseSettings):
     # which can only be described once converted. Empty finds it on the PATH
     # or in /Applications; without it those images are reported, not described.
     libreoffice_path: str = ""
+    # OCR for scanned PDF pages, with Tesseract when it is installed (see
+    # app/services/ocr.py). Empty finds it on the PATH or in /opt/homebrew;
+    # without it scanned pages are skipped with a warning. The language is a
+    # Tesseract language code, such as "eng" or "eng+ara".
+    ocr_enabled: bool = True
+    tesseract_path: str = ""
+    ocr_language: str = "eng"
 
     # Written by `teams app create --env .env`
     client_id: str = ""
@@ -251,9 +269,21 @@ class Settings(BaseSettings):
     retention_purge_interval_hours: float = Field(default=24.0, gt=0)
     retention_purge_timeout_minutes: float = Field(default=30.0, gt=0)
 
+    @field_validator("clip_env")
+    @classmethod
+    def _known_environment(cls, value: str) -> str:
+        """Normalised, and refused if it names no environment we know."""
+        name = value.strip().lower()
+        if name not in KNOWN_ENVIRONMENTS:
+            raise ValueError(
+                f"CLIP_ENV {value!r} is not one of {', '.join(sorted(KNOWN_ENVIRONMENTS))}. "
+                "An unrecognised name is refused rather than treated as development."
+            )
+        return name
+
     @property
     def is_production(self) -> bool:
-        return self.clip_env.lower() in {"production", "prod"}
+        return self.clip_env in PRODUCTION_ENVIRONMENTS
 
     @model_validator(mode="after")
     def _check_room_timing(self) -> "Settings":

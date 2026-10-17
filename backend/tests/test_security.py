@@ -113,10 +113,8 @@ def test_api_answers_carry_the_baseline_security_headers(client: TestClient) -> 
     """For a deployment that reaches the API without nginx in front."""
     for response in (client.get("/api/v1/health"), client.get("/api/v1/auth/me")):
         assert response.headers["x-content-type-options"] == "nosniff"
-        assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
-        assert response.headers["content-security-policy"] == (
-            "default-src 'none'; frame-ancestors 'none'"
-        )
+        assert response.headers["referrer-policy"] == "no-referrer"
+        assert response.headers["content-security-policy"] == "default-src 'none'"
 
 
 def test_the_docs_page_keeps_its_own_scripts(client: TestClient) -> None:

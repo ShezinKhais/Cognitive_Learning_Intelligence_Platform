@@ -70,6 +70,11 @@ export default function StudentSummaryPage() {
         tabTitle={`How you did, ${session.title}`}
         back={{ to: '/student', label: 'My sessions' }}
         description={`${session.course_code}, ${formatWhen(session.ended_at ?? session.starts_at)}`}
+        actions={
+          <Link to={`/student/reviews/${sessionId}`} className={buttonStyles({ intent: 'secondary' })}>
+            Go over each answer
+          </Link>
+        }
       />
       <PageBody>
         <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
@@ -107,6 +112,19 @@ export default function StudentSummaryPage() {
             {summary && summary !== 'none' && <TopicList topics={summary.comprehension_by_topic} />}
           </Panel>
         </div>
+
+        {summary && summary !== 'none' && (summary.action_items?.length ?? 0) > 0 && (
+          <Panel title="Before the next class" className="mt-6">
+            <ul className="space-y-2.5">
+              {summary.action_items!.map((item, index) => (
+                <li key={`${item.kind}-${item.topic ?? index}`} className="flex gap-3">
+                  <span aria-hidden className="mt-2.5 h-px w-3 shrink-0 bg-muted-foreground" />
+                  <span>{item.text}</span>
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        )}
       </PageBody>
     </>
   )

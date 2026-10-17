@@ -13,6 +13,7 @@ test('a refused token sends the lecturer to sign in', () => {
 test('a refusal that retrying cannot fix stops the reconnect loop', () => {
   assert.equal(actionForClose(4003), 'stop')
   assert.equal(actionForClose(4400), 'stop')
+  assert.equal(actionForClose(4429), 'stop')
 })
 
 test('anything that can succeed next time is retried', () => {

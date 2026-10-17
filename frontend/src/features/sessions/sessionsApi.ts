@@ -119,6 +119,8 @@ export interface StudentSummary {
   questions_attempted: number
   questions_missed: number
   comprehension_by_topic: Record<string, string>
+  /** Next steps, from comprehension and missed questions only, never engagement. */
+  action_items?: { kind: 'revisit_topic' | 'review_missed'; text: string; topic: string | null }[]
 }
 
 /** A student's own summary, or null while the route is not built yet (501). */

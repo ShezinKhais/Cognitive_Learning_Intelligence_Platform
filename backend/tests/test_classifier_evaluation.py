@@ -126,3 +126,35 @@ def test_every_labelled_answer_belongs_to_a_question_with_a_checklist():
         assert 2 <= len(question["key_points"]) <= 4
         assert answer["label_luna"] in LABELS
         assert answer["label_nour"] in ("", *LABELS)
+
+
+def test_honest_confidence_has_no_calibration_error():
+    from app.services.classifier_evaluation import expected_calibration_error
+
+    # Says 0.75 and is right 3 times in 4.
+    assert expected_calibration_error([0.75] * 4, [True, True, True, False]) == pytest.approx(0.0)
+
+
+def test_overconfidence_is_the_gap_between_confidence_and_accuracy():
+    from app.services.classifier_evaluation import expected_calibration_error
+
+    # Says 0.95 but is right half the time.
+    assert expected_calibration_error([0.95] * 4, [True, False, True, False]) == pytest.approx(0.45)
+
+
+def test_calibration_error_weights_each_bin_by_its_size():
+    from app.services.classifier_evaluation import expected_calibration_error
+
+    confidences = [0.95, 0.95, 0.95, 0.55]
+    correct = [True, True, True, False]
+    # 0.95 bin: gap 0.05 over 3 of 4; 0.55 bin: gap 0.55 over 1 of 4.
+    assert expected_calibration_error(confidences, correct) == pytest.approx(
+        0.75 * 0.05 + 0.25 * 0.55
+    )
+
+
+def test_brier_score():
+    from app.services.classifier_evaluation import brier_score
+
+    assert brier_score([1.0, 0.0], [True, False]) == 0.0
+    assert brier_score([0.5, 0.5], [True, False]) == pytest.approx(0.25)
