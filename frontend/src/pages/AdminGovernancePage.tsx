@@ -1286,18 +1286,6 @@ export default function AdminGovernancePage() {
             </button>
           </form>
 
-          {targetType ===
-            'student' && (
-            <p className="mt-3 text-xs text-muted-foreground">
-              Student deletion
-              requests may be reviewed,
-              but individual-student
-              erasure is not yet
-              executable by the current
-              backend contract.
-            </p>
-          )}
-
           <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
             <div>
               <label
@@ -1546,7 +1534,7 @@ export default function AdminGovernancePage() {
                       request.request_id && (
                       <div
                         role="group"
-                        aria-label="Confirm irreversible session deletion"
+                        aria-label="Confirm irreversible deletion"
                         className="mt-4 rounded-lg border border-destructive/40 bg-destructive/10 p-4"
                       >
                         <p className="text-sm font-semibold">
@@ -1624,18 +1612,6 @@ export default function AdminGovernancePage() {
                         </div>
                       </div>
                     )}
-
-                    {request.status ===
-                      'approved' &&
-                      request.target_type ===
-                        'student' && (
-                        <p className="mt-3 text-xs text-muted-foreground">
-                          Student erasure
-                          execution is not
-                          available in the
-                          current backend.
-                        </p>
-                      )}
                   </article>
                 ),
               )
