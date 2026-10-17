@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Attention recorder (team only)</title>
+    <link rel="icon" href="data:," />
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+      fieldset { margin: 1rem 0; border: 1px solid #ccc; border-radius: 8px; }
+      label { margin-right: 1rem; }
+      button { margin: 0.25rem; padding: 0.4rem 0.8rem; }
+      video { width: 240px; border-radius: 8px; background: #000; }
+      #status { font-weight: 600; }
+      .labels button { display: block; width: 100%; text-align: left; }
+    </style>
+  </head>
+  <body>
+    <h1>Camera attention recorder</h1>
+    <p>
+      For C.L.I.P team members only, for the camera evaluation (#159). The camera picture stays
+      in this browser and is never saved. Each frame keeps only a few numbers (head angles, how
+      open the eyes are, where the iris is) and the label you are acting out. Use a participant
+      code, never a name.
+    </p>
+    <label><input type="checkbox" id="consent" /> I agree to my face being analysed on this device for this test.</label>
+    <fieldset>
+      <legend>Who and how</legend>
+      <label>Participant code <input id="participant" placeholder="P1" size="5" /></label>
+      <div id="conditions"></div>
+    </fieldset>
+    <button id="start" disabled>Start camera</button>
+    <button id="stop" disabled>Stop camera</button>
+    <video id="preview" muted playsinline></video>
+    <p id="status">Camera off.</p>
+    <fieldset class="labels">
+      <legend>Record a 10-second clip: press one, then do what it says</legend>
+      <div id="labels"></div>
+    </fieldset>
+    <p id="count">0 clips, 0 frames recorded.</p>
+    <button id="download" disabled>Download recordings (CSV)</button>
+    <button id="discard" disabled>Delete everything recorded here</button>
+    <script type="module" src="/src/features/attention/recorder.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,146 @@
+// The recorder page (eval/attention-recorder.html), for #159. Runs the same
+// face worker as the classroom, asks it for the features behind each
+// observation, and keeps those with the label being acted out. The video is
+// shown on this page only and never stored. Served by `npm run dev` at
+// /eval/attention-recorder.html; not part of the built app.
+import { CONDITIONS, LABELS, framesToCsv, type Condition, type Frame, type Label } from './evaluation.ts'
+import type { FaceFeatures } from './signals.ts'
+
+const CLIP_SECONDS = 10
+const FRAME_MS = 250
+const assets = new URL(`${import.meta.env.BASE_URL}attention/`, location.origin).href
+
+const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
+const consent = $<HTMLInputElement>('consent')
+const participant = $<HTMLInputElement>('participant')
+const start = $<HTMLButtonElement>('start')
+const stop = $<HTMLButtonElement>('stop')
+const preview = $<HTMLVideoElement>('preview')
+const status = $<HTMLParagraphElement>('status')
+const counter = $<HTMLParagraphElement>('count')
+const download = $<HTMLButtonElement>('download')
+const discard = $<HTMLButtonElement>('discard')
+
+const frames: Frame[] = []
+let clips = 0
+let stream: MediaStream | undefined
+let worker: Worker | undefined
+let timer: ReturnType<typeof setInterval> | undefined
+let busy = false
+let recording: { label: Label; clip: string; startedAt: number; conditions: Record<Condition, string> } | null = null
+
+const selects = {} as Record<Condition, HTMLSelectElement>
+for (const [name, values] of Object.entries(CONDITIONS) as [Condition, readonly string[]][]) {
+  const label = document.createElement('label')
+  label.textContent = `${name} `
+  const select = document.createElement('select')
+  for (const value of values) select.append(new Option(value, value))
+  label.append(select)
+  $('conditions').append(label)
+  selects[name] = select
+}
+const labelButtons: HTMLButtonElement[] = []
+for (const [label, instruction] of Object.entries(LABELS) as [Label, string][]) {
+  const button = document.createElement('button')
+  button.textContent = `${label}: ${instruction}`
+  button.disabled = true
+  button.onclick = () => record(label)
+  $('labels').append(button)
+  labelButtons.push(button)
+}
+
+function refresh() {
+  const on = Boolean(worker)
+  start.disabled = on || !consent.checked
+  stop.disabled = !on
+  for (const button of labelButtons) button.disabled = !on || recording !== null || !/^P\d+$/.test(participant.value.trim())
+  counter.textContent = `${clips} clips, ${frames.length} frames recorded.`
+  download.disabled = discard.disabled = frames.length === 0
+}
+consent.onchange = participant.oninput = refresh
+
+function record(label: Label) {
+  clips += 1
+  const conditions = Object.fromEntries(Object.entries(selects).map(([k, s]) => [k, s.value])) as Record<Condition, string>
+  recording = { label, clip: `c${clips}`, startedAt: performance.now(), conditions }
+  status.textContent = `Get ready: ${LABELS[label]}`
+  refresh()
+  // Two seconds to get into position before frames count.
+  setTimeout(() => {
+    if (!recording) return
+    recording.startedAt = performance.now()
+    status.textContent = `Recording: ${LABELS[label]}`
+    setTimeout(() => {
+      recording = null
+      status.textContent = 'Clip saved. Pick the next one.'
+      refresh()
+    }, CLIP_SECONDS * 1000)
+  }, 2000)
+}
+
+function keep(features: FaceFeatures) {
+  if (!recording || performance.now() < recording.startedAt) return
+  frames.push({
+    participant: participant.value.trim(),
+    clip: recording.clip,
+    label: recording.label,
+    conditions: recording.conditions,
+    t: (performance.now() - recording.startedAt) / 1000,
+    features,
+  })
+  refresh()
+}
+
+start.onclick = async () => {
+  stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 320 }, height: { ideal: 240 } }, audio: false })
+  preview.srcObject = stream
+  await preview.play()
+  worker = new Worker(new URL('./face.worker.ts', import.meta.url), { type: 'module' })
+  worker.onmessage = event => {
+    if (event.data.type === 'ready') { status.textContent = 'Camera ready. Pick a clip to record.'; sendFrames() }
+    else if (event.data.type === 'observation') { busy = false; if (event.data.features) keep(event.data.features) }
+    else if (event.data.type === 'error') { busy = false; status.textContent = 'A frame could not be read; recording continues.' }
+  }
+  worker.postMessage({ type: 'init', base: assets, withFeatures: true })
+  status.textContent = 'Loading the face model…'
+  refresh()
+}
+
+/** Frames go to the worker only once its model is ready: one sent before is dropped and never answered. */
+function sendFrames() {
+  // The classroom's frame rate, so the recordings match what students send.
+  timer = setInterval(async () => {
+    if (busy || !worker || preview.readyState < 2) return
+    busy = true
+    try {
+      const frame = await createImageBitmap(preview)
+      worker.postMessage({ type: 'frame', frame, timestamp: performance.now() }, [frame])
+    } catch { busy = false }
+  }, FRAME_MS)
+}
+
+stop.onclick = () => {
+  clearInterval(timer)
+  worker?.terminate()
+  worker = undefined
+  stream?.getTracks().forEach(track => track.stop())
+  preview.srcObject = null
+  recording = null
+  status.textContent = 'Camera off.'
+  refresh()
+}
+
+download.onclick = () => {
+  const name = `attention_${participant.value.trim() || 'P'}_${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.csv`
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(new Blob([framesToCsv(frames)], { type: 'text/csv' }))
+  link.download = name
+  link.click()
+  URL.revokeObjectURL(link.href)
+}
+
+discard.onclick = () => {
+  frames.length = 0
+  clips = 0
+  refresh()
+}

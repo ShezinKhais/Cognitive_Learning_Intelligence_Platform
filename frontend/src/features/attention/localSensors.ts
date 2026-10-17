@@ -1,6 +1,22 @@
 import type { FaceObservation } from './signals'
 
 const assets = new URL(`${import.meta.env.BASE_URL}attention/`, location.origin).href
+// The camera's worker while it runs, so the page can ask it to calibrate.
+let cameraWorker: Worker | undefined
+let calibrated: ((ok: boolean) => void) | undefined
+
+/**
+ * Ask the running camera to learn this student's own centre from the next
+ * three seconds of frames. `done` hears whether a usable calibration was
+ * found. False when no camera is running.
+ */
+export function calibrateCamera(done: (ok: boolean) => void): boolean {
+  if (!cameraWorker) return false
+  calibrated = done
+  cameraWorker.postMessage({ type: 'calibrate' })
+  return true
+}
+
 export function stopTracks(stream: MediaStream): void {
   stream.getTracks().forEach(track => track.stop())
 }
@@ -28,6 +44,7 @@ export async function startCamera(signal: AbortSignal, report: (value: FaceObser
   const stop = () => {
     if (stream) stopTracks(stream)
     worker?.terminate()
+    if (cameraWorker === worker) { cameraWorker = undefined; calibrated = undefined }
     clearInterval(timer)
     clearTimeout(deadline)
     video.pause()
@@ -60,10 +77,12 @@ export async function startCamera(signal: AbortSignal, report: (value: FaceObser
         if (event.data.type === 'ready') finish()
         else if (event.data.type === 'error') { finish(new Error('Camera processing unavailable')); stop(); failed() }
         else if (event.data.type === 'observation') { busy = false; report(event.data.value) }
+        else if (event.data.type === 'calibrated') { calibrated?.(event.data.ok); calibrated = undefined }
       }
       worker!.postMessage({ type: 'init', base: assets })
     })
     signal.throwIfAborted()
+    cameraWorker = worker
     timer = setInterval(async () => {
       if (busy || signal.aborted || video.readyState < 2 || stream?.getVideoTracks()[0]?.muted) return
       busy = true

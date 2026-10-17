@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getCurrentUser, recordConsent } from '../../api'
-import { startCamera, startMicrophone } from './localSensors'
+import { calibrateCamera, startCamera, startMicrophone } from './localSensors'
 import { useAttentionReporter } from './useAttentionReporter'
 import { useLocalSensor } from './useLocalSensor'
 import type { AttentionSummary, FaceObservation } from './signals'
@@ -17,6 +17,7 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
   const [savedConsent, setSavedConsent] = useState({ monitoring: false, camera: false, microphone: false })
   const [savingConsent, setSavingConsent] = useState(false)
   const [message, setMessage] = useState('')
+  const [calibration, setCalibration] = useState<'none' | 'running' | 'done' | 'failed'>('none')
   const {
     status: cameraStatus, latest: face, start: enableCamera, stop: stopCamera,
     drain: drainCamera, isActive: cameraActive, isStartingOrActive: cameraStartingOrActive,
@@ -115,6 +116,12 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
     else await enableMicrophone()
   }
 
+  // A new camera start forgets the old calibration, as the worker does.
+  useEffect(() => { if (cameraStatus !== 'on') setCalibration('none') }, [cameraStatus])
+  function startCalibration() {
+    if (calibrateCamera(ok => setCalibration(ok ? 'done' : 'failed'))) setCalibration('running')
+  }
+
   const running = cameraStatus === 'on' || microphoneStatus === 'on'
   const pending = cameraStatus === 'starting' || microphoneStatus === 'starting'
   const selectedConsented = savedConsent.monitoring &&
@@ -155,6 +162,19 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
         ))}
       </div>
       <p className="mt-3 text-sm">Camera: {cameraStatus}. Microphone: {microphoneStatus}.</p>
+      {cameraStatus === 'on' && (
+        <div className="mt-2 text-sm">
+          <button type="button" disabled={calibration === 'running'} onClick={startCalibration}
+            className="rounded-lg border border-border px-3 py-2 text-sm disabled:opacity-50">
+            {calibration === 'running' ? 'Look at the screen…' : 'Calibrate: look at the screen for 3 seconds'}
+          </button>
+          <span className="ml-2 text-muted-foreground">
+            {calibration === 'done' && 'Calibrated to where you look. Only the offsets are kept, on this device.'}
+            {calibration === 'failed' && 'Calibration did not work: your face was not clearly facing the screen. The standard settings are used.'}
+            {calibration === 'none' && 'Optional. It helps if your camera is off to one side.'}
+          </span>
+        </div>
+      )}
       {cameraStatus === 'on' && <p className="text-sm">Face: {face.face === null ? 'unavailable' : face.face ? 'detected' : 'not detected'}. Head direction: {face.head}. Gaze estimate: {face.forward === null ? 'unavailable' : face.forward ? 'camera-facing' : 'away from camera'}.</p>}
       {microphoneStatus === 'on' && <p className="text-sm">Voice activity: {speaking === null ? 'unavailable' : speaking ? 'detected' : 'not detected'}.</p>}
       {!enabled && <p className="mt-2 text-sm text-muted-foreground">Available while connected to an active, unpaused session.</p>}
