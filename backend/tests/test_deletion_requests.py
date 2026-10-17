@@ -435,3 +435,86 @@ async def test_a_failure_after_the_history_is_erased_can_simply_be_run_again(
 
     assert done.status == "executed"
     assert await count(db, Student, Student.student_id, world.student) == 0
+
+
+# -- a failure after the history commit, before the main commit ----------------------------
+
+
+@pytest.fixture
+async def separate_history():
+    """A real second database for history, so its commits are independent of the
+    main one. Skips when the PostgreSQL tools or the right to create one are missing."""
+    import asyncio
+    import shutil
+    import subprocess
+
+    from sqlalchemy.engine import make_url
+
+    from app.history.database import create_history_tables
+    from scripts.database_backup import connection_args, drop, environment, plain_url
+
+    if any(shutil.which(tool) is None for tool in ("createdb", "dropdb")):
+        pytest.skip("the PostgreSQL client tools are not installed")
+    live = get_settings().database_url
+    url = plain_url(live)
+    name = f"clip_history_test_{uuid.uuid4().hex[:8]}"
+    created = await asyncio.to_thread(
+        subprocess.run,
+        ["createdb", *connection_args(url), name],
+        env=environment(url),
+        capture_output=True,
+        text=True,
+    )
+    if created.returncode != 0:
+        pytest.skip(f"this database user may not create databases: {created.stderr.strip()}")
+    engine = create_async_engine(make_url(live).set(database=name), poolclass=NullPool)
+    await create_history_tables(engine)
+    yield async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    await engine.dispose()
+    drop(live, name)
+
+
+async def test_an_erasure_that_fails_after_the_history_commit_is_finished_by_running_it_again(
+    db, world, separate_history, monkeypatch
+):
+    from app.history.repository import SemesterTotals, add_totals, list_for_student
+    from app.services import deletion_requests as module
+
+    async with separate_history() as seed:
+        await add_totals(
+            seed, [SemesterTotals(world.student, uuid.uuid4(), "2001-H1", sessions_attended=1)]
+        )
+        await seed.commit()
+    request = await create_request(
+        db, target_type="student", target_id=world.student, requested_by=world.first
+    )
+    request_id = request.request_id
+    await approve(db, request_id, admin_id=world.second)
+    real = module.erase_student
+    calls = []
+
+    async def fails_after_erasing(*args, **kwargs):
+        calls.append(1)
+        result = await real(*args, **kwargs)
+        if len(calls) == 1:
+            raise RuntimeError("the main database failed after the history was erased")
+        return result
+
+    monkeypatch.setattr(module, "erase_student", fails_after_erasing)
+
+    # The main database's work is undone, as a real rollback would; the history
+    # database committed separately, so its rows stay erased.
+    nested = await db.begin_nested()
+    with pytest.raises(RuntimeError):
+        await execute(db, request_id, admin_id=world.second, history=lambda: separate_history)
+    await nested.rollback()
+
+    async with separate_history() as check:
+        assert await list_for_student(check, world.student) == []
+    assert (await get_request(db, request_id)).status == "approved"
+    assert await count(db, Student, Student.student_id, world.student) == 1
+
+    done = await execute(db, request_id, admin_id=world.second, history=lambda: separate_history)
+
+    assert done.status == "executed"
+    assert await count(db, Student, Student.student_id, world.student) == 0
