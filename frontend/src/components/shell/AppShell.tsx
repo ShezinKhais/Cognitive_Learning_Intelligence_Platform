@@ -8,6 +8,7 @@ import { Wordmark as Brand } from '../brand/ClipMark'
 import { cn } from '../ui/cn'
 import NotificationBell from '../../features/notifications/NotificationBell'
 import IntroOverlay from './IntroOverlay'
+import ThemeSwitch from './ThemeSwitch'
 import { introPlayed, takeIntro } from './intro'
 import { currentItem, NAVIGATION, ROLE_NAME, type NavItem } from './navigation'
 
@@ -146,8 +147,11 @@ function MenuGroup({ items, current }: { items: NavItem[]; current?: NavItem }) 
 function Account({ user }: { user: CurrentUser }) {
   return (
     <div className="mt-auto">
-      <div className="mb-3">
+      <div className="mb-3 space-y-3">
         <NotificationBell user={user} />
+        <div className="px-1">
+          <ThemeSwitch />
+        </div>
       </div>
       <div className="border-t border-border px-3 pt-4">
         <p className="truncate text-sm font-semibold">{user.full_name}</p>
