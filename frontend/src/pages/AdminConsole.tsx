@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { Link } from 'react-router'
 import { apiUploadFile, ApiError, clearAccessToken, type TimetableImportResult } from '../api'
 import SignOutButton from '../components/SignOutButton'
 
@@ -38,7 +39,17 @@ export default function AdminConsole() {
               read as structured data, never guessed at from an image.
             </p>
           </div>
-          <SignOutButton />
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              to="/admin/governance"
+              className="rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted"
+            >
+              Governance
+            </Link>
+
+            <SignOutButton />
+          </div>
         </div>
 
         <div className="mt-8 space-y-6">
