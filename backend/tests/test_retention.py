@@ -611,3 +611,141 @@ async def test_a_student_who_only_attended_still_gets_a_history_row(db, history,
     assert (row.engagement_count, row.gaze_count) == (0, 0)
     [answered] = await list_for_student(db, await student_of(db, history.expired))
     assert answered.questions_attempted == 1
+
+
+# -- a failure between the two databases ------------------------------------------------------
+
+
+@pytest.fixture
+async def separate_history():
+    """A real second database for history, so its commits are independent of the
+    main one. Skips when the PostgreSQL tools or the right to create one are missing."""
+    import asyncio
+    import shutil
+    import subprocess
+
+    from sqlalchemy.engine import make_url
+
+    from app.history.database import create_history_tables
+    from scripts.database_backup import connection_args, drop, environment, plain_url
+
+    if any(shutil.which(tool) is None for tool in ("createdb", "dropdb")):
+        pytest.skip("the PostgreSQL client tools are not installed")
+    live = get_settings().database_url
+    url = plain_url(live)
+    name = f"clip_history_test_{uuid.uuid4().hex[:8]}"
+    created = await asyncio.to_thread(
+        subprocess.run,
+        ["createdb", *connection_args(url), name],
+        env=environment(url),
+        capture_output=True,
+        text=True,
+    )
+    if created.returncode != 0:
+        pytest.skip(f"this database user may not create databases: {created.stderr.strip()}")
+    engine = create_async_engine(make_url(live).set(database=name), poolclass=NullPool)
+    await create_history_tables(engine)
+    yield async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    await engine.dispose()
+    drop(live, name)
+
+
+@pytest.fixture
+def main_that_rolls_back(db, monkeypatch):
+    """The main database for a task that opens and commits its own session: a
+    commit is a flush, and an error undoes what the task did, as a real rollback."""
+    from contextlib import asynccontextmanager
+
+    async def flush_only():
+        await db.flush()
+
+    monkeypatch.setattr(db, "commit", flush_only)
+
+    @asynccontextmanager
+    async def session():
+        nested = await db.begin_nested()
+        try:
+            yield db
+        except BaseException:
+            await nested.rollback()
+            raise
+        else:
+            await nested.commit()
+
+    return lambda: session
+
+
+async def test_a_scheduled_purge_that_stops_between_the_two_commits_is_finished_by_the_next_run(
+    db, history, main_that_rolls_back, separate_history, monkeypatch
+):
+    from app.history.models import ArchivedSession
+    from app.history.repository import list_for_student
+    from app.services import retention_tasks
+
+    student = await student_of(db, history.expired)
+    real = retention_tasks.record_event
+    attempts = []
+
+    async def fails_once(*args, **kwargs):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise RuntimeError("the main database failed after the archive was committed")
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(retention_tasks, "record_event", fails_once)
+    task = retention_tasks.SessionDataPurge(main_that_rolls_back, history=lambda: separate_history)
+
+    with pytest.raises(RuntimeError):
+        await task.purge(days_ago(90), 500)
+
+    # Between the two commits: archived in history, still in the main database.
+    assert await holdings(db, history.expired) == dict.fromkeys(HOLDINGS, 1)
+    async with separate_history() as check:
+        [row] = await list_for_student(check, student)
+        assert row.sessions_attended == 1
+
+    await task.purge(days_ago(90), 500)
+
+    assert await holdings(db, history.expired) == dict.fromkeys(HOLDINGS, 0)
+    async with separate_history() as check:
+        [row] = await list_for_student(check, student)
+        assert row.sessions_attended == 1  # not counted a second time
+        archived = await check.scalar(
+            select(func.count())
+            .select_from(ArchivedSession)
+            .where(ArchivedSession.session_id == history.expired.session)
+        )
+        assert archived == 1
+
+
+async def test_an_admin_purge_that_stops_between_the_two_commits_is_finished_by_the_next_run(
+    db, history, separate_history, monkeypatch
+):
+    from app.history.repository import list_for_student
+    from app.services import retention as retention_module
+
+    student = await student_of(db, history.expired)
+    real = retention_module.record_event
+    attempts = []
+
+    async def fails_once(*args, **kwargs):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise RuntimeError("the main database failed after the archive was committed")
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(retention_module, "record_event", fails_once)
+
+    nested = await db.begin_nested()
+    with pytest.raises(RuntimeError):
+        await purge_expired(db, dry_run=False, retention_days=90, history=lambda: separate_history)
+    await nested.rollback()
+
+    assert await holdings(db, history.expired) == dict.fromkeys(HOLDINGS, 1)
+
+    await purge_expired(db, dry_run=False, retention_days=90, history=lambda: separate_history)
+
+    assert await holdings(db, history.expired) == dict.fromkeys(HOLDINGS, 0)
+    async with separate_history() as check:
+        [row] = await list_for_student(check, student)
+        assert row.sessions_attended == 1

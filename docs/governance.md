@@ -113,6 +113,22 @@ Under `/api/v1/me`, students only, accepted terms required:
 
 Each export is audited as `STUDENT_DATA_EXPORTED`, with counts.
 
+## When a failure falls between the two databases
+
+The main and history databases are separate, so no single commit covers both. Each flow is
+ordered so that a stop between the two commits leaves work half done, never data lost that
+should be kept or kept that should be gone, and the next run finishes it.
+
+| Flow | Order | If it stops between the two commits | Recovery |
+|---|---|---|---|
+| Retention purge (scheduled and admin) | Archive to history and commit, then delete from main | The session is archived but still in the main database | The next run finds it still expired, skips the archive (its id is in `archived_session`, so nothing counts twice) and deletes it |
+| Student erasure | Erase history and commit, then erase main | History rows are gone, the student is still in the main database, and the request is still `approved` | Run `execute` again: erasing is repeatable, and history that is already gone reports nothing left |
+
+What cannot happen: a session deleted without its summary being kept, or a student marked
+erased while their history rows remain. If the history database is down, both flows stop
+before they touch the main data. These cases are tested against a real second database in
+`test_retention.py` and `test_deletion_requests.py`.
+
 ## The audit log
 
 Every deletion step and every purge writes an entry: who did it (empty for a
