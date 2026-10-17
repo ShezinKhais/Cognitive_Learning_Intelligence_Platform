@@ -8,7 +8,7 @@ import {
 
 import {
   clearAccessToken,
-  refreshAccessToken,
+  renewSession,
   getAccessToken,
 } from '../../api'
 import {
@@ -371,10 +371,16 @@ export function useLiveSession(
           // The token may have run out while the tab slept: refresh it once
           // and reconnect before sending the student to sign in.
           tokenRenewed = true
-          void refreshAccessToken().then((token) => {
+          void renewSession().then((outcome) => {
             if (stopped) return
-            if (token) {
+            if (outcome === 'renewed') {
               connect()
+              return
+            }
+            if (outcome === 'unreachable') {
+              // Signed in still; try the socket and the refresh again.
+              tokenRenewed = false
+              scheduleReconnect()
               return
             }
             stopped = true

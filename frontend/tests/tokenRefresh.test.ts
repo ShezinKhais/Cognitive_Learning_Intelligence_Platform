@@ -73,6 +73,7 @@ const {
   clearAccessToken,
   getAccessToken,
   login,
+  renewSession,
   restoreSession,
   saveAccessToken,
 } = await import('../src/api.ts')
@@ -188,6 +189,19 @@ test('a refresh still on its way when the user signs out does not sign them back
   clearAccessToken()
   cookie = true
   assert.equal(await restoring, null)
+  assert.equal(getAccessToken(), null)
+})
+
+test('a socket can tell a refused refresh from an unreachable backend', async () => {
+  reset('kept', true)
+  failures = ['offline']
+  assert.equal(await renewSession(), 'unreachable')
+  // Still signed in, so the class carries on once the network is back.
+  assert.equal(getAccessToken(), 'kept')
+  assert.equal(await renewSession(), 'renewed')
+
+  cookie = false
+  assert.equal(await renewSession(), 'refused')
   assert.equal(getAccessToken(), null)
 })
 

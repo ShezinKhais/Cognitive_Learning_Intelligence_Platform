@@ -5,7 +5,7 @@ import {
 
 import {
   clearAccessToken,
-  refreshAccessToken,
+  renewSession,
   getAccessToken,
 } from '../../api'
 import { actionForClose } from '../materials/closeCodes'
@@ -728,10 +728,17 @@ setAlerts((current) => {
             // The token may have run out while the tab slept: refresh it once
             // and reconnect before sending the lecturer to sign in.
             tokenRenewed = true
-            void refreshAccessToken().then((token) => {
+            void renewSession().then((outcome) => {
               if (stopped) return
-              if (token) {
+              if (outcome === 'renewed') {
                 connect()
+                return
+              }
+              if (outcome === 'unreachable') {
+                // Signed in still; try the socket and the refresh again.
+                tokenRenewed = false
+                setConnectionStatus('disconnected')
+                retryTimer = window.setTimeout(connect, Math.min(1000 * 2 ** retryCount++, 10_000))
                 return
               }
               stopped = true

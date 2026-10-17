@@ -161,6 +161,17 @@ export async function refreshAccessToken(): Promise<string | null> {
   return typeof renewal === 'object' ? renewal.token : null
 }
 
+/**
+ * Get a fresh token, saying why when there is none: 'refused' means sign in
+ * again, 'unreachable' means try again later and keep the user signed in. A
+ * socket refused for its token needs the difference, so a dropped connection
+ * at that moment does not end someone's class.
+ */
+export async function renewSession(): Promise<'renewed' | 'refused' | 'unreachable'> {
+  const renewal = await renew()
+  return typeof renewal === 'object' ? 'renewed' : renewal
+}
+
 async function renewToken(): Promise<Renewal> {
   const asked = signOuts
   let response: Response
