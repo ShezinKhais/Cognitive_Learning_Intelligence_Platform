@@ -10,11 +10,13 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 from app.history.database import create_history_tables
+from app.history.models import StudentSemesterSummary
 from app.history.repository import (
     SemesterTotals,
     add_totals,
@@ -101,3 +103,23 @@ async def test_erasing_a_student_removes_only_their_rows(history):
     assert await list_for_student(history, student) == []
     assert len(await list_for_student(history, other)) == 1
     assert await delete_student(history, student) == 0
+
+
+async def test_adding_to_a_row_refreshes_updated_at(history):
+    student, course = uuid4(), uuid4()
+    await add_totals(history, [totals(student, course, sessions_attended=1)])
+    stamp = datetime(2000, 1, 1, tzinfo=UTC)
+    await history.execute(
+        update(StudentSemesterSummary)
+        .where(StudentSemesterSummary.student_id == student)
+        .values(updated_at=stamp)
+    )
+
+    await add_totals(history, [totals(student, course, sessions_attended=1)])
+
+    after = await history.scalar(
+        select(StudentSemesterSummary.updated_at).where(
+            StudentSemesterSummary.student_id == student
+        )
+    )
+    assert after > stamp

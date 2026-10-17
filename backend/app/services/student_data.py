@@ -226,7 +226,6 @@ async def export_student_data(
             "course_id": _id(student.course_id),
             "consent_status": student.consent_status,
             "attention_threshold": student.attention_threshold,
-            "special_consideration_status": student.special_consideration_status,
             "enrolled_at": _when(student.enrolled_at),
         },
         "answers": answers,

@@ -25,6 +25,7 @@ from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.errors import ServiceUnavailableError
 from app.history.database import resolve_history_factory
 from app.models.session import Session
 from app.models.student_response import StudentResponse
@@ -97,20 +98,29 @@ async def purge_expired(
     archived = None
     if not dry_run:
         # The same guarantee as the scheduled purge: what is kept goes to the
-        # history database first, and if that fails nothing is deleted.
-        factory = resolve_history_factory(history)
-        if factory is not None:
-            from app.services.history_archive import archive_sessions
+        # history database first, and if that fails nothing is deleted. The
+        # sessions deleted are exactly the ones that were archived.
+        ids = list(await db.scalars(select(Session.session_id).where(expired)))
+        try:
+            factory = resolve_history_factory(history)
+            if factory is not None:
+                from app.services.history_archive import archive_sessions
 
-            ids = list(await db.scalars(select(Session.session_id).where(expired)))
-            archived = 0
-            async with factory() as history_db:
-                for start in range(0, len(ids), ARCHIVE_CHUNK):
-                    archived += await archive_sessions(
-                        db, history_db, ids[start : start + ARCHIVE_CHUNK]
-                    )
-                await history_db.commit()
-        await db.execute(delete(Session).where(expired))
+                archived = 0
+                async with factory() as history_db:
+                    for start in range(0, len(ids), ARCHIVE_CHUNK):
+                        archived += await archive_sessions(
+                            db, history_db, ids[start : start + ARCHIVE_CHUNK]
+                        )
+                    await history_db.commit()
+        except Exception as error:
+            raise ServiceUnavailableError(
+                "The history database could not be written, so nothing was deleted."
+            ) from error
+        for start in range(0, len(ids), ARCHIVE_CHUNK):
+            await db.execute(
+                delete(Session).where(Session.session_id.in_(ids[start : start + ARCHIVE_CHUNK]))
+            )
         await db.execute(delete(TeamsRosterSync).where(old_syncs))
         await record_event(
             db,

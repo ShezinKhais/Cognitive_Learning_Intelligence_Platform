@@ -356,6 +356,15 @@ class Settings(BaseSettings):
         if database:
             problems.append(database)
 
+        history_url = self.history_database_url
+        if history_url:
+            if (urlparse(history_url).hostname or "") in {"localhost", "127.0.0.1", "0.0.0.0"}:
+                problems.append("HISTORY_DATABASE_URL points to localhost in production")
+
+            history = database_password_problem(history_url)
+            if history:
+                problems.append(history.replace("DATABASE_URL", "HISTORY_DATABASE_URL"))
+
         if problems:
             raise ValueError("Refusing to start in production: " + "; ".join(problems))
         return self

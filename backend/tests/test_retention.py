@@ -570,7 +570,9 @@ async def test_the_admin_purge_deletes_nothing_when_history_is_unavailable(
     def broken():
         raise RuntimeError("the history database is down")
 
-    with pytest.raises(RuntimeError):
+    from app.core.errors import ServiceUnavailableError
+
+    with pytest.raises(ServiceUnavailableError):
         await purge_expired(db, dry_run=False, retention_days=90, history=lambda: broken)
 
     assert await holdings(db, history.expired) == dict.fromkeys(HOLDINGS, 1)

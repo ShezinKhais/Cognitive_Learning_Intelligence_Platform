@@ -120,29 +120,21 @@ example `retention_purge deleted 12 item(s) older than 2025-12-02 (stored-upload
 A run that gave way to a class ends the line with `stopped early, the next run
 continues`, and logs again on each retry.
 
-The one task the application registers is `stored-uploads`
+One task the application registers is `stored-uploads`
 (`StoredUploadPurge`). It deletes lecture files left in `UPLOAD_STORAGE_DIR`
 that were last changed before the cutoff, and an upload left under its
 temporary name for more than a day. A file is normally deleted as soon as its
 material has been processed, so what is left is the file of a material that
 failed in a way that might have been temporary.
 
-**What is not purged yet.** No database table is purged. Those tasks are BBIS's
-to register. Until they are, `DATA_RETENTION_DAYS` is kept for upload files and
-not for the database, and these tables keep their rows indefinitely:
-
-| Table | What it holds |
-|---|---|
-| `student_response`, `comprehension_result`, `missed_response` | Answers, their labels, and questions a student did not answer |
-| `engagement_record`, `attention_signal_summary`, `dynamic_prompt` | Engagement scores, attention summaries and the prompts sent |
-| `ai_alert`, `ai_recommendation` | Comprehension and room alerts, and what was suggested |
-| `delivered_question`, `session_activity`, `session_participant`, `breakout_room` | What each session delivered, its timeline, who joined, and rooms |
-| `teams_roster_sync`, `teams_participant_mapping` | Teams roster snapshots and meeting participants |
-
-`audit_log` is excluded on purpose: it is the record that the purge ran.
-BBIS's session purge (`Nour-Phase-7`, `services/retention.py`) deletes
-expired sessions and roster syncs when an administrator runs it; registering
-it here as batched tasks puts those tables on the daily run.
+**The database tables.** `register_database_purges` also registers `session-data`,
+`teams-roster-syncs` and `teams-unresolved-mappings` (see [governance.md](governance.md)).
+Deleting a session removes what hangs off it, because those tables cascade from the
+session: answers and their labels, engagement records, attention summaries, prompts,
+alerts, recommendations, delivered questions, the activity timeline, participants and
+breakout rooms. So `DATA_RETENTION_DAYS` applies to the database as well as to upload
+files. Only ended or cancelled sessions are purged. `audit_log` is excluded on purpose:
+it is the record that the purge ran.
 
 ### Registering a purge task (BBIS)
 
