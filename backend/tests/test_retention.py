@@ -251,7 +251,6 @@ async def test_a_purge_is_audited_and_never_touches_the_audit_log(db, history):
     old_entry = AuditLog(
         user_id=history.actor,
         action_type="TEST_OLD_ENTRY",
-        ip_address="203.0.113.1",
         timestamp=days_ago(400),
     )
     db.add(old_entry)

@@ -207,7 +207,7 @@ SUMMARY_VIEWED_ACTION = "STUDENT_SUMMARY_VIEWED"
 
 
 async def record_staff_view(
-    db: AsyncSession, *, viewer: UUID, student_id: UUID, session_id: UUID, ip_address: str
+    db: AsyncSession, *, viewer: UUID, student_id: UUID, session_id: UUID
 ) -> None:
     """Note that staff read a student's summary. Reading someone else's results
     leaves a trace; reading your own does not need one.
@@ -224,7 +224,7 @@ async def record_staff_view(
         session_id,
     )
     try:
-        db.add(AuditLog(user_id=viewer, action_type=SUMMARY_VIEWED_ACTION, ip_address=ip_address))
+        db.add(AuditLog(user_id=viewer, action_type=SUMMARY_VIEWED_ACTION))
         await db.commit()
     except Exception:
         await db.rollback()

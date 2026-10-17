@@ -47,7 +47,6 @@ class AuditEntryOut(BaseModel):
     user_id: UUID | None = Field(description="None for something the system did on its own.")
     action_type: str
     timestamp: datetime
-    ip_address: str | None
     target_type: str | None
     target_id: UUID | None
     details: dict[str, Any] | None = Field(description="Counts and identifiers, never content.")

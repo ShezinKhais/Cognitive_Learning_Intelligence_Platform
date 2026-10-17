@@ -131,7 +131,7 @@ async def count(db, model, column, value) -> int:
 
 
 async def test_a_request_starts_as_requested_and_is_audited(db, world):
-    request = await request_session(db, world, ip_address="203.0.113.5")
+    request = await request_session(db, world)
 
     assert request.status == "requested"
     assert request.requested_by == world.first

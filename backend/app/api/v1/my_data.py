@@ -27,10 +27,6 @@ router = APIRouter(
 )
 
 
-def _ip(request: Request) -> str | None:
-    return request.client.host if request.client is not None else None
-
-
 @router.get("/data", response_model=StudentDataExport)
 async def export_my_data(
     request: Request, principal: CurrentUser, db: DbSession, response: Response
@@ -39,9 +35,7 @@ async def export_my_data(
     response.headers["Cache-Control"] = "no-store"
     response.headers["Content-Disposition"] = 'attachment; filename="my-clip-data.json"'
     try:
-        return await student_data.export_student_data(
-            db, principal.user_id, ip_address=_ip(request)
-        )
+        return await student_data.export_student_data(db, principal.user_id)
     except StudentNotFound as error:
         raise NotFoundError(str(error)) from error
 
@@ -66,7 +60,6 @@ async def request_my_deletion(
             target_id=student.student_id,
             requested_by=principal.user_id,
             reason=payload.reason,
-            ip_address=_ip(request),
         )
     except StudentNotFound as error:
         raise NotFoundError(str(error)) from error

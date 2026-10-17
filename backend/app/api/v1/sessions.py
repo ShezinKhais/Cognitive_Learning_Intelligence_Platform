@@ -364,6 +364,5 @@ async def student_summary(
             viewer=principal.user_id,
             student_id=student_id,
             session_id=session_id,
-            ip_address=request.client.host if request.client is not None else "unknown",
         )
     return summary

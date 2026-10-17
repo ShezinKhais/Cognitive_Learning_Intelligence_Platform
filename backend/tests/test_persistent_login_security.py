@@ -85,7 +85,6 @@ async def test_fifth_failed_login_persists_account_lock() -> None:
 
     locked = await security.record_failed_login(
         user_id,
-        "203.0.113.10",
     )
 
     assert locked is True
@@ -113,7 +112,6 @@ async def test_failure_below_limit_does_not_lock() -> None:
 
     locked = await security.record_failed_login(
         user_id,
-        "203.0.113.10",
     )
 
     assert locked is False
@@ -132,7 +130,6 @@ async def test_successful_login_is_persisted() -> None:
 
     await security.record_successful_login(
         user_id,
-        "203.0.113.10",
     )
 
     assert len(session.added) == 1

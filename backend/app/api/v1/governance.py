@@ -77,10 +77,6 @@ def _translated() -> Iterator[None]:
         raise ValidationError(str(error)) from error
 
 
-def _ip(request: Request) -> str | None:
-    return request.client.host if request.client is not None else None
-
-
 def _report(report: retention.PurgeReport, days: int) -> RetentionReportOut:
     return RetentionReportOut(
         cutoff=report.cutoff,
@@ -115,7 +111,6 @@ async def create_deletion_request(
             target_id=payload.target_id,
             requested_by=principal.user_id,
             reason=payload.reason,
-            ip_address=_ip(request),
         )
     return DeletionRequestOut.model_validate(created)
 
@@ -153,9 +148,7 @@ async def approve_deletion_request(
 ) -> DeletionRequestOut:
     """Approve a request. The admin who made it cannot approve it."""
     with _translated():
-        decided = await deletion_requests.approve(
-            db, request_id, admin_id=principal.user_id, ip_address=_ip(request)
-        )
+        decided = await deletion_requests.approve(db, request_id, admin_id=principal.user_id)
     return DeletionRequestOut.model_validate(decided)
 
 
@@ -164,9 +157,7 @@ async def reject_deletion_request(
     request_id: UUID, request: Request, principal: CurrentUser, db: DbSession
 ) -> DeletionRequestOut:
     with _translated():
-        decided = await deletion_requests.reject(
-            db, request_id, admin_id=principal.user_id, ip_address=_ip(request)
-        )
+        decided = await deletion_requests.reject(db, request_id, admin_id=principal.user_id)
     return DeletionRequestOut.model_validate(decided)
 
 
@@ -178,9 +169,7 @@ async def execute_deletion_request(
     holds and cannot be undone. Erasing a student deletes their own data and
     anonymises their account."""
     with _translated():
-        done = await deletion_requests.execute(
-            db, request_id, admin_id=principal.user_id, ip_address=_ip(request)
-        )
+        done = await deletion_requests.execute(db, request_id, admin_id=principal.user_id)
     return DeletionRequestOut.model_validate(done)
 
 
@@ -247,7 +236,6 @@ async def run_retention(
         dry_run=False,
         retention_days=days,
         actor_id=principal.user_id,
-        ip_address=_ip(request),
     )
     return _report(report, days)
 
@@ -270,7 +258,6 @@ async def read_history(
         db,
         action_type="HISTORY_VIEWED",
         user_id=principal.user_id,
-        ip_address=_ip(request),
         target_type="student",
         target_id=student_id,
         details={"rows": len(rows)},

@@ -66,7 +66,6 @@ async def purge_expired(
     now: datetime | None = None,
     retention_days: int | None = None,
     actor_id: UUID | None = None,
-    ip_address: str | None = None,
     history: Callable[[], Any] | None = None,
 ) -> PurgeReport:
     """Purge, or with dry_run only count, everything past the retention period.
@@ -117,7 +116,6 @@ async def purge_expired(
             db,
             action_type=RETENTION_ACTION,
             user_id=actor_id,
-            ip_address=ip_address,
             target_type="retention",
             details={
                 "sessions": sessions,

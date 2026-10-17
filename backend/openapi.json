@@ -227,17 +227,6 @@
             "description": "Counts and identifiers, never content.",
             "title": "Details"
           },
-          "ip_address": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ip Address"
-          },
           "log_id": {
             "format": "uuid",
             "title": "Log Id",
@@ -290,7 +279,6 @@
           "user_id",
           "action_type",
           "timestamp",
-          "ip_address",
           "target_type",
           "target_id",
           "details"

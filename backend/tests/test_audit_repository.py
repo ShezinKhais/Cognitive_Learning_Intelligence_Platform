@@ -83,7 +83,6 @@ async def test_an_entry_keeps_its_actor_target_and_details(database, audit):
             db,
             action_type="DELETION_APPROVED",
             user_id=audit.user,
-            ip_address="203.0.113.7",
             target_type=audit.marker,
             target_id=target,
             details={"rows": 12},
@@ -96,13 +95,12 @@ async def test_an_entry_keeps_its_actor_target_and_details(database, audit):
     assert total == 1
     assert entry.action_type == "DELETION_APPROVED"
     assert entry.user_id == audit.user
-    assert entry.ip_address == "203.0.113.7"
     assert entry.target_id == target
     assert entry.details == {"rows": 12}
     assert entry.timestamp is not None
 
 
-async def test_a_system_action_needs_no_user_or_address(database, audit):
+async def test_a_system_action_needs_no_user(database, audit):
     async with database() as db:
         await record_event(
             db,
@@ -115,7 +113,7 @@ async def test_a_system_action_needs_no_user_or_address(database, audit):
     async with database() as db:
         [entry], _ = await list_events(db, target_type=audit.marker)
 
-    assert (entry.user_id, entry.ip_address) == (None, None)
+    assert entry.user_id is None
     assert entry.details == {"sessions": 3, "dry_run": False}
 
 

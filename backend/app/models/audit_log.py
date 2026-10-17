@@ -47,11 +47,6 @@ class AuditLog(Base):
     )
 
     # None for system actions, which have no client address.
-    ip_address: Mapped[str | None] = mapped_column(
-        String(45),
-        nullable=True,
-    )
-
     # What the action was about, for example a student or a session.
     target_type: Mapped[str | None] = mapped_column(
         String(50),

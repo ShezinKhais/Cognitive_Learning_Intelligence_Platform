@@ -86,14 +86,12 @@ async def _audit(
     action: str,
     request: DeletionRequest,
     actor: UUID,
-    ip_address: str | None,
     **counts: Any,
 ) -> None:
     await record_event(
         db,
         action_type=action,
         user_id=actor,
-        ip_address=ip_address,
         target_type=request.target_type,
         target_id=request.target_id,
         details={"request_id": str(request.request_id), **counts},
@@ -132,7 +130,6 @@ async def create_request(
     target_id: UUID,
     requested_by: UUID,
     reason: str | None = None,
-    ip_address: str | None = None,
 ) -> DeletionRequest:
     if target_type not in DELETION_TARGETS:
         raise ValueError(f"target_type must be one of {', '.join(DELETION_TARGETS)}")
@@ -159,7 +156,7 @@ async def create_request(
     )
     db.add(request)
     await db.flush()
-    await _audit(db, "DELETION_REQUESTED", request, requested_by, ip_address)
+    await _audit(db, "DELETION_REQUESTED", request, requested_by)
     return request
 
 
@@ -168,7 +165,6 @@ async def approve(
     request_id: UUID,
     *,
     admin_id: UUID,
-    ip_address: str | None = None,
     allow_self_approval: bool = False,
 ) -> DeletionRequest:
     request = await _locked(db, request_id)
@@ -179,20 +175,18 @@ async def approve(
     request.decided_by = admin_id
     request.decided_at = datetime.now(UTC)
     await db.flush()
-    await _audit(db, "DELETION_APPROVED", request, admin_id, ip_address)
+    await _audit(db, "DELETION_APPROVED", request, admin_id)
     return request
 
 
-async def reject(
-    db: AsyncSession, request_id: UUID, *, admin_id: UUID, ip_address: str | None = None
-) -> DeletionRequest:
+async def reject(db: AsyncSession, request_id: UUID, *, admin_id: UUID) -> DeletionRequest:
     request = await _locked(db, request_id)
     _require(request, "requested", "rejected")
     request.status = "rejected"
     request.decided_by = admin_id
     request.decided_at = datetime.now(UTC)
     await db.flush()
-    await _audit(db, "DELETION_REJECTED", request, admin_id, ip_address)
+    await _audit(db, "DELETION_REJECTED", request, admin_id)
     return request
 
 
@@ -233,7 +227,6 @@ async def execute(
     request_id: UUID,
     *,
     admin_id: UUID,
-    ip_address: str | None = None,
     history: Callable[[], Any] | None = None,
 ) -> DeletionRequest:
     """Carry out an approved request. Something already gone, for example a
@@ -254,5 +247,5 @@ async def execute(
     request.executed_at = datetime.now(UTC)
     request.outcome = outcome
     await db.flush()
-    await _audit(db, "DELETION_EXECUTED", request, admin_id, ip_address, **outcome)
+    await _audit(db, "DELETION_EXECUTED", request, admin_id, **outcome)
     return request

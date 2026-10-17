@@ -132,9 +132,13 @@ before they touch the main data. These cases are tested against a real second da
 ## The audit log
 
 Every deletion step and every purge writes an entry: who did it (empty for a
-scheduled purge), what, to which target, from which address, and counts. `details`
+scheduled purge), what, to which target, and counts. `details`
 accepts only numbers, flags and short text, so an answer or a name cannot be written
 into it by accident.
+
+The address a request came from is deliberately not recorded. Addresses change with the
+network and the place a student joins from, and nothing here uses them, so keeping them
+would be personal data held without a purpose.
 
 | Action | Written when |
 |---|---|
