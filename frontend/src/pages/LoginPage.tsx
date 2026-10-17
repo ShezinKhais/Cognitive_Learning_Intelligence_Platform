@@ -7,6 +7,7 @@ import { ApiError, getCurrentUser, login, saveAccessToken } from '../api'
 import { hasRequiredConsent, intendedPathForRole } from '../authRouting'
 import { Wordmark } from '../components/brand/ClipMark'
 import { requestIntro } from '../components/shell/intro'
+import ThemeSwitch from '../components/shell/ThemeSwitch'
 import { buttonStyles } from '../components/ui/button'
 import { cn } from '../components/ui/cn'
 
@@ -85,7 +86,10 @@ export default function LoginPage() {
     <main className="grid min-h-screen bg-background lg:grid-cols-[1.1fr_1fr]">
       <Story />
 
-      <section className="flex flex-col justify-center px-6 py-12 sm:px-12">
+      <section className="relative flex flex-col justify-center px-6 py-12 sm:px-12">
+        <div className="absolute right-4 top-4 w-28 sm:right-6 sm:top-6">
+          <ThemeSwitch />
+        </div>
         <motion.div
           className="mx-auto w-full max-w-sm"
           initial={{ opacity: 0, y: 10 }}
@@ -215,7 +219,7 @@ function Story() {
         <Wordmark />
       </div>
 
-      <div className="relative">
+      <div className="relative my-auto pt-10">
         <h1 className="max-w-md text-[2.6rem] font-extrabold leading-[1.12]">
           Know how the class is doing while you are{' '}
           <span className="relative inline-block whitespace-nowrap">
@@ -248,7 +252,6 @@ function Story() {
         <LivePreview />
       </div>
 
-      <p className="relative text-sm text-muted-foreground">Works in the browser and inside Microsoft Teams.</p>
     </section>
   )
 }
