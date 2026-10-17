@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router'
 
-import { ApiError, getAccessToken, getCurrentUser, type CurrentUser, type Role } from '../api'
+import { ApiError, getCurrentUser, restoreSession, type CurrentUser, type Role } from '../api'
 import { accessFor } from '../authRouting'
 import PageLoader from './brand/PageLoader'
 
@@ -30,15 +30,18 @@ export default function RoleGate({ allow, children }: Props) {
   const [state, setState] = useState<State>({ status: 'loading' })
 
   useEffect(() => {
-    if (!getAccessToken()) {
-      setState({ status: 'unauthenticated' })
-      return
-    }
-
     let cancelled = false
-    getCurrentUser()
-      .then((user) => {
-        if (!cancelled) setState({ status: 'ready', user })
+    // A reload or a new tab has no token in memory yet; the refresh cookie
+    // gets one, or says nobody is signed in.
+    restoreSession()
+      .then((token) => {
+        if (!token) {
+          if (!cancelled) setState({ status: 'unauthenticated' })
+          return
+        }
+        return getCurrentUser().then((user) => {
+          if (!cancelled) setState({ status: 'ready', user })
+        })
       })
       .catch((caught: unknown) => {
         if (cancelled) return

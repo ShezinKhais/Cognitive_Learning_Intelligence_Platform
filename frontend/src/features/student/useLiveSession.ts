@@ -152,7 +152,8 @@ export function useLiveSession(
 
       currentSocket.addEventListener('open', () => {
         const data = buildAuthPayload(
-          authToken,
+          // The latest, so a reconnect after a refresh sends the new token.
+          getAccessToken() ?? authToken,
           sessionId,
           cursor,
         )

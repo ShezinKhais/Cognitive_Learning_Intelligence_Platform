@@ -107,3 +107,27 @@ def test_health_never_reveals_secrets(client: TestClient) -> None:
     body = client.get("/api/v1/health").json()
     assert set(body) == {"status", "env", "version", "teams_configured"}
     assert isinstance(body["teams_configured"], bool), "must be a flag, never the credential"
+
+
+def test_api_answers_carry_the_baseline_security_headers(client: TestClient) -> None:
+    """For a deployment that reaches the API without nginx in front."""
+    for response in (client.get("/api/v1/health"), client.get("/api/v1/auth/me")):
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+        assert response.headers["content-security-policy"] == (
+            "default-src 'none'; frame-ancestors 'none'"
+        )
+
+
+def test_the_docs_page_keeps_its_own_scripts(client: TestClient) -> None:
+    # Swagger UI loads its scripts from a CDN; the API policy would blank it.
+    assert "content-security-policy" not in client.get("/docs").headers
+
+
+def test_the_pool_is_sized_from_settings() -> None:
+    from app.core.database import make_engine
+
+    sized = Settings(db_pool_size=3, db_max_overflow=2, db_pool_recycle_seconds=60)
+    pool = make_engine(sized).pool
+
+    assert (pool.size(), pool._max_overflow, pool._recycle) == (3, 2, 60)

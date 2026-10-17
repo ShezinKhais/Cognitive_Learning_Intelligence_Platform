@@ -514,7 +514,8 @@ setAlerts((current) => {
             last_seq?: number
             stream_id?: string
           } = {
-            token: accessToken,
+            // The latest, so a reconnect after a refresh sends the new token.
+            token: getAccessToken() ?? accessToken,
             session_id:
               activeSessionId,
           }

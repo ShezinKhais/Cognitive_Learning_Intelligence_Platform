@@ -2209,7 +2209,7 @@
     },
     "/api/v1/auth/login": {
       "post": {
-        "description": "Authenticate a user and return a bearer token.\n\nDevelopment uses the fixed Cyber 1 development identities.\nProduction resolves users through Nour's persisted User table.",
+        "description": "Authenticate a user, return a bearer token and set the refresh cookie.\n\nAn address with too many recent failures is refused with 429 before the\npassword is checked. Every failure, whatever the reason, counts against\nthe address.",
         "operationId": "login_api_v1_auth_login_post",
         "requestBody": {
           "content": {
@@ -2241,9 +2241,27 @@
               }
             },
             "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many failed sign-ins from this address recently."
           }
         },
         "summary": "Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "description": "Drop the refresh cookie, so the sign-in cannot be renewed.\n\nAn access token already issued still works until its expiry, as before:\ntokens are not revoked.",
+        "operationId": "logout_api_v1_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Logout",
         "tags": [
           "auth"
         ]
@@ -2273,7 +2291,7 @@
     },
     "/api/v1/auth/refresh": {
       "post": {
-        "description": "Swap a still-valid access token for a fresh one.\n\nThe client calls this shortly before its token expires, so a class longer\nthan the token's lifetime is not interrupted by a sign-in. The account is\nchecked again, and the sign-in itself still ends max_sign_in_hours after\nthe password was typed. An expired token cannot be refreshed: the user\nsigns in again.",
+        "description": "A fresh access token for the holder of the refresh cookie.\n\nThe client calls this shortly before its token expires, so a class longer\nthan the token's lifetime is not interrupted by a sign-in, and on load,\nsince it keeps the access token in memory only. The account is checked\nagain, and the sign-in itself still ends max_sign_in_hours after the\npassword was typed. An access token cannot be refreshed: one taken from\nthe page ends at its own expiry.",
         "operationId": "refresh_api_v1_auth_refresh_post",
         "responses": {
           "200": {

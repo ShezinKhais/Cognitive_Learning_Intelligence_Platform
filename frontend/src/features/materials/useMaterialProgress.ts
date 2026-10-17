@@ -123,7 +123,8 @@ export function useMaterialProgress(
           last_seq: number
           stream_id?: string
         } = {
-          token: accessToken,
+          // The latest, so a reconnect after a refresh sends the new token.
+          token: getAccessToken() ?? accessToken,
           // Zero matters when the socket connects after a very fast upload:
           // it asks the server to replay progress emitted before READY.
           last_seq: lastSeq,

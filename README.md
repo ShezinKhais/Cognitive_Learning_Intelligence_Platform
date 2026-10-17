@@ -287,8 +287,9 @@ will implement it.
 |---|---|---|---|
 | GET | `/health` | none | Liveness, and whether Teams is configured |
 | GET | `/ready` | none | Whether PostgreSQL and Ollama are reachable |
-| POST | `/auth/login` | none | Sign in and receive an access token |
-| POST | `/auth/refresh` | any | Swap a still-valid token for a fresh one, within 12 hours of signing in |
+| POST | `/auth/login` | none | Sign in: an access token, and the httpOnly refresh cookie. 429 after too many failures from one address |
+| POST | `/auth/refresh` | refresh cookie | A fresh access token, within 12 hours of signing in. Needs `X-CLIP-Refresh: 1` |
+| POST | `/auth/logout` | refresh cookie | Drop the refresh cookie. Needs `X-CLIP-Refresh: 1` |
 | GET | `/auth/me` | any | The signed-in user, with role and consents |
 | POST | `/auth/consent` | any | Grant or withdraw one kind of consent |
 | POST | `/admin/timetable` | admin | Import the timetable CSV |

@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-// api.ts reads the token from localStorage and calls fetch; both are stubbed.
-const store = new Map<string, string>()
+// api.ts clears where earlier builds kept the token and calls fetch; both are
+// stubbed. The token itself is only ever in memory.
+const store = new Map<string, string>([
+  ['clip_access_token', 'left-by-an-old-build'],
+  ['clip_access_token_expires_at', '1'],
+])
 Object.assign(globalThis, {
   window: {
     localStorage: {
@@ -13,11 +17,10 @@ Object.assign(globalThis, {
   },
 })
 
-// Without Web Locks, so the sharing tested here is this tab's own.
-Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true })
-
-// The backend: a token is good until it is refreshed, and refreshing a token
-// the backend no longer accepts is a 401.
+// The backend. The refresh cookie is the browser's, so it is modelled as a
+// flag: while it holds, a refresh carrying the header returns a new token.
+// Access tokens are good until the next one is issued.
+let cookie = false
 let valid = new Set<string>()
 let refreshes = 0
 let issued = 0
@@ -28,16 +31,20 @@ let failures: Array<'offline' | number> = []
 // Off when timers are mocked, where a real wait would never end.
 let slowRefresh = true
 
-function bearer(init?: RequestInit): string {
-  return new Headers(init?.headers).get('Authorization')?.replace('Bearer ', '') ?? ''
+function header(init: RequestInit | undefined, name: string): string {
+  return new Headers(init?.headers).get(name) ?? ''
 }
 
 globalThis.fetch = (async (url: string, init?: RequestInit) => {
   const path = String(url)
-  const token = bearer(init)
+  const token = header(init, 'Authorization').replace('Bearer ', '')
   requests.push(`${path} ${token}`)
   if (path.endsWith('/auth/login')) {
     return new Response('{}', { status: 401 })
+  }
+  if (path.endsWith('/auth/logout')) {
+    if (header(init, 'X-CLIP-Refresh') === '1') cookie = false
+    return new Response(null, { status: 204 })
   }
   if (path.endsWith('/auth/refresh')) {
     refreshes += 1
@@ -45,17 +52,18 @@ globalThis.fetch = (async (url: string, init?: RequestInit) => {
     const failure = failures.shift()
     if (failure === 'offline') throw new TypeError('Failed to fetch')
     if (failure !== undefined) return new Response('{}', { status: failure })
-    if (!valid.has(token)) return new Response('{}', { status: 401 })
-    valid.delete(token)
+    // The backend never reads a bearer here.
+    if (token) return new Response('{}', { status: 400 })
+    if (!cookie || header(init, 'X-CLIP-Refresh') !== '1') return new Response('{}', { status: 401 })
     issued += 1
     const fresh = `fresh-${issued}`
-    valid.add(fresh)
+    valid = new Set([fresh])
     return new Response(
       JSON.stringify({ access_token: fresh, token_type: 'bearer', expires_in: 3600, role: 'lecturer' }),
       { status: 200 },
     )
   }
-  if (!token.startsWith('fresh-')) return new Response('{}', { status: 401 })
+  if (!valid.has(token)) return new Response('{}', { status: 401 })
   return new Response(JSON.stringify({ ok: token }), { status: 200 })
 }) as typeof fetch
 
@@ -65,15 +73,27 @@ const {
   clearAccessToken,
   getAccessToken,
   login,
+  restoreSession,
   saveAccessToken,
 } = await import('../src/api.ts')
 
-function reset(token: string, refreshable: boolean): void {
-  valid = new Set(refreshable ? [token] : [])
+const settle = async () => {
+  for (let i = 0; i < 10; i += 1) await new Promise((resolve) => setImmediate(resolve))
+}
+
+// Signed in with this token; the cookie is still good or not.
+function reset(token: string, signedIn: boolean): void {
+  cookie = signedIn
+  valid = new Set()
   refreshes = 0
   requests = []
   saveAccessToken(token)
 }
+
+test('nothing is left where earlier builds kept the token', () => {
+  assert.equal(store.has('clip_access_token'), false)
+  assert.equal(store.has('clip_access_token_expires_at'), false)
+})
 
 test('requests failing together share one refresh and each retry once', async () => {
   reset('expired', true)
@@ -100,20 +120,78 @@ test('a refresh the backend refuses signs the user out', async () => {
   )
   assert.equal(refreshes, 1)
   assert.equal(getAccessToken(), null)
-  // One try, one refresh, no retry with nothing.
-  assert.equal(requests.length, 2)
+  // One try, one refresh, no retry with nothing, then the cookie is dropped.
+  assert.deepEqual(
+    requests.map((line) => line.split(' ')[0]),
+    ['/api/v1/auth/me', '/api/v1/auth/refresh', '/api/v1/auth/logout'],
+  )
 })
 
-test('login is never refreshed or retried', async () => {
+test('a reload signs back in with the cookie, and the token stays in memory', async () => {
   reset('anything', true)
   clearAccessToken()
+  await settle()
+  cookie = true
+  requests = []
+
+  const token = await restoreSession()
+
+  assert.ok(token?.startsWith('fresh-'))
+  assert.equal(getAccessToken(), token)
+  assert.equal(store.size, 0)
+  // A second caller uses the token already held.
+  assert.equal(await restoreSession(), token)
+  assert.equal(refreshes, 1)
+  clearAccessToken()
+})
+
+test('with no cookie a reload is signed out, not an error', async () => {
+  reset('anything', false)
+  clearAccessToken()
+  await settle()
+
+  assert.equal(await restoreSession(), null)
+})
+
+test('an unreachable backend at reload is an error, not a sign-out', async () => {
+  reset('anything', true)
+  clearAccessToken()
+  await settle()
+  cookie = true
+  failures = ['offline']
+
+  await assert.rejects(
+    restoreSession(),
+    (error: unknown) => error instanceof ApiError && error.status === 503,
+  )
+  assert.equal(cookie, true)
+})
+
+test('signing out drops the cookie, so a reload does not sign back in', async () => {
+  reset('anything', true)
+
+  clearAccessToken()
+  await settle()
+
+  assert.equal(getAccessToken(), null)
+  assert.equal(cookie, false)
+  assert.equal(await restoreSession(), null)
+})
+
+test('a wrong password does not sign anyone out', async () => {
+  reset('anything', true)
+  requests = []
 
   await assert.rejects(login('a@b.c', 'wrong'))
+
   assert.deepEqual(requests, ['/api/v1/auth/login '])
+  assert.equal(getAccessToken(), 'anything')
+  assert.equal(cookie, true)
+  clearAccessToken()
 })
 
 test('the token is refreshed before it expires, without waiting for a 401', async () => {
-  valid = new Set(['about-to-expire'])
+  cookie = true
   refreshes = 0
   // Inside the five minutes before expiry, so the refresh is due at once.
   saveAccessToken('about-to-expire', 60)
@@ -128,12 +206,9 @@ test('the token is refreshed before it expires, without waiting for a 401', asyn
 test('a refresh that fails while the token is valid is tried again until one works', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1_000_000 })
   slowRefresh = false
-  valid = new Set(['due'])
+  cookie = true
   refreshes = 0
   failures = ['offline', 503]
-  const settle = async () => {
-    for (let i = 0; i < 10; i += 1) await new Promise((resolve) => setImmediate(resolve))
-  }
 
   // Two minutes left, so the refresh is due at once.
   saveAccessToken('due', 120)
@@ -159,12 +234,9 @@ test('a refresh that fails while the token is valid is tried again until one wor
 test('a failed refresh is not retried once the token has expired', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 2_000_000 })
   slowRefresh = false
-  valid = new Set(['nearly-gone'])
+  cookie = true
   refreshes = 0
   failures = ['offline', 'offline', 'offline']
-  const settle = async () => {
-    for (let i = 0; i < 10; i += 1) await new Promise((resolve) => setImmediate(resolve))
-  }
 
   // Forty seconds left: one try now, one retry at 30s, none after expiry.
   saveAccessToken('nearly-gone', 40)

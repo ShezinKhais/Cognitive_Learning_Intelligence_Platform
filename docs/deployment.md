@@ -109,11 +109,42 @@ Other behaviour:
   trusts any sender (`FORWARDED_ALLOW_IPS=*`), which is safe only because its port is
   not published.
 - Uploads: nginx allows bodies up to 60 MB. The backend limit is 50 MB.
-- Headers: `X-Content-Type-Options: nosniff`, `Referrer-Policy`, and the
-  `Content-Security-Policy: frame-ancestors` header that
-  [teams-frontend-security.md](teams-frontend-security.md) requires. No
-  `X-Frame-Options` is sent. A fuller CSP (script and style sources) is a deployment
-  decision and has not been made.
+- Compression: gzip for scripts, styles, JSON, SVG and wasm over 1 KB. The tutor's
+  NDJSON stream is left uncompressed, since gzip would hold its words back.
+- Headers: `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`
+  (camera and microphone for this origin only), `Strict-Transport-Security`, and a
+  `Content-Security-Policy`. No `X-Frame-Options` is sent.
+- The CSP allows scripts, styles, fonts, workers and connections from this origin only,
+  plus `res.cdn.office.net`, where the Teams SDK reads Microsoft's list of Teams hosts.
+  `wasm-unsafe-eval` lets the attention models' WebAssembly compile; no `eval` and no
+  inline script is allowed. `style-src` allows inline styles for style attributes.
+  `frame-ancestors` is the Teams list [teams-frontend-security.md](teams-frontend-security.md)
+  requires.
+- HSTS is ignored over plain http, so a local demo is unaffected. It takes effect once
+  TLS is terminated in front of nginx.
+- The API sets `nosniff`, `Referrer-Policy` and `Content-Security-Policy: default-src
+  'none'; frame-ancestors 'none'` on its own answers, for any route to it that does not
+  pass through nginx.
+
+## Sign-in
+
+The access token lasts an hour and is kept in the tab's memory only. A refresh token
+is set at sign-in as an httpOnly cookie, scoped to `/api/v1/auth`, and lasts until the
+sign-in ends (`MAX_SIGN_IN_HOURS`). The client uses it to get a new access token before
+the old one expires, and on every reload or new tab. An access token cannot be
+refreshed, so one taken from a page stops working within the hour.
+
+In production the cookie is `Secure; SameSite=None; Partitioned`, because a Teams tab
+is a cross-site iframe and only such a cookie is sent there. To stop another site
+using it, refresh and sign-out require an `X-CLIP-Refresh: 1` header, which a page on
+another origin cannot add without a CORS preflight, and production answers no
+preflight. In development the cookie is `SameSite=Lax` and not `Secure`, since the dev
+server is plain http.
+
+Failed sign-ins are counted per account (5 in 15 minutes locks the account) and per
+address (`LOGIN_FAILURES_PER_ADDRESS` in `LOGIN_FAILURE_WINDOW_MINUTES`, then 429).
+The address count is held in memory, which is the whole count with the one worker the
+image runs.
 
 ## Data
 

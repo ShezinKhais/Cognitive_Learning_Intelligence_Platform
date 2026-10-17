@@ -194,6 +194,15 @@ def create_app() -> FastAPI:
         finally:
             request_id_var.reset(token)
         response.headers["X-Request-ID"] = rid
+        # nginx adds the page's headers in a deployment (frontend/nginx.conf).
+        # These hold when the API is reached any other way. An API answer is
+        # data, never a page: nothing may frame it or run from it.
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        if not request.url.path.startswith(("/docs", "/redoc")):
+            response.headers.setdefault(
+                "Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'"
+            )
         return response
 
     register_error_handlers(app)
