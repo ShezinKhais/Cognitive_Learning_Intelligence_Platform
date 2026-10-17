@@ -51,7 +51,7 @@ class Question(Base):
     # access follows the material's uploader rather than a session.
     session_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("session.session_id"),
+        ForeignKey("session.session_id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )

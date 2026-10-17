@@ -51,3 +51,6 @@ logs/
 
 # Uploaded material, written by LocalDiskStorage
 backend/var/
+
+# Database backups hold personal data
+backend/backups/
