@@ -607,7 +607,18 @@ export default function LecturerLiveSessionPage() {
             </h1>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            {sessionId && (
+              <Link
+                to={`/lecturer/sessions/${encodeURIComponent(
+                  sessionId,
+                )}/report`}
+                className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+              >
+                Session report
+              </Link>
+            )}
+
             <Link
               to="/lecturer/materials"
               className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"

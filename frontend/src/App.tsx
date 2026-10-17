@@ -11,9 +11,11 @@ import StaffTeamsBoundary from './components/StaffTeamsBoundary'
 import { StudentAppProvider } from './features/student/StudentAppContext'
 import AccessDeniedPage from './pages/AccessDeniedPage'
 import AdminConsole from './pages/AdminConsole'
+import AdminGovernancePage from './pages/AdminGovernancePage'
 import ConsentPage from './pages/ConsentPage'
 import LecturerLiveSessionPage from './pages/LecturerLiveSessionPage'
 import LecturerMaterialsPage from './pages/LecturerMaterialsPage'
+import LecturerSessionReportPage from './pages/LecturerSessionReportPage'
 import LecturerSessionsPage from './pages/LecturerSessionsPage'
 import LoginPage from './pages/LoginPage'
 import ProtectedStudentPage from './pages/ProtectedStudentPage'
@@ -128,6 +130,11 @@ export default function App() {
           path="/admin"
           element={<AdminConsole />}
         />
+
+        <Route
+          path="/admin/governance"
+          element={<AdminGovernancePage />}
+        />
       </Route>
 
       {/* Lecturers, and admins who can review on any lecturer's behalf per
@@ -171,6 +178,11 @@ export default function App() {
         <Route
           path="/lecturer/sessions/:sessionId/live"
           element={<LecturerLiveSessionPage />}
+        />
+
+        <Route
+          path="/lecturer/sessions/:sessionId/report"
+          element={<LecturerSessionReportPage />}
         />
 
         <Route
