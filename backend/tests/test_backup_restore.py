@@ -5,7 +5,9 @@ client tools and a database user that may create databases, and skips without.""
 from __future__ import annotations
 
 import shutil
+import subprocess
 import uuid
+from pathlib import Path
 
 import pytest
 from sqlalchemy import text
@@ -14,6 +16,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
+from scripts import database_backup
 from scripts.database_backup import (
     CreateFailed,
     drop,
@@ -105,3 +108,33 @@ def test_any_other_restore_error_is_a_failure():
     )
 
     assert len(unexpected_errors(stderr)) == 1
+
+
+def test_the_dump_file_is_private_before_pg_dump_writes_to_it(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake_run(command, **kwargs):
+        target = Path(command[command.index("--file") + 1])
+        seen["mode"] = target.stat().st_mode & 0o777
+        target.write_bytes(b"dump")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(database_backup.subprocess, "run", fake_run)
+
+    path = dump("postgresql+asyncpg://u:p@h/db", tmp_path / "new", "clip")
+
+    assert seen["mode"] == 0o600
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert (tmp_path / "new").stat().st_mode & 0o777 == 0o700
+
+
+def test_a_failed_dump_leaves_no_partial_file(tmp_path, monkeypatch):
+    def failing_run(command, **kwargs):
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(database_backup.subprocess, "run", failing_run)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        dump("postgresql+asyncpg://u:p@h/db", tmp_path, "clip")
+
+    assert list(tmp_path.iterdir()) == []

@@ -396,3 +396,42 @@ async def test_the_students_export_includes_their_history(db, world, lent_histor
             "gaze_average": None,
         }
     ]
+
+
+async def test_a_failure_after_the_history_is_erased_can_simply_be_run_again(
+    db, world, lent_history, monkeypatch
+):
+    from app.history.repository import SemesterTotals, add_totals, list_for_student
+    from app.services import deletion_requests as module
+
+    await add_totals(
+        db, [SemesterTotals(world.student, uuid.uuid4(), "2001-H1", sessions_attended=1)]
+    )
+    request = await create_request(
+        db, target_type="student", target_id=world.student, requested_by=world.first
+    )
+    await approve(db, request.request_id, admin_id=world.second)
+    real = module.erase_student
+    calls = []
+
+    async def fails_once(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("the main database failed")
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(module, "erase_student", fails_once)
+
+    with pytest.raises(RuntimeError):
+        await execute(db, request.request_id, admin_id=world.second, history=lent_history)
+
+    # The history rows are already gone, but the request is still approved and
+    # the student is still there: nothing is half-recorded as done.
+    assert await list_for_student(db, world.student) == []
+    assert (await get_request(db, request.request_id)).status == "approved"
+    assert await count(db, Student, Student.student_id, world.student) == 1
+
+    done = await execute(db, request.request_id, admin_id=world.second, history=lent_history)
+
+    assert done.status == "executed"
+    assert await count(db, Student, Student.student_id, world.student) == 0

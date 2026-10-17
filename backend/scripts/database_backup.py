@@ -69,23 +69,31 @@ def connection_args(url: URL) -> list[str]:
 
 def dump(url_text: str, out_dir: Path, prefix: str, now: datetime | None = None) -> Path:
     url = plain_url(url_text)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    # Closed to everyone but the owner before pg_dump writes anything: the folder,
+    # when this creates it, and the file itself.
+    if not out_dir.exists():
+        out_dir.mkdir(parents=True, mode=0o700)
     stamp = (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ")
     path = out_dir / f"{prefix}-{stamp}.dump"
-    subprocess.run(
-        [
-            "pg_dump",
-            "--format=custom",
-            "--no-owner",
-            *connection_args(url),
-            "--file",
-            str(path),
-            url.database,
-        ],
-        env=environment(url),
-        check=True,
-    )
-    path.chmod(0o600)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    os.close(descriptor)
+    try:
+        subprocess.run(
+            [
+                "pg_dump",
+                "--format=custom",
+                "--no-owner",
+                *connection_args(url),
+                "--file",
+                str(path),
+                url.database,
+            ],
+            env=environment(url),
+            check=True,
+        )
+    except BaseException:
+        path.unlink(missing_ok=True)  # never leave a partial dump behind
+        raise
     return path
 
 

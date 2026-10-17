@@ -25,6 +25,7 @@ from app.history.repository import SemesterTotals, add_totals, semester_label
 from app.models.attention_signal_summary import AttentionSignalSummary
 from app.models.engagement_record import EngagementRecord
 from app.models.session import Session
+from app.models.session_participant import SessionParticipant
 from app.models.student_response import StudentResponse
 from app.services.retention import session_clock
 
@@ -61,6 +62,17 @@ async def archive_sessions(
         course_id, semester = where[session_id]
         attended.add((session_id, student_id))
         return summary[(student_id, course_id, semester)]
+
+    # Attendance is what the attendance table says. A student who joined but
+    # declined monitoring and never answered still attended: they get a row with
+    # zero answers and no engagement, not no row.
+    attendance = await db.execute(
+        select(SessionParticipant.session_id, SessionParticipant.student_id).where(
+            SessionParticipant.session_id.in_(todo)
+        )
+    )
+    for session_id, student_id in attendance:
+        row_for(session_id, student_id)
 
     answers = await db.execute(
         select(

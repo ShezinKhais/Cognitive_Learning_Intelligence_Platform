@@ -10,7 +10,7 @@ from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -497,3 +497,117 @@ async def test_only_unresolved_old_teams_mappings_are_purged(db, borrowed):
         for name, mapping_id in ids.items()
     }
     assert remaining == {"old_unresolved": False, "new_unresolved": True, "old_resolved": True}
+
+
+# -- a session that is not over is never purged ------------------------------------------------
+
+
+@pytest.mark.parametrize("status", ["prepared", "active", "ending"])
+async def test_a_session_that_is_not_over_is_never_purged(db, history, status):
+    await db.execute(
+        update(Session).where(Session.session_id == history.expired.session).values(status=status)
+    )
+
+    report = await purge_expired(db, dry_run=False, retention_days=90)
+
+    assert await holdings(db, history.expired) == dict.fromkeys(HOLDINGS, 1)
+    assert report.sessions >= 0
+
+
+async def test_a_cancelled_session_is_purged_like_an_ended_one(db, history):
+    await db.execute(
+        update(Session)
+        .where(Session.session_id == history.expired.session)
+        .values(status="cancelled")
+    )
+
+    await purge_expired(db, dry_run=False, retention_days=90)
+
+    assert await holdings(db, history.expired) == dict.fromkeys(HOLDINGS, 0)
+
+
+async def test_the_scheduled_purge_also_leaves_a_live_session_alone(db, history, borrowed):
+    from app.services.retention_tasks import SessionDataPurge
+
+    await db.execute(
+        update(Session).where(Session.session_id == history.expired.session).values(status="active")
+    )
+
+    await SessionDataPurge(borrowed).purge(days_ago(90), 500)
+
+    assert await holdings(db, history.expired) == dict.fromkeys(HOLDINGS, 1)
+
+
+# -- the admin purge archives first, like the scheduled one -------------------------------------
+
+
+async def test_the_admin_purge_archives_to_history_before_deleting(
+    db, history, history_tables, borrowed
+):
+    from app.history.models import ArchivedSession
+    from app.history.repository import list_for_student
+
+    student = await student_of(db, history.expired)  # the answer is gone after the purge
+
+    await purge_expired(db, dry_run=False, retention_days=90, history=borrowed)
+
+    assert await holdings(db, history.expired) == dict.fromkeys(HOLDINGS, 0)
+    # One row for the student, built from the expired session only: the kept
+    # session was not archived and is still there.
+    [row] = await list_for_student(db, student)
+    assert (row.sessions_attended, row.questions_attempted) == (1, 1)
+    archived = await db.scalar(
+        select(func.count())
+        .select_from(ArchivedSession)
+        .where(ArchivedSession.session_id == history.expired.session)
+    )
+    assert archived == 1
+    assert await holdings(db, history.kept) == dict.fromkeys(HOLDINGS, 1)
+
+
+async def test_the_admin_purge_deletes_nothing_when_history_is_unavailable(
+    db, history, history_tables
+):
+    def broken():
+        raise RuntimeError("the history database is down")
+
+    with pytest.raises(RuntimeError):
+        await purge_expired(db, dry_run=False, retention_days=90, history=lambda: broken)
+
+    assert await holdings(db, history.expired) == dict.fromkeys(HOLDINGS, 1)
+
+
+# -- attendance comes from the attendance table ---------------------------------------------------
+
+
+async def test_a_student_who_only_attended_still_gets_a_history_row(db, history, history_tables):
+    from datetime import date
+
+    from app.history.repository import list_for_student
+    from app.models.session_participant import SessionParticipant
+    from app.services.history_archive import archive_sessions
+
+    course = await db.scalar(
+        select(Session.course_id).where(Session.session_id == history.expired.session)
+    )
+    quiet_user = User(name="Quiet Student", role="student", email=f"q-{uuid.uuid4()}@example.com")
+    db.add(quiet_user)
+    await db.flush()
+    quiet = Student(
+        user_id=quiet_user.user_id,
+        course_id=course,
+        consent_status="granted",
+        enrolled_at=date.today(),
+    )
+    db.add(quiet)
+    await db.flush()
+    db.add(SessionParticipant(session_id=history.expired.session, student_id=quiet.student_id))
+    await db.flush()
+
+    await archive_sessions(db, db, [history.expired.session])
+
+    [row] = await list_for_student(db, quiet.student_id)
+    assert (row.sessions_attended, row.questions_attempted, row.questions_correct) == (1, 0, 0)
+    assert (row.engagement_count, row.gaze_count) == (0, 0)
+    [answered] = await list_for_student(db, await student_of(db, history.expired))
+    assert answered.questions_attempted == 1

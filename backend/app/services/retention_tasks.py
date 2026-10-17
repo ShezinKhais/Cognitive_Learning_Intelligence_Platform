@@ -26,7 +26,7 @@ from app.models.teams_user_mapping import TeamsUserMapping
 from app.repositories.audit_repository import record_event
 from app.services.history_archive import archive_sessions
 from app.services.purge_runner import PurgeRunner
-from app.services.retention import RETENTION_ACTION, session_clock
+from app.services.retention import RETENTION_ACTION, expired_sessions, session_clock
 
 SessionFactory = Callable[[], async_sessionmaker[AsyncSession]]
 
@@ -57,7 +57,7 @@ class SessionDataPurge:
             ids = list(
                 await db.scalars(
                     select(Session.session_id)
-                    .where(session_clock() < cutoff)
+                    .where(expired_sessions(cutoff))
                     .order_by(session_clock())
                     .limit(limit)
                 )

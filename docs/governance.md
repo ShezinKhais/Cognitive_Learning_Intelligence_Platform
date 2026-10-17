@@ -24,6 +24,11 @@ the session row is deleted and the database removes everything it holds:
 Teams roster syncs hold participant names and outlive their session, so they are
 purged on their own received date.
 
+**Only finished sessions.** Retention deletes only sessions whose status is `ended`
+or `cancelled`. A `prepared`, `active` or `ending` session is never purged, whatever its
+dates say; end it first. The admin run archives to the history database first, like the
+scheduled purge, and deletes nothing if that fails.
+
 The purge reports what it removed as counts. A **dry run** only counts and is the
 default in code: `GET /governance/retention/preview`. A real run,
 `POST /governance/retention/run`, needs `{"confirm": true}` in the body, deletes for
@@ -62,6 +67,12 @@ The account row stays so the audit log and consent records keep a valid referenc
 it identifies nobody: the name becomes "Deleted student", the email a placeholder, and
 sign-in is disabled. Audit entries and consent records are never touched.
 
+**If an erasure fails halfway.** The history rows are erased and committed first, then
+the main data. If the main step fails, the history rows are already gone but the request
+stays `approved`: run `execute` again and it finishes, because erasing is repeatable and
+a student who is already gone reports nothing left. The order is deliberate. The other way
+round, a failure could leave history rows behind for a request marked executed.
+
 ## The history database
 
 Session data is deleted after `DATA_RETENTION_DAYS`. What is kept longer, until the
@@ -81,6 +92,8 @@ see it.
   database *before* anything is deleted. If that fails, the batch is not deleted, the
   failure is logged, and the next run tries the same sessions. A session is added once:
   its id is recorded in `archived_session`, so a retried batch never counts twice.
+  Attendance comes from the attendance table, so a student who joined but declined
+  monitoring and never answered still gets a row, with zero answers and no engagement.
 - **Erasure:** executing a student deletion request erases the student's history rows
   first, then their main data. If the history database is down the request stays
   `approved` and can be executed again. The outcome counts `history_rows`.
