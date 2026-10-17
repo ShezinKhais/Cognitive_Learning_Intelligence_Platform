@@ -3,6 +3,7 @@
 // observation, and keeps those with the label being acted out. The video is
 // shown on this page only and never stored. Served by `npm run dev` at
 // /eval/attention-recorder.html; not part of the built app.
+import '../../index.css'
 import { CONDITIONS, LABELS, framesToCsv, type Condition, type Frame, type Label } from './evaluation.ts'
 import type { FaceFeatures } from './signals.ts'
 
@@ -20,6 +21,8 @@ const status = $<HTMLParagraphElement>('status')
 const counter = $<HTMLParagraphElement>('count')
 const download = $<HTMLButtonElement>('download')
 const discard = $<HTMLButtonElement>('discard')
+const bar = $<HTMLDivElement>('bar')
+const live = $<HTMLElement>('live')
 
 const frames: Frame[] = []
 let clips = 0
@@ -32,8 +35,10 @@ let recording: { label: Label; clip: string; startedAt: number; conditions: Reco
 const selects = {} as Record<Condition, HTMLSelectElement>
 for (const [name, values] of Object.entries(CONDITIONS) as [Condition, readonly string[]][]) {
   const label = document.createElement('label')
-  label.textContent = `${name} `
+  label.className = 'text-sm font-medium capitalize'
+  label.textContent = name
   const select = document.createElement('select')
+  select.className = 'mt-1 block w-full rounded-lg border border-border bg-input-background px-2 py-1.5 text-sm'
   for (const value of values) select.append(new Option(value, value))
   label.append(select)
   $('conditions').append(label)
@@ -42,7 +47,8 @@ for (const [name, values] of Object.entries(CONDITIONS) as [Condition, readonly 
 const labelButtons: HTMLButtonElement[] = []
 for (const [label, instruction] of Object.entries(LABELS) as [Label, string][]) {
   const button = document.createElement('button')
-  button.textContent = `${label}: ${instruction}`
+  button.className = 'rounded-lg border border-border px-3 py-2 text-left text-sm hover:bg-muted disabled:opacity-40'
+  button.innerHTML = `<span class="font-semibold">${label}</span><span class="block text-xs text-muted-foreground">${instruction}</span>`
   button.disabled = true
   button.onclick = () => record(label)
   $('labels').append(button)
@@ -70,12 +76,32 @@ function record(label: Label) {
     if (!recording) return
     recording.startedAt = performance.now()
     status.textContent = `Recording: ${LABELS[label]}`
+    bar.style.transition = 'none'
+    bar.style.width = '0%'
+    requestAnimationFrame(() => {
+      bar.style.transition = `width ${CLIP_SECONDS}s linear`
+      bar.style.width = '100%'
+    })
     setTimeout(() => {
       recording = null
+      bar.style.transition = 'none'
+      bar.style.width = '0%'
       status.textContent = 'Clip saved. Pick the next one.'
       refresh()
     }, CLIP_SECONDS * 1000)
   }, 2000)
+}
+
+/** The numbers being recorded, live, so the tester can see the camera react. */
+function show(features: FaceFeatures) {
+  const value = (v: number | undefined) => v === undefined ? '–' : `${Math.round(v)}°`
+  const cells: [string, string][] = [
+    ['faces', String(features.faces)],
+    ['yaw', value(features.pose?.yaw)],
+    ['pitch', value(features.pose?.pitch)],
+  ]
+  live.innerHTML = cells.map(([name, v]) =>
+    `<div class="rounded-lg bg-muted p-2"><dt class="text-muted-foreground">${name}</dt><dd class="text-base font-semibold">${v}</dd></div>`).join('')
 }
 
 function keep(features: FaceFeatures) {
@@ -98,7 +124,7 @@ start.onclick = async () => {
   worker = new Worker(new URL('./face.worker.ts', import.meta.url), { type: 'module' })
   worker.onmessage = event => {
     if (event.data.type === 'ready') { status.textContent = 'Camera ready. Pick a clip to record.'; sendFrames() }
-    else if (event.data.type === 'observation') { busy = false; if (event.data.features) keep(event.data.features) }
+    else if (event.data.type === 'observation') { busy = false; if (event.data.features) { show(event.data.features); keep(event.data.features) } }
     else if (event.data.type === 'error') { busy = false; status.textContent = 'A frame could not be read; recording continues.' }
   }
   worker.postMessage({ type: 'init', base: assets, withFeatures: true })
