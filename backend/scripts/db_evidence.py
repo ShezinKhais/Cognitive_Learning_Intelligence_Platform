@@ -52,7 +52,17 @@ FOREIGN_KEYS = text(
 )
 
 
+def require_scratch_name(name: str) -> None:
+    """Refuse any database that is not clearly a throwaway one.
+
+    The scripts drop and recreate what they are pointed at, so a typo in
+    --database must never reach a real database."""
+    if "evidence" not in name:
+        raise SystemExit(f"{name} is not a scratch database: its name must contain 'evidence'.")
+
+
 def scratch_url(name: str) -> str:
+    require_scratch_name(name)
     live = get_settings().database_url
     return make_url(live).set(database=name).render_as_string(hide_password=False)
 
@@ -67,6 +77,7 @@ async def create_extension(name: str, extension: str) -> None:
 
 
 def prepare(name: str) -> None:
+    require_scratch_name(name)
     live = plain_url(get_settings().database_url)
     if name == live.database:
         raise SystemExit(f"{name} is the live database. Pick another name.")
@@ -182,6 +193,7 @@ async def current_revision(name: str) -> str | None:
 
 
 def rollback(name: str) -> int:
+    require_scratch_name(name)
     if name == plain_url(get_settings().database_url).database:
         raise SystemExit(f"{name} is the live database. Pick another name.")
     script = ScriptDirectory.from_config(Config(str(BACKEND / "alembic.ini")))

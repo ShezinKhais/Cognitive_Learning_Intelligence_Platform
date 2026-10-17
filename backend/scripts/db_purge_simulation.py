@@ -44,7 +44,7 @@ from app.services.purge_runner import PurgeRunner
 from app.services.retention import purge_expired
 from app.services.retention_tasks import RosterSyncPurge, SessionDataPurge, TeamsMappingPurge
 from scripts.database_backup import connection_args, environment, plain_url
-from scripts.db_evidence import prepare, scratch_url
+from scripts.db_evidence import prepare, require_scratch_name, scratch_url
 
 STUDENTS = 30
 QUESTIONS = 6
@@ -66,6 +66,7 @@ class Timed:
 
 
 def recreate_database(name: str) -> None:
+    require_scratch_name(name)
     live = plain_url(get_settings().database_url)
     if name == live.database:
         raise SystemExit(f"{name} is the live database. Pick another name.")
