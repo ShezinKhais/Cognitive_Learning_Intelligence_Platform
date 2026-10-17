@@ -7,6 +7,7 @@ import { ApiError, clearAccessToken } from '../api'
 import { cn } from '../components/ui/cn'
 import { buttonStyles } from '../components/ui/button'
 import { EmptyState, PageBody, PageHeader, Tag } from '../components/ui/primitives'
+import { MaterialActionForm, MaterialMenu, type MaterialActionMode } from '../features/materials/MaterialActions'
 import MaterialDetails from '../features/materials/MaterialDetails'
 import { getMaterial, listMaterials, uploadMaterial } from '../features/materials/materialApi'
 import type { Material, MaterialProgress } from '../features/materials/types'
@@ -209,6 +210,8 @@ export default function LecturerMaterialsPage() {
                   progress={progress[material.id] ?? progressFromStatus(material)}
                   open={open === material.id}
                   onToggle={() => setOpen((current) => (current === material.id ? null : material.id))}
+                  onChanged={(changed) => setMaterials((current) => upsertMaterial(current ?? [], changed))}
+                  onDeleted={(id) => setMaterials((current) => (current ?? []).filter((item) => item.id !== id))}
                 />
               </li>
             ))}
@@ -242,18 +245,24 @@ function MaterialRow({
   progress,
   open,
   onToggle,
+  onChanged,
+  onDeleted,
 }: {
   material: Material
   progress: MaterialProgress
   open: boolean
   onToggle: () => void
+  onChanged: (material: Material) => void
+  onDeleted: (id: string) => void
 }) {
+  const [mode, setMode] = useState<MaterialActionMode>('idle')
   const working = !isFinished(material) && progress.stage !== 'done' && progress.stage !== 'failed'
   const failed = material.status === 'failed' || progress.stage === 'failed'
   const ready = material.status === 'completed'
   const pages = material.page_count
   const meta = [
     formatWhen(material.uploaded_at, ''),
+    material.course_code ?? 'Any course',
     pages != null && `${pages} ${fileExtension(material.filename) === 'pptx' ? (pages === 1 ? 'slide' : 'slides') : pages === 1 ? 'page' : 'pages'}`,
     formatBytes(material.size_bytes),
   ]
@@ -295,10 +304,23 @@ function MaterialRow({
               <ChevronDown size={16} aria-hidden className={cn('transition-transform duration-200', open && 'rotate-180')} />
               <span className="sr-only">{open ? 'Hide details' : 'Show what was read'}</span>
             </button>
+            <MaterialMenu material={material} onMode={setMode} />
           </>
         }
       />
       </div>
+      <AnimatePresence initial={false}>
+        {mode !== 'idle' && mode !== 'menu' && (
+          <MaterialActionForm
+            key={mode}
+            mode={mode}
+            material={material}
+            onClose={() => setMode('idle')}
+            onChanged={onChanged}
+            onDeleted={onDeleted}
+          />
+        )}
+      </AnimatePresence>
       <AnimatePresence initial={false}>
         {open && (
           <motion.div

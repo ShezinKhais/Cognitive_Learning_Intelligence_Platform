@@ -48,6 +48,8 @@ export interface Material {
   error: string | null
   uploaded_at: string
   warnings?: string[] | null
+  /** The course it is filed under, if any. */
+  course_code?: string | null
   pages?: MaterialPagePreview[] | null
 }
 
