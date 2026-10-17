@@ -178,6 +178,7 @@ export default function LecturerMaterialsPage() {
 
         {empty && (
           <EmptyState
+            art="add-files"
             title="No materials yet"
             action={
               PIPELINE_ENABLED && (

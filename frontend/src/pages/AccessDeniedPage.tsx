@@ -1,10 +1,10 @@
 import { motion } from 'motion/react'
-import { Lock } from 'lucide-react'
 import { useNavigate } from 'react-router'
 
 import { clearAccessToken } from '../api'
 import { Wordmark } from '../components/brand/ClipMark'
 import { buttonStyles } from '../components/ui/button'
+import Illustration from '../components/ui/Illustration'
 
 export default function AccessDeniedPage() {
   const navigate = useNavigate()
@@ -25,10 +25,8 @@ export default function AccessDeniedPage() {
         <div className="mb-10">
           <Wordmark />
         </div>
-        <span className="grid h-11 w-11 place-items-center rounded-full bg-accent text-accent-foreground">
-          <Lock size={20} aria-hidden />
-        </span>
-        <h1 className="mt-5 text-[1.75rem] font-bold leading-tight">This page is for another role</h1>
+        <Illustration name="access-denied" className="h-40 w-56" />
+        <h1 className="mt-8 text-[1.75rem] font-bold leading-tight">This page is for another role</h1>
         <p className="mt-2 text-muted-foreground">
           Each workspace opens only for the role it is for. Go back to your own home page, or sign in with an account
           that has access.

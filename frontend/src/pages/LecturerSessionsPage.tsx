@@ -65,6 +65,7 @@ export default function LecturerSessionsPage() {
 
         {load.state === 'ready' && sessions.length === 0 && !creating && (
           <EmptyState
+            art="lecture"
             title="No sessions yet"
             action={
               <button type="button" className={buttonStyles()} onClick={() => setCreating(true)}>

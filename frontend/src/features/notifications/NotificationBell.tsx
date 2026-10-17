@@ -4,6 +4,7 @@ import { AlertTriangle, Bell, CheckCircle2, FileCheck2, Radio } from 'lucide-rea
 import { Link } from 'react-router'
 
 import { apiUrl, type CurrentUser } from '../../api'
+import Illustration from '../../components/ui/Illustration'
 import { listMaterials } from '../materials/materialApi'
 import { listSessions } from '../sessions/sessionsApi'
 import { buildNotifications, unreadCount, type AppNotification, type NotificationKind } from './notifications'
@@ -146,7 +147,10 @@ export default function NotificationBell({ user }: { user: CurrentUser }) {
           >
             <p className="border-b border-border px-4 py-2.5 font-semibold">Notifications</p>
             {items.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-muted-foreground">Nothing new. You are up to date.</p>
+              <div className="px-4 py-6 text-center">
+                <Illustration name="notifications" className="mx-auto mb-3 h-20 w-28" />
+                <p className="text-sm text-muted-foreground">Nothing new. You are up to date.</p>
+              </div>
             ) : (
               <ul className="max-h-96 divide-y divide-border overflow-auto">
                 {items.map((item) => {

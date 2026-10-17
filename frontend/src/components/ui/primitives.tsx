@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 
 import { cn } from './cn'
+import Illustration, { type IllustrationName } from './Illustration'
 
 
 
@@ -99,13 +100,16 @@ export function EmptyState({
   title,
   children,
   action,
+  art,
 }: {
   title: ReactNode
   children?: ReactNode
   action?: ReactNode
+  art?: IllustrationName
 }) {
   return (
     <div className="rounded-lg border border-dashed border-input bg-card px-6 py-10 text-center">
+      {art && <Illustration name={art} className="mx-auto mb-6 h-32 w-44" />}
       <p className="font-semibold">{title}</p>
       {children && <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{children}</p>}
       {action && <div className="mt-4 flex justify-center">{action}</div>}

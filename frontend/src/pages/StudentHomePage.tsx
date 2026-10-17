@@ -42,7 +42,7 @@ export default function StudentHomePage() {
         )}
 
         {sessions.length === 0 && (
-          <EmptyState title="No sessions yet">
+          <EmptyState art="lecture" title="No sessions yet">
             Sessions for your courses appear here as soon as your lecturer prepares them.
           </EmptyState>
         )}

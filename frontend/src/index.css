@@ -30,6 +30,9 @@
   --secondary-foreground: #1b1c2b;
 
   --muted: #eff0f5;
+  /* Illustrations: the frames of drawn screens, and drawn hair and lines. */
+  --illo-frame: #dfe0ea;
+  --illo-ink: #2f2e41;
   --muted-foreground: #565b6e;
   --accent: #e8e8f7;
   --accent-foreground: #3d3e8f;
@@ -85,6 +88,8 @@
   --secondary: #252638;
   --secondary-foreground: #e6ebf0;
   --muted: #23243a;
+  --illo-frame: #33354f;
+  --illo-ink: #5a5c7d;
   --muted-foreground: #a3a6bd;
   --accent: #2a2b4f;
   --accent-foreground: #d9daff;
@@ -116,6 +121,8 @@
   --secondary: #000000;
   --secondary-foreground: #ffffff;
   --muted: #000000;
+  --illo-frame: #ffffff;
+  --illo-ink: #ffffff;
   --muted-foreground: #ffffff;
   --accent: #1aebff;
   --accent-foreground: #000000;
