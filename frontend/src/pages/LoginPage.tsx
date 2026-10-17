@@ -208,19 +208,23 @@ function Story() {
         <h1 className="max-w-md text-[2.6rem] font-extrabold leading-[1.12]">
           Know how the class is doing while you are{' '}
           <span className="relative inline-block whitespace-nowrap">
+            {/* The highlighter, full letter height, so the words sit on it whole. */}
             <motion.span
               aria-hidden
-              className="absolute inset-x-[-0.12em] bottom-[0.06em] top-[0.5em] -z-0 origin-left rounded-sm bg-highlight"
+              className="absolute inset-x-[-0.12em] bottom-[0.02em] top-[0.08em] origin-left rounded-sm bg-highlight"
               initial={{ scaleX: 0 }}
               animate={{ scaleX: 1 }}
               transition={{ delay: 0.45, duration: 0.7, ease: EASE }}
             />
-            {/* Dark on the highlighter in either theme, turning as the stroke passes. */}
+            <span className="relative">still teaching it.</span>
+            {/* The same words in ink for the highlighter, uncovered with the
+                stroke, so no letter is ever light on yellow or dark on dark. */}
             <motion.span
-              className="relative"
-              initial={{ color: 'var(--foreground)' }}
-              animate={{ color: 'var(--highlight-foreground)' }}
-              transition={{ delay: 0.65, duration: 0.4 }}
+              aria-hidden
+              className="absolute inset-0 text-highlight-foreground"
+              initial={{ clipPath: 'inset(0 100% 0 0)' }}
+              animate={{ clipPath: 'inset(0 0% 0 0)' }}
+              transition={{ delay: 0.45, duration: 0.7, ease: EASE }}
             >
               still teaching it.
             </motion.span>
