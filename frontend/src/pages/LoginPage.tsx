@@ -11,17 +11,109 @@ import ThemeSwitch from '../components/shell/ThemeSwitch'
 import { buttonStyles } from '../components/ui/button'
 import { cn } from '../components/ui/cn'
 
-// How a class did on each question of a lecture so far, and what each was on.
-const RESULTS = [
-  { label: 'Q1', right: 0.82, topic: 'Assets and entry points' },
-  { label: 'Q2', right: 0.68, topic: 'Trust boundaries' },
-  { label: 'Q3', right: 0.9, topic: 'STRIDE categories' },
-  { label: 'Q4', right: 0.46, topic: 'Token signing' },
-  { label: 'Q5', right: 0.74, topic: 'Data flow diagrams' },
-  { label: 'Q6', right: 0.86, topic: 'Spoofing' },
-  { label: 'Q7', right: 0.61, topic: 'Repudiation' },
-  { label: 'Q8', right: 0.93, topic: 'Mitigations' },
+// Lectures the preview can show: how the class did on each question so far,
+// what each was on, and the question open now. A different one each time the
+// page is opened, in turn, starting again after the last.
+type Scenario = {
+  lecture: string
+  question: string
+  answered: number
+  of: number
+  results: { right: number; topic: string }[]
+}
+
+const SCENARIOS: Scenario[] = [
+  {
+    lecture: 'Week 7, Threat modelling',
+    question: 'Which control stops tampering with a signed token?',
+    answered: 24,
+    of: 28,
+    results: [
+      { right: 0.82, topic: 'Assets and entry points' },
+      { right: 0.68, topic: 'Trust boundaries' },
+      { right: 0.9, topic: 'STRIDE categories' },
+      { right: 0.46, topic: 'Token signing' },
+      { right: 0.74, topic: 'Data flow diagrams' },
+      { right: 0.86, topic: 'Spoofing' },
+      { right: 0.61, topic: 'Repudiation' },
+      { right: 0.93, topic: 'Mitigations' },
+    ],
+  },
+  {
+    lecture: 'Week 4, Applied cryptography',
+    question: 'Why must a nonce never be reused with the same key?',
+    answered: 31,
+    of: 35,
+    results: [
+      { right: 0.88, topic: 'Symmetric keys' },
+      { right: 0.72, topic: 'Block cipher modes' },
+      { right: 0.91, topic: 'Hash functions' },
+      { right: 0.41, topic: 'Key exchange' },
+      { right: 0.66, topic: 'Salting passwords' },
+      { right: 0.79, topic: 'Digital signatures' },
+    ],
+  },
+  {
+    lecture: 'Week 9, Web security',
+    question: 'Which header stops another site framing your page?',
+    answered: 19,
+    of: 22,
+    results: [
+      { right: 0.84, topic: 'SQL injection' },
+      { right: 0.63, topic: 'Cross-site scripting' },
+      { right: 0.48, topic: 'CSRF tokens' },
+      { right: 0.77, topic: 'Same-origin policy' },
+      { right: 0.7, topic: 'Cookie flags' },
+      { right: 0.81, topic: 'Session handling' },
+      { right: 0.66, topic: 'Content Security Policy' },
+    ],
+  },
+  {
+    lecture: 'Week 3, Networks',
+    question: 'What does the TCP three-way handshake agree on?',
+    answered: 40,
+    of: 46,
+    results: [
+      { right: 0.79, topic: 'OSI layers' },
+      { right: 0.58, topic: 'IP addressing' },
+      { right: 0.37, topic: 'Subnetting' },
+      { right: 0.83, topic: 'DNS lookups' },
+      { right: 0.88, topic: 'Ports and services' },
+    ],
+  },
+  {
+    lecture: 'Week 11, Databases',
+    question: 'Which index helps a query that filters on two columns?',
+    answered: 26,
+    of: 30,
+    results: [
+      { right: 0.76, topic: 'Normalisation' },
+      { right: 0.81, topic: 'Joins' },
+      { right: 0.69, topic: 'Transactions' },
+      { right: 0.44, topic: 'Isolation levels' },
+      { right: 0.72, topic: 'Indexes' },
+      { right: 0.58, topic: 'Query plans' },
+      { right: 0.87, topic: 'Constraints' },
+      { right: 0.64, topic: 'Deadlocks' },
+    ],
+  },
 ]
+
+const PREVIEW_KEY = 'clip_login_preview'
+
+/** The next lecture in turn, remembered per browser. Random when the browser
+ * keeps nothing, so a private window still sees some variety. */
+function nextScenario(): Scenario {
+  let index: number
+  try {
+    const last = Number.parseInt(window.localStorage.getItem(PREVIEW_KEY) ?? '', 10)
+    index = Number.isNaN(last) ? 0 : (last + 1) % SCENARIOS.length
+    window.localStorage.setItem(PREVIEW_KEY, String(index))
+  } catch {
+    index = Math.floor(Math.random() * SCENARIOS.length)
+  }
+  return SCENARIOS[index]
+}
 
 const EASE = [0.16, 1, 0.3, 1] as const
 
@@ -258,8 +350,10 @@ function Story() {
 
 /** A picture of the lecturer's live page, labelled so it explains itself. */
 function LivePreview() {
-  const reduced = useReducedMotion()
-  const weakest = RESULTS.reduce((low, result) => (result.right < low.right ? result : low))
+  const [scenario] = useState(nextScenario)
+  const { lecture, question, answered, of, results } = scenario
+  const open = results.length + 1
+  const weakest = results.reduce((low, result) => (result.right < low.right ? result : low))
   return (
     <motion.figure
       initial={{ opacity: 0, y: 16 }}
@@ -268,32 +362,25 @@ function LivePreview() {
       className="mt-10 max-w-md overflow-hidden rounded-xl border border-border bg-background shadow-[0_24px_60px_-24px_rgba(27,28,43,0.35)]"
     >
       <div aria-hidden>
-        <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-          <p className="text-sm font-semibold">Week 7, Threat modelling</p>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
-            <span className="relative flex h-1.5 w-1.5">
-              {!reduced && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60 [animation-iteration-count:3]" />}
-              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
-            </span>
-            Live
-          </span>
+        <div className="border-b border-border px-4 py-2.5">
+          <p className="text-sm font-semibold">{lecture}</p>
         </div>
 
         {/* The open question. */}
         <div className="border-b border-border px-4 py-3.5">
-          <p className="text-xs font-semibold text-muted-foreground">Question 9, open now</p>
-          <p className="mt-1 text-[0.95rem] font-semibold leading-snug">Which control stops tampering with a signed token?</p>
+          <p className="text-xs font-semibold text-muted-foreground">Question {open}, open now</p>
+          <p className="mt-1 text-[0.95rem] font-semibold leading-snug">{question}</p>
           <div className="mt-3 flex items-center gap-3">
             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
               <motion.div
                 className="h-full rounded-full bg-primary"
                 initial={{ width: 0 }}
-                animate={{ width: `${(24 / 28) * 100}%` }}
+                animate={{ width: `${(answered / of) * 100}%` }}
                 transition={{ delay: 1.3, duration: 1.4, ease: EASE }}
               />
             </div>
             <p className="shrink-0 text-xs text-muted-foreground">
-              <CountUp to={24} delay={1.3} /> of 28 answered
+              <CountUp to={answered} delay={1.3} /> of {of} answered
             </p>
           </div>
         </div>
@@ -302,10 +389,11 @@ function LivePreview() {
         <div className="px-4 pb-3 pt-3.5">
           <p className="text-xs font-semibold text-muted-foreground">Answered right, by question</p>
           <ol className="mt-3 flex h-20 items-end gap-1.5">
-            {RESULTS.map((result, index) => {
+            {results.map((result, index) => {
               const low = result === weakest
+              const label = `Q${index + 1}`
               return (
-                <li key={result.label} className="flex h-full flex-1 flex-col items-center gap-1">
+                <li key={label} className="flex h-full flex-1 flex-col items-center gap-1">
                   <div className="flex w-full flex-1 items-end overflow-hidden rounded-[3px] bg-muted">
                     <motion.div
                       className={cn('w-full rounded-[3px]', low ? 'bg-warning' : 'bg-success/85')}
@@ -315,7 +403,7 @@ function LivePreview() {
                     />
                   </div>
                   <span className={cn('text-[0.68rem] tabular-nums', low ? 'font-bold text-foreground' : 'text-muted-foreground')}>
-                    {result.label}
+                    {label}
                   </span>
                 </li>
               )
@@ -323,7 +411,7 @@ function LivePreview() {
             {/* The open question has no result yet. */}
             <li className="flex h-full flex-1 flex-col items-center gap-1">
               <div className="w-full flex-1 rounded-[3px] border border-dashed border-primary/50 bg-primary/5" />
-              <span className="text-[0.68rem] font-semibold text-primary">Q9</span>
+              <span className="text-[0.68rem] font-semibold text-primary">Q{open}</span>
             </li>
           </ol>
         </div>
@@ -342,8 +430,8 @@ function LivePreview() {
         </motion.div>
       </div>
       <figcaption className="sr-only">
-        A live lecture in C.L.I.P: question 9 is open with 24 of 28 students answered, and {weakest.topic} is the topic the class
-        found hardest so far.
+        A live lecture in C.L.I.P, {lecture}: question {open} is open with {answered} of {of} students answered, and{' '}
+        {weakest.topic} is the topic the class found hardest so far.
       </figcaption>
     </motion.figure>
   )

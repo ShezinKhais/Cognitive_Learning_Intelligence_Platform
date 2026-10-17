@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'motion/react'
 import { AlertTriangle, Bell, CheckCircle2, FileCheck2, Radio } from 'lucide-react'
 import { Link } from 'react-router'
@@ -10,6 +11,33 @@ import { listSessions } from '../sessions/sessionsApi'
 import { buildNotifications, unreadCount, type AppNotification, type NotificationKind } from './notifications'
 
 const REFRESH_MS = 60_000
+const PANEL_WIDTH = 320
+const GAP = 8
+const EDGE = 16
+
+/**
+ * Where the panel goes, from where the bell is. The side menu scrolls, so a
+ * panel positioned inside it is cut off at its edge; this one is drawn over
+ * the page instead. Beside the bell on a wide screen, otherwise below it, or
+ * above when there is more room there, and never past the window.
+ */
+function placePanel(bell: DOMRect): CSSProperties {
+  const width = Math.min(PANEL_WIDTH, window.innerWidth - EDGE * 2)
+  if (window.innerWidth >= 1024) {
+    return {
+      left: bell.right + GAP,
+      bottom: Math.max(EDGE, window.innerHeight - bell.bottom),
+      width,
+      maxHeight: Math.max(160, bell.bottom - EDGE),
+    }
+  }
+  const left = Math.min(Math.max(EDGE, bell.left), window.innerWidth - width - EDGE)
+  const below = window.innerHeight - bell.bottom - GAP - EDGE
+  const above = bell.top - GAP - EDGE
+  return below >= above
+    ? { left, top: bell.bottom + GAP, width, maxHeight: below }
+    : { left, bottom: window.innerHeight - bell.top + GAP, width, maxHeight: above }
+}
 
 const ICON: Record<NotificationKind, typeof Bell> = {
   live: Radio,
@@ -70,6 +98,7 @@ export default function NotificationBell({ user }: { user: CurrentUser }) {
   const root = useRef<HTMLDivElement>(null)
   const bell = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLDivElement>(null)
+  const [place, setPlace] = useState<CSSProperties>({})
   const unread = unreadCount(items, read)
 
   const markAllRead = useCallback(() => {
@@ -82,6 +111,21 @@ export default function NotificationBell({ user }: { user: CurrentUser }) {
     }
   }, [items, read, user])
 
+  useLayoutEffect(() => {
+    if (!open) return
+    const follow = () => {
+      if (bell.current) setPlace(placePanel(bell.current.getBoundingClientRect()))
+    }
+    follow()
+    window.addEventListener('resize', follow)
+    // Capture, so the side menu scrolling moves the panel with the bell.
+    window.addEventListener('scroll', follow, true)
+    return () => {
+      window.removeEventListener('resize', follow)
+      window.removeEventListener('scroll', follow, true)
+    }
+  }, [open])
+
   useEffect(() => {
     if (!open) return
     const frame = requestAnimationFrame(() => panel.current?.focus())
@@ -90,7 +134,10 @@ export default function NotificationBell({ user }: { user: CurrentUser }) {
         if (event.key !== 'Escape') return
         setOpen(false)
         bell.current?.focus()
-      } else if (!root.current?.contains(event.target as Node)) {
+      } else if (
+        !root.current?.contains(event.target as Node) &&
+        !panel.current?.contains(event.target as Node)
+      ) {
         setOpen(false)
       }
     }
@@ -132,47 +179,51 @@ export default function NotificationBell({ user }: { user: CurrentUser }) {
           )}
         </AnimatePresence>
       </button>
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            ref={panel}
-            tabIndex={-1}
-            role="dialog"
-            aria-label="Notifications"
-            initial={{ opacity: 0, y: 6, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 6, scale: 0.98 }}
-            transition={{ duration: 0.16 }}
-            className="absolute bottom-full left-0 z-40 mb-2 w-80 overflow-hidden rounded-lg border border-border bg-popover shadow-[var(--shadow-card-hover)] lg:bottom-0 lg:left-full lg:mb-0 lg:ml-2"
-          >
-            <p className="border-b border-border px-4 py-2.5 font-semibold">Notifications</p>
-            {items.length === 0 ? (
-              <div className="px-4 py-6 text-center">
-                <Illustration name="notifications" className="mx-auto mb-3 h-20 w-28" />
-                <p className="text-sm text-muted-foreground">Nothing new. You are up to date.</p>
-              </div>
-            ) : (
-              <ul className="max-h-96 divide-y divide-border overflow-auto">
-                {items.map((item) => {
-                  const Icon = ICON[item.kind]
-                  return (
-                    <li key={item.id}>
-                      <Link to={item.to} onClick={() => setOpen(false)} className="flex gap-3 px-4 py-3 transition-colors hover:bg-muted">
-                        <Icon size={17} aria-hidden className={item.kind === 'problem' ? 'mt-0.5 text-critical' : item.kind === 'live' ? 'mt-0.5 text-primary' : 'mt-0.5 text-success'} />
-                        <span className="min-w-0">
-                          <span className="block truncate text-sm font-semibold">{item.title}</span>
-                          <span className="block text-sm text-muted-foreground">{item.detail}</span>
-                          <span className="mt-1 block text-sm font-semibold text-primary">{item.action}</span>
-                        </span>
-                      </Link>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {createPortal(
+        <AnimatePresence>
+          {open && (
+            <motion.div
+              ref={panel}
+              tabIndex={-1}
+              role="dialog"
+              aria-label="Notifications"
+              initial={{ opacity: 0, y: 6, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.98 }}
+              transition={{ duration: 0.16 }}
+              style={place}
+              className="fixed z-50 flex flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-[var(--shadow-card-hover)]"
+            >
+              <p className="shrink-0 border-b border-border px-4 py-2.5 font-semibold">Notifications</p>
+              {items.length === 0 ? (
+                <div className="px-4 py-6 text-center">
+                  <Illustration name="notifications" className="mx-auto mb-3 h-20 w-28" />
+                  <p className="text-sm text-muted-foreground">Nothing new. You are up to date.</p>
+                </div>
+              ) : (
+                <ul className="max-h-96 min-h-0 divide-y divide-border overflow-auto">
+                  {items.map((item) => {
+                    const Icon = ICON[item.kind]
+                    return (
+                      <li key={item.id}>
+                        <Link to={item.to} onClick={() => setOpen(false)} className="flex gap-3 px-4 py-3 transition-colors hover:bg-muted">
+                          <Icon size={17} aria-hidden className={item.kind === 'problem' ? 'mt-0.5 text-critical' : item.kind === 'live' ? 'mt-0.5 text-primary' : 'mt-0.5 text-success'} />
+                          <span className="min-w-0">
+                            <span className="block break-words text-sm font-semibold">{item.title}</span>
+                            <span className="block text-sm text-muted-foreground">{item.detail}</span>
+                            <span className="mt-1 block text-sm font-semibold text-primary">{item.action}</span>
+                          </span>
+                        </Link>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
     </div>
   )
 }
