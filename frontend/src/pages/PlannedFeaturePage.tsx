@@ -32,7 +32,6 @@ export default function PlannedFeaturePage({ feature }: { feature: PlannedFeatur
             <List items={feature.today} />
           </Panel>
         </div>
-        <p className="mt-6 text-sm text-muted-foreground">Built by {feature.owner}.</p>
       </PageBody>
     </>
   )

@@ -17,7 +17,7 @@ import type { Role } from '../../api'
 /**
  * What each role can reach from the side menu. Built pages come first;
  * planned ones are listed under "Planned" so a reviewer can see the whole
- * product, and each says on its page what it will do and who builds it.
+ * product, and each says on its page what it will do.
  */
 export interface NavItem {
   to: string

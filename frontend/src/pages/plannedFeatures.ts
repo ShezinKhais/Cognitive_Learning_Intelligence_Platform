@@ -5,7 +5,6 @@ export interface PlannedFeature {
   will: readonly string[]
   /** What already works today, so nobody waits for what is there. */
   today: readonly string[]
-  owner: string
   /** The working preview shown on its page. */
   demo: 'groups' | 'engagement' | 'progress' | 'governance' | 'consideration'
 }
@@ -23,7 +22,6 @@ export const PLANNED: Record<string, PlannedFeature> = {
       'Students can name the room they are in from the live session',
       'A room that falls silent raises an alert on your live session page',
     ],
-    owner: 'General CS (rooms), with the room interface to follow',
     demo: 'groups',
   },
   engagement: {
@@ -37,7 +35,6 @@ export const PLANNED: Record<string, PlannedFeature> = {
       'Engagement is shown live during a session, for students who consented',
       'It is not stored after the session yet, so there is no history to show',
     ],
-    owner: 'BBIS (storing engagement), Cyber 1 (fairness rules)',
     demo: 'engagement',
   },
   progress: {
@@ -48,7 +45,6 @@ export const PLANNED: Record<string, PlannedFeature> = {
       'Open the slides a topic came from',
     ],
     today: ['Each finished session has its own summary under My sessions'],
-    owner: 'AI 1 (summaries), Cyber 1 (what a summary may say)',
     demo: 'progress',
   },
   governance: {
@@ -63,7 +59,6 @@ export const PLANNED: Record<string, PlannedFeature> = {
       'Uploaded files past the retention period are deleted every day',
       'Every change made for a signed-in user is written to the audit log',
     ],
-    owner: 'BBIS (retention and deletion requests), Cyber 2 (this console)',
     demo: 'governance',
   },
   consideration: {
@@ -78,7 +73,6 @@ export const PLANNED: Record<string, PlannedFeature> = {
       'An accommodated student is never prompted and never marked disengaged',
       'Their answer speed is counted as typical, so their score cannot give them away',
     ],
-    owner: 'Cyber 1 (fairness rules), Cyber 2 (the request and review screens)',
     demo: 'consideration',
   },
 }
