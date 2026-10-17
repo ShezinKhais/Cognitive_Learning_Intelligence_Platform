@@ -92,7 +92,12 @@ class FakeModel:
         return self.steps.popleft() if self.steps else None
 
     async def complete(
-        self, model: str, messages: Sequence[Message], *, max_tokens: int | None
+        self,
+        model: str,
+        messages: Sequence[Message],
+        *,
+        max_tokens: int | None,
+        options: object = None,
     ) -> str:
         step = self._begin(model, messages)
         try:
@@ -105,7 +110,12 @@ class FakeModel:
             self.active -= 1
 
     async def stream(
-        self, model: str, messages: Sequence[Message], *, max_tokens: int | None
+        self,
+        model: str,
+        messages: Sequence[Message],
+        *,
+        max_tokens: int | None,
+        options: object = None,
     ) -> AsyncIterator[str]:
         step = self._begin(model, messages)
         try:
@@ -845,7 +855,12 @@ class _UnrulyModel:
             await asyncio.Event().wait()
 
     async def complete(
-        self, model: str, messages: Sequence[Message], *, max_tokens: int | None
+        self,
+        model: str,
+        messages: Sequence[Message],
+        *,
+        max_tokens: int | None,
+        options: object = None,
     ) -> str:
         self.active += 1
         self.peak = max(self.peak, self.active)
@@ -856,7 +871,12 @@ class _UnrulyModel:
             self.active -= 1
 
     async def stream(
-        self, model: str, messages: Sequence[Message], *, max_tokens: int | None
+        self,
+        model: str,
+        messages: Sequence[Message],
+        *,
+        max_tokens: int | None,
+        options: object = None,
     ) -> AsyncIterator[str]:
         self.active += 1
         self.peak = max(self.peak, self.active)

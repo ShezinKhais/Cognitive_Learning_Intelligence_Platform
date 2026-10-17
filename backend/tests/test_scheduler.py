@@ -155,7 +155,38 @@ def test_the_app_schedules_its_housekeeping() -> None:
     assert [job.name for job in housekeeping().jobs] == [
         "stranded-material-sweep",
         "expire-reports",
+        "retention-purge",
     ]
+
+
+def test_the_purge_runs_on_its_interval_and_first_well_after_startup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core.config import Settings
+    from app.services.purge_runner import purge_expired_data
+
+    monkeypatch.setattr("app.main.get_settings", lambda: Settings(_env_file=None))
+    [job] = [j for j in housekeeping().jobs if j.name == "retention-purge"]
+
+    assert job.run is purge_expired_data
+    assert job.every == timedelta(hours=24)
+    assert job.first_after == timedelta(minutes=10)
+
+
+def test_a_short_purge_interval_is_not_waited_out_before_the_first_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A load test runs the purge every few seconds; its first run is not
+    ten minutes away."""
+    from app.core.config import Settings
+
+    monkeypatch.setattr(
+        "app.main.get_settings",
+        lambda: Settings(_env_file=None, retention_purge_interval_hours=0.001),
+    )
+    [job] = [j for j in housekeeping().jobs if j.name == "retention-purge"]
+
+    assert job.first_after == job.every == timedelta(hours=0.001)
 
 
 async def test_the_report_expiry_job_expires_reports(monkeypatch: pytest.MonkeyPatch) -> None:

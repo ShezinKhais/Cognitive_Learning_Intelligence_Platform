@@ -109,24 +109,25 @@ async def test_a_meeting_that_starts_unlinked_gets_a_session_for_its_course(db, 
     assert body["teams_meeting_id"] == meeting
 
 
-async def test_a_created_session_that_cannot_start_stays_linked_for_the_retry(db, app) -> None:
-    """Nothing is staged, so the start is refused. The session it created is
-    kept and linked, so the next start event finds it rather than making
-    another."""
+async def test_a_meeting_with_nothing_staged_still_starts_its_session(db, app) -> None:
+    """Nothing is staged, but the session starts anyway: the lecturer can stage
+    a question once it is live. A repeated start event finds the same session
+    rather than making another."""
     client, factory, created = db
     course = await add_course(factory, created)
     sign_in_as(app, LECTURER_ID, Role.LECTURER)
     meeting = _meeting()
 
-    refused = _event(client, "started", meeting, course_code=course.code)
-    assert refused.status_code == 409
+    started = _event(client, "started", meeting, course_code=course.code)
+    assert started.status_code == 200, started.text
+    assert started.json()["status"] == "active"
 
     session_id = await meetings.directory.session_for(meeting)
-    assert session_id is not None
-    await add_question(db, course, LECTURER_ID)
-    retried = _event(client, "started", meeting, course_code=course.code)
-    assert (retried.json()["id"], retried.json()["status"]) == (str(session_id), "active")
-    assert retried.json()["title"] == "Teams meeting"
+    assert started.json()["id"] == str(session_id)
+    again = _event(client, "started", meeting, course_code=course.code)
+    assert (again.json()["id"], again.json()["status"]) == (str(session_id), "active")
+    assert again.json()["title"] == "Teams meeting"
+    _event(client, "ended", meeting)
 
 
 async def test_an_unlinked_meeting_with_no_course_is_not_found(db, app) -> None:

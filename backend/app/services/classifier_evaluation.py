@@ -135,6 +135,43 @@ def confidence_separation(confidences: Sequence[float], correct: Sequence[bool])
     return wins / (len(right) * len(wrong))
 
 
+def expected_calibration_error(
+    confidences: Sequence[float], correct: Sequence[bool], bins: int = 10
+) -> float:
+    """How far confidence is from accuracy, on average: 0 is perfectly honest.
+
+    Confidences are put in `bins` equal-width bins; in each, the gap between
+    the mean confidence and the share right is weighted by the bin's size.
+    A marker that says 0.9 and is right 9 times in 10 has no gap there.
+    """
+    _checked(confidences, correct)
+    if not confidences:
+        raise ValueError("no confidences to check")
+    total = 0.0
+    for b in range(bins):
+        low, high = b / bins, (b + 1) / bins
+        inside = [
+            (c, ok)
+            for c, ok in zip(confidences, correct, strict=True)
+            if low <= c < high or (b == bins - 1 and c == 1.0)
+        ]
+        if inside:
+            gap = abs(
+                sum(c for c, _ in inside) / len(inside) - sum(ok for _, ok in inside) / len(inside)
+            )
+            total += len(inside) / len(confidences) * gap
+    return total
+
+
+def brier_score(confidences: Sequence[float], correct: Sequence[bool]) -> float:
+    """Mean squared gap between confidence and being right (1) or wrong (0).
+    0 is perfect; always saying 0.5 scores 0.25."""
+    _checked(confidences, correct)
+    if not confidences:
+        raise ValueError("no confidences to check")
+    return sum((c - ok) ** 2 for c, ok in zip(confidences, correct, strict=True)) / len(confidences)
+
+
 def cohen_kappa(a: Sequence[str], b: Sequence[str], labels: Sequence[str] = LABELS) -> float:
     """Agreement between two labellers beyond what chance alone would give.
 

@@ -43,6 +43,7 @@ async def _session_answers(db: AsyncSession, session_id: UUID) -> list[LabelledA
             StudentResponse.question_id,
             Question.topic,
             Question.difficulty,
+            Question.source_slide,
             ComprehensionResult.label,
             ComprehensionResult.confidence_score,
         )
@@ -62,6 +63,7 @@ async def _session_answers(db: AsyncSession, session_id: UUID) -> list[LabelledA
             label=label,
             confidence=confidence,
             question_difficulty=difficulty,
+            source_slide=slide,
         )
-        for student_id, question_id, topic, difficulty, label, confidence in rows.all()
+        for student_id, question_id, topic, difficulty, slide, label, confidence in rows.all()
     ]

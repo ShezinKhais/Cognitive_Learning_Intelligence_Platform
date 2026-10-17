@@ -5,14 +5,13 @@ the lecturer-approved question's stored correct_option. The result also keeps
 the source slide/page and excerpt produced and validated during Phase 2 so the
 student can receive feedback grounded in the lecturer's own material.
 
-Free-text classification is deliberately not implemented here. Phase 5 will
-provide that classifier through a separate path.
+Free-text answers are not scored here. They are marked after they are
+stored, by free_text_classifier.py through free_text_marking.py.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
 from uuid import UUID
 
 from app.core.errors import ValidationError
@@ -41,19 +40,6 @@ class FeedbackResult:
     message: str
     source_slide: int | None
     source_excerpt: str | None
-
-
-class FreeTextClassifier(Protocol):
-    """Interface reserved for later free-text comprehension classification."""
-
-    async def classify(
-        self,
-        *,
-        question: Question,
-        answer: str,
-    ) -> tuple[str, float, str | None]:
-        """Return label, confidence, and optional reason."""
-        ...
 
 
 def score_mcq(question: Question, selected_option: int) -> MCQScoreResult:

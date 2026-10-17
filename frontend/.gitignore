@@ -10,6 +10,9 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+dist-e2e
+playwright-report
+test-results
 public/attention/
 *.local
 

@@ -5,12 +5,12 @@ Owner: General CS, Phase 3, with Cyber 1's engagement evidence.
 Which attention prompt is waiting on each student, how many each has been
 sent, how far each has escalated and how many questions in a row each has let
 pass; and the evidence engagement scoring reads: questions shown and
-answered, how quickly, how prompts were answered, and the latest signal from
-the student's own device, with every signal of the current minute gathered
-for storing (attention_windows.py). The classroom decides whether now is a fair time to
-prompt, sends the prompt, runs its expiry timer and records its outcome, all
-under the session's lock. This keeps the counts and applies the per-student
-rules.
+answered, how quickly, how prompts were answered, and the recent signals from
+the student's own device, as one rolling window (signals.py), with every
+signal of the current minute gathered for storing (attention_windows.py).
+The classroom decides whether now is a fair time to prompt, sends the prompt,
+runs its expiry timer and records its outcome, all under the session's lock.
+This keeps the counts and applies the per-student rules.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from uuid import UUID, uuid4
 
 from app.realtime.attention_windows import AttentionWindows
 from app.realtime.recorders import AttentionWindow, PromptOutcome, PromptResult
+from app.realtime.signals import SignalWindow
 from app.schemas.events import AttentionPromptPayload, AttentionSignalPayload
 from app.services.engagement import (
     ATTENTION_SIGNAL_MAX_AGE_SECONDS,
@@ -36,6 +37,10 @@ from app.services.engagement import (
 from app.services.engagement_baseline import PersonalBaseline
 
 MAX_PROMPT_MESSAGE_LENGTH = 280
+
+# The longest one summary may claim to cover in the rolling window. The client
+# sends one every five seconds; a tab that was asleep may send a longer one.
+MAX_SUMMARY_SECONDS = 30.0
 
 
 def checked_message(message: str) -> str:
@@ -91,22 +96,42 @@ class _Student:
     answered: int = 0
     response_times: list[float] = field(default_factory=list)
     prompt_responses: list[float] = field(default_factory=list)
-    signal: AttentionSignalPayload | None = None
-    signal_at: datetime | None = None
+    signals: SignalWindow = field(default_factory=SignalWindow)
     score: ScoredStudent | None = None
-    # The student's own normal for this session, and the signal it last learned
-    # from, so one reading is never counted twice.
+    # When a prompt was last sent on the strength of the signals alone.
+    refocused_at: datetime | None = None
+    # The student's own normal for this session, and the newest signal it
+    # learned from, so one reading is never counted twice.
     baseline: PersonalBaseline = field(default_factory=PersonalBaseline)
     baseline_from: datetime | None = None
 
     def current_signal(self, now: datetime) -> AttentionSignalPayload | None:
-        """The latest signal, unless it is too old to describe the student
-        now: a camera closed early in the lecture must not keep counting."""
-        if self.signal_at is None or now - self.signal_at > timedelta(
-            seconds=ATTENTION_SIGNAL_MAX_AGE_SECONDS
-        ):
-            return None
-        return self.signal
+        """The student's recent signals as one, leaving out any too old to
+        describe them now: a camera closed early in the lecture must not keep
+        counting."""
+        return self.signals.summary(now, timedelta(seconds=ATTENTION_SIGNAL_MAX_AGE_SECONDS))
+
+    def learn_baseline(self, now: datetime) -> None:
+        """Teach the baseline the student's recent signals, once per new
+        signal: a question closing with nothing new received adds nothing."""
+        signal = self.current_signal(now)
+        newest = self.signals.newest_at()
+        if signal is not None and newest != self.baseline_from:
+            self.baseline.record(signal.gaze_on_screen_ratio, signal.face_present)
+            self.baseline_from = newest
+
+    def engagement(self, now: datetime, accommodated: bool = False) -> EngagementComputation:
+        return compute_engagement(
+            EngagementInputs(
+                questions_shown=self.shown,
+                questions_answered=self.answered,
+                response_times=tuple(self.response_times),
+                prompt_responses=tuple(self.prompt_responses),
+                attention=self.current_signal(now),
+                baseline=self.baseline,
+                accommodated=accommodated,
+            )
+        )
 
 
 class Attention:
@@ -210,17 +235,43 @@ class Attention:
 
     def observe(
         self, user_id: UUID, signal: AttentionSignalPayload, now: datetime
-    ) -> list[AttentionWindow]:
-        """Keep the student's latest attention signal for their next score,
-        and in their current minute. A signal sent too soon after their last
-        one is dropped (see attention_windows.py). Returns the minutes now
-        over and ready to store."""
+    ) -> tuple[AttentionSignalPayload | None, list[AttentionWindow]]:
+        """Add an attention signal to the student's rolling window for their
+        next score, and to their current minute. A signal sent too soon after
+        their last one is dropped (see attention_windows.py). Returns the
+        signal as kept, or None when it was dropped, and the minutes now over
+        and ready to store."""
         kept, finished = self.windows.add(user_id, signal, now)
         if kept is not None:
-            student = self._student(user_id)
-            student.signal = kept
-            student.signal_at = now
-        return finished
+            self._student(user_id).signals.add(kept, now, MAX_SUMMARY_SECONDS)
+        return kept, finished
+
+    def signal(self, user_id: UUID, now: datetime) -> AttentionSignalPayload | None:
+        """The student's recent signals as one, or None with none recent."""
+        student = self._students.get(user_id)
+        return student.current_signal(now) if student is not None else None
+
+    def observed(self) -> list[UUID]:
+        """Every student a signal is held for, recent or not."""
+        return [user_id for user_id, s in self._students.items() if len(s.signals)]
+
+    def rescore(self, user_id: UUID, now: datetime, accommodated: bool = False) -> ScoredStudent:
+        """Score the student again on what is known now, between questions.
+        Nothing is counted and the baseline learns nothing: only the signals
+        have changed, and the baseline learns once per question."""
+        student = self._student(user_id)
+        student.score = ScoredStudent(user_id, student.engagement(now, accommodated), now)
+        return student.score
+
+    def refocus_due(self, user_id: UUID, now: datetime, cooldown: timedelta) -> bool:
+        """Whether long enough has passed since the signals last prompted
+        this student. A student still looking away is not prompted every few
+        seconds."""
+        at = self._student(user_id).refocused_at
+        return at is None or now - at >= cooldown
+
+    def refocused(self, user_id: UUID, now: datetime) -> None:
+        self._student(user_id).refocused_at = now
 
     def forget(self, user_id: UUID) -> Prompt | None:
         """Drop all engagement evidence and the score kept for a student whose
@@ -233,7 +284,7 @@ class Attention:
         student = self._students.pop(user_id, None)
         if student is None:
             return None
-        self._students[user_id] = _Student(sent=student.sent)
+        self._students[user_id] = _Student(sent=student.sent, refocused_at=student.refocused_at)
         return student.waiting
 
     def restrict_signal(
@@ -241,15 +292,12 @@ class Attention:
         user_id: UUID,
         keep: Callable[[AttentionSignalPayload], AttentionSignalPayload | None],
     ) -> None:
-        """Narrow the student's stored signal, and their unsent minute, to what
-        keep allows, as when camera or microphone consent is withdrawn."""
+        """Narrow the student's stored signals, and their unsent minute, to
+        what keep allows, as when camera or microphone consent is withdrawn."""
         self.windows.restrict(user_id, keep)
         student = self._students.get(user_id)
-        if student is None or student.signal is None:
-            return
-        student.signal = keep(student.signal)
-        if student.signal is None:
-            student.signal_at = None
+        if student is not None:
+            student.signals.restrict(keep)
 
     def score(
         self,
@@ -272,28 +320,12 @@ class Attention:
                 student.answered += 1
                 if user_id in timing:
                     student.response_times.append(timing[user_id])
-            signal = student.current_signal(now)
             # Nothing is learned from the camera of a student whose camera is
             # never scored: no baseline to keep, nothing to purge.
-            if (
-                signal is not None
-                and user_id not in accommodated
-                and student.signal_at != student.baseline_from
-            ):
-                student.baseline.record(signal.gaze_on_screen_ratio, signal.face_present)
-                student.baseline_from = student.signal_at
-            engagement = compute_engagement(
-                EngagementInputs(
-                    questions_shown=student.shown,
-                    questions_answered=student.answered,
-                    response_times=tuple(student.response_times),
-                    prompt_responses=tuple(student.prompt_responses),
-                    attention=signal,
-                    baseline=student.baseline,
-                    accommodated=user_id in accommodated,
-                )
-            )
-            student.score = ScoredStudent(user_id, engagement, now)
+            accommodation = user_id in accommodated
+            if not accommodation:
+                student.learn_baseline(now)
+            student.score = ScoredStudent(user_id, student.engagement(now, accommodation), now)
             scored.append(student.score)
         return scored
 

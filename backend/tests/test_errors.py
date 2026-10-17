@@ -40,35 +40,12 @@ def test_validation_failure_is_serialisable(client: TestClient) -> None:
 def test_authentication_is_checked_before_anything_else(client: TestClient) -> None:
     """Unauthenticated callers must not learn which routes exist or are stubs.
 
-    Every stub sits behind the auth dependency, so 401 comes first and 501 is
-    unreachable until Cyber 1 lands token validation.
+    Every route sits behind the auth dependency, so a bad token is a 401
+    before anything else is looked at.
     """
     response = client.get("/api/v1/sessions", headers={"Authorization": "Bearer nonsense"})
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "UNAUTHENTICATED"
-
-
-def test_unimplemented_route_names_its_owner(as_lecturer: TestClient) -> None:
-    """Past the auth gate, a stub tells you who is building it and when."""
-    response = as_lecturer.get("/api/v1/sessions")
-    assert response.status_code == 501
-
-    body = response.json()
-    _assert_envelope(body)
-    assert body["error"]["code"] == "NOT_IMPLEMENTED"
-    assert body["error"]["detail"]["owner"] == "BBIS"
-    assert body["error"]["detail"]["phase"] == "Phase 3"
-
-
-def test_every_stub_reports_an_owner(as_lecturer: TestClient) -> None:
-    """No route may 501 without saying who is responsible for it."""
-    paths = {
-        ("get", "/api/v1/sessions"),
-    }
-    for method, path in paths:
-        response = as_lecturer.request(method.upper(), path)
-        assert response.status_code == 501, f"{path} returned {response.status_code}"
-        assert response.json()["error"]["detail"]["owner"], f"{path} has no owner"
 
 
 def test_unauthenticated_requests_are_rejected(client: TestClient) -> None:

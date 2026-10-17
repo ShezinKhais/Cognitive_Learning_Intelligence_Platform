@@ -74,7 +74,10 @@ def test_student_and_lecturer_cannot_upload_a_timetable(client: TestClient) -> N
         assert response.json()["error"]["code"] == "FORBIDDEN"
 
 
-def test_admin_can_reach_timetable_and_roster_handlers(client: TestClient) -> None:
+async def test_admin_can_reach_timetable_and_roster_handlers(db) -> None:  # noqa: ANN001
+    # The handlers read accounts to match names against, so the requests run
+    # on the db fixture's connections rather than the app's pool.
+    client = db[0]
     token = _login(client, "admin@clip.example.com", ADMIN_PASSWORD)
     _accept_terms(client, token)
 

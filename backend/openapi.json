@@ -1,6 +1,41 @@
 {
   "components": {
     "schemas": {
+      "ActionItem": {
+        "description": "One thing a student could do next, worked out from their marked answers.\n\nOnly comprehension and missed questions give rise to one. Engagement never\ndoes: how someone's camera or click rate read says nothing about what they\nshould study.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "revisit_topic",
+              "review_missed"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic"
+          }
+        },
+        "required": [
+          "kind",
+          "text"
+        ],
+        "title": "ActionItem",
+        "type": "object"
+      },
       "AlertOut": {
         "description": "An alert kept for the lecturer: what was raised, why, what to do about it,\nand whether anyone has seen it.\n\nServed from the stored alert, so it is there after a refresh and after the\nsession. The three figures at the end are those of a topic difficulty alert,\nnull for any other kind.",
         "properties": {
@@ -870,6 +905,37 @@
         "title": "Page[ResponseOut]",
         "type": "object"
       },
+      "Page_ReviewSession_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewSession"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[ReviewSession]",
+        "type": "object"
+      },
       "Page_SessionOut_": {
         "properties": {
           "items": {
@@ -1159,7 +1225,7 @@
         "type": "object"
       },
       "ReadinessIssueCode": {
-        "description": "Why a session is not ready to start, or what the lecturer should know.\n\nOnly NO_APPROVED_QUESTIONS always blocks the start. NO_MATERIAL and\nMATERIAL_PROCESSING explain why there is no question to deliver, so they\nblock alongside it and are warnings when one is staged. MATERIAL_FAILED is\nonly ever a warning: one broken upload should not hold back a class whose\nother material is fine.",
+        "description": "What the lecturer should know before starting a session.\n\nEach one is a warning. None of them stops the start: a session may begin\nwith no staged question and have one staged while it is live.",
         "enum": [
           "no_material",
           "material_processing",
@@ -1402,6 +1468,85 @@
         "title": "ResponseOut",
         "type": "object"
       },
+      "ReviewAnswer": {
+        "properties": {
+          "answer": {
+            "title": "Answer",
+            "type": "string"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_correct": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Correct"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComprehensionLabel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "submitted_at": {
+            "format": "date-time",
+            "title": "Submitted At",
+            "type": "string"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic"
+          }
+        },
+        "required": [
+          "id",
+          "question",
+          "topic",
+          "answer",
+          "is_correct",
+          "label",
+          "confidence",
+          "submitted_at"
+        ],
+        "title": "ReviewAnswer",
+        "type": "object"
+      },
       "ReviewDecision": {
         "description": "The statuses a lecturer may set through the review routes.\n\nEvery QuestionStatus except DELIVERED. A question becomes delivered when\nthe session actually sends it to students; set by hand, it would freeze a\nquestion as \"already asked\" when no student ever saw it.",
         "enum": [
@@ -1412,6 +1557,130 @@
         ],
         "title": "ReviewDecision",
         "type": "string"
+      },
+      "ReviewEngagement": {
+        "properties": {
+          "explanation": {
+            "default": "A verified post-session engagement record with confidence and signal availability is not available. Missing readings are not zero and do not indicate understanding.",
+            "title": "Explanation",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "null"
+          },
+          "status": {
+            "const": "unavailable",
+            "default": "unavailable",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "ReviewEngagement",
+        "type": "object"
+      },
+      "ReviewSession": {
+        "properties": {
+          "course_code": {
+            "title": "Course Code",
+            "type": "string"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "course_code",
+          "ended_at"
+        ],
+        "title": "ReviewSession",
+        "type": "object"
+      },
+      "ReviewSource": {
+        "properties": {
+          "chunk_id": {
+            "format": "uuid",
+            "title": "Chunk Id",
+            "type": "string"
+          },
+          "match": {
+            "enum": [
+              "excerpt",
+              "page"
+            ],
+            "title": "Match",
+            "type": "string"
+          },
+          "material_title": {
+            "title": "Material Title",
+            "type": "string"
+          },
+          "source_page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Page"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chunk_id",
+          "material_title",
+          "source_page",
+          "text",
+          "match"
+        ],
+        "title": "ReviewSource",
+        "type": "object"
+      },
+      "ReviewSources": {
+        "properties": {
+          "has_more": {
+            "default": false,
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewSource"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ReviewSources",
+        "type": "object"
       },
       "Role": {
         "enum": [
@@ -1697,8 +1966,65 @@
         "title": "SessionStatus",
         "type": "string"
       },
-      "StudentSessionSummary": {
+      "StudentReview": {
         "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewAnswer"
+            },
+            "title": "Answers",
+            "type": "array"
+          },
+          "engagement": {
+            "$ref": "#/components/schemas/ReviewEngagement"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "questions_attempted": {
+            "title": "Questions Attempted",
+            "type": "integer"
+          },
+          "questions_missed": {
+            "title": "Questions Missed",
+            "type": "integer"
+          },
+          "session": {
+            "$ref": "#/components/schemas/ReviewSession"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session",
+          "questions_attempted",
+          "questions_missed",
+          "answers",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "StudentReview",
+        "type": "object"
+      },
+      "StudentSessionSummary": {
+        "description": "What one student did in one session. Engagement and comprehension sit in\nseparate fields and are never combined into one figure.",
+        "properties": {
+          "action_items": {
+            "description": "Suggested next steps from comprehension and missed questions only.",
+            "items": {
+              "$ref": "#/components/schemas/ActionItem"
+            },
+            "title": "Action Items",
+            "type": "array"
+          },
           "comprehension_by_topic": {
             "additionalProperties": {
               "$ref": "#/components/schemas/ComprehensionLabel"
@@ -2222,6 +2548,28 @@
           }
         },
         "summary": "Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "description": "Swap a still-valid access token for a fresh one.\n\nThe client calls this shortly before its token expires, so a class longer\nthan the token's lifetime is not interrupted by a sign-in. The account is\nchecked again, and the sign-in itself still ends max_sign_in_hours after\nthe password was typed. An expired token cannot be refreshed: the user\nsigns in again.",
+        "operationId": "refresh_api_v1_auth_refresh_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Refresh",
         "tags": [
           "auth"
         ]
@@ -2876,6 +3224,7 @@
     },
     "/api/v1/sessions": {
       "get": {
+        "description": "The caller's sessions, newest first: a lecturer's own, a student's\ncourses', or every session for an admin.",
         "operationId": "list_sessions_api_v1_sessions_get",
         "parameters": [
           {
@@ -3459,7 +3808,7 @@
     },
     "/api/v1/sessions/{session_id}/readiness": {
       "get": {
-        "description": "Whether the session's material has processed and approved questions are\nstaged. Start is refused, with the same blockers, until ready is true.",
+        "description": "What the session has to deliver: its material and staged questions.\nEach issue is a warning; none of them stops the session from starting.",
         "operationId": "session_readiness_api_v1_sessions__session_id__readiness_get",
         "parameters": [
           {
@@ -3547,6 +3896,7 @@
     },
     "/api/v1/sessions/{session_id}/responses": {
       "get": {
+        "description": "Every response in the session for its lecturer or an admin, and a\nstudent's own for a student.",
         "operationId": "list_responses_api_v1_sessions__session_id__responses_get",
         "parameters": [
           {
@@ -3701,6 +4051,7 @@
     },
     "/api/v1/sessions/{session_id}/summary/{student_id}": {
       "get": {
+        "description": "One student's results for one session: what they attempted and missed,\nwhere their answers were strong or weak, and what to do next. Engagement\nand comprehension are separate fields and never combined.\n\nA student reads only their own; staff read those of a session they run\n(and leave an audit trace when it is not their own). A session, a student\nor a pairing the caller may not see are all the same 404.",
         "operationId": "student_summary_api_v1_sessions__session_id__summary__student_id__get",
         "parameters": [
           {
@@ -3797,6 +4148,181 @@
         "summary": "Session Topics",
         "tags": [
           "sessions"
+        ]
+      }
+    },
+    "/api/v1/student-reviews": {
+      "get": {
+        "operationId": "list_reviews_api_v1_student_reviews_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ReviewSession_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Reviews",
+        "tags": [
+          "student-review"
+        ]
+      }
+    },
+    "/api/v1/student-reviews/{session_id}": {
+      "get": {
+        "operationId": "review_api_v1_student_reviews__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentReview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review",
+        "tags": [
+          "student-review"
+        ]
+      }
+    },
+    "/api/v1/student-reviews/{session_id}/responses/{response_id}/sources": {
+      "get": {
+        "operationId": "sources_api_v1_student_reviews__session_id__responses__response_id__sources_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "response_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Response Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewSources"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sources",
+        "tags": [
+          "student-review"
         ]
       }
     },

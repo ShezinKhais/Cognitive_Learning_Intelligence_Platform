@@ -64,6 +64,8 @@
 
   "permissions": ["identity"],
 
+  "devicePermissions": ["media"],
+
   "webApplicationInfo": {
     "id": "${{BOT_ID}}",
     "resource": "https://RscBasedStoreApp"
