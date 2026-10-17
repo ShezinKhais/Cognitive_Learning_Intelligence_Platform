@@ -238,20 +238,35 @@ async def joinable_session(
 
 
 async def session_out(db: AsyncSession, row: Session) -> SessionOut:
+    return (await sessions_out(db, [row]))[0]
+
+
+async def sessions_out(db: AsyncSession, rows: list[Session]) -> list[SessionOut]:
+    """session_out for a page of sessions, with each lookup made once for all
+    of them: the list would otherwise make three queries per session."""
+    if not rows:
+        return []
     repo = SessionRepository(db)
-    return SessionOut(
-        id=row.session_id,
-        course_code=await repo.course_code(row.course_id),
-        title=row.title,
-        lecturer_id=row.instructor_id,
-        status=SessionStatus(row.status),
-        starts_at=row.start_time,
-        ended_at=row.ended_at,
-        teams_meeting_id=await meetings.directory.meeting_for(row.session_id),
-        participant_count=len(hub.student_ids(row.session_id)),
-        questions_delivered=await repo.count_delivered(row.session_id),
-        paused=row.status == SessionStatus.ACTIVE.value and row.paused_at is not None,
-    )
+    ids = [row.session_id for row in rows]
+    codes = await repo.course_codes({row.course_id for row in rows})
+    delivered = await repo.count_delivered_by_session(ids)
+    meeting_ids = await meetings.directory.meetings_for(ids)
+    return [
+        SessionOut(
+            id=row.session_id,
+            course_code=codes[row.course_id],
+            title=row.title,
+            lecturer_id=row.instructor_id,
+            status=SessionStatus(row.status),
+            starts_at=row.start_time,
+            ended_at=row.ended_at,
+            teams_meeting_id=meeting_ids.get(row.session_id),
+            participant_count=len(hub.student_ids(row.session_id)),
+            questions_delivered=delivered.get(row.session_id, 0),
+            paused=row.status == SessionStatus.ACTIVE.value and row.paused_at is not None,
+        )
+        for row in rows
+    ]
 
 
 # -- Teams meetings ---------------------------------------------------------------

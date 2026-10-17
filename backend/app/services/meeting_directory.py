@@ -29,6 +29,10 @@ class MeetingDirectory(Protocol):
 
     async def meeting_for(self, session_id: UUID) -> str | None: ...
 
+    async def meetings_for(self, session_ids: list[UUID]) -> dict[UUID, str]:
+        """The meeting of each session that has one, in one read, for a list."""
+        ...
+
     async def link(self, meeting_id: str, session_id: UUID) -> None: ...
 
     async def link_if_absent(self, meeting_id: str, session_id: UUID) -> UUID:
@@ -47,6 +51,9 @@ class InMemoryMeetingDirectory:
 
     async def meeting_for(self, session_id: UUID) -> str | None:
         return self._meetings.get(session_id)
+
+    async def meetings_for(self, session_ids: list[UUID]) -> dict[UUID, str]:
+        return {sid: self._meetings[sid] for sid in session_ids if sid in self._meetings}
 
     async def link(self, meeting_id: str, session_id: UUID) -> None:
         # Unlink both sides first, so neither keeps pointing at a partner

@@ -76,6 +76,27 @@ class SessionRepository:
         )
         return result.scalar_one()
 
+    async def course_codes(self, course_ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
+        if not course_ids:
+            return {}
+        result = await self.session.execute(
+            select(Course.id, Course.code).where(Course.id.in_(course_ids))
+        )
+        return dict(result.tuples().all())
+
+    async def count_delivered_by_session(
+        self, session_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, int]:
+        """Questions delivered in each session. A session with none is absent."""
+        if not session_ids:
+            return {}
+        result = await self.session.execute(
+            select(DeliveredQuestion.session_id, func.count())
+            .where(DeliveredQuestion.session_id.in_(session_ids))
+            .group_by(DeliveredQuestion.session_id)
+        )
+        return dict(result.tuples().all())
+
     def _deliverable(self, live: Session):  # noqa: ANN202 - a select
         """Staged questions this session may deliver.
 
