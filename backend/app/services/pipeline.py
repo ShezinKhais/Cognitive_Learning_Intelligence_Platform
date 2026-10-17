@@ -61,6 +61,7 @@ from app.services.material_seams import (
     ModelRun,
     QuestionGenerator,
 )
+from app.services.ocr import TesseractReader
 from app.services.processing_security import validate_extraction, validate_processing_result
 from app.services.storage import MaterialStorage, StoredFile
 
@@ -101,6 +102,8 @@ class MaterialPipeline:
     # Describes the material's images before it is chunked for good. None
     # leaves them as placeholders, as before Phase 6.
     captioner: ImageCaptioner | None = None
+    # Reads scanned PDF pages. None skips them, as before Phase 8.
+    ocr: TesseractReader | None = None
 
     def job(self, stored: StoredFile, owner_id: UUID) -> MaterialJob:
         return MaterialJob(self, stored, owner_id)
@@ -193,7 +196,11 @@ class MaterialJob:
             # long, which is the exact failure the 202 exists to avoid.
             # Extraction only reads the stored file, so a daemon thread is safe.
             extraction = await run_in_daemon_thread(
-                partial(extract_material, with_images=pipeline.captioner is not None),
+                partial(
+                    extract_material,
+                    with_images=pipeline.captioner is not None,
+                    ocr=pipeline.ocr.read if pipeline.ocr is not None else None,
+                ),
                 str(path),
                 pipeline.settings.max_upload_bytes,
                 name="material-extraction",

@@ -21,6 +21,7 @@ import LoginPage from './pages/LoginPage'
 import ProtectedStudentPage from './pages/ProtectedStudentPage'
 import QuestionReview from './pages/QuestionReview'
 import StudentHomePage from './pages/StudentHomePage'
+import StudentReviewPage, { StudentReviewHistoryPage } from './pages/StudentReviewPage'
 import StudentLiveSessionPage from './pages/StudentLiveSessionPage'
 import SystemStatusPage from './pages/SystemStatusPage'
 import TeamsConfigPage from './pages/TeamsConfigPage'
@@ -84,6 +85,12 @@ export default function App() {
           path="session/:sessionId"
           element={<StudentLiveSessionPage />}
         />
+      </Route>
+
+      {/* Independent of live-session discovery, which may still be unavailable. */}
+      <Route element={<RoleGate allow={['student']}>{() => <Outlet />}</RoleGate>}>
+        <Route path="/student/reviews" element={<StudentReviewHistoryPage />} />
+        <Route path="/student/reviews/:sessionId" element={<StudentReviewPage />} />
       </Route>
 
       {/* Shared Teams meeting entry point. RoleGate first verifies the

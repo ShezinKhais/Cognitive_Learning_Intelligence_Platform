@@ -1,5 +1,7 @@
 # Cyber 1 Phase 5 AI Safety Review
 
+> **Update, Phase 8.** R1 is closed: `POST /sessions/{id}/chat` landed in #135 and runs every request through the guardrails in section 4 (`tutor_guardrails.py`). The rest of this review is as written in Phase 5.
+
 ## C.L.I.P. - Chatbot Guardrails, Prompt-Injection Defence, Explainability and Recommendations
 
 Role: Cyber 1  

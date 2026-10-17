@@ -10,6 +10,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session_factory
 from app.models.comprehension_result import ComprehensionResult
@@ -23,33 +24,37 @@ class DatabaseComprehensionSource:
 
     async def question_labels(self, session_id: UUID, question_id: UUID) -> QuestionComprehension:
         async with get_session_factory()() as db:
-            rows = await db.execute(
-                select(
-                    StudentResponse.student_id,
-                    ComprehensionResult.label,
-                    ComprehensionResult.confidence_score,
-                )
-                .join(
-                    ComprehensionResult,
-                    ComprehensionResult.response_id == StudentResponse.response_id,
-                )
-                .where(
-                    StudentResponse.session_id == session_id,
-                    StudentResponse.question_id == question_id,
-                )
-                .order_by(ComprehensionResult.created_at)
+            return await self.read_labels(db, session_id, question_id)
+
+    async def read_labels(
+        self, db: AsyncSession, session_id: UUID, question_id: UUID
+    ) -> QuestionComprehension:
+        """Use the caller's transaction, without checking out a second connection."""
+        rows = await db.execute(
+            select(
+                StudentResponse.student_id,
+                ComprehensionResult.label,
+                ComprehensionResult.confidence_score,
             )
-            # A reclassified answer counts once, by its newest label.
-            latest = {
-                student_id: (label, confidence) for student_id, label, confidence in rows.all()
-            }
-            question = (
-                await db.execute(
-                    select(Question.topic, Question.source_slide).where(
-                        Question.question_id == question_id
-                    )
+            .join(
+                ComprehensionResult,
+                ComprehensionResult.response_id == StudentResponse.response_id,
+            )
+            .where(
+                StudentResponse.session_id == session_id,
+                StudentResponse.question_id == question_id,
+            )
+            .order_by(ComprehensionResult.created_at)
+        )
+        # A reclassified answer counts once, by its newest label.
+        latest = {student_id: (label, confidence) for student_id, label, confidence in rows.all()}
+        question = (
+            await db.execute(
+                select(Question.topic, Question.source_slide).where(
+                    Question.question_id == question_id
                 )
-            ).one_or_none()
+            )
+        ).one_or_none()
         topic, source_slide = (question.topic, question.source_slide) if question else (None, None)
         return QuestionComprehension(
             labels=[label for label, _ in latest.values()],

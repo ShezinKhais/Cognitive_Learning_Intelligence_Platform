@@ -1,0 +1,7 @@
+Logistic regression
+
+Logistic regression models a binary response, such as pass or fail, as a function of one or more predictors.
+
+The logit function maps a probability between 0 and 1 onto the whole real line, so a linear model can be fitted to it.
+
+Exponentiating a coefficient gives an odds ratio: how many times the odds of the outcome change when the predictor rises by one unit.

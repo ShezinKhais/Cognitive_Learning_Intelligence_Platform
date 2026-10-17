@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -22,18 +23,6 @@ from app.schemas.identity import ConsentType, Role
 from .classroom_support import answer_to, deliver_next, join_as, make_room, make_row
 
 pytestmark = pytest.mark.usefixtures("fake_session_repository")
-
-
-@pytest.fixture(autouse=True)
-def _no_signal_spacing(monkeypatch: pytest.MonkeyPatch) -> None:
-    """These tests send several readings a fraction of a second apart. The
-    server drops a student's signal that follows the last within
-    MIN_SIGNAL_INTERVAL (attention_windows.py); that rule has its own tests."""
-    from datetime import timedelta
-
-    from app.realtime import attention_windows
-
-    monkeypatch.setattr(attention_windows, "MIN_SIGNAL_INTERVAL", timedelta(0))
 
 
 ALL = {
@@ -65,6 +54,26 @@ async def _close(room: Classroom, row: SimpleNamespace, answer=None) -> None:  #
 
 def _gaze(ratio: float, face: bool | None = None) -> AttentionSignalPayload:
     return AttentionSignalPayload(gaze_on_screen_ratio=ratio, face_present=face, window_seconds=5)
+
+
+async def _learn_baseline(
+    room: Classroom, row: SimpleNamespace, student: UUID, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Advance the classroom clock at the real client's five-second cadence.
+
+    Keep the real question timers short; do not disable signal rate limiting.
+    """
+    from app.realtime import classroom as module
+
+    real_now = module._now
+    offset = timedelta()
+    with monkeypatch.context() as clock:
+        clock.setattr(module, "_now", lambda: real_now() + offset)
+        for _ in range(3):
+            assert await room.record_attention(row.session_id, student, _gaze(0.4, True))
+            await _close(room, row)
+            offset += timedelta(seconds=5)
+    assert room._live[row.session_id].attention._students[student].baseline.gaze == [0.4] * 3
 
 
 async def test_an_accommodated_student_who_misses_questions_is_never_nudged_or_disengaged() -> None:
@@ -100,11 +109,11 @@ async def test_an_accommodated_students_camera_is_not_scored_even_when_sent() ->
     await room.shutdown()
 
 
-async def test_the_class_learns_a_students_normal_from_their_own_readings() -> None:
+async def test_the_class_learns_a_students_normal_from_their_own_readings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     room, row, _, student = await _room()
-    for _ in range(3):
-        assert await room.record_attention(row.session_id, student, _gaze(0.4, True))
-        await _close(room, row)
+    await _learn_baseline(room, row, student, monkeypatch)
     live = room._live[row.session_id]
     assert len(live.attention._students[student].baseline.gaze) == 3
     await room.shutdown()
@@ -120,33 +129,33 @@ async def test_one_reading_is_not_counted_twice_across_questions() -> None:
     await room.shutdown()
 
 
-async def test_withdrawing_the_camera_forgets_what_the_camera_taught() -> None:
+async def test_withdrawing_the_camera_forgets_what_the_camera_taught(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     room, row, _, student = await _room()
-    for _ in range(3):
-        assert await room.record_attention(row.session_id, student, _gaze(0.4, True))
-        await _close(room, row)
+    await _learn_baseline(room, row, student, monkeypatch)
     await room.withdraw_consent(student, ConsentType.CAMERA)
     held = room._live[row.session_id].attention._students[student].baseline
     assert (held.gaze, held.face) == ([], [])
     await room.shutdown()
 
 
-async def test_withdrawing_the_microphone_leaves_the_camera_baseline_alone() -> None:
+async def test_withdrawing_the_microphone_leaves_the_camera_baseline_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     room, row, _, student = await _room()
-    for _ in range(3):
-        assert await room.record_attention(row.session_id, student, _gaze(0.4, True))
-        await _close(room, row)
+    await _learn_baseline(room, row, student, monkeypatch)
     await room.withdraw_consent(student, ConsentType.MICROPHONE)
     held = room._live[row.session_id].attention._students[student].baseline
     assert len(held.gaze) == 3
     await room.shutdown()
 
 
-async def test_withdrawing_monitoring_drops_the_baseline_with_everything_else() -> None:
+async def test_withdrawing_monitoring_drops_the_baseline_with_everything_else(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     room, row, _, student = await _room()
-    for _ in range(3):
-        assert await room.record_attention(row.session_id, student, _gaze(0.4, True))
-        await _close(room, row)
+    await _learn_baseline(room, row, student, monkeypatch)
     await room.withdraw_consent(student, ConsentType.ENGAGEMENT_MONITORING)
     held = room._live[row.session_id].attention._students[student].baseline
     assert (held.gaze, held.face) == ([], [])
@@ -280,10 +289,31 @@ async def test_the_scorer_reads_a_student_against_their_own_baseline() -> None:
     for _ in range(3):
         attention.observe(student, _gaze(0.4), now)
         attention.score({student}, set(), {}, now)
-        now = now + timedelta(seconds=3)
+        now += timedelta(seconds=5)
     # attempt rate 0, gaze 0.4 which is 100% of their own normal
     [scored] = attention.scores()
     assert scored.engagement.score == pytest.approx(0.5 / 1.5)
+
+
+def test_rate_limited_readings_do_not_train_the_baseline() -> None:
+    from app.realtime.attention import Attention
+
+    attention = Attention(uuid4())
+    student = uuid4()
+    now = datetime(2026, 1, 1, 12, 0, 5, tzinfo=UTC)
+    for milliseconds in (0, 100, 200):
+        at = now + timedelta(milliseconds=milliseconds)
+        attention.observe(student, _gaze(0.4), at)
+        attention.score({student}, set(), {}, at)
+    assert attention._students[student].baseline.gaze == [0.4]
+    at = now + timedelta(seconds=5)
+    attention.observe(student, _gaze(0.8), at)
+    attention.score({student}, set(), {}, at)
+    # The baseline learns the student's recent signals as one: the 0.4 sent five
+    # seconds ago is still in the window, so the new entry is their mean. What
+    # matters is that the two dropped readings added nothing: one entry per
+    # accepted reading.
+    assert attention._students[student].baseline.gaze == pytest.approx([0.4, 0.6])
 
 
 async def test_an_error_while_checking_never_logs_its_text(

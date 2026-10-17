@@ -11,9 +11,10 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, Path, Request
 
-from app.api.deps import CurrentUser, DbSession, require_consents, require_roles
+from app.api.deps import AppSettings, CurrentUser, DbSession, require_consents, require_roles
+from app.core.audit import audit_action
 from app.schemas.identity import ConsentType, Role
 from app.schemas.meetings import MAX_MEETING_ID_LENGTH, MeetingEventIn, MeetingLinkRequest
 from app.schemas.session import SessionOut
@@ -41,10 +42,13 @@ async def meeting_session(
 
 
 @router.put("/{meeting_id}", response_model=SessionOut)
+@audit_action("MEETING_LINKED")
 async def link_meeting(
     meeting_id: Annotated[str, Path(min_length=1, max_length=MAX_MEETING_ID_LENGTH)],
     payload: MeetingLinkRequest,
     principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
     db: DbSession,
 ) -> SessionOut:
     """Hold a session in this meeting. Either side's old link is replaced."""
@@ -52,9 +56,12 @@ async def link_meeting(
 
 
 @router.post("/events", response_model=SessionOut)
+@audit_action("MEETING_EVENT_APPLIED")
 async def meeting_event(
     event: MeetingEventIn,
     principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
     db: DbSession,
 ) -> SessionOut:
     """Start or end the meeting's session, creating one for a meeting that

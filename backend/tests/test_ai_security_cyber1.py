@@ -1,7 +1,7 @@
 """Cyber 1 adversarial security tests for AI 1 question generation.
 
 These tests reproduce the AI-grounding checks documented in
-CYBER1_PHASE2_SECURITY_TEST_REPORT.md.
+docs/security/phase2-upload-and-grounding-tests.md.
 
 Original AI 1 implementation tested:
 Luna-Phase-2 commit 62800db3dd7a022bb0ce17791f3bedda513d7d3d

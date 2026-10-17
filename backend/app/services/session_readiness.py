@@ -2,17 +2,14 @@
 
 Owner: AI 1, Phase 4.
 
-A session may start once it has at least one approved, staged question to
-deliver: that question's material has processed, or it would not exist.
-Everything else explains why there is none, or is a warning when there are
-some, so a slow upload for another week never holds back a class that has
-something to ask. The readiness endpoint and start_session both call
+A session may always start. Nothing here blocks it: a lecturer can open a
+class before any question is staged and stage one once it is live, since
+delivery looks for staged questions at the moment it sends one. Missing
+material, material still processing, a failed upload and having no staged
+question yet are all warnings, shown so the lecturer knows what the class
+has to work with. The readiness endpoint and start_session both call
 evaluate_readiness, so what the lecturer is shown and what the start button
 does cannot disagree.
-
-A failed material is a warning, not a blocker. It will never finish, so
-blocking on it would hold the class back forever even when the rest of the
-material is fine and has questions staged.
 """
 
 from __future__ import annotations
@@ -45,22 +42,17 @@ def assess(
 
     unfinished = [m for m in materials if m.status in _UNFINISHED]
     failed = [m for m in materials if m.status == MaterialStatus.FAILED.value]
-    ready = deliverable_questions > 0
-    # Only a missing question blocks. Missing or unfinished material is the
-    # reason there is none, or a warning when there already are some, so
-    # ready is true exactly when blockers is empty.
-    reasons = warnings if ready else blockers
 
     if not materials:
-        reasons.append(
+        warnings.append(
             ReadinessIssue(
                 code=ReadinessIssueCode.NO_MATERIAL,
-                message="Upload lecture material for this course before starting.",
+                message="No lecture material is uploaded for this course yet.",
             )
         )
 
     for material in unfinished:
-        reasons.append(
+        warnings.append(
             ReadinessIssue(
                 code=ReadinessIssueCode.MATERIAL_PROCESSING,
                 message=f"{material.filename} is still being processed.",
@@ -77,17 +69,18 @@ def assess(
             )
         )
 
-    if not ready:
-        blockers.append(
+    if deliverable_questions == 0:
+        warnings.append(
             ReadinessIssue(
                 code=ReadinessIssueCode.NO_APPROVED_QUESTIONS,
-                message="Stage at least one approved question before starting the session.",
+                message="No approved question is staged yet. The session can start, "
+                "but there is nothing to send until one is staged.",
             )
         )
 
     return SessionReadinessOut(
         session_id=session_id,
-        ready=ready,
+        ready=True,
         blockers=blockers,
         warnings=warnings,
         materials_total=len(materials),

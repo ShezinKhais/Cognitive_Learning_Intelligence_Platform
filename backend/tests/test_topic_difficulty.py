@@ -223,6 +223,7 @@ async def question(database):
             status="delivered",
             difficulty="easy",
             topic="Neural networks",
+            source_slide=4,
             options=["Incorrect", "Correct"],
             correct_option=1,
         )
@@ -274,6 +275,22 @@ async def test_a_sessions_labelled_answers_are_read_with_their_topic(database, q
     assert topic.expected is Difficulty.EASY
     # One answer is not enough to call the topic hard.
     assert topic.level is None
+
+
+async def test_a_labelled_answer_carries_its_questions_slide(database, question):
+    await live_wiring._store_response(
+        session_id=question.session,
+        question_id=question.question,
+        user_id=question.user,
+        selected_option=0,
+        free_text=None,
+        is_correct=False,
+        elapsed_ms=900,
+    )
+
+    [answer] = await DatabaseTopicAnswers().session_answers(question.session)
+
+    assert answer.source_slide == 4
 
 
 async def test_another_sessions_answers_are_not_read(database, question):

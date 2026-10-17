@@ -40,7 +40,7 @@ export default function LoginPage() {
         password,
       )
 
-      saveAccessToken(result.access_token)
+      saveAccessToken(result.access_token, result.expires_in)
 
       const currentUser = await getCurrentUser()
 
