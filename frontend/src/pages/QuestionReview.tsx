@@ -563,6 +563,7 @@ function QuestionCard({
             onChange={(e) => setPrompt(e.target.value)}
             className="w-full rounded-lg border border-border bg-background p-2 text-sm"
             rows={2}
+            maxLength={2000}
             aria-label="Question prompt"
           />
         ) : (
@@ -611,6 +612,7 @@ function QuestionCard({
                       setOptions(next)
                     }}
                     className="flex-1 rounded border border-border bg-background px-2 py-1 text-sm"
+                    maxLength={500}
                     aria-label={`Option ${i + 1} text`}
                   />
                 </>

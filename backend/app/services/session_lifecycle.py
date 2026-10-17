@@ -38,6 +38,7 @@ from app.schemas.common import Page
 from app.schemas.identity import ConsentType, Role
 from app.schemas.meetings import MeetingEventIn, MeetingEventKind
 from app.schemas.session import (
+    MAX_TITLE_LENGTH,
     DeliverableQuestionOut,
     SessionCreateRequest,
     SessionOut,
@@ -58,8 +59,6 @@ MODE_TEAMS = "teams"
 MEETING_TITLE = "Teams meeting"
 
 FINISHED = {SessionStatus.ENDED.value, SessionStatus.CANCELLED.value}
-
-MAX_TITLE_LENGTH = 200
 
 
 async def create_session(

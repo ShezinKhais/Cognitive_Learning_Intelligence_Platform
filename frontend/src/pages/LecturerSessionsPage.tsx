@@ -254,6 +254,7 @@ function CreateSession({ onCancel }: { onCancel: () => void }) {
             onChange={(event) => setCourseCode(event.target.value)}
             placeholder="CSIT321"
             autoComplete="off"
+            maxLength={20}
             disabled={saving}
             className={field}
           />
@@ -265,6 +266,7 @@ function CreateSession({ onCancel }: { onCancel: () => void }) {
             onChange={(event) => setTitle(event.target.value)}
             placeholder="Week 7: Threat modelling"
             autoComplete="off"
+            maxLength={200}
             disabled={saving}
             className={field}
           />

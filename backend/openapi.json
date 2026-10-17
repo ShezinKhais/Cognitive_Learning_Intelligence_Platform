@@ -519,6 +519,7 @@
             "type": "string"
           },
           "password": {
+            "maxLength": 1024,
             "title": "Password",
             "type": "string"
           }
@@ -730,6 +731,7 @@
           "course_code": {
             "anyOf": [
               {
+                "maxLength": 20,
                 "type": "string"
               },
               {
@@ -751,6 +753,7 @@
           "title": {
             "anyOf": [
               {
+                "maxLength": 200,
                 "type": "string"
               },
               {
@@ -1097,6 +1100,8 @@
           "correct_option": {
             "anyOf": [
               {
+                "exclusiveMaximum": 8.0,
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -1119,8 +1124,10 @@
             "anyOf": [
               {
                 "items": {
+                  "maxLength": 500,
                   "type": "string"
                 },
+                "maxItems": 8,
                 "type": "array"
               },
               {
@@ -1132,6 +1139,7 @@
           "prompt": {
             "anyOf": [
               {
+                "maxLength": 2000,
                 "type": "string"
               },
               {
@@ -1469,6 +1477,7 @@
       "SessionCreateRequest": {
         "properties": {
           "course_code": {
+            "maxLength": 20,
             "title": "Course Code",
             "type": "string"
           },
@@ -1485,6 +1494,7 @@
             "title": "Starts At"
           },
           "title": {
+            "maxLength": 200,
             "title": "Title",
             "type": "string"
           }
@@ -2354,6 +2364,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -2591,6 +2602,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -3068,6 +3080,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -3537,6 +3550,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -3750,6 +3764,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"

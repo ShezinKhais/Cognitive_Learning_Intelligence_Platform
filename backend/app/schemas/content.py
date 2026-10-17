@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Annotated
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -116,13 +117,22 @@ class QuestionOut(BaseModel):
     )
 
 
+# Well above anything generation writes (four short options, a one or two
+# sentence prompt), so they only stop an edit no student could read.
+MAX_PROMPT_CHARS = 2000
+MAX_OPTION_CHARS = 500
+MAX_OPTIONS = 8
+
+
 class QuestionReviewRequest(BaseModel):
     """A lecturer approving, editing or rejecting a generated question."""
 
     status: ReviewDecision
-    prompt: str | None = None
-    options: list[str] | None = None
-    correct_option: int | None = None
+    prompt: str | None = Field(default=None, max_length=MAX_PROMPT_CHARS)
+    options: list[Annotated[str, Field(max_length=MAX_OPTION_CHARS)]] | None = Field(
+        default=None, max_length=MAX_OPTIONS
+    )
+    correct_option: int | None = Field(default=None, ge=0, lt=MAX_OPTIONS)
     difficulty: Difficulty | None = None
 
 

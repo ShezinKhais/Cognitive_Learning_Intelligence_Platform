@@ -14,6 +14,11 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from app.schemas.content import Difficulty
 
+# course.code is String(20). The title is checked again after trimming, in
+# session_lifecycle, which gives the message a lecturer reads.
+MAX_COURSE_CODE_LENGTH = 20
+MAX_TITLE_LENGTH = 200
+
 # Text a lecturer reads. Blank is not text: an alert with a blank reason, or
 # with only whitespace for one, would tell the lecturer nothing.
 ShownText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -79,8 +84,8 @@ class SessionOut(BaseModel):
 
 
 class SessionCreateRequest(BaseModel):
-    course_code: str
-    title: str
+    course_code: str = Field(max_length=MAX_COURSE_CODE_LENGTH)
+    title: str = Field(max_length=MAX_TITLE_LENGTH)
     starts_at: datetime | None = None
 
 
