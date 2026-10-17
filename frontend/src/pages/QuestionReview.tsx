@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react'
-import { ArrowLeft, Check } from 'lucide-react'
-import { Link, useParams } from 'react-router'
+import { Check } from 'lucide-react'
+import { useParams } from 'react-router'
 
 import {
   ApiError,
@@ -276,12 +276,7 @@ export default function QuestionReview() {
             . A question reaches a class only once you approve it and make it ready to send.
           </>
         }
-        actions={
-          <Link to="/lecturer/materials" className={buttonStyles({ intent: 'quiet' })}>
-            <ArrowLeft size={16} aria-hidden />
-            Materials
-          </Link>
-        }
+        back={{ to: '/lecturer/materials', label: 'Materials' }}
       >
         {counts.all > 0 && (
           <div className="mt-4 max-w-md">

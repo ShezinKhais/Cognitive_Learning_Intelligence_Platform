@@ -1,7 +1,6 @@
 
 import {
   CheckCircle2,
-  ChevronLeft,
   Clock3,
   MessagesSquare,
   RefreshCw,
@@ -12,6 +11,8 @@ import { AnimatePresence, motion } from 'motion/react'
 
 import { buttonStyles } from '../components/ui/button'
 import SegmentedTabs from '../components/ui/SegmentedTabs'
+import { BackLink } from '../components/ui/primitives'
+import { useDocumentTitle } from '../components/ui/useDocumentTitle'
 import {
   useEffect,
   useState,
@@ -90,6 +91,8 @@ export function LiveSessionPanel({
     Boolean(state.checkpoint || state.attentionPrompt),
   )
 
+  useDocumentTitle(compact ? undefined : session.title)
+
   const finished =
     state.sessionStatus === 'ended' ||
     state.sessionStatus === 'cancelled'
@@ -108,13 +111,7 @@ export function LiveSessionPanel({
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               {!compact && (
-                <Link
-                  to="/student"
-                  className="inline-flex items-center gap-1 text-sm font-medium text-info link-sweep"
-                >
-                  <ChevronLeft aria-hidden="true" size={17} />
-                  All sessions
-                </Link>
+                <BackLink to="/student">My sessions</BackLink>
               )}
 
               <p className={`${compact ? '' : 'mt-4'} text-sm font-semibold text-info`}>

@@ -1,13 +1,16 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Plus } from 'lucide-react'
 import { Link, useNavigate } from 'react-router'
 
 import { ApiError, clearAccessToken } from '../api'
 import { cn } from '../components/ui/cn'
 import { buttonStyles } from '../components/ui/button'
-import { EmptyState, PageBody, PageHeader, Panel, Tag, SkeletonRows } from '../components/ui/primitives'
+import ListToolbar from '../components/ui/ListToolbar'
+import { EmptyState, MetaLine, PageBody, PageHeader, Panel, Tag, SkeletonRows } from '../components/ui/primitives'
+import { countBy, filterSessions, type SessionFilter } from '../features/format/listFilters'
+import { sinceVerb } from '../features/format/relativeTime'
 import { createSession } from '../features/live/sessionActions'
-import { formatWhen, groupSessions, statusLabel, statusTone } from '../features/sessions/format'
+import { formatWhen, groupOf, groupSessions, statusLabel, statusTone } from '../features/sessions/format'
 import { listSessions, type SessionSummary } from '../features/sessions/sessionsApi'
 
 type Load = { state: 'loading' } | { state: 'error'; message: string } | { state: 'ready'; sessions: SessionSummary[] }
@@ -20,6 +23,8 @@ function signInAgain(): void {
 export default function LecturerSessionsPage() {
   const [load, setLoad] = useState<Load>({ state: 'loading' })
   const [creating, setCreating] = useState(false)
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<SessionFilter>('all')
 
   useEffect(() => {
     let cancelled = false
@@ -38,8 +43,10 @@ export default function LecturerSessionsPage() {
     }
   }, [])
 
-  const sessions = load.state === 'ready' ? load.sessions : []
-  const groups = groupSessions(sessions)
+  const sessions = useMemo(() => (load.state === 'ready' ? load.sessions : []), [load])
+  const counts = useMemo(() => countBy(sessions, (session) => groupOf(session.status)), [sessions])
+  const shown = useMemo(() => filterSessions(sessions, query, filter), [sessions, query, filter])
+  const groups = groupSessions(shown)
 
   return (
     <>
@@ -78,6 +85,44 @@ export default function LecturerSessionsPage() {
           </EmptyState>
         )}
 
+        {sessions.length > 0 && (
+          <ListToolbar
+            label="sessions"
+            query={query}
+            onQuery={setQuery}
+            placeholder="Search by title or course"
+            filter={filter}
+            onFilter={setFilter}
+            filters={[
+              { key: 'all', label: 'All', count: sessions.length },
+              { key: 'live', label: 'Live', count: counts.live ?? 0 },
+              { key: 'prepared', label: 'Upcoming', count: counts.prepared ?? 0 },
+              { key: 'finished', label: 'Finished', count: counts.finished ?? 0 },
+            ]}
+          />
+        )}
+
+        {sessions.length > 0 && shown.length === 0 && (
+          <EmptyState
+            title="No sessions match"
+            action={
+              <button
+                type="button"
+                className={buttonStyles({ intent: 'secondary' })}
+                onClick={() => {
+                  setQuery('')
+                  setFilter('all')
+                }}
+              >
+                Show all sessions
+              </button>
+            }
+          >
+            {query ? `Nothing is called "${query.trim()}"` : 'There are none of these'}
+            {filter !== 'all' && query ? ' with this filter.' : '.'}
+          </EmptyState>
+        )}
+
         {groups.live.length > 0 && <SessionList heading="Live now" sessions={groups.live} />}
         {groups.prepared.length > 0 && <SessionList heading="Prepared" sessions={groups.prepared} />}
         {groups.finished.length > 0 && <SessionList heading="Finished" sessions={groups.finished} />}
@@ -103,6 +148,26 @@ function SessionList({ heading, sessions }: { heading: string; sessions: Session
   )
 }
 
+/** When, in the terms that matter for its state: how long ago a live class
+ * started or a finished one ended, and the date of one still to come. The
+ * exact time is on hover and for screen readers. */
+function SessionTime({ session }: { session: SessionSummary }) {
+  const at = session.ended_at ?? session.starts_at
+  if (!at) return <>No start time set</>
+  const exact = formatWhen(at)
+  if (session.status === 'prepared') return <time dateTime={at}>{exact}</time>
+  const words = sinceVerb(
+    session.status === 'active' ? 'Started' : session.status === 'cancelled' ? 'Cancelled' : 'Ended',
+    at,
+  )
+  return (
+    <time dateTime={at} title={exact}>
+      {words}
+      <span className="sr-only">, {exact}</span>
+    </time>
+  )
+}
+
 function SessionRow({ session }: { session: SessionSummary }) {
   const finished = session.status === 'ended' || session.status === 'cancelled'
   const live = `/lecturer/sessions/${session.id}/live`
@@ -117,12 +182,16 @@ function SessionRow({ session }: { session: SessionSummary }) {
         <Link to={finished ? report : live} className="mt-1 block truncate text-[1.05rem] font-bold hover:underline">
           {session.title}
         </Link>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          {formatWhen(session.ended_at ?? session.starts_at)}
-          {session.questions_delivered > 0 &&
-            `, ${session.questions_delivered} ${session.questions_delivered === 1 ? 'question' : 'questions'} asked`}
-          {session.participant_count > 0 && `, ${session.participant_count} joined`}
-        </p>
+        <MetaLine
+          className="mt-0.5"
+          items={[
+            <SessionTime key="when" session={session} />,
+            session.questions_delivered > 0 &&
+              `${session.questions_delivered} ${session.questions_delivered === 1 ? 'question' : 'questions'} asked`,
+            session.participant_count > 0 &&
+              `${session.participant_count} ${session.participant_count === 1 ? 'student' : 'students'} joined`,
+          ]}
+        />
       </div>
       <div className="flex flex-wrap gap-2">
         {!finished && (
@@ -131,7 +200,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
           </Link>
         )}
         {session.status !== 'prepared' && session.status !== 'cancelled' && (
-          <Link to={report} className={buttonStyles({ intent: finished ? 'primary' : 'quiet' })}>
+          <Link to={report} className={buttonStyles({ intent: finished ? 'secondary' : 'quiet' })}>
             Report
           </Link>
         )}

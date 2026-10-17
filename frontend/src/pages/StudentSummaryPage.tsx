@@ -65,7 +65,12 @@ export default function StudentSummaryPage() {
 
   return (
     <>
-      <PageHeader title={session.title} description={`${session.course_code}, ${formatWhen(session.ended_at ?? session.starts_at)}`} />
+      <PageHeader
+        title={session.title}
+        tabTitle={`How you did, ${session.title}`}
+        back={{ to: '/student', label: 'My sessions' }}
+        description={`${session.course_code}, ${formatWhen(session.ended_at ?? session.starts_at)}`}
+      />
       <PageBody>
         <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
           <Panel title="Your answers" description="Only you and your lecturer can see these.">

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react'
-import { LogOut, Menu, Search, X } from 'lucide-react'
+import { Keyboard, LogOut, Menu, Search, X } from 'lucide-react'
 import { Link, useLocation } from 'react-router'
 
 import { clearAccessToken, type CurrentUser } from '../../api'
@@ -11,7 +11,8 @@ import IntroOverlay from './IntroOverlay'
 import { introPlayed, takeIntro } from './intro'
 import { currentItem, NAVIGATION, ROLE_NAME, type NavItem } from './navigation'
 import QuickJump from './QuickJump'
-import { shortcutLabel, useQuickJumpShortcut } from './quickJumpKeys'
+import { shortcutLabel, useQuickJumpShortcut, useShortcutsKey } from './quickJumpKeys'
+import ShortcutsSheet from './ShortcutsSheet'
 import ThemeSwitch from './ThemeSwitch'
 
 /**
@@ -33,6 +34,10 @@ export default function AppShell({ user, children }: { user: CurrentUser; childr
   }, [])
   const openJump = useCallback(() => setJumping(true), [])
   useQuickJumpShortcut(openJump)
+  const [shortcuts, setShortcuts] = useState(false)
+  const phoneHeader = useStickyHeaderHeight()
+  const openShortcuts = useCallback(() => setShortcuts(true), [])
+  useShortcutsKey(openShortcuts)
   useRouteAnnouncement(current?.label)
 
   // Close the phone menu when a link in it is followed.
@@ -70,6 +75,7 @@ export default function AppShell({ user, children }: { user: CurrentUser; childr
         {intro && <IntroOverlay firstName={user.full_name.split(' ')[0]} onDone={finishIntro} />}
       </AnimatePresence>
       <QuickJump user={user} open={jumping} onClose={() => setJumping(false)} />
+      <ShortcutsSheet open={shortcuts} onClose={() => setShortcuts(false)} />
       <div className="min-h-screen bg-background lg:grid lg:grid-cols-[15rem_1fr]">
         <a
           href="#content"
@@ -78,7 +84,10 @@ export default function AppShell({ user, children }: { user: CurrentUser; childr
           Skip to content
         </a>
 
-        <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-card/95 px-4 py-3 backdrop-blur lg:hidden">
+        <header
+          ref={phoneHeader}
+          className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-card/95 px-4 py-3 backdrop-blur lg:hidden"
+        >
           <Wordmark />
           <div className="flex items-center gap-1">
             <button type="button" onClick={openJump} className="rounded-md p-2 hover:bg-muted">
@@ -110,14 +119,14 @@ export default function AppShell({ user, children }: { user: CurrentUser; childr
             >
               <div className="flex flex-col gap-6 px-3 py-4">
                 {menu}
-                <Account user={user} />
+                <Account user={user} onShortcuts={openShortcuts} />
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
         <aside className="sticky top-0 hidden h-screen flex-col gap-6 overflow-y-auto border-r border-border bg-card px-3 py-6 lg:flex">
-          <div className="h-[2.6rem] px-3">
+          <div className="h-[2.9rem] px-3">
             {/* The intro's mark lands here. */}
             {!intro && (
               <motion.span layoutId="clip-brand" className="inline-flex" transition={{ type: 'spring', stiffness: 170, damping: 24 }}>
@@ -127,7 +136,7 @@ export default function AppShell({ user, children }: { user: CurrentUser; childr
           </div>
           {jumpButton}
           {menu}
-          <Account user={user} />
+          <Account user={user} onShortcuts={openShortcuts} />
         </aside>
 
         <motion.main
@@ -154,6 +163,29 @@ export default function AppShell({ user, children }: { user: CurrentUser; childr
 }
 
 /**
+ * The phone header is sticky, so anything else sticky has to sit under it.
+ * Its height, kept in --shell-header for them; 0 on a wide screen, where
+ * the header is hidden.
+ */
+function useStickyHeaderHeight() {
+  const header = useRef<HTMLElement>(null)
+  useLayoutEffect(() => {
+    const node = header.current
+    if (!node) return
+    const root = document.documentElement
+    const update = () => root.style.setProperty('--shell-header', `${node.offsetHeight}px`)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(node)
+    return () => {
+      observer.disconnect()
+      root.style.removeProperty('--shell-header')
+    }
+  }, [])
+  return header
+}
+
+/**
  * After moving to another page: name it in the tab title, and put focus at
  * the top of the new page so a screen reader starts reading there and Tab
  * goes on from it. Not on the first load, where focus belongs to the browser.
@@ -162,9 +194,11 @@ function useRouteAnnouncement(label: string | undefined) {
   const { pathname } = useLocation()
   const first = useRef(true)
 
-  useEffect(() => {
+  // A layout effect, so it runs before any page's own title (useDocumentTitle,
+  // a passive effect) and a page that names itself has the last word.
+  useLayoutEffect(() => {
     document.title = label ? `${label} · C.L.I.P` : 'C.L.I.P'
-  }, [label])
+  }, [label, pathname])
 
   useEffect(() => {
     if (first.current) {
@@ -238,7 +272,7 @@ function MenuGroup({ items, current }: { items: NavItem[]; current?: NavItem }) 
   )
 }
 
-function Account({ user }: { user: CurrentUser }) {
+function Account({ user, onShortcuts }: { user: CurrentUser; onShortcuts: () => void }) {
   return (
     <div className="mt-auto">
       <div className="mb-3 space-y-3">
@@ -262,6 +296,15 @@ function Account({ user }: { user: CurrentUser }) {
         >
           <LogOut size={16} aria-hidden />
           Sign out
+        </button>
+        <button
+          type="button"
+          onClick={onShortcuts}
+          className="mt-1 hidden items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground lg:flex"
+        >
+          <Keyboard size={16} aria-hidden />
+          Keyboard shortcuts
+          <kbd className="ml-auto rounded border border-border px-1.5 text-xs">?</kbd>
         </button>
       </div>
     </div>

@@ -1,4 +1,5 @@
 import type { Role } from '../../api'
+import { daysBetween } from '../format/relativeTime.ts'
 import type { Material } from '../materials/types'
 import type { SessionSummary } from '../sessions/sessionsApi'
 
@@ -86,9 +87,41 @@ export function buildNotifications(role: Role, sources: NotificationSources): Ap
     }
   }
 
-  return found.sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+  return found.sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, MAX_NOTIFICATIONS)
 }
 
 export function unreadCount(notifications: readonly AppNotification[], read: ReadonlySet<string>): number {
   return notifications.filter((item) => !read.has(item.id)).length
+}
+
+/** The most the panel lists. Older ones are still a week away from ageing
+ * out, but past this many nobody reads them. */
+export const MAX_NOTIFICATIONS = 30
+
+/** The badge: a count while it is readable, then 99+. */
+export function badgeLabel(count: number): string {
+  return count > 99 ? '99+' : String(count)
+}
+
+export interface NotificationGroup {
+  label: 'Today' | 'Yesterday' | 'Earlier this week'
+  items: AppNotification[]
+}
+
+/** Newest first, split by day in the class's time zone. Empty groups are
+ * left out. */
+export function groupByDay(
+  notifications: readonly AppNotification[],
+  now = Date.now(),
+): NotificationGroup[] {
+  const groups: NotificationGroup[] = [
+    { label: 'Today', items: [] },
+    { label: 'Yesterday', items: [] },
+    { label: 'Earlier this week', items: [] },
+  ]
+  for (const item of notifications) {
+    const days = daysBetween(Date.parse(item.at), now)
+    groups[days <= 0 ? 0 : days === 1 ? 1 : 2].items.push(item)
+  }
+  return groups.filter((group) => group.items.length > 0)
 }

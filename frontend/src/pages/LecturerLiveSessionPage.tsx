@@ -10,7 +10,9 @@ import {
 import { ApiError } from '../api'
 import { buttonStyles } from '../components/ui/button'
 import { PageHeader, Panel, Tag } from '../components/ui/primitives'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 import LiveResults from '../features/live/LiveResults'
+import LiveStatusBar from '../features/live/LiveStatusBar'
 import ReadinessChecklist from '../features/live/ReadinessChecklist'
 import RoomsPanel from '../features/live/RoomsPanel'
 import { statusLabel, statusTone } from '../features/sessions/format'
@@ -143,6 +145,7 @@ export default function LecturerLiveSessionPage() {
   // The session's title and course, for the header. The socket carries its
   // live state; this is only what it is called.
   const [details, setDetails] = useState<SessionSummary | null>(null)
+  const [confirmingEnd, setConfirmingEnd] = useState(false)
   useEffect(() => {
     if (!sessionId) return
     let cancelled = false
@@ -602,6 +605,8 @@ export default function LecturerLiveSessionPage() {
 
       <PageHeader
         title={details?.title ?? 'Live session'}
+        tabTitle={details ? `Live, ${details.title}` : 'Live session'}
+        back={{ to: '/lecturer/sessions', label: 'Sessions' }}
         description={details ? details.course_code : undefined}
         actions={
           <>
@@ -626,10 +631,61 @@ export default function LecturerLiveSessionPage() {
           </div>
         )}
       </PageHeader>
+      {sessionState?.status === 'active' && (
+        <LiveStatusBar
+          paused={sessionState.paused}
+          startedAt={details?.starts_at}
+          participants={sessionState.participant_count}
+          questionOpen={activeQuestion !== null}
+          secondsRemaining={secondsRemaining}
+          canPause={canPause}
+          canResume={canResume}
+          canEnd={canEnd}
+          working={
+            actionInProgress === 'pause' || actionInProgress === 'resume' || actionInProgress === 'end'
+              ? actionInProgress
+              : null
+          }
+          onPause={() => void handleSessionAction('pause')}
+          onResume={() => void handleSessionAction('resume')}
+          onEnd={() => setConfirmingEnd(true)}
+        />
+      )}
+
+      <ConfirmDialog
+        open={confirmingEnd}
+        title={sessionState?.status === 'prepared' ? 'Cancel this session?' : 'End the class?'}
+        confirmLabel={sessionState?.status === 'prepared' ? 'Cancel the session' : 'End the class'}
+        cancelLabel={sessionState?.status === 'prepared' ? 'Keep it' : 'Keep teaching'}
+        busy={actionInProgress === 'end'}
+        onCancel={() => setConfirmingEnd(false)}
+        onConfirm={() => {
+          void handleSessionAction('end').finally(() => setConfirmingEnd(false))
+        }}
+      >
+        {sessionState?.status === 'prepared' ? (
+          <p>It will not run, and students can no longer join it. This cannot be undone.</p>
+        ) : (
+          <p>
+            Students are disconnected and no more questions are sent. Answers so far are kept for the report. A class
+            that has ended cannot be restarted.
+          </p>
+        )}
+      </ConfirmDialog>
+
       <div className="mx-auto max-w-6xl px-5 py-8 sm:px-8">
 
         <div className="grid gap-6 lg:grid-cols-2">
-          <Panel title="Class" description="Start, pause and end the class from here.">
+          <Panel
+            title="Class"
+            description={
+              sessionState?.status === 'prepared'
+                ? 'Check it is ready, then start the class.'
+                : sessionState?.status === 'active'
+                  ? 'Pause and end it from the bar above.'
+                  : 'Where the class stands.'
+            }
+          >
             <dl className="grid grid-cols-2 gap-4">
               <div>
                 <dt className="text-sm text-muted-foreground">Session</dt>
@@ -688,72 +744,17 @@ export default function LecturerLiveSessionPage() {
                 </button>
               )}
 
-              {sessionState?.status ===
-                'active' &&
-                !sessionState.paused && (
-                  <button
-                    type="button"
-                    disabled={
-                      !canPause
-                    }
-                    onClick={() =>
-                      void handleSessionAction(
-                        'pause',
-                      )
-                    }
-                    className={buttonStyles({ intent: 'secondary' })}
-                  >
-                    {actionInProgress ===
-                    'pause'
-                      ? 'Pausing...'
-                      : 'Pause'}
-                  </button>
-                )}
-
-              {sessionState?.status ===
-                'active' &&
-                sessionState.paused && (
-                  <button
-                    type="button"
-                    disabled={
-                      !canResume
-                    }
-                    onClick={() =>
-                      void handleSessionAction(
-                        'resume',
-                      )
-                    }
-                    className={buttonStyles()}
-                  >
-                    {actionInProgress ===
-                    'resume'
-                      ? 'Resuming...'
-                      : 'Resume'}
-                  </button>
-                )}
-
-              {(sessionState?.status ===
-                'prepared' ||
-                sessionState?.status ===
-                  'active') && (
+              {sessionState?.status === 'prepared' && (
                 <button
                   type="button"
-                  disabled={
-                    !canEnd
-                  }
-                  onClick={() =>
-                    void handleSessionAction(
-                      'end',
-                    )
-                  }
+                  disabled={!canEnd}
+                  onClick={() => setConfirmingEnd(true)}
                   className={buttonStyles({ intent: 'danger' })}
                 >
-                  {actionInProgress ===
-                  'end'
-                    ? 'Ending...'
-                    : 'End the class'}
+                  {actionInProgress === 'end' ? 'Cancelling...' : 'Cancel the session'}
                 </button>
               )}
+
 
               {(sessionState?.status ===
                 'ended' ||

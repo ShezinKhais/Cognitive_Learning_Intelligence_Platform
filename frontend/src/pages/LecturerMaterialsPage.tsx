@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { ChevronDown, FileText, Presentation, Upload } from 'lucide-react'
 import { Link } from 'react-router'
@@ -6,7 +6,10 @@ import { Link } from 'react-router'
 import { ApiError, clearAccessToken } from '../api'
 import { cn } from '../components/ui/cn'
 import { buttonStyles } from '../components/ui/button'
-import { EmptyState, PageBody, PageHeader, Tag, SkeletonRows } from '../components/ui/primitives'
+import ListToolbar from '../components/ui/ListToolbar'
+import { EmptyState, MetaLine, PageBody, PageHeader, Tag, SkeletonRows } from '../components/ui/primitives'
+import { countBy, filterMaterials, materialState, type MaterialFilter } from '../features/format/listFilters'
+import { sinceVerb } from '../features/format/relativeTime'
 import { MaterialActionForm, MaterialMenu, type MaterialActionMode } from '../features/materials/MaterialActions'
 import MaterialDetails from '../features/materials/MaterialDetails'
 import { getMaterial, listMaterials, uploadMaterial } from '../features/materials/materialApi'
@@ -48,6 +51,10 @@ export default function LecturerMaterialsPage() {
   const [problem, setProblem] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<MaterialFilter>('all')
+  const counts = useMemo(() => countBy(materials ?? [], materialState), [materials])
+  const shown = useMemo(() => filterMaterials(materials ?? [], query, filter), [materials, query, filter])
   const dragDepth = useRef(0)
 
   const refresh = useCallback(async (id: string) => {
@@ -193,18 +200,56 @@ export default function LecturerMaterialsPage() {
           </EmptyState>
         )}
 
-        {(uploading.length > 0 || (materials?.length ?? 0) > 0) && (
+        {(materials?.length ?? 0) > 1 && (
+          <ListToolbar
+            label="materials"
+            query={query}
+            onQuery={setQuery}
+            placeholder="Search by file name or course"
+            filter={filter}
+            onFilter={setFilter}
+            filters={[
+              { key: 'all', label: 'All', count: materials?.length ?? 0 },
+              { key: 'ready', label: 'Ready', count: counts.ready ?? 0 },
+              { key: 'processing', label: 'Processing', count: counts.processing ?? 0 },
+              { key: 'failed', label: 'Failed', count: counts.failed ?? 0 },
+            ]}
+          />
+        )}
+
+        {(materials?.length ?? 0) > 0 && shown.length === 0 && uploading.length === 0 && (
+          <EmptyState
+            title="No materials match"
+            action={
+              <button
+                type="button"
+                className={buttonStyles({ intent: 'secondary' })}
+                onClick={() => {
+                  setQuery('')
+                  setFilter('all')
+                }}
+              >
+                Show all materials
+              </button>
+            }
+          >
+            {query ? `No file is called "${query.trim()}"` : 'There are none of these'}
+            {filter !== 'all' && query ? ' with this filter.' : '.'}
+          </EmptyState>
+        )}
+
+        {(uploading.length > 0 || shown.length > 0) && (
           <ul className="overflow-hidden rounded-lg border border-border bg-card" aria-label="Your materials">
             {uploading.map((item) => (
               <li key={item.key} className="border-b border-border last:border-b-0">
                 <Row
                   name={item.name}
-                  meta={`${formatBytes(item.size)}, uploading`}
+                  meta={[formatBytes(item.size), 'Uploading']}
                   bar={{ percent: 2, label: 'Uploading' }}
                 />
               </li>
             ))}
-            {materials?.map((material) => (
+            {shown.map((material) => (
               <li key={material.id} className="border-b border-border last:border-b-0">
                 <MaterialRow
                   material={material}
@@ -261,14 +306,16 @@ function MaterialRow({
   const failed = material.status === 'failed' || progress.stage === 'failed'
   const ready = material.status === 'completed'
   const pages = material.page_count
-  const meta = [
-    formatWhen(material.uploaded_at, ''),
+  const meta: ReactNode[] = [
+    material.uploaded_at && (
+      <time key="uploaded" dateTime={material.uploaded_at} title={formatWhen(material.uploaded_at, '')}>
+        {sinceVerb('Uploaded', material.uploaded_at)}
+      </time>
+    ),
     material.course_code ?? 'Any course',
     pages != null && `${pages} ${fileExtension(material.filename) === 'pptx' ? (pages === 1 ? 'slide' : 'slides') : pages === 1 ? 'page' : 'pages'}`,
     formatBytes(material.size_bytes),
   ]
-    .filter(Boolean)
-    .join(', ')
 
   return (
     <>
@@ -349,7 +396,7 @@ function Row({
   actions,
 }: {
   name: string
-  meta: string
+  meta: ReactNode[]
   icon?: typeof FileText
   status?: ReactNode
   bar?: { percent: number; label: string }
@@ -364,7 +411,7 @@ function Row({
           <span className="truncate font-semibold">{name}</span>
           {status}
         </div>
-        <p className="text-sm text-muted-foreground">{meta}</p>
+        <MetaLine items={meta} />
         {bar && (
           <div className="mt-2 max-w-md" aria-live="polite">
             <div

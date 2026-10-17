@@ -40,12 +40,24 @@ export function ClipMark({ size = 28, draw = false }: { size?: number; draw?: bo
 /** The mark beside the name. */
 export function Wordmark({ size = 'regular' }: { size?: 'regular' | 'large' }) {
   const large = size === 'large'
+  if (large) {
+    return (
+      <span className="inline-flex items-center gap-2.5">
+        <ClipMark size={56} />
+        <span className="text-5xl font-extrabold leading-none tracking-tight">C.L.I.P</span>
+      </span>
+    )
+  }
+  // The full name sits under the whole lockup on one line. Beside the mark it
+  // had a third less room and broke over two cramped lines in the side menu.
   return (
-    <span className="inline-flex items-center gap-2.5">
-      <ClipMark size={large ? 56 : 26} />
-      <span className="flex flex-col leading-none">
-        <span className={large ? 'text-5xl font-extrabold tracking-tight' : 'text-xl font-extrabold tracking-tight'}>C.L.I.P</span>
-        {!large && <span className="mt-1 text-[0.68rem] text-muted-foreground">Cognitive Learning Intelligence Platform</span>}
+    <span className="inline-flex flex-col">
+      <span className="inline-flex items-center gap-2.5">
+        <ClipMark size={26} />
+        <span className="text-xl font-extrabold leading-none tracking-tight">C.L.I.P</span>
+      </span>
+      <span className="mt-1.5 whitespace-nowrap text-[0.66rem] leading-none text-muted-foreground">
+        Cognitive Learning Intelligence Platform
       </span>
     </span>
   )

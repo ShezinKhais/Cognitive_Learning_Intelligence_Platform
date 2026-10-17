@@ -8,7 +8,15 @@ import { apiUrl, type CurrentUser } from '../../api'
 import Illustration from '../../components/ui/Illustration'
 import { listMaterials } from '../materials/materialApi'
 import { listSessions } from '../sessions/sessionsApi'
-import { buildNotifications, unreadCount, type AppNotification, type NotificationKind } from './notifications'
+import { formatClock, formatRelative } from '../format/relativeTime'
+import {
+  badgeLabel,
+  buildNotifications,
+  groupByDay,
+  unreadCount,
+  type AppNotification,
+  type NotificationKind,
+} from './notifications'
 
 const REFRESH_MS = 60_000
 const PANEL_WIDTH = 320
@@ -101,15 +109,19 @@ export default function NotificationBell({ user }: { user: CurrentUser }) {
   const [place, setPlace] = useState<CSSProperties>({})
   const unread = unreadCount(items, read)
 
-  const markAllRead = useCallback(() => {
-    const next = new Set([...read, ...items.map((item) => item.id)])
-    setRead(next)
-    try {
-      window.localStorage.setItem(readKey(user), JSON.stringify([...next].slice(-200)))
-    } catch {
-      // Storage blocked: they come back as unread next visit.
-    }
-  }, [items, read, user])
+  const remember = useCallback(
+    (ids: readonly string[]) => {
+      const next = new Set([...read, ...ids])
+      setRead(next)
+      try {
+        window.localStorage.setItem(readKey(user), JSON.stringify([...next].slice(-200)))
+      } catch {
+        // Storage blocked: they come back as unread next visit.
+      }
+    },
+    [read, user],
+  )
+  const markAllRead = useCallback(() => remember(items.map((item) => item.id)), [items, remember])
 
   useLayoutEffect(() => {
     if (!open) return
@@ -128,7 +140,7 @@ export default function NotificationBell({ user }: { user: CurrentUser }) {
 
   useEffect(() => {
     if (!open) return
-    const frame = requestAnimationFrame(() => panel.current?.focus())
+    const frame = requestAnimationFrame(() => panel.current?.focus({ preventScroll: true }))
     const close = (event: MouseEvent | KeyboardEvent) => {
       if (event instanceof KeyboardEvent) {
         if (event.key !== 'Escape') return
@@ -155,10 +167,7 @@ export default function NotificationBell({ user }: { user: CurrentUser }) {
       <button
         ref={bell}
         type="button"
-        onClick={() => {
-          setOpen((value) => !value)
-          if (!open) markAllRead()
-        }}
+        onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-label={unread ? `Notifications, ${unread} new` : 'Notifications'}
         className="relative flex w-full items-center gap-2 rounded-md px-3 py-2 text-[0.95rem] hover:bg-muted"
@@ -174,7 +183,7 @@ export default function NotificationBell({ user }: { user: CurrentUser }) {
               transition={{ type: 'spring', stiffness: 500, damping: 28 }}
               className="ml-auto rounded-full bg-highlight px-1.5 text-xs font-bold text-highlight-foreground"
             >
-              {unread}
+              {badgeLabel(unread)}
             </motion.span>
           )}
         </AnimatePresence>
@@ -194,30 +203,68 @@ export default function NotificationBell({ user }: { user: CurrentUser }) {
               style={place}
               className="fixed z-50 flex flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-[var(--shadow-card-hover)]"
             >
-              <p className="shrink-0 border-b border-border px-4 py-2.5 font-semibold">Notifications</p>
+              <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2.5">
+                <p className="font-semibold">Notifications</p>
+                {unread > 0 && (
+                  <button
+                    type="button"
+                    onClick={markAllRead}
+                    className="rounded px-1.5 py-0.5 text-sm font-semibold text-primary hover:bg-muted"
+                  >
+                    Mark all read
+                  </button>
+                )}
+              </div>
               {items.length === 0 ? (
                 <div className="px-4 py-6 text-center">
                   <Illustration name="notifications" className="mx-auto mb-3 h-20 w-28" />
                   <p className="text-sm text-muted-foreground">Nothing new. You are up to date.</p>
                 </div>
               ) : (
-                <ul className="max-h-96 min-h-0 divide-y divide-border overflow-auto">
-                  {items.map((item) => {
-                    const Icon = ICON[item.kind]
-                    return (
-                      <li key={item.id}>
-                        <Link to={item.to} onClick={() => setOpen(false)} className="flex gap-3 px-4 py-3 transition-colors hover:bg-muted">
-                          <Icon size={17} aria-hidden className={item.kind === 'problem' ? 'mt-0.5 text-critical' : item.kind === 'live' ? 'mt-0.5 text-primary' : 'mt-0.5 text-success'} />
-                          <span className="min-w-0">
-                            <span className="block break-words text-sm font-semibold">{item.title}</span>
-                            <span className="block text-sm text-muted-foreground">{item.detail}</span>
-                            <span className="mt-1 block text-sm font-semibold text-primary">{item.action}</span>
-                          </span>
-                        </Link>
-                      </li>
-                    )
-                  })}
-                </ul>
+                <div className="max-h-96 min-h-0 overflow-auto">
+                  {groupByDay(items).map((group) => (
+                    <section key={group.label} aria-label={group.label}>
+                      <h3 className="sticky top-0 z-10 border-b border-border bg-popover/95 px-4 py-1.5 text-xs font-semibold text-muted-foreground backdrop-blur">
+                        {group.label}
+                      </h3>
+                      <ul className="divide-y divide-border">
+                        {group.items.map((item) => {
+                          const Icon = ICON[item.kind]
+                          const fresh = !read.has(item.id)
+                          return (
+                            <li key={item.id}>
+                              <Link
+                                to={item.to}
+                                onClick={() => {
+                                  remember([item.id])
+                                  setOpen(false)
+                                }}
+                                className={`flex gap-3 px-4 py-3 transition-colors hover:bg-muted ${fresh ? 'bg-primary/[0.06]' : ''}`}
+                              >
+                                <Icon size={17} aria-hidden className={item.kind === 'problem' ? 'mt-0.5 shrink-0 text-critical' : item.kind === 'live' ? 'mt-0.5 shrink-0 text-primary' : 'mt-0.5 shrink-0 text-success'} />
+                                <span className="min-w-0 flex-1">
+                                  <span className="flex items-start justify-between gap-2">
+                                    <span className="break-words text-sm font-semibold">{item.title}</span>
+                                    <time dateTime={item.at} title={new Date(item.at).toLocaleString()} className="shrink-0 pt-px text-xs text-muted-foreground">
+                                      {group.label === 'Today' ? formatRelative(item.at) : formatClock(item.at, group.label === 'Earlier this week')}
+                                    </time>
+                                  </span>
+                                  <span className="block text-sm text-muted-foreground">{item.detail}</span>
+                                  <span className="mt-1 block text-sm font-semibold text-primary">{item.action}</span>
+                                </span>
+                                {fresh && (
+                                  <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary">
+                                    <span className="sr-only">New</span>
+                                  </span>
+                                )}
+                              </Link>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </section>
+                  ))}
+                </div>
               )}
             </motion.div>
           )}

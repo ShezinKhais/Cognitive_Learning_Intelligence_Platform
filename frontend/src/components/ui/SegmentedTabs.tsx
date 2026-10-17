@@ -19,6 +19,7 @@ export default function SegmentedTabs<K extends string>({
   value,
   onChange,
   stretch = false,
+  dense = false,
   className,
 }: {
   label: string
@@ -26,6 +27,8 @@ export default function SegmentedTabs<K extends string>({
   value: K
   onChange: (key: K) => void
   stretch?: boolean
+  /** Tighter tabs on a phone, for a row of four with counts. */
+  dense?: boolean
   className?: string
 }) {
   const pill = useId()
@@ -46,7 +49,7 @@ export default function SegmentedTabs<K extends string>({
   }
 
   return (
-    <div role="tablist" aria-label={label} className={cn('flex gap-1 rounded-lg border border-border bg-card p-1', className)}>
+    <div role="tablist" aria-label={label} className={cn('flex rounded-lg border border-border bg-card p-1', dense ? 'gap-0.5 sm:gap-1' : 'gap-1', className)}>
       {segments.map((segment, index) => {
         const selected = segment.key === value
         return (
@@ -62,7 +65,8 @@ export default function SegmentedTabs<K extends string>({
             onClick={() => onChange(segment.key)}
             onKeyDown={(event) => onKeyDown(event, index)}
             className={cn(
-              'relative inline-flex items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors',
+              'relative inline-flex shrink-0 items-center justify-center gap-2 rounded-md py-1.5 text-sm transition-colors',
+              dense ? 'gap-1 px-1.5 sm:gap-2 sm:px-3' : 'px-3',
               stretch && 'flex-1',
               selected ? 'font-semibold text-primary-foreground' : 'text-foreground hover:bg-muted',
             )}

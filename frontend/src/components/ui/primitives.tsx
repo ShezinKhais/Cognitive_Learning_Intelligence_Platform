@@ -1,26 +1,54 @@
 import type { ReactNode } from 'react'
+import { ArrowLeft } from 'lucide-react'
+import { Link } from 'react-router'
 
 import { cn } from './cn'
+import { useDocumentTitle } from './useDocumentTitle'
 import Illustration, { type IllustrationName } from './Illustration'
 
 
 
-/** The top of a page: what it is, a line on what you do here, its actions. */
+/** Where a page one level down goes back to, top left above its title. */
+export function BackLink({ to, children }: { to: string; children: ReactNode }) {
+  return (
+    <Link
+      to={to}
+      className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <ArrowLeft size={15} aria-hidden />
+      <span className="link-sweep">{children}</span>
+    </Link>
+  )
+}
+
+/** The top of a page: where it sits, what it is, a line on what you do here,
+ * its actions. The tab is named after the title, or `tabTitle` when the
+ * title is not plain text. */
 export function PageHeader({
   title,
   description,
   actions,
+  back,
+  tabTitle,
   children,
 }: {
   title: ReactNode
   description?: ReactNode
   actions?: ReactNode
+  back?: { to: string; label: string }
+  tabTitle?: string
   children?: ReactNode
 }) {
+  useDocumentTitle(tabTitle ?? (typeof title === 'string' ? title : undefined))
   return (
     <header className="border-b border-border bg-card">
       <div className="mx-auto flex max-w-6xl flex-wrap items-end justify-between gap-4 px-5 pb-5 pt-8 sm:px-8">
         <div className="max-w-2xl">
+          {back && (
+            <div className="mb-3">
+              <BackLink to={back.to}>{back.label}</BackLink>
+            </div>
+          )}
           <h1 className="text-[1.75rem] font-bold text-foreground">{title}</h1>
           {description && <p className="mt-1.5 text-muted-foreground">{description}</p>}
           {children}
@@ -136,5 +164,23 @@ export function SkeletonRows({ label, rows = 3 }: { label: string; rows?: number
         </div>
       ))}
     </div>
+  )
+}
+
+/** Facts about a row on one line, with a small dot between them, wrapping
+ * whole facts rather than mid-fact on a narrow screen. Empty ones are left
+ * out. */
+export function MetaLine({ items, className }: { items: ReactNode[]; className?: string }) {
+  const shown = items.filter((item) => item !== null && item !== undefined && item !== false && item !== '')
+  return (
+    <p className={cn('flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground', className)}>
+      {shown.map((item, index) => (
+        <span key={index} className="inline-flex items-center gap-2 whitespace-nowrap">
+          {index > 0 && <span aria-hidden className="h-[3px] w-[3px] rounded-full bg-current opacity-60" />}
+          {item}
+          {index < shown.length - 1 && <span className="sr-only">,</span>}
+        </span>
+      ))}
+    </p>
   )
 }

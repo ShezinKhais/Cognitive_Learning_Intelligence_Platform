@@ -68,11 +68,13 @@ export default function SessionReportPage() {
     <>
       <PageHeader
         title={session.title}
+        tabTitle={`Report, ${session.title}`}
+        back={{ to: '/lecturer/sessions', label: 'Sessions' }}
         description={`${session.course_code}, ${formatWhen(session.ended_at ?? session.starts_at)}`}
         actions={
           session.status === 'active' && (
             <Link to={`/lecturer/sessions/${session.id}/live`} className={buttonStyles({ intent: 'secondary' })}>
-              Back to the live view
+              Open live view
             </Link>
           )
         }
