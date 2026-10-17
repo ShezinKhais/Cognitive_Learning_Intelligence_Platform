@@ -21,7 +21,7 @@ class ComprehensionResult(Base):
 
     response_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("student_response.response_id"),
+        ForeignKey("student_response.response_id", ondelete="CASCADE"),
         nullable=False,
         # One label per answer: a retried or concurrent write keeps the first.
         unique=True,

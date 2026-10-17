@@ -194,6 +194,21 @@ and the correct answer is revealed when the window closes.
 - **Class comprehension alert.** Raised to the lecturer when at least 50% of at least five
   respondents are partial or struggling on a topic, with the reason shown.
 
+### Phase 7 - Retention, deletion requests and the audit log
+
+- **Retention.** A session is purged 120 days (a semester) after it ended. The purge
+  removes everything the session holds: answers and their labels, engagement, prompts,
+  alerts and attention summaries. Lecturer questions and uploaded material stay. Teams
+  roster syncs hold participant names, so they are purged on their own received date.
+- **Deletion requests.** An admin can ask for a session to be erased. A different admin
+  approves the request before anything is deleted, and each step is recorded. Erasing a
+  single student removes their own data and anonymises their account.
+- **Audit log.** Every deletion step and every purge is recorded with who did it, to what
+  and how many rows, never with content. Nothing deletes the audit log: not retention, and
+  not a deletion request.
+
+See [docs/governance.md](docs/governance.md).
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -320,6 +335,19 @@ will implement it.
 | GET | `/reports/{report_id}` | lecturer, admin | The report, once built |
 | GET | `/reports/{report_id}/pdf` | lecturer, admin | The report as a PDF |
 | GET | `/sessions/{session_id}/summary/{student_id}` | student, staff | Performance summary (**501**, Cyber 1, Phase 7) |
+| POST | `/governance/deletion-requests` | admin | Ask for a session's or student's data to be erased |
+| GET | `/governance/deletion-requests` | admin | List deletion requests, by status |
+| GET | `/governance/deletion-requests/{request_id}` | admin | One deletion request |
+| POST | `/governance/deletion-requests/{request_id}/approve` | admin | Approve it (not the admin who asked) |
+| POST | `/governance/deletion-requests/{request_id}/reject` | admin | Reject it |
+| POST | `/governance/deletion-requests/{request_id}/execute` | admin | Carry out an approved request (a session or a student) |
+| GET | `/governance/audit-log` | admin | Browse the audit log |
+| GET | `/governance/retention/preview` | admin | What the retention purge would delete |
+| POST | `/governance/retention/run` | admin | Run the purge (needs `"confirm": true`) |
+| GET | `/governance/history/{student_id}` | admin | A student's kept summaries (audited) |
+| GET | `/me/data` | student | Download your own data as JSON |
+| POST | `/me/deletion-request` | student | Ask for your own data to be erased (needs `"confirm": true`) |
+| GET | `/me/deletion-request` | student | Where your latest request stands |
 | WS | `/ws/session` | token | Live classroom events, see `events.schema.json` |
 
 The Teams meeting routes (`/meetings/{meeting_id}`, `/meetings/events`) and the bot
@@ -470,7 +498,9 @@ cross-phase PR dependencies, see [the integration checkpoint](docs/phase-integra
 | `dynamic_prompt` | Attention prompts sent, and how each was answered |
 | `breakout_room` | Breakout groups (Phase 6) |
 | `ai_model_run` | Which model produced what, for explainability |
-| `audit_log` | Security-relevant events, metadata only |
+| `audit_log` | Security and governance events: who did what, to what, and when. Counts and identifiers only, never content, and never deleted |
+| `attention_signal_summary` | One row per student per minute of on-device attention indicators, with no raw media |
+| `deletion_request` | A request to erase a session's or student's data, and who approved it |
 
 ## Privacy and Security
 
@@ -483,7 +513,7 @@ These are enforced in code, not only promised in documentation.
   never lowers a student's score.
 - Engagement and comprehension are measured separately, and neither is an assessment.
 - Every role is checked on the server; Teams context is never trusted for authorisation.
-- Session data is deleted after 90 days, in line with UAE Federal Decree-Law No. 45 of
+- Session data is deleted after a semester (120 days), in line with UAE Federal Decree-Law No. 45 of
   2021 on the Protection of Personal Data.
 
 ## Project Status

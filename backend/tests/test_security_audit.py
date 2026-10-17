@@ -35,6 +35,7 @@ PUBLIC = {
     ("GET", "/api/v1/health"): "liveness for a load balancer",
     ("GET", "/api/v1/ready"): "readiness for a load balancer",
     ("POST", "/api/v1/teams/messages"): "Teams bot endpoint, authenticated by Microsoft's token",
+    ("POST", "/api/v1/auth/refresh"): "renews a token, authenticated by the token itself",
 }
 
 # Who each route is for. Anything not named here fails the audit, so a new
@@ -80,6 +81,22 @@ AUDIENCE = {
     ("POST", "/api/v1/sessions/{session_id}/reports"): STAFF,
     ("GET", "/api/v1/reports/{report_id}"): STAFF,
     ("GET", "/api/v1/reports/{report_id}/pdf"): STAFF,
+    ("GET", "/api/v1/student-reviews"): STUDENT_ONLY,
+    ("GET", "/api/v1/student-reviews/{session_id}"): STUDENT_ONLY,
+    ("GET", "/api/v1/student-reviews/{session_id}/responses/{response_id}/sources"): STUDENT_ONLY,
+    ("POST", "/api/v1/governance/deletion-requests"): ADMIN_ONLY,
+    ("GET", "/api/v1/governance/deletion-requests"): ADMIN_ONLY,
+    ("GET", "/api/v1/governance/deletion-requests/{request_id}"): ADMIN_ONLY,
+    ("POST", "/api/v1/governance/deletion-requests/{request_id}/approve"): ADMIN_ONLY,
+    ("POST", "/api/v1/governance/deletion-requests/{request_id}/reject"): ADMIN_ONLY,
+    ("POST", "/api/v1/governance/deletion-requests/{request_id}/execute"): ADMIN_ONLY,
+    ("GET", "/api/v1/governance/audit-log"): ADMIN_ONLY,
+    ("GET", "/api/v1/governance/retention/preview"): ADMIN_ONLY,
+    ("POST", "/api/v1/governance/retention/run"): ADMIN_ONLY,
+    ("GET", "/api/v1/governance/history/{student_id}"): ADMIN_ONLY,
+    ("GET", "/api/v1/me/data"): STUDENT_ONLY,
+    ("POST", "/api/v1/me/deletion-request"): STUDENT_ONLY,
+    ("GET", "/api/v1/me/deletion-request"): STUDENT_ONLY,
 }
 
 # Routes with a published contract and no handler, so far. Each answers 501 to a

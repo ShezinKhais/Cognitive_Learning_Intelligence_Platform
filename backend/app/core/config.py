@@ -247,11 +247,15 @@ class Settings(BaseSettings):
     max_material_chunks: int = 5000
 
     # Retention (UAE PDPL)
-    data_retention_days: int = Field(default=90, ge=1)
+    # A semester, so the live database only holds the current one.
+    data_retention_days: int = Field(default=120, ge=1)
     # How often the purge of data past that period runs, and how long one run
     # may take. A run cut short carries on at the next.
     retention_purge_interval_hours: float = Field(default=24.0, gt=0)
     retention_purge_timeout_minutes: float = Field(default=30.0, gt=0)
+    # A second database for derived per-student summaries kept after the
+    # purge (app/history). Empty means history is off.
+    history_database_url: str = ""
 
     @field_validator("clip_env")
     @classmethod

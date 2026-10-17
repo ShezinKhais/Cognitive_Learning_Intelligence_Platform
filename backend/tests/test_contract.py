@@ -14,6 +14,9 @@ BACKEND = Path(__file__).resolve().parent.parent
 
 EXPECTED_PATHS = {
     # Phase 7 AI2: additive own-student review adapter; summary contract unchanged.
+    "/api/v1/governance/history/{student_id}",
+    "/api/v1/me/data",
+    "/api/v1/me/deletion-request",
     "/api/v1/student-reviews",
     "/api/v1/student-reviews/{session_id}",
     "/api/v1/student-reviews/{session_id}/responses/{response_id}/sources",
@@ -57,6 +60,16 @@ EXPECTED_PATHS = {
     # Added in Phase 5 for the tutor (General CS). Additive. The reply is a
     # stream of NDJSON events, so it has no response model.
     "/api/v1/sessions/{session_id}/chat",
+    # Added in Phase 7 for deletion requests, the audit log and retention (BBIS).
+    # Additive. Admin only.
+    "/api/v1/governance/deletion-requests",
+    "/api/v1/governance/deletion-requests/{request_id}",
+    "/api/v1/governance/deletion-requests/{request_id}/approve",
+    "/api/v1/governance/deletion-requests/{request_id}/reject",
+    "/api/v1/governance/deletion-requests/{request_id}/execute",
+    "/api/v1/governance/audit-log",
+    "/api/v1/governance/retention/preview",
+    "/api/v1/governance/retention/run",
     # Added in Phase 7 for session reports and their PDF (General CS). Additive.
     "/api/v1/sessions/{session_id}/reports",
     "/api/v1/reports/{report_id}",
