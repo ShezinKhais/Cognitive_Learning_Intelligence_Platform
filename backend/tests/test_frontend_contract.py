@@ -62,6 +62,8 @@ ENTRY_POINT = API_TS.parent / "main.tsx"
 
 # Bare specifiers ('react', 'lucide-react') are dependencies, not our source.
 RELATIVE_IMPORT = re.compile(r"""(?:from|import)\s+['"](\.{1,2}/[^'"]+|@/[^'"]+)['"]""")
+# A lazy page or demo: import('./Page'), which Vite splits into its own chunk.
+DYNAMIC_IMPORT = re.compile(r"""\bimport\s*\(\s*['"](\.{1,2}/[^'"]+|@/[^'"]+)['"]\s*\)""")
 # Vite bundles worker entry points separately; they are not ordinary imports.
 WORKER_IMPORT = re.compile(
     r"""new\s+(?:SharedWorker|Worker)\s*\(\s*new\s+URL\s*\(\s*['"]"""
@@ -98,7 +100,8 @@ def _reachable_from_entry_point(src: Path) -> set[Path]:
         seen.add(current)
 
         source = current.read_text(encoding="utf-8")
-        for specifier in RELATIVE_IMPORT.findall(source) + WORKER_IMPORT.findall(source):
+        found = RELATIVE_IMPORT.findall(source) + DYNAMIC_IMPORT.findall(source)
+        for specifier in found + WORKER_IMPORT.findall(source):
             target = _resolve(specifier, current, src)
             if target is not None and target.suffix in {".ts", ".tsx"}:
                 queue.append(target)

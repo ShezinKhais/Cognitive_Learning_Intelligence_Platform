@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 
-import { apiGet, type Health } from '../api'
+import { apiGet, apiUrl, type Health } from '../api'
 import { buttonStyles } from '../components/ui/button'
 import { PageBody, PageHeader, Panel, Tag } from '../components/ui/primitives'
 
@@ -23,7 +23,7 @@ const NAMES: Record<string, string> = { postgres: 'Database', ollama: 'AI models
 /** /ready answers 503 when something is down, with the same body; read it
  * either way so the page can say what is wrong. */
 async function readReadiness(): Promise<Readiness> {
-  const response = await fetch('/api/v1/ready')
+  const response = await fetch(apiUrl('/ready'))
   return (await response.json()) as Readiness
 }
 

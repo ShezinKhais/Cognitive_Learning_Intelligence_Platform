@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { AlertTriangle, Bell, CheckCircle2, FileCheck2, Radio } from 'lucide-react'
 import { Link } from 'react-router'
 
-import type { CurrentUser } from '../../api'
+import { apiUrl, type CurrentUser } from '../../api'
 import { listMaterials } from '../materials/materialApi'
 import { listSessions } from '../sessions/sessionsApi'
 import { buildNotifications, unreadCount, type AppNotification, type NotificationKind } from './notifications'
@@ -31,7 +31,7 @@ function loadRead(user: CurrentUser): Set<string> {
 
 async function readinessDown(): Promise<string[]> {
   try {
-    const body = (await (await fetch('/api/v1/ready')).json()) as { dependencies?: { name: string; ok: boolean }[] }
+    const body = (await (await fetch(apiUrl('/ready'))).json()) as { dependencies?: { name: string; ok: boolean }[] }
     const names: Record<string, string> = { postgres: 'The database', ollama: 'The AI models' }
     return (body.dependencies ?? []).filter((d) => !d.ok).map((d) => names[d.name] ?? d.name)
   } catch {
