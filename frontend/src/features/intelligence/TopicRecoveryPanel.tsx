@@ -1,3 +1,4 @@
+import { Panel, SkeletonRows, Tag, type Tone } from '../../components/ui/primitives'
 import {
   difficultyLabel,
   difficultyScoreLabel,
@@ -6,141 +7,100 @@ import {
 
 import type {
   TopicDifficulty,
+  TopicDifficultyLevel,
 } from './topicRecovery'
 
 interface TopicRecoveryPanelProps {
   topics: TopicDifficulty[]
+  loading?: boolean
+  error?: string | null
+}
+
+const LEVEL_TONE: Record<TopicDifficultyLevel, Tone> = {
+  easy: 'good',
+  medium: 'mixed',
+  hard: 'poor',
+}
+
+const BREAKDOWN = [
+  { key: 'mastered', label: 'Mastered' },
+  { key: 'partial', label: 'Partial' },
+  { key: 'struggling', label: 'Struggling' },
+  { key: 'uncertain', label: 'Uncertain' },
+] as const
+
+function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`
 }
 
 export default function TopicRecoveryPanel({
   topics,
+  loading = false,
+  error = null,
 }: TopicRecoveryPanelProps) {
   return (
-    <section className="rounded-xl border border-border bg-card p-6">
-      <div>
-        <p className="text-xs font-semibold text-muted-foreground">
-          Topic recovery
+    <Panel
+      title="Topics to revisit"
+      description="Hardest first, from how each answer was marked."
+    >
+      {error && (
+        <p
+          role="alert"
+          className="mb-4 rounded-md border border-critical/30 bg-critical/10 px-3 py-2 text-sm text-critical"
+        >
+          {error}
         </p>
-
-        <h2 className="mt-1 text-lg font-semibold">
-          Topics to revisit
-        </h2>
-
-        <p className="mt-1 text-sm text-muted-foreground">
-          Topic difficulty is based on the stored comprehension
-          classifications for student responses.
-        </p>
-      </div>
-
-      {topics.length === 0 ? (
-        <div className="mt-5 rounded-md border border-border p-4">
-          <p className="text-sm text-muted-foreground">
-            No topic recovery data is available yet.
-          </p>
-        </div>
-      ) : (
-        <div className="mt-5 space-y-4">
-          {topics.map((topic) => (
-            <article
-              key={topic.topic}
-              className="rounded-md border border-border p-4"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="font-semibold">
-                    {topic.topic}
-                  </p>
-
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {topic.answers}{' '}
-                    {topic.answers === 1
-                      ? 'answer'
-                      : 'answers'}{' '}
-                    across {topic.questions}{' '}
-                    {topic.questions === 1
-                      ? 'question'
-                      : 'questions'}
-                  </p>
-                </div>
-
-                <div className="rounded-full border border-border px-3 py-1 text-xs font-semibold">
-                  {difficultyLabel(
-                    topic.level,
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-4">
-                <div className="rounded-md bg-muted p-3">
-                  <p className="text-xs text-muted-foreground">
-                    Mastered
-                  </p>
-
-                  <p className="mt-1 text-lg font-semibold">
-                    {topic.mastered}
-                  </p>
-                </div>
-
-                <div className="rounded-md bg-muted p-3">
-                  <p className="text-xs text-muted-foreground">
-                    Partial
-                  </p>
-
-                  <p className="mt-1 text-lg font-semibold">
-                    {topic.partial}
-                  </p>
-                </div>
-
-                <div className="rounded-md bg-muted p-3">
-                  <p className="text-xs text-muted-foreground">
-                    Struggling
-                  </p>
-
-                  <p className="mt-1 text-lg font-semibold">
-                    {topic.struggling}
-                  </p>
-                </div>
-
-                <div className="rounded-md bg-muted p-3">
-                  <p className="text-xs text-muted-foreground">
-                    Uncertain
-                  </p>
-
-                  <p className="mt-1 text-lg font-semibold">
-                    {topic.uncertain}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4 space-y-2 text-sm">
-                <p>
-                  <span className="font-medium">
-                    Difficulty score:
-                  </span>{' '}
-                  {difficultyScoreLabel(
-                    topic.score,
-                  )}
-                </p>
-
-                <p>
-                  <span className="font-medium">
-                    Expected difficulty:
-                  </span>{' '}
-                  {difficultyLabel(
-                    topic.expected,
-                  )}
-                </p>
-
-                <p className="text-muted-foreground">
-                  {recoveryMessage(
-                    topic,
-                  )}
-                </p>
-              </div>
-            </article>
-          ))}
-        </div>
       )}
-    </section>
+
+      {loading && topics.length === 0 ? (
+        <SkeletonRows label="Loading topics" rows={2} />
+      ) : topics.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Topics appear here once answers have been marked.
+        </p>
+      ) : (
+        <ul className="-my-1 divide-y divide-border">
+          {topics.map((topic) => (
+            <li key={topic.topic} className="py-4 first:pt-1 last:pb-1">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold">{topic.topic}</p>
+                  <p className="mt-0.5 text-sm text-muted-foreground">
+                    {plural(topic.answers, 'answer', 'answers')} across{' '}
+                    {plural(topic.questions, 'question', 'questions')}
+                  </p>
+                </div>
+
+                {topic.level && (
+                  <Tag tone={LEVEL_TONE[topic.level]}>
+                    {difficultyLabel(topic.level)}
+                  </Tag>
+                )}
+              </div>
+
+              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
+                {BREAKDOWN.map(({ key, label }) => (
+                  <div key={key}>
+                    <dt className="text-xs text-muted-foreground">{label}</dt>
+                    <dd className="text-lg font-semibold tabular-nums">{topic[key]}</dd>
+                  </div>
+                ))}
+              </dl>
+
+              <p className="mt-3 text-sm">
+                <span className="text-muted-foreground">Difficulty score</span>{' '}
+                <span className="font-semibold">{difficultyScoreLabel(topic.score)}</span>
+                <span className="text-muted-foreground">, expected</span>{' '}
+                <span className="font-semibold">{difficultyLabel(topic.expected)}</span>
+              </p>
+
+              <p className="mt-1 text-sm text-muted-foreground">
+                {recoveryMessage(topic)}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
   )
 }

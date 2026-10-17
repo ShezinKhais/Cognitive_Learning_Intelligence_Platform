@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Check } from 'lucide-react'
 import { Link, useParams } from 'react-router'
 
 import {
@@ -298,7 +298,7 @@ export default function QuestionReview() {
       </PageHeader>
 
       <PageBody>
-        <div className="mx-auto max-w-3xl">
+        <div className="max-w-3xl">
           {state.status === 'ready' && counts.all > 0 && (
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
               <SegmentedTabs
@@ -621,9 +621,18 @@ function QuestionCard({
                 </>
               ) : (
                 <span
-                  className={i === question.correct_option ? 'font-medium text-success' : ''}
+                  className={
+                    i === question.correct_option
+                      ? 'inline-flex items-center gap-1.5 font-medium text-success'
+                      : 'pl-[1.375rem]'
+                  }
                 >
-                  {i === question.correct_option ? '\u2713 ' : ''}
+                  {i === question.correct_option && (
+                    <>
+                      <Check size={16} strokeWidth={2.5} aria-hidden className="shrink-0" />
+                      <span className="sr-only">Correct answer: </span>
+                    </>
+                  )}
                   {opt}
                 </span>
               )}

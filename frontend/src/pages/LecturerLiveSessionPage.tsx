@@ -9,7 +9,7 @@ import {
 
 import { ApiError } from '../api'
 import { buttonStyles } from '../components/ui/button'
-import { PageHeader, Tag } from '../components/ui/primitives'
+import { PageHeader, Panel, Tag } from '../components/ui/primitives'
 import LiveResults from '../features/live/LiveResults'
 import ReadinessChecklist from '../features/live/ReadinessChecklist'
 import RoomsPanel from '../features/live/RoomsPanel'
@@ -70,10 +70,13 @@ function sessionLabel(
     return 'Waiting...'
   }
 
-  return (
-    status.charAt(0).toUpperCase() +
-    status.slice(1)
-  )
+  const labels: Record<string, string> = {
+    prepared: 'Not started',
+    active: 'Live',
+    ended: 'Ended',
+    cancelled: 'Cancelled',
+  }
+  return labels[status] ?? status
 }
 
 function questionCycleLabel(
@@ -623,38 +626,24 @@ export default function LecturerLiveSessionPage() {
           </div>
         )}
       </PageHeader>
-      <div className="mx-auto max-w-7xl px-5 py-8 sm:px-8">
+      <div className="mx-auto max-w-6xl px-5 py-8 sm:px-8">
 
         <div className="grid gap-6 lg:grid-cols-2">
-          <section className="rounded-lg border border-border bg-card p-6">
-            <h2 className="text-lg font-bold">
-              Class
-            </h2>
-
-            <div className="mt-4">
-              <p className="text-sm text-muted-foreground">
-                Session status
-              </p>
-
-              <p className="mt-1 text-2xl font-semibold">
-                {sessionLabel(
-                  sessionState?.status,
-                )}
-              </p>
-            </div>
-
-            <div className="mt-4">
-              <p className="text-sm text-muted-foreground">
-                Question cycle
-              </p>
-
-              <p className="mt-1 font-medium">
-                {questionCycleLabel(
-                  sessionState?.status,
-                  sessionState?.paused,
-                )}
-              </p>
-            </div>
+          <Panel title="Class" description="Start, pause and end the class from here.">
+            <dl className="grid grid-cols-2 gap-4">
+              <div>
+                <dt className="text-sm text-muted-foreground">Session</dt>
+                <dd className="mt-1 text-xl font-semibold">
+                  {sessionLabel(sessionState?.status)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-sm text-muted-foreground">Questions</dt>
+                <dd className="mt-1 text-xl font-semibold">
+                  {questionCycleLabel(sessionState?.status, sessionState?.paused)}
+                </dd>
+              </div>
+            </dl>
 
             {sessionState?.status === 'prepared' && (
               <ReadinessChecklist
@@ -688,13 +677,13 @@ export default function LecturerLiveSessionPage() {
                       'start',
                     )
                   }
-                  className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  className={buttonStyles()}
                 >
                   {actionInProgress ===
                   'start'
                     ? 'Starting...'
                     : readinessLoading
-                      ? 'Checking…'
+                      ? 'Checking...'
                       : 'Start the class'}
                 </button>
               )}
@@ -712,7 +701,7 @@ export default function LecturerLiveSessionPage() {
                         'pause',
                       )
                     }
-                    className="rounded-md border border-border px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                    className={buttonStyles({ intent: 'secondary' })}
                   >
                     {actionInProgress ===
                     'pause'
@@ -734,7 +723,7 @@ export default function LecturerLiveSessionPage() {
                         'resume',
                       )
                     }
-                    className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                    className={buttonStyles()}
                   >
                     {actionInProgress ===
                     'resume'
@@ -757,7 +746,7 @@ export default function LecturerLiveSessionPage() {
                       'end',
                     )
                   }
-                  className="rounded-md border border-border px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                  className={buttonStyles({ intent: 'danger' })}
                 >
                   {actionInProgress ===
                   'end'
@@ -776,15 +765,12 @@ export default function LecturerLiveSessionPage() {
                 </p>
               )}
             </div>
-          </section>
+          </Panel>
 
-          <section className="rounded-lg border border-border bg-card p-6">
-            <h2 className="text-lg font-semibold">
-              Participants
-            </h2>
-
-            <p className="mt-2 text-sm text-muted-foreground">
-              {sessionState?.status === 'prepared'
+          <Panel
+            title="Participants"
+            description={
+              sessionState?.status === 'prepared'
                 ? 'Connected and waiting for the session to start'
                 : sessionState?.status === 'active'
                   ? 'Currently connected students'
@@ -792,17 +778,16 @@ export default function LecturerLiveSessionPage() {
                     ? 'Session ended'
                     : sessionState?.status === 'cancelled'
                       ? 'Session cancelled'
-                      : 'Waiting for session state'}
-            </p>
-
-            <p className="mt-5 text-3xl font-semibold">
+                      : 'Waiting for session state'
+            }
+          >
+            <p className="text-3xl font-semibold tabular-nums">
               {sessionState?.status === 'ended' ||
               sessionState?.status === 'cancelled'
                 ? 0
-                : (sessionState?.participant_count ??
-                  '—')}
+                : (sessionState?.participant_count ?? '-')}
             </p>
-          </section>
+          </Panel>
 
           <LecturerAttentionPanel
             students={engagement}
@@ -830,33 +815,16 @@ export default function LecturerLiveSessionPage() {
             />
           )}
 
-          <div>
-            {topicsLoading && (
-              <p
-                role="status"
-                className="mb-3 text-sm text-muted-foreground"
-              >
-                Loading topic recovery data...
-              </p>
-            )}
-
-            {topicsError && (
-              <div
-                role="alert"
-                className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-              >
-                {topicsError}
-              </div>
-            )}
-
-            <TopicRecoveryPanel
-              topics={topics}
-            />
-          </div>
+          <TopicRecoveryPanel
+            topics={topics}
+            loading={topicsLoading}
+            error={topicsError}
+          />
 
           <RoomsPanel rooms={rooms} />
 
           <LiveAlertsPanel
+            className="lg:col-span-2"
             alerts={alerts}
             sessionNotice={sessionNotice}
             onAcknowledge={

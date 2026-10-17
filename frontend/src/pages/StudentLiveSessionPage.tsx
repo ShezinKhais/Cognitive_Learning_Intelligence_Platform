@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 
+import { buttonStyles } from '../components/ui/button'
 import SegmentedTabs from '../components/ui/SegmentedTabs'
 import {
   useEffect,
@@ -89,6 +90,10 @@ export function LiveSessionPanel({
     Boolean(state.checkpoint || state.attentionPrompt),
   )
 
+  const finished =
+    state.sessionStatus === 'ended' ||
+    state.sessionStatus === 'cancelled'
+
   const secondsRemaining = state.checkpoint
     ? remainingResponseSeconds(
         state.checkpoint.question.closes_at,
@@ -124,15 +129,17 @@ export function LiveSessionPanel({
           </div>
 
           <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 border-t border-border pt-4 text-sm text-muted-foreground">
-            <span className="inline-flex items-center gap-2">
-              <Users aria-hidden="true" size={17} />
-              {state.participantCount} connected
-            </span>
+            {!finished && (
+              <span className="inline-flex items-center gap-2">
+                <Users aria-hidden="true" size={17} />
+                {state.participantCount} connected
+              </span>
+            )}
 
             <span>
               Session:{' '}
               <strong className="font-medium text-foreground">
-                {state.paused ? 'paused' : state.sessionStatus}
+                {sessionStateLabel(state.sessionStatus, state.paused)}
               </strong>
             </span>
 
@@ -143,7 +150,7 @@ export function LiveSessionPanel({
           {state.sessionStatus === 'active' && !compact && <RoomConfirm onConfirm={confirmRoom} />}
         </header>
 
-        <ConnectionNotice status={state.connection} />
+        {!finished && <ConnectionNotice status={state.connection} />}
 
         {LOCAL_ATTENTION_ENABLED && (
           <AttentionControls key={session.id} onSignal={sendAttention}
@@ -151,7 +158,7 @@ export function LiveSessionPanel({
             enabled={state.connection === 'connected' && state.sessionStatus === 'active' && !state.paused} />
         )}
 
-        {SOCRATIC_CHAT_ENABLED && (
+        {SOCRATIC_CHAT_ENABLED && !finished && (
           <SegmentedTabs
             label="Student session tools"
             value={activeView}
@@ -173,7 +180,7 @@ export function LiveSessionPanel({
           />
         )}
 
-        {state.error && (
+        {state.error && !finished && state.connection !== 'forbidden' && (
           <div
             role="alert"
             className="mt-4 flex items-start justify-between gap-4 rounded-xl border border-critical/30 bg-card p-4 text-sm"
@@ -201,7 +208,7 @@ export function LiveSessionPanel({
         <section
           className="mt-5"
           aria-live="polite"
-          hidden={SOCRATIC_CHAT_ENABLED && activeView !== 'class' && !state.checkpoint}
+          hidden={SOCRATIC_CHAT_ENABLED && !finished && activeView !== 'class' && !state.checkpoint}
         >
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
@@ -226,15 +233,17 @@ export function LiveSessionPanel({
                 />
               ) : (
                 <WaitingCard
+                  sessionId={session.id}
                   sessionStatus={state.sessionStatus}
                   paused={state.paused}
+                  compact={compact}
                 />
               )}
             </motion.div>
           </AnimatePresence>
         </section>
 
-        {SOCRATIC_CHAT_ENABLED && (
+        {SOCRATIC_CHAT_ENABLED && !finished && (
           <div className="mt-5" hidden={activeView !== 'chat'}>
             <SocraticChatPanel
               key={session.id}
@@ -623,12 +632,29 @@ function CheckpointOutcome({
   )
 }
 
+function sessionStateLabel(
+  status: StudentSession['status'],
+  paused: boolean,
+): string {
+  if (status === 'active') return paused ? 'Paused' : 'Live'
+  const labels: Record<string, string> = {
+    prepared: 'Not started',
+    ended: 'Ended',
+    cancelled: 'Cancelled',
+  }
+  return labels[status] ?? status
+}
+
 function WaitingCard({
+  sessionId,
   sessionStatus,
   paused,
+  compact,
 }: {
+  sessionId: string
   sessionStatus: StudentSession['status']
   paused: boolean
+  compact: boolean
 }) {
   const ended =
     sessionStatus === 'ended' ||
@@ -660,11 +686,20 @@ function WaitingCard({
 
       <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted-foreground">
         {ended
-          ? 'Your responses have been saved. A review view will be available in the reporting phase.'
+          ? 'Your answers are saved. See how you did, and what to revisit before the next class.'
           : paused
             ? 'The lecturer has paused the session. Checkpoints will resume automatically when the session continues.'
             : 'Stay on this page. The lecturer’s next question will appear automatically.'}
       </p>
+
+      {ended && !compact && (
+        <Link
+          to={`/student/session/${sessionId}/summary`}
+          className={`${buttonStyles()} mt-5`}
+        >
+          See how you did
+        </Link>
+      )}
     </div>
   )
 }

@@ -2,6 +2,8 @@ import {
   useState,
 } from 'react'
 
+import { buttonStyles } from '../../components/ui/button'
+import { Panel } from '../../components/ui/primitives'
 import ConfidenceIndicator from '../intelligence/ConfidenceIndicator'
 import ExplainabilityPanel from '../intelligence/ExplainabilityPanel'
 
@@ -17,6 +19,7 @@ interface LiveAlertsPanelProps {
   onAcknowledge: (
     alertId: string,
   ) => Promise<void>
+  className?: string
 }
 
 function alertKindLabel(
@@ -43,6 +46,7 @@ export default function LiveAlertsPanel({
   alerts,
   sessionNotice,
   onAcknowledge,
+  className,
 }: LiveAlertsPanelProps) {
   const [
     acknowledgingAlertId,
@@ -76,40 +80,30 @@ export default function LiveAlertsPanel({
   }
 
   return (
-    <section className="rounded-xl border border-border bg-card p-6">
-      <div>
-        <h2 className="text-lg font-semibold">
-          Alerts
-        </h2>
-
-        <p className="mt-1 text-sm text-muted-foreground">
-          Live session issues and
-          comprehension or engagement
-          alerts appear here.
-        </p>
-      </div>
-
+    <Panel
+      className={className}
+      title="Alerts"
+      description="A topic the class is stuck on, a student who has gone quiet, or a room with no activity."
+    >
       {acknowledgementError && (
         <div
           role="alert"
-          className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          className="mb-4 rounded-md border border-critical/30 bg-critical/10 px-3 py-2 text-sm text-critical"
         >
           {acknowledgementError}
         </div>
       )}
 
       {!hasAnything && (
-        <div className="mt-5 rounded-md border border-border p-4">
-          <p className="text-sm text-muted-foreground">
-            No live alerts.
-          </p>
-        </div>
+        <p className="text-sm text-muted-foreground">
+          Nothing needs you right now.
+        </p>
       )}
 
       {sessionNotice && (
         <div
           role="alert"
-          className="mt-5 rounded-md border border-warning/40 bg-warning/10 p-4"
+          className="rounded-md border border-warning/40 bg-warning/10 p-4"
         >
           <p className="font-semibold">
             {noticeTitle(
@@ -133,7 +127,7 @@ export default function LiveAlertsPanel({
       )}
 
       {alerts.length > 0 && (
-        <div className="mt-5 space-y-3">
+        <div className={sessionNotice ? 'mt-4 space-y-3' : 'space-y-3'}>
           {alerts.map(
             (alert) => {
               const hasIntelligenceDetails =
@@ -213,7 +207,7 @@ export default function LiveAlertsPanel({
                           alert.alert_id,
                         )
                       }}
-                      className="rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                      className={buttonStyles({ intent: 'secondary' })}
                     >
                       {isAcknowledging
                         ? 'Acknowledging...'
@@ -226,6 +220,6 @@ export default function LiveAlertsPanel({
           )}
         </div>
       )}
-    </section>
+    </Panel>
   )
 }

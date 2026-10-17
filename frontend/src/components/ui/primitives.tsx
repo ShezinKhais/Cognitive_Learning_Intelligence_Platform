@@ -32,10 +32,9 @@ export function PageHeader({
 }
 
 /** The page body under its header. */
-export function PageBody({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
-  return (
-    <div className={cn('mx-auto px-5 py-8 sm:px-8', wide ? 'max-w-7xl' : 'max-w-6xl')}>{children}</div>
-  )
+export function PageBody({ children }: { children: ReactNode }) {
+  // The same measure as PageHeader, so a page's content starts where its title does.
+  return <div className="mx-auto max-w-6xl px-5 py-8 sm:px-8">{children}</div>
 }
 
 /** A bordered area of a page with an optional heading. */

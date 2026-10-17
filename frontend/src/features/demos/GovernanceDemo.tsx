@@ -129,7 +129,7 @@ export default function GovernanceDemo() {
                     {request.who}, asked {request.asked}
                   </p>
                   <div className="mt-2 flex gap-2">
-                    <button type="button" className={buttonStyles()} onClick={() => decide(request, 'Deleted')}>
+                    <button type="button" className={buttonStyles({ intent: 'danger' })} onClick={() => decide(request, 'Deleted')}>
                       Approve and delete
                     </button>
                     <button type="button" className={buttonStyles({ intent: 'quiet' })} onClick={() => decide(request, 'Refused')}>
