@@ -1,3 +1,6 @@
+import { motion } from 'motion/react'
+
+import { Panel, Tag, type Tone } from '../../components/ui/primitives'
 import {
   engagementCounts,
   engagementStatusLabel,
@@ -17,242 +20,122 @@ interface LecturerAttentionPanelProps {
   sessionStatus: string | undefined
 }
 
-function statusClass(
-  status: EngagementStatus,
-): string {
-  if (status === 'engaged') {
-    return 'bg-success/10 text-success'
-  }
-
-  if (
-    status === 'at_risk' ||
-    status === 'disengaged'
-  ) {
-    return 'bg-warning/10 text-warning'
-  }
-
-  return 'bg-muted text-muted-foreground'
+const TONE: Record<EngagementStatus, Tone> = {
+  engaged: 'good',
+  at_risk: 'mixed',
+  disengaged: 'poor',
+  insufficient_data: 'neutral',
 }
 
+function computedAt(value: string): string {
+  return Number.isNaN(Date.parse(value))
+    ? 'time unknown'
+    : new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+/**
+ * Engagement estimates for the class. They are estimates from the signals
+ * students have chosen to share, not proof of attention, and are kept apart
+ * from how anyone is answering. A missing camera or microphone counts as
+ * no evidence, never as zero.
+ */
 export default function LecturerAttentionPanel({
   students,
   loading,
   error,
   sessionStatus,
 }: LecturerAttentionPanelProps) {
-  const counts =
-    engagementCounts(students)
+  const counts = engagementCounts(students)
+  const isActive = sessionStatus === 'active'
 
-  const isActive =
-    sessionStatus === 'active'
+  const bands = [
+    { key: 'engaged', label: 'Engaged', count: counts.engaged, colour: 'bg-success' },
+    { key: 'at_risk', label: 'At risk', count: counts.atRisk, colour: 'bg-warning' },
+    { key: 'disengaged', label: 'Needs attention', count: counts.needsAttention, colour: 'bg-critical' },
+    { key: 'insufficient', label: 'Not enough data', count: counts.insufficientData, colour: 'bg-muted-foreground/40' },
+  ]
 
   return (
-    <section className="rounded-xl border border-border bg-card p-6 lg:col-span-2">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-semibold">
-            Attention and engagement indicators
-          </h2>
-
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-            These are privacy-preserving
-            engagement estimates from the
-            signals currently available to
-            C.L.I.P. They are estimates only
-            and are not proof of attention or
-            understanding. Missing camera or
-            microphone signals are not counted
-            as zero, and engagement remains
-            separate from comprehension.
-          </p>
-        </div>
-
-        {loading && (
-          <span
-            role="status"
-            className="text-sm text-muted-foreground"
-          >
-            Refreshing...
+    <Panel
+      className="lg:col-span-2"
+      title="Engagement"
+      description="Estimates from the signals students share. Not proof of attention, and separate from how they answer."
+      actions={
+        loading ? (
+          <span role="status" className="text-sm text-muted-foreground">
+            Updating…
           </span>
-        )}
-      </div>
-
+        ) : undefined
+      }
+    >
       {error && (
-        <div
-          role="alert"
-          className="mt-4 rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-sm"
-        >
-          {students.length > 0
-            ? `${error} Showing the last successfully loaded indicators.`
-            : error}
-        </div>
+        <p role="alert" className="mb-4 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
+          {students.length > 0 ? `${error} Showing the last figures that loaded.` : error}
+        </p>
       )}
 
-      {!isActive && (
-        <div className="mt-5 rounded-md border border-border bg-muted/20 p-4">
-          <p className="font-medium">
-            Live indicators unavailable
-          </p>
-
-          <p className="mt-1 text-sm text-muted-foreground">
-            Attention and engagement indicators are
-            available while the session is active.
-          </p>
-        </div>
-      )}
-
-      {isActive &&
-        students.length === 0 &&
-        !loading &&
-        !error && (
-          <div className="mt-5 rounded-md border border-border bg-muted/20 p-4">
-            <p className="font-medium">
-              No engagement data yet
-            </p>
-
-            <p className="mt-1 text-sm text-muted-foreground">
-              Indicators will appear when enough
-              session activity is available. Missing
-              optional signals are not treated as
-              negative evidence.
-            </p>
-          </div>
-        )}
+      {!isActive ? (
+        <p className="text-sm text-muted-foreground">Engagement shows while the class is running.</p>
+      ) : students.length === 0 && !loading && !error ? (
+        <p className="text-sm text-muted-foreground">
+          Nothing yet. Figures appear once there is enough activity; a student sharing no camera or microphone is
+          not counted against.
+        </p>
+      ) : null}
 
       {students.length > 0 && (
         <>
-          <dl className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <div className="rounded-md border border-border bg-background p-3">
-              <dt className="text-xs font-medium text-muted-foreground">
-                Students with indicators
-              </dt>
-
-              <dd className="mt-1 text-xl font-semibold">
-                {counts.total}
-              </dd>
-            </div>
-
-            <div className="rounded-md border border-border bg-background p-3">
-              <dt className="text-xs font-medium text-muted-foreground">
-                Engaged
-              </dt>
-
-              <dd className="mt-1 text-xl font-semibold">
-                {counts.engaged}
-              </dd>
-            </div>
-
-            <div className="rounded-md border border-border bg-background p-3">
-              <dt className="text-xs font-medium text-muted-foreground">
-                At risk
-              </dt>
-
-              <dd className="mt-1 text-xl font-semibold">
-                {counts.atRisk}
-              </dd>
-            </div>
-
-            <div className="rounded-md border border-border bg-background p-3">
-              <dt className="text-xs font-medium text-muted-foreground">
-                Needs attention
-              </dt>
-
-              <dd className="mt-1 text-xl font-semibold">
-                {counts.needsAttention}
-              </dd>
-            </div>
-
-            <div className="rounded-md border border-border bg-background p-3">
-              <dt className="text-xs font-medium text-muted-foreground">
-                Insufficient data
-              </dt>
-
-              <dd className="mt-1 text-xl font-semibold">
-                {counts.insufficientData}
-              </dd>
+          <div className="flex h-3 overflow-hidden rounded-full bg-muted" aria-hidden>
+            {bands.map((band) =>
+              band.count > 0 ? (
+                <motion.div
+                  key={band.key}
+                  className={`${band.colour} h-full border-r-2 border-card last:border-r-0`}
+                  initial={false}
+                  animate={{ width: `${(band.count / counts.total) * 100}%` }}
+                  transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                />
+              ) : null,
+            )}
+          </div>
+          <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+            {bands.map((band) => (
+              <div key={band.key} className="flex items-center gap-2">
+                <span aria-hidden className={`h-2.5 w-2.5 rounded-full ${band.colour}`} />
+                <dt className="text-muted-foreground">{band.label}</dt>
+                <dd className="font-semibold tabular-nums">{band.count}</dd>
+              </div>
+            ))}
+            <div className="flex items-center gap-2 sm:ml-auto">
+              <dt className="text-muted-foreground">Students</dt>
+              <dd className="font-semibold tabular-nums">{counts.total}</dd>
             </div>
           </dl>
 
-          <p className="mt-4 text-xs leading-5 text-muted-foreground">
-            For privacy and contract safety, the
-            current engagement API provides student
-            IDs rather than display names. Shortened
-            IDs are shown here instead of adding an
-            unapproved identity lookup. Per-student
-            contributing signal details are not
-            displayed.
-          </p>
-
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
-            {students.map(
-              (student) => (
-                <article
-                  key={
-                    student.student_id
-                  }
-                  className="rounded-xl border border-border bg-background p-4"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-medium text-muted-foreground">
-                        Student
-                      </p>
-
-                      <p
-                        className="mt-1 font-mono text-sm"
-                        title={
-                          student.student_id
-                        }
-                      >
-                        {shortStudentId(
-                          student.student_id,
-                        )}
-                      </p>
-                    </div>
-
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${statusClass(
-                        student.status,
-                      )}`}
-                    >
-                      {engagementStatusLabel(
-                        student.status,
-                      )}
-                    </span>
-                  </div>
-
-                  <dl className="mt-4">
-                    <div>
-                      <dt className="text-xs text-muted-foreground">
-                        Evidence coverage
-                      </dt>
-
-                      <dd className="mt-1 font-semibold">
-                        {evidenceCoverageLabel(
-                          student.confidence,
-                        )}
-                      </dd>
-                    </div>
-                  </dl>
-
-                  <p className="mt-4 text-xs text-muted-foreground">
-                    Last computed:{' '}
-                    {Number.isNaN(
-                      Date.parse(
-                        student.computed_at,
-                      ),
-                    )
-                      ? 'Unavailable'
-                      : new Date(
-                          student.computed_at,
-                        ).toLocaleTimeString()}
+          <ul className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {students.map((student) => (
+              <li
+                key={student.student_id}
+                className="flex items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2.5"
+              >
+                <div className="min-w-0">
+                  <p className="font-mono text-sm" title={student.student_id}>
+                    {shortStudentId(student.student_id)}
                   </p>
-                </article>
-              ),
-            )}
-          </div>
+                  <p className="text-xs text-muted-foreground">
+                    {evidenceCoverageLabel(student.confidence)}, at {computedAt(student.computed_at)}
+                  </p>
+                </div>
+                <Tag tone={TONE[student.status]}>{engagementStatusLabel(student.status)}</Tag>
+              </li>
+            ))}
+          </ul>
+
+          <p className="mt-4 text-xs text-muted-foreground">
+            Students are shown by a shortened ID, and the signals behind each estimate are not shown.
+          </p>
         </>
       )}
-    </section>
+    </Panel>
   )
 }
