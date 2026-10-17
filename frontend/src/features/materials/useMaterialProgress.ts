@@ -6,6 +6,7 @@ import {
 
 import {
   clearAccessToken,
+  refreshAccessToken,
   getAccessToken,
 } from '../../api'
 import { actionForClose } from './closeCodes'
@@ -109,12 +110,17 @@ export function useMaterialProgress(
     let lastSeq = 0
     let streamId: string | null = null
     let connectedOnce = false
+    // One refresh per refusal; any message after it proves the new token.
+    let tokenRenewed = false
 
     function connect() {
       if (stopped) return
 
       setStatus('connecting')
       const currentSocket = new WebSocket(progressSocketUrl())
+      currentSocket.addEventListener('message', () => {
+        tokenRenewed = false
+      })
       socket = currentSocket
 
       currentSocket.addEventListener('open', () => {
@@ -187,6 +193,22 @@ export function useMaterialProgress(
         if (stopped) return
 
         const action = actionForClose(event.code)
+        if (action === 'sign-in' && !tokenRenewed) {
+          // The token may have run out while the tab slept: refresh it once
+          // and reconnect before sending the lecturer to sign in.
+          tokenRenewed = true
+          void refreshAccessToken().then((token) => {
+            if (stopped) return
+            if (token) {
+              connect()
+              return
+            }
+            stopped = true
+            clearAccessToken()
+            window.location.assign('/login')
+          })
+          return
+        }
         if (action === 'sign-in') {
           stopped = true
           clearAccessToken()

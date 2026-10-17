@@ -8,6 +8,7 @@ import {
 
 import {
   clearAccessToken,
+  refreshAccessToken,
   getAccessToken,
 } from '../../api'
 import {
@@ -110,6 +111,8 @@ export function useLiveSession(
     let connectedOnce = false
     let retryCount = 0
     let cursor = readCursor(sessionId)
+    // One refresh per refusal; any message after it proves the new token.
+    let tokenRenewed = false
 
     function scheduleReconnect(): void {
       if (stopped || reconnectTimer !== undefined) return
@@ -147,6 +150,9 @@ export function useLiveSession(
       readyRef.current = false
 
       const currentSocket = new WebSocket(liveSocketUrl())
+      currentSocket.addEventListener('message', () => {
+        tokenRenewed = false
+      })
       socket = currentSocket
       socketRef.current = currentSocket
 
@@ -360,6 +366,23 @@ export function useLiveSession(
         if (stopped) return
 
         const closeAction = actionForClose(closeEvent.code)
+
+        if (closeAction === 'sign-in' && !tokenRenewed) {
+          // The token may have run out while the tab slept: refresh it once
+          // and reconnect before sending the student to sign in.
+          tokenRenewed = true
+          void refreshAccessToken().then((token) => {
+            if (stopped) return
+            if (token) {
+              connect()
+              return
+            }
+            stopped = true
+            clearAccessToken()
+            window.location.assign('/login')
+          })
+          return
+        }
 
         if (closeAction === 'sign-in') {
           stopped = true

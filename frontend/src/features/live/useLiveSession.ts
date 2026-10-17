@@ -5,6 +5,7 @@ import {
 
 import {
   clearAccessToken,
+  refreshAccessToken,
   getAccessToken,
 } from '../../api'
 import { actionForClose } from '../materials/closeCodes'
@@ -488,6 +489,8 @@ setAlerts((current) => {
     let retryCount = 0
     let lastSeq = 0
     let streamId: string | null = null
+    // One refresh per refusal; any message after it proves the new token.
+    let tokenRenewed = false
 
     function connect() {
       if (stopped) {
@@ -504,6 +507,10 @@ setAlerts((current) => {
         )
 
       socket = currentSocket
+
+      currentSocket.addEventListener('message', () => {
+        tokenRenewed = false
+      })
 
       currentSocket.addEventListener(
         'open',
@@ -713,6 +720,26 @@ setAlerts((current) => {
             actionForClose(
               event.code,
             )
+
+          if (
+            action === 'sign-in' &&
+            !tokenRenewed
+          ) {
+            // The token may have run out while the tab slept: refresh it once
+            // and reconnect before sending the lecturer to sign in.
+            tokenRenewed = true
+            void refreshAccessToken().then((token) => {
+              if (stopped) return
+              if (token) {
+                connect()
+                return
+              }
+              stopped = true
+              clearAccessToken()
+              window.location.assign('/login')
+            })
+            return
+          }
 
           if (
             action === 'sign-in'
