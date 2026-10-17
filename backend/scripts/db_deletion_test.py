@@ -32,12 +32,14 @@ from app.models.session_participant import SessionParticipant
 from app.models.student import Student
 from app.models.student_response import StudentResponse
 from app.models.user import User
+from app.services import deletion_requests as deletion_module
 from app.services.deletion_requests import (
     SelfApproval,
     WrongState,
     approve,
     create_request,
     execute,
+    get_request,
 )
 from app.services.retention_tasks import SessionDataPurge
 from app.services.student_data import StudentNotFound, export_student_data
@@ -104,10 +106,10 @@ async def run(name: str) -> int:
         await db.commit()
         rows = (
             await db.execute(
-                select(Student.student_id, Student.user_id).order_by(Student.student_id).limit(2)
+                select(Student.student_id, Student.user_id).order_by(Student.student_id).limit(3)
             )
         ).all()
-    (target, target_user), (retry, _retry_user) = rows
+    (target, target_user), (retry, _retry_user), (midway, _midway_user) = rows
     use_history: Any = lambda: history  # noqa: E731
 
     # -- before ------------------------------------------------------------------------
@@ -228,6 +230,49 @@ async def run(name: str) -> int:
         )
     retry_history_after = await history_rows(history, retry)
 
+    # -- failure after the history commit, before the main commit -----------------------
+    async with main() as db:
+        midway_request = await create_request(
+            db, target_type="student", target_id=midway, requested_by=admin_one
+        )
+        midway_id = midway_request.request_id
+        await db.commit()
+    async with main() as db:
+        await approve(db, midway_id, admin_id=admin_two)
+        await db.commit()
+    midway_history_before = await history_rows(history, midway)
+    real_erase = deletion_module.erase_student
+
+    async def fails_after_erasing(*args: Any, **kwargs: Any) -> None:
+        await real_erase(*args, **kwargs)
+        raise RuntimeError("the main database failed after the history was erased")
+
+    deletion_module.erase_student = fails_after_erasing
+    try:
+        async with main() as db:
+            try:
+                await execute(db, midway_id, admin_id=admin_two, history=use_history)
+                failed_midway = False
+            except RuntimeError:
+                failed_midway = True
+            await db.rollback()  # the main database's work is undone
+    finally:
+        deletion_module.erase_student = real_erase
+    midway_history_mid = await history_rows(history, midway)
+    async with main() as db:
+        midway_survived = await db.scalar(
+            select(func.count()).select_from(Student).where(Student.student_id == midway)
+        )
+        midway_status = (await get_request(db, midway_id)).status
+    async with main() as db:
+        finished_midway = await execute(db, midway_id, admin_id=admin_two, history=use_history)
+        midway_final = finished_midway.status
+        await db.commit()
+    async with main() as db:
+        midway_gone = not await db.scalar(
+            select(func.count()).select_from(Student).where(Student.student_id == midway)
+        )
+
     checks = [
         (
             "The student's export matched their stored data",
@@ -290,6 +335,20 @@ async def run(name: str) -> int:
             "The retry finishes the job",
             status == "executed" and retry_gone and retry_history_after == 0,
             f"history {retry_history_before} -> {retry_history_after}",
+        ),
+        (
+            "A failure after the history commit leaves the student and request intact",
+            failed_midway
+            and midway_history_before > 0
+            and midway_history_mid == 0
+            and bool(midway_survived)
+            and midway_status == "approved",
+            f"history {midway_history_before} -> {midway_history_mid}, request {midway_status}",
+        ),
+        (
+            "Running it again finishes the erasure",
+            midway_final == "executed" and midway_gone,
+            f"request {midway_final}",
         ),
     ]
 

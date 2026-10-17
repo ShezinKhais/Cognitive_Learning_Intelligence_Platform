@@ -15,7 +15,7 @@ never the live data. Each script prints a Markdown section, saved in
 | Integrity | `db_evidence.py integrity` | 6 of 6 checks pass | [integrity.md](evidence/integrity.md) |
 | Migration rollback | `db_evidence.py rollback` | 44 of 44 steps down and 44 of 44 back up | [rollback.md](evidence/rollback.md) |
 | Purge simulation | `db_purge_simulation.py --scale 5` | 9 of 9 checks pass | [purge-simulation.md](evidence/purge-simulation.md) |
-| Deletion test | `db_deletion_test.py` | 13 of 13 checks pass | [deletion-test.md](evidence/deletion-test.md) |
+| Deletion test | `db_deletion_test.py` | 15 of 15 checks pass | [deletion-test.md](evidence/deletion-test.md) |
 | Backup restoration | `db_restore_check.py` | 5 of 5 checks pass | [restore-drill.md](evidence/restore-drill.md) |
 | Performance queries | `db_performance.py --scale 10` | slowest query 37 ms, no missing index | [performance.md](evidence/performance.md) |
 
@@ -72,6 +72,10 @@ separate history database.
   is refused.
 - With the history database down, execution stops before it touches anything, and the
   retry afterwards finishes the job.
+- A failure *after* the history database has committed (the main step fails after
+  erasing, and its work is rolled back) leaves the history rows erased but the student
+  and the request intact, with the request still `approved`. Running it again finishes
+  the erasure, and the request ends `executed`.
 
 ## Backup restoration
 

@@ -17,3 +17,5 @@ One student was erased end to end on a throwaway database with a separate histor
 | Executing the same request again is refused | PASS |  |
 | With history down, execution stops before touching anything | PASS | student and history rows intact |
 | The retry finishes the job | PASS | history 1 -> 0 |
+| A failure after the history commit leaves the student and request intact | PASS | history 1 -> 0, request approved |
+| Running it again finishes the erasure | PASS | request executed |
