@@ -65,6 +65,9 @@ export function apiUrl(path: string): string {
 // httpOnly: the browser sends it to /auth/refresh and no script can read it.
 let accessToken: string | null = null
 let accessTokenExpiresAt = 0
+// Moves on at every sign-out, so a refresh that was already on its way
+// cannot sign the user back in when it lands.
+let signOuts = 0
 
 // Where earlier builds kept the token. Cleared on load, so a token left there
 // by one is not lying around for anything to read.
@@ -88,6 +91,7 @@ export function saveAccessToken(token: string, expiresIn?: number): void {
 
 function forgetAccessToken(): void {
   forgetCurrentUser()
+  signOuts += 1
   accessToken = null
   accessTokenExpiresAt = 0
   scheduleRefresh()
@@ -158,6 +162,7 @@ export async function refreshAccessToken(): Promise<string | null> {
 }
 
 async function renewToken(): Promise<Renewal> {
+  const asked = signOuts
   let response: Response
   try {
     response = await fetch(apiUrl('/auth/refresh'), {
@@ -178,6 +183,7 @@ async function renewToken(): Promise<Renewal> {
     return 'unreachable'
   }
   const renewed = (await response.json()) as LoginResponse
+  if (signOuts !== asked) return 'refused'
   saveAccessToken(renewed.access_token, renewed.expires_in)
   return { token: renewed.access_token }
 }

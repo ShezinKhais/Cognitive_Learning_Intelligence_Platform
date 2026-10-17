@@ -178,6 +178,19 @@ test('signing out drops the cookie, so a reload does not sign back in', async ()
   assert.equal(await restoreSession(), null)
 })
 
+test('a refresh still on its way when the user signs out does not sign them back in', async () => {
+  reset('kept', true)
+  clearAccessToken()
+  cookie = true
+  // A reload's refresh, then sign-out before it is answered. The backend
+  // answers the refresh first, while the cookie still holds.
+  const restoring = restoreSession()
+  clearAccessToken()
+  cookie = true
+  assert.equal(await restoring, null)
+  assert.equal(getAccessToken(), null)
+})
+
 test('a wrong password does not sign anyone out', async () => {
   reset('anything', true)
   requests = []
