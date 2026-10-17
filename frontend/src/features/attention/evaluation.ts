@@ -64,7 +64,27 @@ export function framesToCsv(frames: Frame[]): string {
   return [COLUMNS.join(','), ...frames.map(frameToRow)].join('\n') + '\n'
 }
 
+/**
+ * Rows of one recording file. Files from before the countdown fix also hold
+ * the two-second "get ready" frames: their t counts up, then starts again from
+ * zero when the clip really begins, so the rows before that restart are dropped.
+ */
 export function parseCsv(text: string): Frame[] {
+  return dropCountdown(parseRows(text))
+}
+
+export function dropCountdown(frames: Frame[]): Frame[] {
+  const key = (f: Frame) => `${f.participant}/${f.clip}`
+  const lastT = new Map<string, number>()
+  const restart = new Map<string, number>()
+  frames.forEach((f, i) => {
+    if (f.t < (lastT.get(key(f)) ?? -Infinity)) restart.set(key(f), i)
+    lastT.set(key(f), f.t)
+  })
+  return frames.filter((f, i) => i >= (restart.get(key(f)) ?? 0))
+}
+
+function parseRows(text: string): Frame[] {
   const [header, ...lines] = text.trim().split(/\r?\n/)
   const names = header.split(',')
   return lines.filter(Boolean).map(line => {

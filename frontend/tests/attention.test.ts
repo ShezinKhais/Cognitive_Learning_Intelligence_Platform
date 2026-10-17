@@ -58,7 +58,7 @@ import {
   DEFAULT_THRESHOLDS, calibrate, classifyFace, faceFeatures, poseFromMatrix, type FaceFeatures,
 } from '../src/features/attention/signals.ts'
 import {
-  balancedAccuracy, bootstrap, count, framesToCsv, parseCsv, precision, recall, split, tune, type Frame,
+  balancedAccuracy, bootstrap, count, dropCountdown, framesToCsv, parseCsv, precision, recall, split, tune, type Frame,
 } from '../src/features/attention/evaluation.ts'
 
 /** A 4x4 column-major rotation about x (pitch) or y (yaw), in degrees. */
@@ -132,6 +132,14 @@ test('recordings round-trip through CSV with numbers only', () => {
   assert.equal(back[1].features.faces, 0)
   assert.ok(Math.abs(back[0].features.pose!.pitch - 2) < 1e-3)
   assert.deepEqual(classifyFace(back[0].features), classifyFace(frames[0].features))
+})
+
+test('countdown frames from older recordings are dropped where the clock restarts', () => {
+  const at = (clip: string, t: number, label: 'screen' | 'away_left' = 'screen') => ({ ...frame('P1', clip, label, 0), t })
+  // c1: two countdown frames, then the clip from t = 0. c2 was recorded after the fix.
+  const frames = [at('c1', 0.1), at('c1', 1.9), at('c1', 0.1), at('c1', 5), at('c2', 0.2, 'away_left'), at('c2', 9)]
+  assert.deepEqual(dropCountdown(frames).map(f => [f.clip, f.t]), [['c1', 0.1], ['c1', 5], ['c2', 0.2], ['c2', 9]])
+  assert.equal(parseCsv(framesToCsv(frames)).length, 4)
 })
 
 test('counts keep frames with no reading apart', () => {

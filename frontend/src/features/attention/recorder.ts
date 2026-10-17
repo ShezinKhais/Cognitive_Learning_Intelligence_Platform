@@ -63,18 +63,23 @@ function refresh() {
   counter.textContent = `${clips} clips, ${frames.length} frames recorded.`
   download.disabled = discard.disabled = frames.length === 0
 }
-consent.onchange = participant.oninput = refresh
+participant.oninput = refresh
+// Unticking consent turns the camera off at once, not just the Start button.
+consent.onchange = () => { if (!consent.checked && worker) stopCamera('Consent withdrawn. Camera off.'); else refresh() }
 
 function record(label: Label) {
   clips += 1
   const conditions = Object.fromEntries(Object.entries(selects).map(([k, s]) => [k, s.value])) as Record<Condition, string>
-  recording = { label, clip: `c${clips}`, startedAt: performance.now(), conditions }
+  // No frame counts until the countdown ends and startedAt is set below.
+  const clip = { label, clip: `c${clips}`, startedAt: Infinity, conditions }
+  recording = clip
   status.textContent = `Get ready: ${LABELS[label]}`
   refresh()
-  // Two seconds to get into position before frames count.
+  // Two seconds to get into position before frames count. The timers check
+  // this is still the same clip, in case the camera was stopped meanwhile.
   setTimeout(() => {
-    if (!recording) return
-    recording.startedAt = performance.now()
+    if (recording !== clip) return
+    clip.startedAt = performance.now()
     status.textContent = `Recording: ${LABELS[label]}`
     bar.style.transition = 'none'
     bar.style.width = '0%'
@@ -83,6 +88,7 @@ function record(label: Label) {
       bar.style.width = '100%'
     })
     setTimeout(() => {
+      if (recording !== clip) return
       recording = null
       bar.style.transition = 'none'
       bar.style.width = '0%'
@@ -145,16 +151,20 @@ function sendFrames() {
   }, FRAME_MS)
 }
 
-stop.onclick = () => {
+function stopCamera(message: string) {
   clearInterval(timer)
   worker?.terminate()
   worker = undefined
+  busy = false
   stream?.getTracks().forEach(track => track.stop())
   preview.srcObject = null
   recording = null
-  status.textContent = 'Camera off.'
+  bar.style.transition = 'none'
+  bar.style.width = '0%'
+  status.textContent = message
   refresh()
 }
+stop.onclick = () => stopCamera('Camera off.')
 
 download.onclick = () => {
   const name = `attention_${participant.value.trim() || 'P'}_${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.csv`

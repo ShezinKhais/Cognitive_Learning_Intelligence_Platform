@@ -22,7 +22,8 @@ const out = rest[0] === '--out' ? rest[1] : undefined
 const files = (await readdir(folder)).filter(name => name.endsWith('.csv')).sort()
 if (!files.length) throw new Error(`no CSV files in ${folder}`)
 const frames: Frame[] = []
-for (const name of files) frames.push(...parseCsv(await readFile(path.join(folder, name), 'utf8')))
+// Clip codes restart at c1 in every download, so they are kept apart by file.
+for (const name of files) frames.push(...parseCsv(await readFile(path.join(folder, name), 'utf8')).map(f => ({ ...f, clip: `${name}:${f.clip}` })))
 
 // "Before" is #63's judgement: the landmark proxies, as if no pose came with the frame.
 const withoutPose = (fs: Frame[]) => fs.map(f => ({ ...f, features: { ...f.features, pose: null } }))
