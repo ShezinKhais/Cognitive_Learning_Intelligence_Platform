@@ -8,6 +8,8 @@ export interface ChatRequest {
   sessionId: string
   requestId: string
   question: string
+  /** Earlier exchanges, oldest first, for a follow-up. */
+  history?: { question: string; answer: string }[]
   signal: AbortSignal
   onEvent: (event: ChatStreamEvent) => void
 }
@@ -24,6 +26,7 @@ export async function streamChat(request: ChatRequest): Promise<void> {
       body: JSON.stringify({
         request_id: request.requestId,
         question: request.question,
+        ...(request.history?.length ? { history: request.history } : {}),
       }),
       signal: request.signal,
     },

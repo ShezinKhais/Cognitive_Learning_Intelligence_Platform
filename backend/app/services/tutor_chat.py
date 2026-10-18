@@ -52,7 +52,7 @@ from app.repositories.session_repository import SessionRepository
 from app.schemas.content import MaterialStatus
 from app.services.ai_gateway import AiGateway, AiRequest, Priority, get_ai_gateway
 from app.services.retrieval import RetrievedChunk
-from app.services.tutor_guardrails import OpenQuestion, TutorPrompt, guarded_chat
+from app.services.tutor_guardrails import EarlierTurn, OpenQuestion, TutorPrompt, guarded_chat
 
 log = logging.getLogger("clip.tutor")
 
@@ -215,7 +215,9 @@ class TutorExchange:
         # Which material each retrieved excerpt came from, for its citation.
         self._found_in: dict[UUID, UUID] = {}
 
-    async def lines(self, request_id: str, question: str) -> AsyncIterator[bytes]:
+    async def lines(
+        self, request_id: str, question: str, earlier: Sequence[EarlierTurn] = ()
+    ) -> AsyncIterator[bytes]:
         """The reply as NDJSON: one event to a line, as the panel reads it.
 
         Ends with the exchange counted as finished, whether it completed, was
@@ -231,6 +233,7 @@ class TutorExchange:
             retrieve=self._retrieve,
             generate=self._generate,
             describe=self._describe,
+            earlier=earlier,
         )
         try:
             # Closed on the way out, so a reader that stops early still ends
@@ -308,6 +311,8 @@ class TutorExchange:
         excerpt = " ".join(chunk.chunk_text.split())[:CITATION_EXCERPT_CHARS]
         return {
             "id": str(chunk.chunk_id),
+            # The [n] the answer cites it by, so the panel can link the two.
+            "number": number,
             "material_title": source.title,
             "source_page": None if source.slides else chunk.source_page,
             "source_slide": chunk.source_page if source.slides else None,

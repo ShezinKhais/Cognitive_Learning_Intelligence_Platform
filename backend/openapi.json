@@ -252,6 +252,15 @@
       },
       "ChatRequest": {
         "properties": {
+          "history": {
+            "description": "The exchanges before this one, oldest first, so a follow-up can refer to them. Screened again on the server; never cited.",
+            "items": {
+              "$ref": "#/components/schemas/ChatTurn"
+            },
+            "maxItems": 3,
+            "title": "History",
+            "type": "array"
+          },
           "question": {
             "maxLength": 2000,
             "minLength": 1,
@@ -271,6 +280,29 @@
           "question"
         ],
         "title": "ChatRequest",
+        "type": "object"
+      },
+      "ChatTurn": {
+        "description": "An earlier exchange the panel sends back with a follow-up. The server\nkeeps no conversation, so this is the client's word for it, and the guard\nscreens it again before the model sees it.",
+        "properties": {
+          "answer": {
+            "maxLength": 1500,
+            "minLength": 1,
+            "title": "Answer",
+            "type": "string"
+          },
+          "question": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "answer"
+        ],
+        "title": "ChatTurn",
         "type": "object"
       },
       "ComprehensionLabel": {
