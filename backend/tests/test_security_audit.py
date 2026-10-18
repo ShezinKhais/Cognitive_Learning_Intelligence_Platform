@@ -8,7 +8,8 @@ fail when a route is added, or changed, without meeting the rules.
 * RBAC: every route has a declared audience, and a student reaches no staff
   route; a lecturer reaches none of another lecturer's sessions.
 * Consent: a signed-in user without terms consent reaches nothing but the
-  consent route itself.
+  consent route itself, and the routes to take or erase their own data
+  (NO_CONSENT_NEEDED).
 * The error envelope never leaks a stack trace, a path or a SQL fragment.
 """
 
@@ -31,11 +32,18 @@ METHODS = ("get", "post", "put", "patch", "delete")
 
 # Reachable without signing in, and why.
 PUBLIC = {
+    ("POST", "/api/v1/auth/refresh"): "renews a token, authenticated by the token itself",
     ("POST", "/api/v1/auth/login"): "how a user signs in",
     ("GET", "/api/v1/health"): "liveness for a load balancer",
     ("GET", "/api/v1/ready"): "readiness for a load balancer",
     ("POST", "/api/v1/teams/messages"): "Teams bot endpoint, authenticated by Microsoft's token",
-    ("POST", "/api/v1/auth/refresh"): "renews a token, authenticated by the token itself",
+}
+
+# Served to a signed-in student who has withdrawn the terms, and why.
+NO_CONSENT_NEEDED = {
+    ("GET", "/api/v1/me/data"): "a student can always take a copy of their own data",
+    ("POST", "/api/v1/me/deletion-request"): "a student can always ask to be erased",
+    ("GET", "/api/v1/me/deletion-request"): "a student can always see where that request stands",
 }
 
 # Who each route is for. Anything not named here fails the audit, so a new
@@ -47,6 +55,9 @@ ADMIN_ONLY = "admins"
 MEMBER = "a member of the session, decided in the handler"
 
 AUDIENCE = {
+    ("GET", "/api/v1/student-reviews"): STUDENT_ONLY,
+    ("GET", "/api/v1/student-reviews/{session_id}"): STUDENT_ONLY,
+    ("GET", "/api/v1/student-reviews/{session_id}/responses/{response_id}/sources"): STUDENT_ONLY,
     ("POST", "/api/v1/auth/consent"): ANY_USER,
     ("GET", "/api/v1/auth/me"): ANY_USER,
     ("POST", "/api/v1/admin/roster"): ADMIN_ONLY,
@@ -81,9 +92,6 @@ AUDIENCE = {
     ("POST", "/api/v1/sessions/{session_id}/reports"): STAFF,
     ("GET", "/api/v1/reports/{report_id}"): STAFF,
     ("GET", "/api/v1/reports/{report_id}/pdf"): STAFF,
-    ("GET", "/api/v1/student-reviews"): STUDENT_ONLY,
-    ("GET", "/api/v1/student-reviews/{session_id}"): STUDENT_ONLY,
-    ("GET", "/api/v1/student-reviews/{session_id}/responses/{response_id}/sources"): STUDENT_ONLY,
     ("POST", "/api/v1/governance/deletion-requests"): ADMIN_ONLY,
     ("GET", "/api/v1/governance/deletion-requests"): ADMIN_ONLY,
     ("GET", "/api/v1/governance/deletion-requests/{request_id}"): ADMIN_ONLY,
@@ -314,7 +322,9 @@ async def test_another_lecturer_cannot_touch_a_session_they_do_not_run(
     [
         r
         for r in AUDIENCE
-        if r != ("POST", "/api/v1/auth/consent") and r != ("GET", "/api/v1/auth/me")
+        if r != ("POST", "/api/v1/auth/consent")
+        and r != ("GET", "/api/v1/auth/me")
+        and r not in NO_CONSENT_NEEDED
     ],
 )
 def test_without_terms_consent_nothing_is_served(db, app, method: str, path: str) -> None:  # noqa: ANN001
@@ -337,6 +347,25 @@ def test_without_terms_consent_nothing_is_served(db, app, method: str, path: str
     assert response.json()["error"]["code"] in {"consent_required", "CONSENT_REQUIRED"} or (
         "consent" in response.text.lower()
     )
+
+
+@pytest.mark.parametrize(("method", "path"), list(NO_CONSENT_NEEDED))
+def test_a_withdrawn_student_keeps_access_to_their_data(db, app, method: str, path: str) -> None:  # noqa: ANN001
+    from app.api.deps import Principal, get_principal
+    from app.auth.store import get_consent_repository
+    from app.core.config import get_settings
+    from app.schemas.identity import ConsentType
+
+    client, _, _ = db
+    user = uuid4()
+    app.dependency_overrides[get_principal] = lambda: Principal(
+        user_id=user, role=Role.STUDENT, email="student@clip.example.com"
+    )
+    get_consent_repository(get_settings()).record(user, ConsentType.TERMS, False)
+    response = call(client, method, path)
+    # This user has no student profile, so the answer may be not found or invalid.
+    # What matters is that consent did not turn them away.
+    assert response.status_code != 403, (method, path, response.text)
 
 
 def test_unimplemented_routes_are_known(db, app) -> None:  # noqa: ANN001

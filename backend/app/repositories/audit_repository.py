@@ -44,7 +44,6 @@ async def record_event(
     *,
     action_type: str,
     user_id: UUID | None = None,
-    ip_address: str | None = None,
     target_type: str | None = None,
     target_id: UUID | None = None,
     details: Mapping[str, Any] | None = None,
@@ -58,7 +57,6 @@ async def record_event(
     entry = AuditLog(
         user_id=user_id,
         action_type=action_type,
-        ip_address=ip_address,
         target_type=target_type,
         target_id=target_id,
         details=checked_details(details),

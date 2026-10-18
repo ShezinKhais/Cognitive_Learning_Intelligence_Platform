@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections import defaultdict
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.history.models import ArchivedSession
@@ -26,8 +26,34 @@ from app.models.attention_signal_summary import AttentionSignalSummary
 from app.models.engagement_record import EngagementRecord
 from app.models.session import Session
 from app.models.session_participant import SessionParticipant
+from app.models.student import Student
 from app.models.student_response import StudentResponse
 from app.services.retention import session_clock
+
+
+async def lock_attendees(db: AsyncSession, session_ids: list[UUID]) -> None:
+    """Lock the students who took part in these sessions until the caller's
+    transaction ends.
+
+    An erasure holds the same lock from before it erases a student's history
+    until its main commit. Taking it here makes a purge wait for an erasure in
+    progress, and then find nothing of that student left to archive; without it
+    the purge can add their summaries back between the two erasures, and they
+    survive. Students are locked in id order, so two purges cannot deadlock."""
+    taking_part = union(
+        select(SessionParticipant.student_id).where(SessionParticipant.session_id.in_(session_ids)),
+        select(StudentResponse.student_id).where(StudentResponse.session_id.in_(session_ids)),
+        select(EngagementRecord.student_id).where(EngagementRecord.session_id.in_(session_ids)),
+        select(AttentionSignalSummary.student_id).where(
+            AttentionSignalSummary.session_id.in_(session_ids)
+        ),
+    ).subquery()
+    await db.execute(
+        select(Student.student_id)
+        .where(Student.student_id.in_(select(taking_part.c.student_id)))
+        .order_by(Student.student_id)
+        .with_for_update()
+    )
 
 
 async def archive_sessions(
@@ -43,6 +69,8 @@ async def archive_sessions(
     todo = [session_id for session_id in session_ids if session_id not in already]
     if not todo:
         return 0
+
+    await lock_attendees(db, todo)
 
     where = {
         row.session_id: (row.course_id, semester_label(row.clock))

@@ -135,9 +135,7 @@ async def test_an_audited_route_writes_its_record_in_production(db) -> None:  # 
                 )
             )
         ).all()
-        assert [(r.action_type, r.ip_address) for r in rows] == [
-            ("SESSION_CREATED", "203.0.113.20")
-        ]
+        assert [r.action_type for r in rows] == ["SESSION_CREATED"]
         await session.execute(delete(AuditLog).where(AuditLog.log_id.in_([r.log_id for r in rows])))
         await session.commit()
     assert made.title == "Audited"

@@ -61,7 +61,9 @@ def test_teams_lecturer_tab_has_a_matching_frontend_route() -> None:
 ENTRY_POINT = API_TS.parent / "main.tsx"
 
 # Bare specifiers ('react', 'lucide-react') are dependencies, not our source.
-RELATIVE_IMPORT = re.compile(r"""(?:from|import)\s+['"](\.{1,2}/[^'"]+|@/[^'"]+)['"]""")
+RELATIVE_IMPORT = re.compile(
+    r"""(?:from\s+|import\s*(?:\(\s*)?)['"](\.{1,2}/[^'"]+|@/[^'"]+)['"]"""
+)
 # Vite bundles worker entry points separately; they are not ordinary imports.
 WORKER_IMPORT = re.compile(
     r"""new\s+(?:SharedWorker|Worker)\s*\(\s*new\s+URL\s*\(\s*['"]"""
@@ -120,6 +122,32 @@ def test_reachability_follows_worker_and_its_imports(tmp_path: Path, constructor
         "main.tsx",
         "face.worker.ts",
         "signals.ts",
+    }
+
+
+def test_reachability_follows_lazy_dynamic_imports(tmp_path: Path) -> None:
+    """Lazy-loaded pages and their dependencies are reachable from the entry point."""
+    (tmp_path / "main.tsx").write_text(
+        "const page = lazy(() => import('./LazyPage'))",
+        encoding="utf-8",
+    )
+    (tmp_path / "LazyPage.tsx").write_text(
+        "import { value } from './dependency'\nexport default value",
+        encoding="utf-8",
+    )
+    (tmp_path / "dependency.ts").write_text(
+        "export const value = 1",
+        encoding="utf-8",
+    )
+    (tmp_path / "orphan.ts").write_text(
+        "export const unused = true",
+        encoding="utf-8",
+    )
+
+    assert {path.name for path in _reachable_from_entry_point(tmp_path)} == {
+        "main.tsx",
+        "LazyPage.tsx",
+        "dependency.ts",
     }
 
 

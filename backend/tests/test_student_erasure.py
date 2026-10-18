@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
+from app.models.ai_alert import AIAlert
+from app.models.ai_recommendation import AIRecommendation
 from app.models.attention_signal_summary import AttentionSignalSummary
 from app.models.comprehension_result import ComprehensionResult
 from app.models.consent import Consent
@@ -237,6 +239,8 @@ async def test_a_students_own_data_is_erased(db, classroom):
         "prompts": 1,
         "engagement": 1,
         "teams_records": 2,
+        "alerts": 0,
+        "recommendations": 0,
     }
 
 
@@ -302,7 +306,16 @@ async def test_erasing_a_student_twice_is_safe(db, classroom):
     again = await erase_student(db, classroom.leaver)
 
     assert again.as_counts() == dict.fromkeys(
-        ("answers", "attention_summaries", "prompts", "engagement", "teams_records"), 0
+        (
+            "answers",
+            "attention_summaries",
+            "prompts",
+            "engagement",
+            "teams_records",
+            "alerts",
+            "recommendations",
+        ),
+        0,
     )
 
 
@@ -324,3 +337,43 @@ async def test_only_a_student_account_is_anonymised(db, classroom):
         )
     ).one()
     assert (account.name, account.active) == ("Erasure Lecturer", True)
+
+
+async def test_alerts_and_recommendations_about_the_student_are_deleted(db, classroom):
+    def alert(student):
+        return AIAlert(
+            session_id=classroom.session,
+            student_id=student,
+            kind="comprehension",
+            message="This student is struggling with the topic.",
+            reason="Several wrong answers in a row.",
+            confidence=0.7,
+        )
+
+    def recommendation(student):
+        return AIRecommendation(
+            session_id=classroom.session,
+            student_id=student,
+            recommendation="Revisit the topic with this student.",
+            reason="Several wrong answers in a row.",
+            confidence=0.7,
+        )
+
+    db.add_all(
+        [
+            alert(classroom.leaver),
+            alert(classroom.stayer),
+            recommendation(classroom.leaver),
+            recommendation(classroom.stayer),
+        ]
+    )
+    await db.flush()
+
+    report = await erase_student(db, classroom.leaver)
+
+    assert (report.alerts, report.recommendations) == (1, 1)
+    assert await count(db, AIAlert, AIAlert.student_id, classroom.leaver) == 0
+    assert await count(db, AIRecommendation, AIRecommendation.student_id, classroom.leaver) == 0
+    # Nothing was merely unlinked: the leaver's rows are gone and the stayer's remain.
+    assert await count(db, AIAlert, AIAlert.session_id, classroom.session) == 1
+    assert await count(db, AIRecommendation, AIRecommendation.session_id, classroom.session) == 1

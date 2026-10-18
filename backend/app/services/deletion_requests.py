@@ -19,6 +19,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.history.database import resolve_history_factory
@@ -27,7 +28,9 @@ from app.models.deletion_request import DELETION_TARGETS, DeletionRequest
 from app.models.session import Session
 from app.models.student import Student
 from app.models.student_response import StudentResponse
+from app.models.teams_roster_sync import TeamsRosterSync
 from app.repositories.audit_repository import record_event
+from app.services.retention import TERMINAL_STATUSES
 from app.services.student_erasure import erase_student
 
 MAX_REASON_LENGTH = 500
@@ -86,14 +89,12 @@ async def _audit(
     action: str,
     request: DeletionRequest,
     actor: UUID,
-    ip_address: str | None,
     **counts: Any,
 ) -> None:
     await record_event(
         db,
         action_type=action,
         user_id=actor,
-        ip_address=ip_address,
         target_type=request.target_type,
         target_id=request.target_id,
         details={"request_id": str(request.request_id), **counts},
@@ -132,7 +133,6 @@ async def create_request(
     target_id: UUID,
     requested_by: UUID,
     reason: str | None = None,
-    ip_address: str | None = None,
 ) -> DeletionRequest:
     if target_type not in DELETION_TARGETS:
         raise ValueError(f"target_type must be one of {', '.join(DELETION_TARGETS)}")
@@ -157,9 +157,15 @@ async def create_request(
         reason=reason,
         requested_by=requested_by,
     )
-    db.add(request)
-    await db.flush()
-    await _audit(db, "DELETION_REQUESTED", request, requested_by, ip_address)
+    # The check above is not enough on its own: two requests filed at the same
+    # moment both pass it. The unique index on open requests is what refuses
+    # the second, and the savepoint keeps the caller's transaction usable.
+    try:
+        async with db.begin_nested():
+            db.add(request)
+    except IntegrityError as error:
+        raise AlreadyOpen(f"This {target_type} already has an open deletion request.") from error
+    await _audit(db, "DELETION_REQUESTED", request, requested_by)
     return request
 
 
@@ -168,7 +174,6 @@ async def approve(
     request_id: UUID,
     *,
     admin_id: UUID,
-    ip_address: str | None = None,
     allow_self_approval: bool = False,
 ) -> DeletionRequest:
     request = await _locked(db, request_id)
@@ -179,24 +184,29 @@ async def approve(
     request.decided_by = admin_id
     request.decided_at = datetime.now(UTC)
     await db.flush()
-    await _audit(db, "DELETION_APPROVED", request, admin_id, ip_address)
+    await _audit(db, "DELETION_APPROVED", request, admin_id)
     return request
 
 
-async def reject(
-    db: AsyncSession, request_id: UUID, *, admin_id: UUID, ip_address: str | None = None
-) -> DeletionRequest:
+async def reject(db: AsyncSession, request_id: UUID, *, admin_id: UUID) -> DeletionRequest:
     request = await _locked(db, request_id)
     _require(request, "requested", "rejected")
     request.status = "rejected"
     request.decided_by = admin_id
     request.decided_at = datetime.now(UTC)
     await db.flush()
-    await _audit(db, "DELETION_REJECTED", request, admin_id, ip_address)
+    await _audit(db, "DELETION_REJECTED", request, admin_id)
     return request
 
 
 async def _delete_session(db: AsyncSession, session_id: UUID) -> dict[str, int]:
+    """Delete a finished session and everything it holds, including the Teams
+    roster snapshots that name its participants, which would otherwise outlive it
+    until the roster purge. A session that is still running is refused: deleting it
+    mid-class would pull it out from under the answers still arriving."""
+    status = await db.scalar(select(Session.status).where(Session.session_id == session_id))
+    if status is not None and status not in TERMINAL_STATUSES:
+        raise WrongState("A session that has not ended or been cancelled cannot be deleted.")
     sessions = (
         await db.scalar(
             select(func.count()).select_from(Session).where(Session.session_id == session_id)
@@ -211,8 +221,11 @@ async def _delete_session(db: AsyncSession, session_id: UUID) -> dict[str, int]:
         )
         or 0
     )
+    roster_syncs = await db.execute(
+        delete(TeamsRosterSync).where(TeamsRosterSync.session_id == session_id)
+    )
     await db.execute(delete(Session).where(Session.session_id == session_id))
-    return {"sessions": sessions, "answers": answers}
+    return {"sessions": sessions, "answers": answers, "roster_syncs": roster_syncs.rowcount or 0}
 
 
 async def _erase_history(student_id: UUID, history: Callable[[], Any] | None) -> int | None:
@@ -233,7 +246,6 @@ async def execute(
     request_id: UUID,
     *,
     admin_id: UUID,
-    ip_address: str | None = None,
     history: Callable[[], Any] | None = None,
 ) -> DeletionRequest:
     """Carry out an approved request. Something already gone, for example a
@@ -242,6 +254,13 @@ async def execute(
     _require(request, "approved", "executed")
 
     if request.target_type == "student":
+        # Held until the caller commits. A purge archiving this student waits for
+        # it, so it cannot add their history back between the two erasures.
+        await db.scalar(
+            select(Student.student_id)
+            .where(Student.student_id == request.target_id)
+            .with_for_update()
+        )
         history_rows = await _erase_history(request.target_id, history)
         outcome = (await erase_student(db, request.target_id)).as_counts()
         if history_rows is not None:
@@ -254,5 +273,5 @@ async def execute(
     request.executed_at = datetime.now(UTC)
     request.outcome = outcome
     await db.flush()
-    await _audit(db, "DELETION_EXECUTED", request, admin_id, ip_address, **outcome)
+    await _audit(db, "DELETION_EXECUTED", request, admin_id, **outcome)
     return request

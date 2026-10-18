@@ -48,7 +48,9 @@ approves it, and only then can it be executed.
 
 Rules: the admin who made a request cannot approve it; a target has at most one open
 request; a request is decided once; nothing is deleted before approval. Executing a
-**session** request deletes the session and everything it holds. A session already
+**session** request deletes the session and everything it holds, including the Teams
+roster snapshots that name its participants. A session that has not ended or been
+cancelled is refused with a 409, because it may still be in a class. A session already
 removed by retention counts as done. Executing a **student** request erases that
 student's own data and anonymises their account (see 'Erasing a student').
 
@@ -59,9 +61,10 @@ The request row outlives what it deleted: `target_id` is deliberately not a fore
 Executing an approved student request removes the student's own data: answers and the
 labels on them, attention prompts, engagement and attention summaries, attendance and
 missed questions, and the student profile with its accessibility and
-special-consideration notes. Alerts and recommendations keep their class-level content
-and lose only the link to the student. Teams ids and names that point at the account
-are cleared.
+special-consideration notes. Alerts and recommendations about the student are deleted
+too, because their text is generated about the student and can describe them; the
+class-level ones, which name nobody, stay. Teams ids and names that point at the
+account are cleared.
 
 The account row stays so the audit log and consent records keep a valid reference, but
 it identifies nobody: the name becomes "Deleted student", the email a placeholder, and
@@ -129,12 +132,27 @@ erased while their history rows remain. If the history database is down, both fl
 before they touch the main data. These cases are tested against a real second database in
 `test_retention.py` and `test_deletion_requests.py`.
 
+## An erasure and a purge at the same time
+
+Erasing a student takes a lock on the student's row before it touches the history
+database, and keeps it until the main database commits. A purge takes the same lock
+on every student in the sessions it is about to archive. So a purge that meets an
+erasure in progress waits for it and then finds nothing of that student left to
+archive, and an erasure that starts during a purge waits for the purge. Either order
+ends with the student's history erased. `tests/test_erasure_purge_race.py` pauses an
+erasure between its two commits, starts a purge, and checks that the purge waits and
+that no history is left.
+
 ## The audit log
 
 Every deletion step and every purge writes an entry: who did it (empty for a
-scheduled purge), what, to which target, from which address, and counts. `details`
+scheduled purge), what, to which target, and counts. `details`
 accepts only numbers, flags and short text, so an answer or a name cannot be written
 into it by accident.
+
+The address a request came from is deliberately not recorded. Addresses change with the
+network and the place a student joins from, and nothing here uses them, so keeping them
+would be personal data held without a purpose.
 
 | Action | Written when |
 |---|---|
@@ -142,7 +160,8 @@ into it by accident.
 | `DELETION_APPROVED` | An admin approves it |
 | `DELETION_REJECTED` | An admin rejects it |
 | `DELETION_EXECUTED` | A request is carried out, with counts |
-| `RETENTION_PURGE` | A purge runs, by an admin or the scheduler (no user), with counts |
+| `RETENTION_PURGE` | A purge batch runs, by the scheduler or an admin's run (no user), with counts |
+| `RETENTION_RUN` | An admin starts a purge by hand: who asked, and what it deleted |
 | `STUDENT_DATA_EXPORTED` | A student downloads their own data, with counts |
 | `HISTORY_VIEWED` | An admin reads a student's history, with the row count |
 

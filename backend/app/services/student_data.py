@@ -67,7 +67,6 @@ async def export_student_data(
     db: AsyncSession,
     user_id: UUID,
     *,
-    ip_address: str | None = None,
     history: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
     student = await own_student(db, user_id)
@@ -204,7 +203,6 @@ async def export_student_data(
         db,
         action_type=EXPORT_ACTION,
         user_id=user_id,
-        ip_address=ip_address,
         target_type="student",
         target_id=sid,
         details={
@@ -228,7 +226,6 @@ async def export_student_data(
             "course_id": _id(student.course_id),
             "consent_status": student.consent_status,
             "attention_threshold": student.attention_threshold,
-            "special_consideration_status": student.special_consideration_status,
             "enrolled_at": _when(student.enrolled_at),
         },
         "answers": answers,

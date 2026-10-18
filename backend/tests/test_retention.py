@@ -251,7 +251,6 @@ async def test_a_purge_is_audited_and_never_touches_the_audit_log(db, history):
     old_entry = AuditLog(
         user_id=history.actor,
         action_type="TEST_OLD_ENTRY",
-        ip_address="203.0.113.1",
         timestamp=days_ago(400),
     )
     db.add(old_entry)
@@ -571,7 +570,9 @@ async def test_the_admin_purge_deletes_nothing_when_history_is_unavailable(
     def broken():
         raise RuntimeError("the history database is down")
 
-    with pytest.raises(RuntimeError):
+    from app.core.errors import ServiceUnavailableError
+
+    with pytest.raises(ServiceUnavailableError):
         await purge_expired(db, dry_run=False, retention_days=90, history=lambda: broken)
 
     assert await holdings(db, history.expired) == dict.fromkeys(HOLDINGS, 1)

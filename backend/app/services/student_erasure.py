@@ -2,8 +2,9 @@
 
 Owner: BBIS, Phase 7. Deleting the student record removes, through the database,
 their answers and the labels on them, attention prompts, engagement and attention
-summaries, attendance and missed questions. Alerts and recommendations lose only
-the link to the student. The student profile goes too, with its accessibility and
+summaries, attendance and missed questions. Alerts and recommendations about the
+student are deleted too: their text is generated about the student and can describe
+them. The student profile goes too, with its accessibility and
 special-consideration notes.
 
 The account row stays so the audit log and consent records keep a valid
@@ -22,6 +23,8 @@ from uuid import UUID
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.ai_alert import AIAlert
+from app.models.ai_recommendation import AIRecommendation
 from app.models.attention_signal_summary import AttentionSignalSummary
 from app.models.dynamic_prompt import DynamicPrompt
 from app.models.engagement_record import EngagementRecord
@@ -41,6 +44,8 @@ class ErasureReport:
     prompts: int = 0
     engagement: int = 0
     teams_records: int = 0
+    alerts: int = 0
+    recommendations: int = 0
 
     def as_counts(self) -> dict[str, int]:
         return asdict(self)
@@ -69,6 +74,13 @@ async def erase_student(db: AsyncSession, student_id: UUID) -> ErasureReport:
     prompts = await _count(db, DynamicPrompt, DynamicPrompt.student_id, student_id)
     engagement = await _count(db, EngagementRecord, EngagementRecord.student_id, student_id)
 
+    # Alerts and recommendations about this student are generated text that can
+    # describe them, so they are deleted with the student and not merely unlinked.
+    recommendations = await db.execute(
+        delete(AIRecommendation).where(AIRecommendation.student_id == student_id)
+    )
+    alerts = await db.execute(delete(AIAlert).where(AIAlert.student_id == student_id))
+
     await db.execute(delete(Student).where(Student.student_id == student_id))
 
     mappings = await db.execute(delete(TeamsUserMapping).where(TeamsUserMapping.user_id == user_id))
@@ -92,4 +104,6 @@ async def erase_student(db: AsyncSession, student_id: UUID) -> ErasureReport:
         prompts=prompts,
         engagement=engagement,
         teams_records=(mappings.rowcount or 0) + (participants.rowcount or 0),
+        alerts=alerts.rowcount or 0,
+        recommendations=recommendations.rowcount or 0,
     )

@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,6 +31,14 @@ class DeletionRequest(Base):
             name="ck_deletion_request_status",
         ),
         Index("ix_deletion_request_target", "target_type", "target_id"),
+        # At most one open request per target, however many are filed at once.
+        Index(
+            "uq_deletion_request_open_target",
+            "target_type",
+            "target_id",
+            unique=True,
+            postgresql_where=text("status IN ('requested', 'approved')"),
+        ),
     )
 
     request_id: Mapped[uuid.UUID] = mapped_column(

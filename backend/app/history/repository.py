@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,7 +59,10 @@ async def add_totals(db: AsyncSession, totals: list[SemesterTotals]) -> None:
         await db.execute(
             statement.on_conflict_do_update(
                 constraint="uq_history_student_course_semester",
-                set_={name: table.c[name] + statement.excluded[name] for name in ADDED},
+                set_={
+                    **{name: table.c[name] + statement.excluded[name] for name in ADDED},
+                    "updated_at": func.now(),
+                },
             )
         )
 

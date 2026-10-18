@@ -3,15 +3,18 @@
 Owner: BBIS, Phase 7. Students only. The deletion request goes through the same
 service as the admin routes, so it needs a different admin to approve it, and
 every step is audited there.
+
+No consent is required. A student who has withdrawn the terms can still take a
+copy of their data or ask for it to be erased: those are rights, not features.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request, Response, status
 
-from app.api.deps import CurrentUser, DbSession, require_consents, require_roles
+from app.api.deps import CurrentUser, DbSession, require_roles
 from app.core.errors import ConflictError, NotFoundError, ValidationError
-from app.schemas.identity import ConsentType, Role
+from app.schemas.identity import Role
 from app.schemas.my_data import MyDeletionRequestCreate, MyDeletionRequestOut, StudentDataExport
 from app.services import deletion_requests, student_data
 from app.services.deletion_requests import AlreadyOpen
@@ -20,15 +23,8 @@ from app.services.student_data import StudentNotFound
 router = APIRouter(
     prefix="/me",
     tags=["my-data"],
-    dependencies=[
-        Depends(require_roles(Role.STUDENT)),
-        Depends(require_consents(ConsentType.TERMS)),
-    ],
+    dependencies=[Depends(require_roles(Role.STUDENT))],
 )
-
-
-def _ip(request: Request) -> str | None:
-    return request.client.host if request.client is not None else None
 
 
 @router.get("/data", response_model=StudentDataExport)
@@ -39,9 +35,7 @@ async def export_my_data(
     response.headers["Cache-Control"] = "no-store"
     response.headers["Content-Disposition"] = 'attachment; filename="my-clip-data.json"'
     try:
-        return await student_data.export_student_data(
-            db, principal.user_id, ip_address=_ip(request)
-        )
+        return await student_data.export_student_data(db, principal.user_id)
     except StudentNotFound as error:
         raise NotFoundError(str(error)) from error
 
@@ -66,7 +60,6 @@ async def request_my_deletion(
             target_id=student.student_id,
             requested_by=principal.user_id,
             reason=payload.reason,
-            ip_address=_ip(request),
         )
     except StudentNotFound as error:
         raise NotFoundError(str(error)) from error

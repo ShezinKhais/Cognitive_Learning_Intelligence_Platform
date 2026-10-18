@@ -131,7 +131,7 @@ async def count(db, model, column, value) -> int:
 
 
 async def test_a_request_starts_as_requested_and_is_audited(db, world):
-    request = await request_session(db, world, ip_address="203.0.113.5")
+    request = await request_session(db, world)
 
     assert request.status == "requested"
     assert request.requested_by == world.first
@@ -230,7 +230,7 @@ async def test_executing_a_session_request_deletes_the_session_and_what_it_holds
 
     assert done.status == "executed"
     assert done.executed_by == world.second
-    assert done.outcome == {"sessions": 1, "answers": 1}
+    assert done.outcome == {"sessions": 1, "answers": 1, "roster_syncs": 0}
     assert await count(db, Session, Session.session_id, world.session) == 0
     assert await count(db, StudentResponse, StudentResponse.session_id, world.session) == 0
 
@@ -258,7 +258,7 @@ async def test_a_session_already_gone_counts_as_done(db, world):
     done = await execute(db, request.request_id, admin_id=world.second)
 
     assert done.status == "executed"
-    assert done.outcome == {"sessions": 0, "answers": 0}
+    assert done.outcome == {"sessions": 0, "answers": 0, "roster_syncs": 0}
 
 
 async def test_executing_a_student_request_erases_the_student(db, world):
@@ -518,3 +518,56 @@ async def test_an_erasure_that_fails_after_the_history_commit_is_finished_by_run
 
     assert done.status == "executed"
     assert await count(db, Student, Student.student_id, world.student) == 0
+
+
+async def test_two_open_requests_for_one_target_cannot_exist_even_when_filed_together(
+    db, world, monkeypatch
+):
+    await request_session(db, world)
+    # Filed at the same moment, both requests would pass the open-request check.
+    # The database is what refuses the second.
+    monkeypatch.setattr("app.services.deletion_requests.OPEN_STATUSES", ())
+
+    with pytest.raises(AlreadyOpen):
+        await request_session(db, world)
+
+
+async def test_a_session_that_is_still_running_cannot_be_deleted(db, world):
+    from sqlalchemy import update
+
+    from app.services.deletion_requests import WrongState
+
+    await db.execute(
+        update(Session).where(Session.session_id == world.session).values(status="live")
+    )
+    request = await request_session(db, world)
+    await approve(db, request.request_id, admin_id=world.second)
+
+    with pytest.raises(WrongState):
+        await execute(db, request.request_id, admin_id=world.second)
+
+    assert await count(db, Session, Session.session_id, world.session) == 1
+    assert (await get_request(db, request.request_id)).status == "approved"
+
+
+async def test_deleting_a_session_also_deletes_its_teams_roster_snapshots(db, world):
+    from uuid import uuid4
+
+    from app.models.teams_roster_sync import TeamsRosterSync
+
+    db.add(
+        TeamsRosterSync(
+            meeting_id=f"meeting-{uuid4().hex}",
+            session_id=world.session,
+            source_event_id="event-1",
+            event_type="snapshot",
+        )
+    )
+    await db.flush()
+    request = await request_session(db, world)
+    await approve(db, request.request_id, admin_id=world.second)
+
+    done = await execute(db, request.request_id, admin_id=world.second)
+
+    assert done.outcome["roster_syncs"] == 1
+    assert await count(db, TeamsRosterSync, TeamsRosterSync.session_id, world.session) == 0
