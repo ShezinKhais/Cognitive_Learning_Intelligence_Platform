@@ -4,14 +4,15 @@ import {
 } from 'react'
 
 import {
-  clearAccessToken,
   getAccessToken,
 } from '../../api'
 import { actionForClose } from '../materials/closeCodes'
+import { isRoomStatus, updateRooms, type RoomStatus } from './rooms'
 import {
   acknowledgeSessionAlert,
   getOpenSessionAlerts,
 } from './alertApi'
+import { renewAfterRefusal, signOutToLogin } from '../realtime/tokenRefusal'
 
 export type LiveConnectionStatus =
   | 'connecting'
@@ -105,6 +106,7 @@ interface UseLiveSessionResult {
   acknowledgeAlert: (
     alertId: string,
   ) => Promise<void>
+  rooms: RoomStatus[]
 }
 
 function liveSocketUrl(): string {
@@ -358,6 +360,8 @@ export function useLiveSession(
     null,
   )
 
+  const [rooms, setRooms] = useState<RoomStatus[]>([])
+
   useEffect(() => {
     if (!sessionId) {
       return
@@ -484,6 +488,8 @@ setAlerts((current) => {
     let retryCount = 0
     let lastSeq = 0
     let streamId: string | null = null
+    // One refresh per refusal; any message after it proves the new token.
+    let tokenRenewed = false
 
     function connect() {
       if (stopped) {
@@ -501,6 +507,10 @@ setAlerts((current) => {
 
       socket = currentSocket
 
+      currentSocket.addEventListener('message', () => {
+        tokenRenewed = false
+      })
+
       currentSocket.addEventListener(
         'open',
         () => {
@@ -510,7 +520,8 @@ setAlerts((current) => {
             last_seq?: number
             stream_id?: string
           } = {
-            token: accessToken,
+            // The latest, so a reconnect after a refresh sends the new token.
+            token: getAccessToken() ?? accessToken,
             session_id:
               activeSessionId,
           }
@@ -671,6 +682,12 @@ setAlerts((current) => {
             return
           }
 
+          if (message.type === 'room.status' && isRoomStatus(message.data)) {
+            const update = message.data
+            setRooms((current) => updateRooms(current, update))
+            return
+          }
+
           if (
             message.type === 'error' &&
             isLiveSessionNotice(
@@ -704,15 +721,30 @@ setAlerts((current) => {
             )
 
           if (
+            action === 'sign-in' &&
+            !tokenRenewed
+          ) {
+            // The token may have run out while the tab slept: refresh it once
+            // and reconnect before sending the lecturer to sign in.
+            tokenRenewed = true
+            renewAfterRefusal({
+              stopped: () => stopped,
+              reconnect: connect,
+              retryLater: () => {
+                tokenRenewed = false
+                setConnectionStatus('disconnected')
+                retryTimer = window.setTimeout(connect, Math.min(1000 * 2 ** retryCount++, 10_000))
+              },
+            })
+            return
+          }
+
+          if (
             action === 'sign-in'
           ) {
             stopped = true
 
-            clearAccessToken()
-
-            window.location.assign(
-              '/login',
-            )
+            signOutToLogin()
 
             return
           }
@@ -804,6 +836,7 @@ setAlerts((current) => {
     closedQuestion,
     alerts,
     sessionNotice,
+    rooms,
     acknowledgeAlert,
   }
 }

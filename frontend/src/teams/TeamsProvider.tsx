@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react'
 
+import { followStoredTheme, stopFollowingTheme } from '../components/shell/theme'
 import { createTeamsHost } from './teamsClient'
 import { applyTeamsTheme } from './teamsTheme'
 import type {
@@ -44,7 +45,9 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         if (!active) return
 
         if (!context) {
+          // Outside a meeting the person's own light or dark choice applies.
           applyTeamsTheme('default')
+          followStoredTheme()
           setState({
             status: 'standalone',
             host: host.kind,
@@ -54,6 +57,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           return
         }
 
+        stopFollowingTheme()
         applyTeamsTheme(context.theme)
         removeThemeHandler = host.onThemeChange((theme) => {
           applyTeamsTheme(theme)

@@ -3,6 +3,7 @@ import {
   apiAuthenticatedGet,
   apiAuthenticatedRequest,
   authenticatedFetch,
+  statusMessage,
 } from '../../api.ts'
 
 import type {
@@ -60,7 +61,7 @@ async function pdfError(
 ): Promise<ApiError> {
   let code = 'HTTP_ERROR'
   let message =
-    `HTTP ${response.status}`
+    statusMessage(response.status)
 
   try {
     const body =

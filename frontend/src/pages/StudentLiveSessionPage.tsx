@@ -1,15 +1,18 @@
 
 import {
   CheckCircle2,
-  ChevronLeft,
   Clock3,
   MessagesSquare,
   RefreshCw,
   Users,
-  Wifi,
-  WifiOff,
   XCircle,
 } from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
+
+import { buttonStyles } from '../components/ui/button'
+import SegmentedTabs from '../components/ui/SegmentedTabs'
+import { BackLink } from '../components/ui/primitives'
+import { useDocumentTitle } from '../components/ui/useDocumentTitle'
 import {
   useEffect,
   useState,
@@ -27,6 +30,8 @@ import type {
   LiveConnectionStatus,
 } from '../features/student/liveSessionTypes'
 import type { StudentSession } from '../features/student/types'
+import ParticipationGauge from '../features/student/ParticipationGauge'
+import RoomConfirm from '../features/student/RoomConfirm'
 import { useLiveSession } from '../features/student/useLiveSession'
 import { AttentionControls } from '../features/attention/AttentionControls'
 
@@ -42,7 +47,7 @@ export default function StudentLiveSessionPage() {
 
   if (!sessionId || !session) {
     return (
-      <main className="grid min-h-screen place-items-center bg-background p-6">
+      <div className="grid place-items-center bg-background p-6">
         <section className="w-full max-w-md rounded-xl border border-border bg-card p-6 text-center shadow-[var(--shadow-card)]">
           <h1 className="text-xl font-semibold">Session unavailable</h1>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -55,7 +60,7 @@ export default function StudentLiveSessionPage() {
             Return to sessions
           </Link>
         </section>
-      </main>
+      </div>
     )
   }
 
@@ -79,11 +84,18 @@ export function LiveSessionPanel({
     clearError,
     sendAttention,
     attentionConsentRejected,
+    confirmRoom,
   } = useLiveSession(session.id, session.status, session.paused ?? false)
 
   const now = useCurrentTime(
     Boolean(state.checkpoint || state.attentionPrompt),
   )
+
+  useDocumentTitle(compact ? undefined : session.title)
+
+  const finished =
+    state.sessionStatus === 'ended' ||
+    state.sessionStatus === 'cancelled'
 
   const secondsRemaining = state.checkpoint
     ? remainingResponseSeconds(
@@ -93,19 +105,13 @@ export function LiveSessionPanel({
     : 0
 
   return (
-    <main className={`min-h-screen bg-background px-4 py-5 ${compact ? '' : 'sm:px-6 sm:py-8'}`}>
+    <div className={`bg-background px-4 py-5 ${compact ? '' : 'sm:px-6 sm:py-8'}`}>
       <div className={`mx-auto ${compact ? 'max-w-xl' : 'max-w-4xl'}`}>
         <header className="rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)] sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               {!compact && (
-                <Link
-                  to="/student"
-                  className="inline-flex items-center gap-1 text-sm font-medium text-info hover:underline"
-                >
-                  <ChevronLeft aria-hidden="true" size={17} />
-                  All sessions
-                </Link>
+                <BackLink to="/student">My sessions</BackLink>
               )}
 
               <p className={`${compact ? '' : 'mt-4'} text-sm font-semibold text-info`}>
@@ -117,33 +123,31 @@ export function LiveSessionPanel({
               </h1>
             </div>
 
-            <ConnectionBadge status={state.connection} />
-            {state.sessionStatus === 'ended' && <Link className="text-info underline" to={`/student/reviews/${session.id}`}>Review this session</Link>}
           </div>
 
           <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 border-t border-border pt-4 text-sm text-muted-foreground">
-            <span className="inline-flex items-center gap-2">
-              <Users aria-hidden="true" size={17} />
-              {state.participantCount} connected
-            </span>
+            {!finished && (
+              <span className="inline-flex items-center gap-2">
+                <Users aria-hidden="true" size={17} />
+                {state.participantCount} connected
+              </span>
+            )}
 
             <span>
               Session:{' '}
               <strong className="font-medium text-foreground">
-                {state.paused ? 'paused' : state.sessionStatus}
+                {sessionStateLabel(state.sessionStatus, state.paused)}
               </strong>
             </span>
 
-            <span>
-              Checkpoints delivered:{' '}
-              <strong className="font-medium text-foreground">
-                {state.questionsDelivered}
-              </strong>
+            <span className="ml-auto">
+              <ParticipationGauge answered={state.answeredIds.length} delivered={state.questionsDelivered} />
             </span>
           </div>
+          {state.sessionStatus === 'active' && !compact && <RoomConfirm onConfirm={confirmRoom} />}
         </header>
 
-        <ConnectionNotice status={state.connection} />
+        {!finished && <ConnectionNotice status={state.connection} />}
 
         {LOCAL_ATTENTION_ENABLED && (
           <AttentionControls key={session.id} onSignal={sendAttention}
@@ -151,40 +155,29 @@ export function LiveSessionPanel({
             enabled={state.connection === 'connected' && state.sessionStatus === 'active' && !state.paused} />
         )}
 
-        {SOCRATIC_CHAT_ENABLED && (
-          <nav
-            aria-label="Student session tools"
-            className="mt-5 flex rounded-xl border border-border bg-card p-1"
-          >
-            <button
-              type="button"
-              aria-current={activeView === 'class' ? 'page' : undefined}
-              onClick={() => setActiveView('class')}
-              className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${
-                activeView === 'class'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-muted'
-              }`}
-            >
-              Live class
-            </button>
-            <button
-              type="button"
-              aria-current={activeView === 'chat' ? 'page' : undefined}
-              onClick={() => setActiveView('chat')}
-              className={`inline-flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
-                activeView === 'chat'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-muted'
-              }`}
-            >
-              <MessagesSquare aria-hidden="true" size={17} />
-              Learning assistant
-            </button>
-          </nav>
+        {SOCRATIC_CHAT_ENABLED && !finished && (
+          <SegmentedTabs
+            label="Student session tools"
+            value={activeView}
+            onChange={setActiveView}
+            stretch
+            className="mt-5 rounded-xl"
+            segments={[
+              { key: 'class', label: 'Live class' },
+              {
+                key: 'chat',
+                label: (
+                  <>
+                    <MessagesSquare aria-hidden="true" size={17} />
+                    Learning assistant
+                  </>
+                ),
+              },
+            ]}
+          />
         )}
 
-        {state.error && (
+        {state.error && !finished && state.connection !== 'forbidden' && (
           <div
             role="alert"
             className="mt-4 flex items-start justify-between gap-4 rounded-xl border border-critical/30 bg-card p-4 text-sm"
@@ -212,30 +205,42 @@ export function LiveSessionPanel({
         <section
           className="mt-5"
           aria-live="polite"
-          hidden={SOCRATIC_CHAT_ENABLED && activeView !== 'class' && !state.checkpoint}
+          hidden={SOCRATIC_CHAT_ENABLED && !finished && activeView !== 'class' && !state.checkpoint}
         >
-          {state.checkpoint ? (
-            <CheckpointCard
-              checkpoint={state.checkpoint}
-              secondsRemaining={secondsRemaining}
-              connected={state.connection === 'connected'}
-              onSelectOption={selectOption}
-              onSetFreeText={setFreeText}
-              onSubmit={submitAnswer}
-            />
-          ) : state.completedCheckpoint ? (
-            <CompletedCheckpointCard
-              checkpoint={state.completedCheckpoint}
-            />
-          ) : (
-            <WaitingCard
-              sessionStatus={state.sessionStatus}
-              paused={state.paused}
-            />
-          )}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={state.checkpoint ? `ask-${state.checkpoint.question.question_id}` : state.completedCheckpoint ? 'done' : 'wait'}
+              initial={{ opacity: 0, y: -14, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, transition: { duration: 0.15 } }}
+              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+            >
+              {state.checkpoint ? (
+                <CheckpointCard
+                  checkpoint={state.checkpoint}
+                  secondsRemaining={secondsRemaining}
+                  connected={state.connection === 'connected'}
+                  onSelectOption={selectOption}
+                  onSetFreeText={setFreeText}
+                  onSubmit={submitAnswer}
+                />
+              ) : state.completedCheckpoint ? (
+                <CompletedCheckpointCard
+                  checkpoint={state.completedCheckpoint}
+                />
+              ) : (
+                <WaitingCard
+                  sessionId={session.id}
+                  sessionStatus={state.sessionStatus}
+                  paused={state.paused}
+                  compact={compact}
+                />
+              )}
+            </motion.div>
+          </AnimatePresence>
         </section>
 
-        {SOCRATIC_CHAT_ENABLED && (
+        {SOCRATIC_CHAT_ENABLED && !finished && (
           <div className="mt-5" hidden={activeView !== 'chat'}>
             <SocraticChatPanel
               key={session.id}
@@ -254,7 +259,7 @@ export function LiveSessionPanel({
             aria-describedby="attention-prompt-message"
             className="fixed inset-x-4 bottom-4 z-20 mx-auto max-w-md rounded-xl border-2 border-warning bg-card p-5 shadow-2xl"
           >
-            <p className="text-xs font-semibold uppercase tracking-wide text-warning">
+            <p className="text-xs font-semibold text-warning">
               Private check-in
             </p>
 
@@ -295,7 +300,7 @@ export function LiveSessionPanel({
             </div>
           </aside>
         )}
-    </main>
+    </div>
   )
 }
 
@@ -357,10 +362,14 @@ function CheckpointCard({
   )
 
   return (
-    <article className="overflow-hidden rounded-xl border border-border bg-card shadow-[var(--shadow-card)]">
+    <article className="overflow-hidden rounded-lg border-2 border-primary/40 bg-card shadow-[var(--shadow-card-hover)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4 sm:px-7">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-info">
+          <p className="inline-flex items-center gap-2 text-sm font-semibold text-primary">
+            <span aria-hidden className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+            </span>
             Live checkpoint
           </p>
 
@@ -385,20 +394,22 @@ function CheckpointCard({
       </div>
 
       <div
-        className="h-1 bg-muted"
+        className="h-1.5 bg-muted"
         role="progressbar"
         aria-valuemin={0}
         aria-valuemax={question.window_seconds}
         aria-valuenow={secondsRemaining}
         aria-label="Response time remaining"
       >
-        <div
-          className={`h-full transition-[width] ${
-            secondsRemaining <= 5
-              ? 'bg-critical'
-              : 'bg-info'
+        {/* Glides between ticks rather than stepping; turns amber, then red,
+            as time runs out. */}
+        <motion.div
+          className={`h-full ${
+            secondsRemaining <= 5 ? 'bg-critical' : secondsRemaining <= 10 ? 'bg-warning' : 'bg-primary'
           }`}
-          style={{ width: `${progress}%` }}
+          initial={false}
+          animate={{ width: `${progress}%` }}
+          transition={{ duration: 0.9, ease: 'linear' }}
         />
       </div>
 
@@ -618,12 +629,29 @@ function CheckpointOutcome({
   )
 }
 
+function sessionStateLabel(
+  status: StudentSession['status'],
+  paused: boolean,
+): string {
+  if (status === 'active') return paused ? 'Paused' : 'Live'
+  const labels: Record<string, string> = {
+    prepared: 'Not started',
+    ended: 'Ended',
+    cancelled: 'Cancelled',
+  }
+  return labels[status] ?? status
+}
+
 function WaitingCard({
+  sessionId,
   sessionStatus,
   paused,
+  compact,
 }: {
+  sessionId: string
   sessionStatus: StudentSession['status']
   paused: boolean
+  compact: boolean
 }) {
   const ended =
     sessionStatus === 'ended' ||
@@ -655,41 +683,21 @@ function WaitingCard({
 
       <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted-foreground">
         {ended
-          ? 'Your responses have been saved. A review view will be available in the reporting phase.'
+          ? 'Your answers are saved. See how you did, and what to revisit before the next class.'
           : paused
             ? 'The lecturer has paused the session. Checkpoints will resume automatically when the session continues.'
             : 'Stay on this page. The lecturer’s next question will appear automatically.'}
       </p>
-    </div>
-  )
-}
 
-function ConnectionBadge({
-  status,
-}: {
-  status: LiveConnectionStatus
-}) {
-  const connected = status === 'connected'
-  const ended = status === 'ended'
-
-  return (
-    <span
-      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${
-        connected
-          ? 'bg-success/10 text-success'
-          : ended
-            ? 'bg-muted text-muted-foreground'
-            : 'bg-warning/10 text-warning'
-      }`}
-    >
-      {connected ? (
-        <Wifi aria-hidden="true" size={15} />
-      ) : (
-        <WifiOff aria-hidden="true" size={15} />
+      {ended && !compact && (
+        <Link
+          to={`/student/session/${sessionId}/summary`}
+          className={`${buttonStyles()} mt-5`}
+        >
+          See how you did
+        </Link>
       )}
-
-      {connectionLabel(status)}
-    </span>
+    </div>
   )
 }
 
@@ -748,21 +756,6 @@ function ConnectionNotice({
       )}
     </div>
   )
-}
-
-function connectionLabel(
-  status: LiveConnectionStatus,
-): string {
-  return {
-    connecting: 'Connecting',
-    connected: 'Live',
-    recovering: 'Recovering',
-    reconnecting: 'Reconnecting',
-    offline: 'Offline',
-    forbidden: 'Access denied',
-    ended: 'Ended',
-    disconnected: 'Disconnected',
-  }[status]
 }
 
 function useCurrentTime(enabled: boolean): number {

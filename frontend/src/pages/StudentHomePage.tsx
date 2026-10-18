@@ -1,239 +1,129 @@
-import SignOutButton from '../components/SignOutButton'
+import { Link } from 'react-router'
+
+import { buttonStyles } from '../components/ui/button'
+import { EmptyState, PageBody, PageHeader, Tag } from '../components/ui/primitives'
+import { ProblemState } from '../components/ui/ProblemState'
+import { problemArt } from '../components/ui/problem'
 import { useStudentApp } from '../features/student/StudentAppContext'
 import { LIVE_SESSIONS_ENABLED } from '../features/student/studentApi'
 import type { StudentSession } from '../features/student/types'
-import { Link } from 'react-router'
+import { formatWhen, groupSessions, statusLabel, statusTone } from '../features/sessions/format'
 
 export default function StudentHomePage() {
-  const {
-    authStatus,
-    currentUser,
-    sessions,
-    error,
-  } = useStudentApp()
+  const { authStatus, currentUser, sessions, error, cause } = useStudentApp()
 
   if (authStatus === 'checking') {
-    return (
-      <MessagePanel
-        title="Loading student workspace"
-        message="Checking your account and sessions..."
-      />
-    )
+    return <MessagePanel title="Loading your sessions" message="Checking your account and sessions…" />
   }
-
   if (authStatus === 'error') {
     return (
-      <MessagePanel
-        title="Could not load the student workspace"
-        message={error ?? 'An unexpected error occurred.'}
-        isError
-      />
+      <PageBody>
+        <ProblemState art={problemArt(cause)} title="Your sessions could not be loaded">
+          {error ?? 'An unexpected error occurred.'}
+        </ProblemState>
+      </PageBody>
     )
   }
-
-  if (
-    authStatus === 'unauthenticated' ||
-    !currentUser
-  ) {
-    return (
-      <MessagePanel
-        title="Sign-in required"
-        message="Please sign in before opening the student workspace."
-      />
-    )
+  if (authStatus === 'unauthenticated' || !currentUser) {
+    return <MessagePanel title="Sign in required" message="Sign in before opening your sessions." />
   }
-
   if (currentUser.role !== 'student') {
-    return (
-      <MessagePanel
-        title="Student access required"
-        message="This workspace is only available to student accounts."
-        isError
-      />
-    )
+    return <MessagePanel title="Student access required" message="This page is only for student accounts." isError />
   }
+
+  const groups = groupSessions(sessions.map((session) => ({ ...session, paused: session.paused ?? false })))
+  const firstName = currentUser.full_name.split(' ')[0]
 
   return (
-    <main className="min-h-screen bg-background px-6 py-10">
-      <section className="mx-auto max-w-4xl">
-        <header className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium text-info">
-              Student workspace
-            </p>
-
-            <h1 className="mt-2 text-3xl font-bold">
-              Welcome, {currentUser.full_name}
-            </h1>
-
-            <p className="mt-2 text-muted-foreground">
-              View your available learning sessions.
-            </p>
-          </div>
-
-          <div className="flex items-start gap-3">
-            <div className="rounded-xl border border-border bg-card px-4 py-3 text-sm">
-              <p className="font-medium">{currentUser.email}</p>
-
-              <p className="mt-1 text-muted-foreground">
-                Authenticated student
-              </p>
-            </div>
-
-            <SignOutButton />
-          </div>
-        </header>
-
-        <Link to="/student/reviews" className="mt-6 inline-flex rounded-lg border border-border px-4 py-2 font-medium text-info">Review past sessions</Link>
-
+    <>
+      <PageHeader
+        title={`Hello, ${firstName}`}
+        description="Join a class when it goes live, and look back at the ones you have finished."
+      />
+      <PageBody>
         {!LIVE_SESSIONS_ENABLED && (
-          <div
-            role="status"
-            className="mt-8 rounded-xl border border-info/20 bg-card p-4 text-sm"
-          >
-            <span className="font-semibold text-info">
-              Live sessions unavailable:
-            </span>{' '}
-            Session discovery will appear here after the Phase 3 backend integration is enabled.
-          </div>
+          <p role="status" className="mb-6 rounded-md border border-info/30 bg-info/5 px-4 py-3 text-sm">
+            Live sessions are switched off in this build, so none are listed.
+          </p>
         )}
 
-        <section
-          className="mt-8"
-          aria-labelledby="sessions-heading"
-        >
-          <h2
-            id="sessions-heading"
-            className="text-xl font-semibold"
-          >
-            Available sessions
-          </h2>
+        {sessions.length === 0 && (
+          <EmptyState art="lecture" title="No sessions yet">
+            Sessions for your courses appear here as soon as your lecturer prepares them.
+          </EmptyState>
+        )}
 
-          {sessions.length === 0 ? (
-            <div className="mt-4 rounded-xl border border-border bg-card p-6">
-              <p className="font-medium">
-                No sessions available
-              </p>
+        {groups.live.length > 0 && <Group heading="Live now" sessions={groups.live} />}
+        {groups.prepared.length > 0 && <Group heading="Coming up" sessions={groups.prepared} />}
+        {groups.finished.length > 0 && <Group heading="Finished" sessions={groups.finished} />}
 
-              <p className="mt-2 text-sm text-muted-foreground">
-                Sessions assigned to you will appear here.
-              </p>
-            </div>
-          ) : (
-            <ul className="mt-4 grid gap-4">
-              {sessions.map((session) => (
-                <li key={session.id}>
-                  <SessionCard
-                    session={session}
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </section>
-    </main>
+        {!LIVE_SESSIONS_ENABLED && (
+          <Link to="/student/reviews" className={buttonStyles({ intent: 'secondary' })}>
+            Go over past sessions
+          </Link>
+        )}
+      </PageBody>
+    </>
   )
 }
 
-function SessionCard({
-  session,
-}: {
-  session: StudentSession
-}) {
-  const joinable = session.status === 'prepared' || session.status === 'active'
-
+function Group({ heading, sessions }: { heading: string; sessions: (StudentSession & { paused: boolean })[] }) {
   return (
-    <article className="rounded-xl border border-border bg-card p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className="font-semibold text-info">
-          {session.course_code}
-        </span>
+    <section className="mb-10">
+      <h2 className="mb-3 text-lg font-bold">{heading}</h2>
+      <ul className="grid gap-3 sm:grid-cols-2">
+        {sessions.map((session) => (
+          <li key={session.id}>
+            <SessionCard session={session} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
 
-        <span className="rounded-full bg-secondary px-3 py-1 text-xs font-medium">
-          {session.status}
-        </span>
+function SessionCard({ session }: { session: StudentSession & { paused: boolean } }) {
+  const finished = session.status === 'ended'
+  const joinable = session.status === 'prepared' || session.status === 'active'
+  return (
+    <article className="flex h-full flex-col rounded-lg border border-border bg-card px-5 py-4">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-semibold text-muted-foreground">{session.course_code}</span>
+        <Tag tone={statusTone(session)}>{statusLabel(session)}</Tag>
       </div>
-
-      <h3 className="mt-3 text-lg font-semibold">
-        {session.title}
-      </h3>
-
-      <p className="mt-2 text-sm text-muted-foreground">
-        {formatStart(session.starts_at)}
-      </p>
-
-      {joinable ? (
-        <Link
-          to={`/student/session/${session.id}`}
-          className="mt-5 inline-flex rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-        >
-          {session.status === 'active' ? 'Join live session' : 'Open waiting room'}
-        </Link>
-      ) : session.status === 'ended' ? (
-        <Link to={`/student/reviews/${session.id}`} className="mt-5 inline-flex rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground">Review session</Link>
-      ) : (
-        <span className="mt-5 inline-flex rounded-lg bg-muted px-4 py-2 text-sm font-medium text-muted-foreground">
-          Session {session.status}
-        </span>
-      )}
+      <h3 className="mt-2 text-[1.05rem] font-bold">{session.title}</h3>
+      <p className="mt-0.5 text-sm text-muted-foreground">{formatWhen(session.ended_at ?? session.starts_at)}</p>
+      <div className="mt-auto pt-4">
+        {joinable && (
+          <Link
+            to={`/student/session/${session.id}`}
+            className={buttonStyles({ intent: session.status === 'active' ? 'primary' : 'secondary' })}
+          >
+            {session.status === 'active' ? 'Join the class' : 'Open the waiting room'}
+          </Link>
+        )}
+        {finished && (
+          <span className="flex flex-wrap gap-2">
+            <Link to={`/student/session/${session.id}/summary`} className={buttonStyles({ intent: 'secondary' })}>
+              See how you did
+            </Link>
+            <Link to={`/student/reviews/${session.id}`} className={buttonStyles({ intent: 'quiet' })}>
+              Your answers
+            </Link>
+          </span>
+        )}
+      </div>
     </article>
   )
 }
 
-function MessagePanel({
-  title,
-  message,
-  isError = false,
-}: {
-  title: string
-  message: string
-  isError?: boolean
-}) {
+function MessagePanel({ title, message, isError = false }: { title: string; message: string; isError?: boolean }) {
   return (
-    <main className="min-h-screen grid place-items-center p-8">
-      <div
-        role={isError ? 'alert' : 'status'}
-        className="w-full max-w-md rounded-xl border border-border bg-card p-6"
-      >
-        <h1
-          className={
-            isError
-              ? 'text-xl font-semibold text-critical'
-              : 'text-xl font-semibold'
-          }
-        >
-          {title}
-        </h1>
-
-        <p className="mt-2 text-sm text-muted-foreground">
-          {message}
-        </p>
+    <PageBody>
+      <div role={isError ? 'alert' : 'status'} className="max-w-md rounded-lg border border-border bg-card p-6">
+        <h1 className={isError ? 'text-xl font-bold text-critical' : 'text-xl font-bold'}>{title}</h1>
+        <p className="mt-2 text-muted-foreground">{message}</p>
       </div>
-    </main>
+    </PageBody>
   )
-}
-
-function formatStart(
-  value: string | null | undefined,
-): string {
-  if (!value) {
-    return 'Start time not scheduled'
-  }
-
-  const startTime = new Date(value)
-
-  if (Number.isNaN(startTime.getTime())) {
-    return 'Start time unavailable'
-  }
-
-  return new Intl.DateTimeFormat('en-AE', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone: 'Asia/Dubai',
-    timeZoneName: 'short',
-  }).format(startTime)
 }

@@ -101,6 +101,7 @@ def test_list_materials_returns_paginated_results(
                 "uploaded_at": materials[1].uploaded_at.isoformat().replace("+00:00", "Z"),
                 "warnings": [],
                 "pages": [],
+                "course_code": None,
             }
         ],
         "total": 2,

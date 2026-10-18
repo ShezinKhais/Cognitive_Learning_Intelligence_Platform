@@ -330,6 +330,15 @@
       },
       "ChatRequest": {
         "properties": {
+          "history": {
+            "description": "The exchanges before this one, oldest first, so a follow-up can refer to them. Screened again on the server; never cited.",
+            "items": {
+              "$ref": "#/components/schemas/ChatTurn"
+            },
+            "maxItems": 3,
+            "title": "History",
+            "type": "array"
+          },
           "question": {
             "maxLength": 2000,
             "minLength": 1,
@@ -349,6 +358,29 @@
           "question"
         ],
         "title": "ChatRequest",
+        "type": "object"
+      },
+      "ChatTurn": {
+        "description": "An earlier exchange the panel sends back with a follow-up. The server\nkeeps no conversation, so this is the client's word for it, and the guard\nscreens it again before the model sees it.",
+        "properties": {
+          "answer": {
+            "maxLength": 1500,
+            "minLength": 1,
+            "title": "Answer",
+            "type": "string"
+          },
+          "question": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "answer"
+        ],
+        "title": "ChatTurn",
         "type": "object"
       },
       "ComprehensionLabel": {
@@ -411,6 +443,270 @@
         ],
         "title": "ConsentType",
         "type": "string"
+      },
+      "ConsiderationAdminOut": {
+        "properties": {
+          "course_code": {
+            "title": "Course Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decision_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Note"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "needs": {
+            "items": {
+              "$ref": "#/components/schemas/ConsiderationNeed"
+            },
+            "title": "Needs",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "withdrawn"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "student_email": {
+            "title": "Student Email",
+            "type": "string"
+          },
+          "student_name": {
+            "title": "Student Name",
+            "type": "string"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          }
+        },
+        "required": [
+          "id",
+          "needs",
+          "until",
+          "note",
+          "status",
+          "created_at",
+          "reviewed_at",
+          "decision_note",
+          "student_name",
+          "student_email",
+          "course_code"
+        ],
+        "title": "ConsiderationAdminOut",
+        "type": "object"
+      },
+      "ConsiderationCreate": {
+        "properties": {
+          "needs": {
+            "items": {
+              "$ref": "#/components/schemas/ConsiderationNeed"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Needs",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last day it applies; null for the term.",
+            "title": "Until"
+          }
+        },
+        "required": [
+          "needs"
+        ],
+        "title": "ConsiderationCreate",
+        "type": "object"
+      },
+      "ConsiderationDecision": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "ConsiderationDecision",
+        "type": "object"
+      },
+      "ConsiderationNeed": {
+        "enum": [
+          "camera",
+          "gaze",
+          "pace",
+          "prompts"
+        ],
+        "title": "ConsiderationNeed",
+        "type": "string"
+      },
+      "ConsiderationOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decision_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Note"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "needs": {
+            "items": {
+              "$ref": "#/components/schemas/ConsiderationNeed"
+            },
+            "title": "Needs",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "withdrawn"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          }
+        },
+        "required": [
+          "id",
+          "needs",
+          "until",
+          "note",
+          "status",
+          "created_at",
+          "reviewed_at",
+          "decision_note"
+        ],
+        "title": "ConsiderationOut",
+        "type": "object"
       },
       "DeletionRequestCreate": {
         "properties": {
@@ -872,6 +1168,7 @@
             "type": "string"
           },
           "password": {
+            "maxLength": 1024,
             "title": "Password",
             "type": "string"
           }
@@ -899,6 +1196,18 @@
           "content_type": {
             "title": "Content Type",
             "type": "string"
+          },
+          "course_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The course the material is filed under, if any.",
+            "title": "Course Code"
           },
           "error": {
             "anyOf": [
@@ -1033,12 +1342,45 @@
         "title": "MaterialStatus",
         "type": "string"
       },
+      "MaterialUpdateRequest": {
+        "description": "Fields to change. Omit one to leave it; send course_code as null to\nfile the material under no course.",
+        "properties": {
+          "course_code": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Code"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          }
+        },
+        "title": "MaterialUpdateRequest",
+        "type": "object"
+      },
       "MeetingEventIn": {
         "description": "A meeting started or ended. Teams can deliver an event more than once,\nso one that finds the session already in that state changes nothing.",
         "properties": {
           "course_code": {
             "anyOf": [
               {
+                "maxLength": 20,
                 "type": "string"
               },
               {
@@ -1060,6 +1402,7 @@
           "title": {
             "anyOf": [
               {
+                "maxLength": 200,
                 "type": "string"
               },
               {
@@ -1097,6 +1440,26 @@
           "session_id"
         ],
         "title": "MeetingLinkRequest",
+        "type": "object"
+      },
+      "MyConsiderationOut": {
+        "description": "The student's most recent request, if any.",
+        "properties": {
+          "current": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConsiderationOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "current"
+        ],
+        "title": "MyConsiderationOut",
         "type": "object"
       },
       "MyDeletionRequestCreate": {
@@ -1207,6 +1570,37 @@
           "offset"
         ],
         "title": "Page[AuditEntryOut]",
+        "type": "object"
+      },
+      "Page_ConsiderationAdminOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ConsiderationAdminOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[ConsiderationAdminOut]",
         "type": "object"
       },
       "Page_DeletionRequestOut_": {
@@ -1578,6 +1972,8 @@
           "correct_option": {
             "anyOf": [
               {
+                "exclusiveMaximum": 8.0,
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -1600,8 +1996,10 @@
             "anyOf": [
               {
                 "items": {
+                  "maxLength": 500,
                   "type": "string"
                 },
+                "maxItems": 8,
                 "type": "array"
               },
               {
@@ -1613,6 +2011,7 @@
           "prompt": {
             "anyOf": [
               {
+                "maxLength": 2000,
                 "type": "string"
               },
               {
@@ -2208,6 +2607,7 @@
       "SessionCreateRequest": {
         "properties": {
           "course_code": {
+            "maxLength": 20,
             "title": "Course Code",
             "type": "string"
           },
@@ -2224,6 +2624,7 @@
             "title": "Starts At"
           },
           "title": {
+            "maxLength": 200,
             "title": "Title",
             "type": "string"
           }
@@ -2973,6 +3374,186 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/admin/consideration-requests": {
+      "get": {
+        "description": "Requests to decide, oldest first; `show=all` adds the decided ones after them.",
+        "operationId": "list_requests_api_v1_admin_consideration_requests_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "show",
+            "required": false,
+            "schema": {
+              "default": "pending",
+              "enum": [
+                "pending",
+                "all"
+              ],
+              "title": "Show",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ConsiderationAdminOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Requests",
+        "tags": [
+          "consideration"
+        ]
+      }
+    },
+    "/api/v1/admin/consideration-requests/{request_id}/approve": {
+      "post": {
+        "description": "Approve a waiting request. The live class honours it at once.",
+        "operationId": "approve_request_api_v1_admin_consideration_requests__request_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsiderationDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsiderationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Request",
+        "tags": [
+          "consideration"
+        ]
+      }
+    },
+    "/api/v1/admin/consideration-requests/{request_id}/reject": {
+      "post": {
+        "description": "Refuse a waiting request. Nothing about the student changes.",
+        "operationId": "reject_request_api_v1_admin_consideration_requests__request_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsiderationDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsiderationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Request",
+        "tags": [
+          "consideration"
+        ]
+      }
+    },
     "/api/v1/admin/roster": {
       "post": {
         "description": "CSV or XLSX only, same reasoning as /timetable: no OCR path.",
@@ -3101,7 +3682,7 @@
     },
     "/api/v1/auth/login": {
       "post": {
-        "description": "Authenticate a user and return a bearer token.\n\nDevelopment uses the fixed Cyber 1 development identities.\nProduction resolves users through Nour's persisted User table.",
+        "description": "Authenticate a user, return a bearer token and set the refresh cookie.\n\nAn address with too many recent failures is refused with 429 before the\npassword is checked. Every failure, whatever the reason, counts against\nthe address.",
         "operationId": "login_api_v1_auth_login_post",
         "requestBody": {
           "content": {
@@ -3133,9 +3714,27 @@
               }
             },
             "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many failed sign-ins from this address recently."
           }
         },
         "summary": "Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "description": "Drop the refresh cookie, so the sign-in cannot be renewed.\n\nAn access token already issued still works until its expiry, as before:\ntokens are not revoked.",
+        "operationId": "logout_api_v1_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Logout",
         "tags": [
           "auth"
         ]
@@ -3165,7 +3764,7 @@
     },
     "/api/v1/auth/refresh": {
       "post": {
-        "description": "Swap a still-valid access token for a fresh one.\n\nThe client calls this shortly before its token expires, so a class longer\nthan the token's lifetime is not interrupted by a sign-in. The account is\nchecked again, and the sign-in itself still ends max_sign_in_hours after\nthe password was typed. An expired token cannot be refreshed: the user\nsigns in again.",
+        "description": "A fresh access token for the holder of the refresh cookie.\n\nThe client calls this shortly before its token expires, so a class longer\nthan the token's lifetime is not interrupted by a sign-in, and on load,\nsince it keeps the access token in memory only. The account is checked\nagain, and the sign-in itself still ends max_sign_in_hours after the\npassword was typed. An access token cannot be refreshed: one taken from\nthe page ends at its own expiry.",
         "operationId": "refresh_api_v1_auth_refresh_post",
         "responses": {
           "200": {
@@ -3310,6 +3909,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -3388,6 +3988,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -3787,6 +4388,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -3862,6 +4464,41 @@
       }
     },
     "/api/v1/materials/{material_id}": {
+      "delete": {
+        "description": "Delete a material with its questions and what was read from it.\nRefused (409) while it is still processing, or once any of its questions\nhas been delivered in a class, whose history it is.",
+        "operationId": "remove_material_api_v1_materials__material_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "material_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Material Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Material",
+        "tags": [
+          "content"
+        ]
+      },
       "get": {
         "operationId": "get_material_api_v1_materials__material_id__get",
         "parameters": [
@@ -3902,6 +4539,58 @@
         "tags": [
           "content"
         ]
+      },
+      "patch": {
+        "description": "Rename a material, or file it under a course: its questions are then\noffered only to that course's sessions. Send course_code as null to file\nit under none.",
+        "operationId": "edit_material_api_v1_materials__material_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "material_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Material Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaterialUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaterialOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Edit Material",
+        "tags": [
+          "content"
+        ]
       }
     },
     "/api/v1/materials/{material_id}/questions": {
@@ -3937,6 +4626,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -4140,6 +4830,90 @@
         "summary": "Bulk Review Questions",
         "tags": [
           "content"
+        ]
+      }
+    },
+    "/api/v1/me/consideration": {
+      "get": {
+        "description": "The student's most recent request and where it stands.",
+        "operationId": "my_request_api_v1_me_consideration_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyConsiderationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "My Request",
+        "tags": [
+          "consideration"
+        ]
+      },
+      "post": {
+        "description": "Ask for special consideration. One request may wait at a time (409).",
+        "operationId": "submit_request_api_v1_me_consideration_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsiderationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsiderationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Request",
+        "tags": [
+          "consideration"
+        ]
+      }
+    },
+    "/api/v1/me/consideration/withdraw": {
+      "post": {
+        "description": "Take back a request that is still waiting.",
+        "operationId": "withdraw_request_api_v1_me_consideration_withdraw_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsiderationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Withdraw Request",
+        "tags": [
+          "consideration"
         ]
       }
     },
@@ -4498,6 +5272,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -4967,6 +5742,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -5180,6 +5956,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -5426,6 +6203,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -5492,6 +6270,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"

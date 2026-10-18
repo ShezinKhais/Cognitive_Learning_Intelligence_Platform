@@ -51,7 +51,7 @@ export default function ExplainabilityPanel({
   return (
     <section className="rounded-xl border border-border bg-card p-6">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <p className="text-xs font-semibold text-muted-foreground">
           AI intelligence
         </p>
 

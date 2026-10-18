@@ -35,6 +35,9 @@ NOT_AUDITED = {
     # refresh and refusal is in the security log, and an audit row an hour
     # per signed-in user would bury the changes the log is for.
     ("POST", "/api/v1/auth/refresh"),
+    # Drops the caller's own refresh cookie and changes nothing that is kept.
+    # It is in the security log.
+    ("POST", "/api/v1/auth/logout"),
     # Authenticated by Bot Framework, not a user; acts through the meeting
     # routes' service, and each activity is logged.
     ("POST", "/api/v1/teams/messages"),

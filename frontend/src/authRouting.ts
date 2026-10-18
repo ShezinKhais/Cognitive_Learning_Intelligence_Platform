@@ -5,7 +5,7 @@ import type { CurrentUser, Role } from './api'
 // lecturer following a review link from before sign-in arrives back on it.
 const ROLE_PAGES: Record<Role, { home: string; returnable: readonly string[] }> = {
   student: { home: '/student', returnable: ['/student', '/teams/'] },
-  lecturer: { home: '/lecturer/materials', returnable: ['/lecturer', '/materials/'] },
+  lecturer: { home: '/lecturer/sessions', returnable: ['/lecturer', '/materials/'] },
   admin: { home: '/admin', returnable: ['/admin'] },
 }
 

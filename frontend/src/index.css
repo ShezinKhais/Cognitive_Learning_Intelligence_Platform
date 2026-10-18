@@ -8,82 +8,106 @@
 
 :root {
   --font-size: 16px;
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  /* Atkinson Hyperlegible: drawn for low-vision readers by the Braille
+     Institute. Legibility is the brief: a student glancing at a checkpoint,
+     a lecturer reading an alert mid-sentence. Bundled, so it loads inside
+     Teams and under the deployment's content security policy. */
+  --font-sans: 'Atkinson Hyperlegible Next Variable', 'Segoe UI', system-ui, sans-serif;
 
-  /* Background & surface */
-  --background: #f4f5fb;
-  --foreground: #0f0f1a;
+  /* Slate paper and ink. */
+  --background: #f5f5f9;
+  --foreground: #1b1c2b;
   --card: #ffffff;
-  --card-foreground: #0f0f1a;
+  --card-foreground: #1b1c2b;
   --popover: #ffffff;
-  --popover-foreground: #0f0f1a;
+  --popover-foreground: #1b1c2b;
 
-  /* Brand */
-  --primary: #1a1a2e;
+  /* Teams indigo carries actions and where you are, so C.L.I.P sits
+     naturally inside a Teams meeting. */
+  --primary: #5b5fc7;
   --primary-foreground: #ffffff;
-  --secondary: #ededf7;
-  --secondary-foreground: #1a1a2e;
+  --secondary: #ebebf6;
+  --secondary-foreground: #1b1c2b;
 
-  /* Neutral */
-  --muted: #ededf7;
-  --muted-foreground: #6b6b85;
-  --accent: #e8eaf6;
-  --accent-foreground: #1a1a2e;
+  --muted: #eff0f5;
+  /* Illustrations: the frames of drawn screens, and drawn hair and lines. */
+  --illo-frame: #dfe0ea;
+  --illo-mid: #b9bacb;
+  --illo-ink: #2f2e41;
+  --muted-foreground: #565b6e;
+  --accent: #e8e8f7;
+  --accent-foreground: #3d3e8f;
 
-  /* Engagement and comprehension states. Pair with a text label; colour alone
-     fails the accessibility requirement. */
-  --destructive: #dc2626;
+  /* The highlighter: only for what is live or new. */
+  --highlight: #ffe066;
+  --highlight-foreground: #3d3200;
+
+  /* Comprehension and engagement states. Always beside a text label; colour
+     alone fails the accessibility requirement. */
+  --destructive: #b3261e;
   --destructive-foreground: #ffffff;
-  --success: #059669;          /* Mastered / Engaged */
+  --success: #1e7a4c;          /* Mastered / Engaged */
   --success-foreground: #ffffff;
-  --warning: #d97706;          /* Partial / At risk */
+  --warning: #a15c00;          /* Partial / At risk */
   --warning-foreground: #ffffff;
-  --info: #2563eb;
+  --info: #2b6cb0;
   --info-foreground: #ffffff;
-  --critical: #dc2626;         /* Struggling / Disengaged */
+  --critical: #b3261e;         /* Struggling / Disengaged */
   --critical-foreground: #ffffff;
 
-  /* Structure */
-  --border: rgba(99, 102, 241, 0.1);
-  --input: transparent;
-  --input-background: #f0f1f9;
-  --switch-background: #c4c7d8;
-  --ring: #6366f1;
+  /* Structure: rules, not shadows. */
+  --border: #dcdde8;
+  --input: #c6c8d8;
+  --input-background: #ffffff;
+  --switch-background: #b6c0ca;
+  --ring: #5b5fc7;
 
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
+  /* Two series on one chart, checked for colour-blind separation. */
+  --series-1: #2f6fc4;
+  --series-2: #c2417f;
+  --chart-1: #5b5fc7;
+  --chart-2: #1e7a4c;
+  --chart-3: #a15c00;
+  --chart-4: #6b4c9a;
+  --chart-5: #b3261e;
 
-  --radius: 0.75rem;
+  --radius: 0.5rem;
 
-  --shadow-card: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(99,102,241,0.06);
-  --shadow-card-hover: 0 4px 12px rgba(0,0,0,0.06), 0 8px 32px rgba(99,102,241,0.1);
+  --shadow-card: 0 1px 0 rgba(27, 28, 43, 0.04);
+  --shadow-card-hover: 0 1px 0 rgba(27, 28, 43, 0.05), 0 8px 24px rgba(91, 95, 199, 0.12);
 }
 
 .dark {
-  --background: #0d0d1a;
-  --foreground: #f0f0ff;
-  --card: #13132a;
-  --card-foreground: #f0f0ff;
-  --popover: #13132a;
-  --popover-foreground: #f0f0ff;
-  --primary: #f0f0ff;
-  --primary-foreground: #0d0d1a;
-  --secondary: #1e1e3a;
-  --secondary-foreground: #f0f0ff;
-  --muted: #1e1e3a;
-  --muted-foreground: #8080aa;
-  --accent: #1e1e3a;
-  --accent-foreground: #f0f0ff;
-  --destructive: #ef4444;
-  --success: #34d399;
-  --warning: #fbbf24;
-  --critical: #ef4444;
-  --border: rgba(255,255,255,0.07);
-  --input: rgba(255,255,255,0.07);
-  --ring: #818cf8;
+  --background: #121320;
+  --foreground: #e6ebf0;
+  --card: #1b1c2b;
+  --card-foreground: #e6ebf0;
+  --popover: #1b1c2b;
+  --popover-foreground: #e6ebf0;
+  --primary: #9ea2ff;
+  --primary-foreground: #1a1b3d;
+  --secondary: #252638;
+  --secondary-foreground: #e6ebf0;
+  --muted: #23243a;
+  --illo-frame: #33354f;
+  --illo-mid: #474a69;
+  --illo-ink: #5a5c7d;
+  --muted-foreground: #a3a6bd;
+  --accent: #2a2b4f;
+  --accent-foreground: #d9daff;
+  --highlight: #e9c949;
+  --series-1: #3d86dc;
+  --series-2: #d0629a;
+  --highlight-foreground: #2b2300;
+  --destructive: #f2867e;
+  --success: #6fcf9b;
+  --warning: #f0b45c;
+  --info: #9ec3f0;
+  --critical: #f2867e;
+  --border: #303248;
+  --input: #40435e;
+  --input-background: #15162a;
+  --ring: #9ea2ff;
 }
 
 /* Teams high-contrast theme. */
@@ -99,9 +123,14 @@
   --secondary: #000000;
   --secondary-foreground: #ffffff;
   --muted: #000000;
+  --illo-frame: #ffffff;
+  --illo-mid: #ffffff;
+  --illo-ink: #ffffff;
   --muted-foreground: #ffffff;
   --accent: #1aebff;
   --accent-foreground: #000000;
+  --highlight: #ffff00;
+  --highlight-foreground: #000000;
   --destructive: #ff0000;
   --success: #00ff00;
   --warning: #ffff00;
@@ -134,6 +163,10 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-highlight: var(--highlight);
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
+  --color-highlight-foreground: var(--highlight-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
@@ -174,13 +207,92 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.55;
     margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  h1, h2, h3 {
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* Headings and regions focused by the app after a page change are a
+     reading position, not a control: no ring. */
+  h1[tabindex="-1"]:focus, main[tabindex="-1"]:focus, [role="dialog"][tabindex="-1"]:focus {
+    outline: none;
+  }
+
+  /* The parts the browser draws, in the palette rather than its defaults. */
+  ::selection {
+    background: var(--highlight);
+    color: var(--highlight-foreground);
+  }
+
+  input, textarea, select {
+    caret-color: var(--primary);
+  }
+
+  input[type="checkbox"], input[type="radio"], input[type="range"], progress {
+    accent-color: var(--primary);
+  }
+
+  * {
+    scrollbar-color: var(--input) transparent;
+    scrollbar-width: thin;
+  }
+
+  a {
+    text-underline-offset: 0.18em;
+  }
+
+  /* Phones and tablets: every control at least 44px to hit with a thumb. */
+  @media (pointer: coarse) {
+    button, [role="button"], [role="radio"], [role="tab"], [role="menuitem"], a[href], select, input:not([type="checkbox"]):not([type="radio"]) {
+      min-height: 44px;
+    }
   }
 }
 
 @layer utilities {
   .animate-in-up { animation: fadeInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
   .animate-in-fade { animation: fadeIn 0.25s ease both; }
+}
+
+/* Text links: the underline draws in from the left on hover or focus and
+   leaves to the right, so it reads as a pen stroke rather than a flicker.
+   Reduced motion shows it at once. */
+.link-sweep {
+  background: linear-gradient(currentColor, currentColor) no-repeat right bottom / 0% 1.5px;
+  padding-bottom: 1px;
+  transition: background-size 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.link-sweep:hover, .link-sweep:focus-visible {
+  background-position: left bottom;
+  background-size: 100% 1.5px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .link-sweep { transition: none; }
+}
+
+/* Loading placeholders: a slow sheen across the shape. Still, not hidden, when
+   motion is reduced. */
+.skeleton {
+  background: linear-gradient(90deg, var(--muted) 0%, var(--secondary) 45%, var(--muted) 90%) 0 0 / 220% 100%;
+  animation: sheen 1.6s ease-in-out infinite;
+}
+@keyframes sheen {
+  from { background-position: 100% 0; }
+  to   { background-position: -100% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
 }
 
 @keyframes fadeInUp {
@@ -192,10 +304,14 @@
   to   { opacity: 1; }
 }
 
+/* Reduced motion keeps fades and colour changes, which carry state, and
+   drops travel: nothing slides, scales, pulses or loops. JS animations follow
+   the same rule through MotionConfig in main.tsx. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
-    animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
+  .animate-in-up { animation-name: fadeIn; }
+  .animate-ping, .animate-pulse, .animate-spin { animation: none !important; }
 }

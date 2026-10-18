@@ -3,8 +3,12 @@ import test from 'node:test'
 
 import {
   chatReducer,
+  historyFor,
   initialChatState,
+  MAX_HISTORY,
+  splitCitations,
 } from '../src/features/chat/chatState.ts'
+import type { ChatExchange } from '../src/features/chat/chatTypes.ts'
 import {
   parseChatStreamEvent,
   parseNdjsonLine,
@@ -135,4 +139,41 @@ test('validates newline-delimited stream events at the client boundary', () => {
     parseChatStreamEvent({ type: 'unsupported', request_id: 'r1', reason: '' }),
     null,
   )
+})
+
+function asked(id: string, phase: ChatExchange['phase'], answer = `Answer ${id}. [1]`): ChatExchange {
+  return { id, question: `Question ${id}?`, answer, phase, citations: [], followUps: [], explanation: null }
+}
+
+test('a follow-up carries only the last few answers that completed', () => {
+  const exchanges = [
+    asked('a', 'completed'),
+    asked('b', 'unsupported'),
+    asked('c', 'cancelled'),
+    asked('d', 'completed'),
+    asked('e', 'completed'),
+    asked('f', 'completed'),
+    asked('g', 'completed', '   '),
+  ]
+  const history = historyFor(exchanges)
+  assert.equal(history.length, MAX_HISTORY)
+  assert.deepEqual(history.map((turn) => turn.question), ['Question d?', 'Question e?', 'Question f?'])
+  assert.deepEqual(historyFor([]), [])
+})
+
+test('an answer is split into text and the sources it cites', () => {
+  assert.deepEqual(splitCitations('Layers stay fixed [1] and [12].'), ['Layers stay fixed ', 1, ' and ', 12, '.'])
+  assert.deepEqual(splitCitations('[2] First.'), [2, ' First.'])
+  assert.deepEqual(splitCitations('No sources here'), ['No sources here'])
+  assert.deepEqual(splitCitations('Not a citation [abc] or [123]'), ['Not a citation [abc] or [123]'])
+})
+
+test('a citation keeps its number, and one without stays valid', () => {
+  const base = { id: 'c1', material_title: 'Lab 3', source_page: 2, source_slide: null, excerpt: null }
+  const numbered = parseChatStreamEvent({ type: 'citation', request_id: 'r', citation: { ...base, number: 2 } })
+  assert.equal(numbered?.type === 'citation' && numbered.citation.number, 2)
+  const plain = parseChatStreamEvent({ type: 'citation', request_id: 'r', citation: base })
+  assert.ok(plain?.type === 'citation' && plain.citation.number === undefined)
+  const bad = parseChatStreamEvent({ type: 'citation', request_id: 'r', citation: { ...base, number: -1 } })
+  assert.ok(bad?.type === 'citation' && bad.citation.number === undefined)
 })

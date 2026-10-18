@@ -269,7 +269,7 @@ def test_no_module_that_handles_attention_logs_a_reading() -> None:
 def test_the_accessibility_need_is_read_in_one_place_only() -> None:
     root = Path(inspect.getfile(ws_module)).parents[2]
     users = sorted(
-        str(p.relative_to(root))
+        p.relative_to(root).as_posix()
         for p in root.rglob("*.py")
         if "accessibility_need" in p.read_text(encoding="utf-8")
     )

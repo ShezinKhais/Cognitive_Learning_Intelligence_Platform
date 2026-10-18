@@ -25,6 +25,8 @@ interface StudentAppState {
   sessions: StudentSession[]
   selectedSessionId: string | null
   error: string | null
+  /** What failed, so the page can show why (offline, server down). */
+  cause: unknown
 }
 
 type StudentAppAction =
@@ -36,6 +38,7 @@ type StudentAppAction =
   | {
       type: 'failed'
       message: string
+      cause: unknown
     }
   | {
       type: 'session-selected'
@@ -52,6 +55,7 @@ const initialState: StudentAppState = {
   sessions: [],
   selectedSessionId: null,
   error: null,
+  cause: null,
 }
 
 const StudentAppContext =
@@ -72,6 +76,7 @@ function reducer(
         sessions: action.sessions,
         selectedSessionId: null,
         error: null,
+        cause: null,
       }
 
     case 'failed':
@@ -82,6 +87,7 @@ function reducer(
         sessions: [],
         selectedSessionId: null,
         error: action.message,
+        cause: action.cause,
       }
 
     case 'session-selected':
@@ -162,6 +168,7 @@ export function StudentAppProvider({
               caught instanceof Error
                 ? caught.message
                 : 'Could not load the student workspace.',
+            cause: caught,
           })
         }
       }

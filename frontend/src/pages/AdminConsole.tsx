@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
-import { Link } from 'react-router'
-import { apiUploadFile, ApiError, clearAccessToken, type TimetableImportResult } from '../api'
-import SignOutButton from '../components/SignOutButton'
+import { apiUploadFile, ApiError, type TimetableImportResult } from '../api'
+import { signOutToLogin } from '../features/realtime/tokenRefusal'
+import { PageBody, PageHeader } from '../components/ui/primitives'
 
 type UploadKind = 'timetable' | 'roster'
 
@@ -29,35 +29,18 @@ const KIND_CONFIG: Record<UploadKind, { title: string; path: string; hint: strin
 
 export default function AdminConsole() {
   return (
-    <main className="min-h-screen p-8">
-      <div className="mx-auto max-w-3xl">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-bold text-foreground">Administrator console</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Import timetables and student rosters. Only .csv and .xlsx are accepted; every row is
-              read as structured data, never guessed at from an image.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <Link
-              to="/admin/governance"
-              className="rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted"
-            >
-              Governance
-            </Link>
-
-            <SignOutButton />
-          </div>
-        </div>
-
-        <div className="mt-8 space-y-6">
+    <>
+      <PageHeader
+        title="Imports"
+        description="Bring in the term's timetable and each course's students from a spreadsheet. Every row is read as data and checked; nothing is guessed."
+      />
+      <PageBody>
+        <div className="grid max-w-3xl gap-6">
           <UploadPanel kind="timetable" />
           <UploadPanel kind="roster" />
         </div>
-      </div>
-    </main>
+      </PageBody>
+    </>
   )
 }
 
@@ -73,8 +56,7 @@ function UploadPanel({ kind }: { kind: UploadKind }) {
       setState({ status: 'success', result, error: null, filename: file.name })
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
-        clearAccessToken()
-        window.location.assign('/login')
+        await signOutToLogin()
         return
       }
       const message = err instanceof ApiError ? err.message : 'Upload failed. Try again.'

@@ -25,6 +25,10 @@ PASSWORD_ITERATIONS = 600_000
 # Phase 1 uses one fixed JWT algorithm in every environment.
 JWT_ALGORITHM = "HS256"
 
+# Marks a refresh token. An access token carries no "typ", so tokens issued
+# before refresh tokens existed still decode as access tokens.
+REFRESH_TOKEN_TYPE = "refresh"
+
 # Used when an email does not exist so login still performs an expensive
 # password verification and does not reveal registered emails through timing.
 DUMMY_PASSWORD_HASH = (
@@ -154,6 +158,11 @@ def decode_access_token(token: str, settings: Settings) -> TokenClaims:
         if not email:
             raise ValueError("empty email")
 
+        # A refresh token is signed with the same key and must never be
+        # accepted where an access token is expected.
+        if payload.get("typ") is not None:
+            raise ValueError("not an access token")
+
     except (jwt.PyJWTError, KeyError, TypeError, ValueError) as exc:
         raise TokenValidationError("invalid or expired access token") from exc
 
@@ -163,6 +172,63 @@ def decode_access_token(token: str, settings: Settings) -> TokenClaims:
         email=email,
         auth_time=auth_time,
     )
+
+
+def create_refresh_token(
+    *,
+    user_id: UUID,
+    role: Role,
+    email: str,
+    settings: Settings,
+    auth_time: datetime,
+) -> tuple[str, int]:
+    """Create the token kept in the httpOnly refresh cookie.
+
+    It lasts as long as the sign-in may, max_sign_in_hours from auth_time,
+    and only ever buys access tokens: decode_access_token refuses it.
+    """
+    now = datetime.now(UTC)
+    expires_at = auth_time + timedelta(hours=settings.max_sign_in_hours)
+
+    payload = {
+        "typ": REFRESH_TOKEN_TYPE,
+        "sub": str(user_id),
+        "role": role.value,
+        "email": email,
+        "iat": now,
+        "exp": expires_at,
+        "auth_time": int(auth_time.timestamp()),
+    }
+
+    token = jwt.encode(payload, settings.clip_secret_key, algorithm=JWT_ALGORITHM)
+    return token, max(0, int((expires_at - now).total_seconds()))
+
+
+def decode_refresh_token(token: str, settings: Settings) -> TokenClaims:
+    """Validate a refresh token: signature, expiry, type and identity claims."""
+    try:
+        payload = jwt.decode(
+            token,
+            settings.clip_secret_key,
+            algorithms=[JWT_ALGORITHM],
+            options={"require": ["typ", "sub", "role", "email", "iat", "exp", "auth_time"]},
+        )
+
+        if payload["typ"] != REFRESH_TOKEN_TYPE:
+            raise ValueError("not a refresh token")
+
+        user_id = UUID(str(payload["sub"]))
+        role = Role(str(payload["role"]))
+        email = str(payload["email"]).strip().lower()
+        auth_time = datetime.fromtimestamp(int(payload["auth_time"]), UTC)
+
+        if not email:
+            raise ValueError("empty email")
+
+    except (jwt.PyJWTError, KeyError, TypeError, ValueError) as exc:
+        raise TokenValidationError("invalid or expired refresh token") from exc
+
+    return TokenClaims(user_id=user_id, role=role, email=email, auth_time=auth_time)
 
 
 def extract_bearer_token(authorization: str | None) -> str:

@@ -49,7 +49,8 @@ class Pagination:
         ] = 50,
         offset: Annotated[
             int,
-            Query(ge=0),
+            # Past this a page is a scan of rows nobody will read.
+            Query(ge=0, le=100_000),
         ] = 0,
     ) -> None:
         self.limit = limit

@@ -209,6 +209,10 @@ def create_app() -> FastAPI:
         response = await call_next(request)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
+        # nginx adds the page's own policy in a deployment (frontend/nginx.conf).
+        # An API answer is data, never a page, so nothing in it may load or run.
+        if not request.url.path.startswith(("/docs", "/redoc")):
+            response.headers.setdefault("Content-Security-Policy", "default-src 'none'")
         if request.url.path.startswith(API_V1):
             response.headers.setdefault("Cache-Control", "no-store")
         return response

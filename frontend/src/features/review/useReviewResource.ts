@@ -10,6 +10,7 @@ export function useReviewResource<T>(path: string) {
     attempt: number
     data?: T
     error?: string
+    status?: number
   }>({ key: '', attempt: -1 })
   useEffect(() => {
     const controller = new AbortController()
@@ -25,6 +26,7 @@ export function useReviewResource<T>(path: string) {
           setState({
             key: path,
             attempt,
+            status: error instanceof ApiError ? error.status : undefined,
             error: reviewError(
               error instanceof ApiError ? error.status : undefined,
             ),
@@ -37,6 +39,7 @@ export function useReviewResource<T>(path: string) {
   return {
     data: current ? state.data : undefined,
     error: current ? state.error : undefined,
+    status: current ? state.status : undefined,
     retry: () => setAttempt((value) => value + 1),
   }
 }

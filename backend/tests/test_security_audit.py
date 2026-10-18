@@ -32,8 +32,9 @@ METHODS = ("get", "post", "put", "patch", "delete")
 
 # Reachable without signing in, and why.
 PUBLIC = {
-    ("POST", "/api/v1/auth/refresh"): "renews a token, authenticated by the token itself",
     ("POST", "/api/v1/auth/login"): "how a user signs in",
+    ("POST", "/api/v1/auth/refresh"): "the httpOnly refresh cookie is the credential",
+    ("POST", "/api/v1/auth/logout"): "clears the refresh cookie, and does nothing without one",
     ("GET", "/api/v1/health"): "liveness for a load balancer",
     ("GET", "/api/v1/ready"): "readiness for a load balancer",
     ("POST", "/api/v1/teams/messages"): "Teams bot endpoint, authenticated by Microsoft's token",
@@ -65,6 +66,8 @@ AUDIENCE = {
     ("POST", "/api/v1/materials"): STAFF,
     ("GET", "/api/v1/materials"): STAFF,
     ("GET", "/api/v1/materials/{material_id}"): STAFF,
+    ("PATCH", "/api/v1/materials/{material_id}"): STAFF,
+    ("DELETE", "/api/v1/materials/{material_id}"): STAFF,
     ("GET", "/api/v1/materials/{material_id}/questions"): STAFF,
     ("PATCH", "/api/v1/materials/{material_id}/questions/{question_id}"): STAFF,
     ("POST", "/api/v1/materials/{material_id}/questions/{question_id}:regenerate"): STAFF,
@@ -92,6 +95,12 @@ AUDIENCE = {
     ("POST", "/api/v1/sessions/{session_id}/reports"): STAFF,
     ("GET", "/api/v1/reports/{report_id}"): STAFF,
     ("GET", "/api/v1/reports/{report_id}/pdf"): STAFF,
+    ("GET", "/api/v1/me/consideration"): STUDENT_ONLY,
+    ("POST", "/api/v1/me/consideration"): STUDENT_ONLY,
+    ("POST", "/api/v1/me/consideration/withdraw"): STUDENT_ONLY,
+    ("GET", "/api/v1/admin/consideration-requests"): ADMIN_ONLY,
+    ("POST", "/api/v1/admin/consideration-requests/{request_id}/approve"): ADMIN_ONLY,
+    ("POST", "/api/v1/admin/consideration-requests/{request_id}/reject"): ADMIN_ONLY,
     ("POST", "/api/v1/governance/deletion-requests"): ADMIN_ONLY,
     ("GET", "/api/v1/governance/deletion-requests"): ADMIN_ONLY,
     ("GET", "/api/v1/governance/deletion-requests/{request_id}"): ADMIN_ONLY,

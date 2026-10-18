@@ -1,3 +1,4 @@
+import type { Tone } from '../../components/ui/primitives'
 import type { ReviewAnswer } from './reviewTypes.ts'
 
 export function needsReview(answer: ReviewAnswer): boolean {
@@ -10,7 +11,7 @@ export function needsReview(answer: ReviewAnswer): boolean {
 
 export function comprehensionText(answer: ReviewAnswer): string {
   if (answer.label && answer.confidence !== null && answer.confidence < 0.6) {
-    return 'Uncertain classification — ask your lecturer'
+    return 'Uncertain, ask your lecturer'
   }
   if (answer.label === 'mastered') return 'Mastered'
   if (answer.label === 'partial') return 'Partially understood'
@@ -29,4 +30,16 @@ export function reviewError(status?: number): string {
   if (status === 501)
     return 'Session review is not available on this server yet.'
   return 'Could not load this review. Check your connection and try again.'
+}
+
+/** The colour of the verdict beside an answer. An uncertain or missing
+ * label stays neutral rather than looking like a wrong answer. */
+export function comprehensionTone(answer: ReviewAnswer): Tone {
+  if (answer.label && answer.confidence !== null && answer.confidence < 0.6) return 'neutral'
+  if (answer.label === 'mastered') return 'good'
+  if (answer.label === 'partial') return 'mixed'
+  if (answer.label === 'struggling') return 'poor'
+  if (answer.is_correct === true) return 'good'
+  if (answer.is_correct === false) return 'poor'
+  return 'neutral'
 }

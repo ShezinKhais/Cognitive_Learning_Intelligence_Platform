@@ -29,9 +29,13 @@ class ConsentType(StrEnum):
     MICROPHONE = "microphone"
 
 
+# Far past any real password; it only stops a megabyte being hashed.
+MAX_PASSWORD_LENGTH = 1024
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(max_length=MAX_PASSWORD_LENGTH)
 
 
 class TokenResponse(BaseModel):

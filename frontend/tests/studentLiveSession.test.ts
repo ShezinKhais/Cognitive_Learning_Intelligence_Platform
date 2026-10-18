@@ -89,6 +89,8 @@ test('a student can receive, answer and get feedback for a checkpoint', () => {
   assert.equal(state.completedCheckpoint?.phase, 'submitted')
   assert.equal(state.completedCheckpoint?.feedback?.correct, true)
   assert.equal(state.completedCheckpoint?.feedback?.source_slide, 4)
+  // Counted once toward the student's own participation.
+  assert.deepEqual(state.answeredIds, ['question-1'])
 })
 
 test('an unanswered checkpoint becomes missed when its window elapses', () => {

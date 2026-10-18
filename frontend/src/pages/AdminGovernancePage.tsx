@@ -16,7 +16,6 @@ import {
   clearAccessToken,
   getCurrentUser,
 } from '../api'
-import SignOutButton from '../components/SignOutButton'
 import {
   canApproveDeletion,
   canExecuteDeletion,
@@ -925,19 +924,19 @@ export default function AdminGovernancePage() {
 
   if (identityLoading) {
     return (
-      <main className="min-h-screen bg-background p-8">
+      <div className="bg-background p-8">
         <p
           role="status"
           className="text-sm text-muted-foreground"
         >
           Loading governance controls...
         </p>
-      </main>
+      </div>
     )
   }
 
   return (
-    <main className="min-h-screen bg-background">
+    <div className="bg-background">
       <header className="border-b border-border bg-card">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
           <div>
@@ -958,7 +957,6 @@ export default function AdminGovernancePage() {
               Admin console
             </Link>
 
-            <SignOutButton />
           </div>
         </div>
       </header>
@@ -1833,6 +1831,6 @@ export default function AdminGovernancePage() {
           </div>
         </section>
       </div>
-    </main>
+    </div>
   )
 }

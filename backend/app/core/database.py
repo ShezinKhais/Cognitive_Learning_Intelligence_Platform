@@ -15,16 +15,23 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 
 
 @lru_cache
 def get_engine() -> AsyncEngine:
-    settings = get_settings()
+    return make_engine(get_settings())
+
+
+def make_engine(settings: Settings) -> AsyncEngine:
     return create_async_engine(
         settings.database_url,
         echo=settings.clip_env == "development",
         pool_pre_ping=True,
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+        pool_timeout=settings.db_pool_timeout_seconds,
+        pool_recycle=settings.db_pool_recycle_seconds,
     )
 
 

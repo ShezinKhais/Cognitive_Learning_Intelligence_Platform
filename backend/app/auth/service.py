@@ -15,6 +15,7 @@ from app.core.security import (
     TokenValidationError,
     create_access_token,
     decode_access_token,
+    decode_refresh_token,
 )
 from app.repositories.consent_repository import ConsentRepository
 from app.repositories.user_repository import UserRepository
@@ -100,20 +101,22 @@ class RenewedToken:
 
 
 async def renew_token(
-    token: str,
+    refresh_token: str,
     settings: Settings,
     db: AsyncSession,
 ) -> RenewedToken:
-    """A fresh access token for the holder of a still-valid one.
+    """A fresh access token for the holder of a still-valid refresh token.
 
-    The account is checked again as it stands now: it must exist, be active
-    and have the role the token was issued for. The new token keeps the
-    original sign-in time, and none is issued once max_sign_in_hours have
-    passed since it, so refreshing never stands in for signing in. An expired
-    token is refused like any other invalid one.
+    The refresh token lives in an httpOnly cookie, so a script on the page
+    cannot read it, and an access token is refused here: one stolen from the
+    page dies at its own expiry instead of being renewed. The account is
+    checked again as it stands now: it must exist, be active and have the
+    role the sign-in was for. The new token keeps the original sign-in time,
+    and none is issued once max_sign_in_hours have passed since it, so
+    refreshing never stands in for signing in.
     """
 
-    claims = decode_access_token(token, settings)
+    claims = decode_refresh_token(refresh_token, settings)
     user = await _holder(claims, settings, db)
 
     if datetime.now(UTC) >= claims.auth_time + timedelta(hours=settings.max_sign_in_hours):

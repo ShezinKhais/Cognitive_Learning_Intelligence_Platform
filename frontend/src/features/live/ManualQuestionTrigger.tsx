@@ -1,6 +1,11 @@
 import { useState } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
+import { Send } from 'lucide-react'
 
 import { ApiError } from '../../api'
+import { buttonStyles } from '../../components/ui/button'
+import { cn } from '../../components/ui/cn'
+import { useToast } from '../../components/ui/toast'
 import {
   deliverQuestion,
   loadStagedQuestions,
@@ -12,284 +17,162 @@ interface ManualQuestionTriggerProps {
   enabled: boolean
 }
 
-export default function ManualQuestionTrigger({
-  sessionId,
-  enabled,
-}: ManualQuestionTriggerProps) {
-  const [
-    questions,
-    setQuestions,
-  ] = useState<StagedQuestion[]>([])
-
-  const [
-    selectedQuestionId,
-    setSelectedQuestionId,
-  ] = useState('')
-
-  const [
-    selectorOpen,
-    setSelectorOpen,
-  ] = useState(false)
-
-  const [
-    loading,
-    setLoading,
-  ] = useState(false)
-
-  const [
-    delivering,
-    setDelivering,
-  ] = useState(false)
-
-  const [
-    error,
-    setError,
-  ] = useState<string | null>(null)
+/**
+ * Send a ready question now rather than waiting for the next automatic
+ * checkpoint. Opens a list of the session's ready questions to pick from.
+ */
+export default function ManualQuestionTrigger({ sessionId, enabled }: ManualQuestionTriggerProps) {
+  const [questions, setQuestions] = useState<StagedQuestion[]>([])
+  const [selectedQuestionId, setSelectedQuestionId] = useState('')
+  const [selectorOpen, setSelectorOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [delivering, setDelivering] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const notify = useToast()
 
   async function openSelector() {
-    if (
-      !enabled ||
-      !sessionId
-    ) {
-      return
-    }
-
+    if (!enabled || !sessionId) return
     setSelectorOpen(true)
     setError(null)
     setLoading(true)
-
     try {
-      const staged =
-        await loadStagedQuestions(
-          sessionId,
-        )
-
+      const staged = await loadStagedQuestions(sessionId)
       setQuestions(staged)
-
-      setSelectedQuestionId(
-        staged[0]?.id ?? '',
-      )
+      setSelectedQuestionId(staged[0]?.id ?? '')
     } catch (caught) {
-      if (
-        caught instanceof ApiError
-      ) {
-        setError(caught.message)
-      } else {
-        setError(
-          'Staged questions could not be loaded.',
-        )
-      }
+      setError(caught instanceof ApiError ? caught.message : 'The ready questions could not be loaded.')
     } finally {
       setLoading(false)
     }
   }
 
   async function triggerSelectedQuestion() {
-    if (
-      !enabled ||
-      !sessionId ||
-      !selectedQuestionId
-    ) {
-      return
-    }
-
+    if (!enabled || !sessionId || !selectedQuestionId) return
     setError(null)
     setDelivering(true)
-
     try {
-      await deliverQuestion(
-        sessionId,
-        selectedQuestionId,
-      )
-
-      setQuestions(
-        (current) =>
-          current.filter(
-            (question) =>
-              question.id !==
-              selectedQuestionId,
-          ),
-      )
-
+      await deliverQuestion(sessionId, selectedQuestionId)
+      notify('Question sent to the class')
+      setQuestions((current) => current.filter((question) => question.id !== selectedQuestionId))
       setSelectedQuestionId('')
       setSelectorOpen(false)
     } catch (caught) {
-      if (
-        caught instanceof ApiError
-      ) {
-        setError(caught.message)
-      } else {
-        setError(
-          'The question could not be delivered.',
-        )
-      }
+      setError(caught instanceof ApiError ? caught.message : 'The question could not be sent.')
     } finally {
       setDelivering(false)
     }
   }
 
-  const selectedQuestion =
-    questions.find(
-      (question) =>
-        question.id ===
-        selectedQuestionId,
-    ) ?? null
-
-  if (!selectorOpen) {
-    return (
-      <button
-        type="button"
-        disabled={!enabled}
-        onClick={() =>
-          void openSelector()
-        }
-        className="mt-5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        Send checkpoint now
-      </button>
-    )
-  }
-
   return (
-    <div className="mt-5 rounded-lg border border-border bg-background p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="font-semibold">
-            Send checkpoint now
-          </h3>
-
-          <p className="mt-1 text-sm text-muted-foreground">
-            Automatic checkpoints normally run in the background.
-            Use this only when you want to send an approved question immediately.
-          </p>
-        </div>
-
+    <div className="mt-4">
+      {!selectorOpen && (
         <button
           type="button"
-          disabled={delivering}
-          onClick={() => {
-            setSelectorOpen(false)
-            setError(null)
-          }}
-          className="rounded-md border border-border px-3 py-1.5 text-sm disabled:opacity-50"
+          disabled={!enabled}
+          onClick={() => void openSelector()}
+          className={buttonStyles()}
+          title={enabled ? undefined : 'Available while the class is running and nothing is open'}
         >
-          Cancel
+          <Send size={15} aria-hidden />
+          Send a checkpoint now
         </button>
-      </div>
+      )}
 
-      {loading ? (
-        <p className="mt-4 text-sm text-muted-foreground">
-          Loading staged questions...
-        </p>
-      ) : questions.length === 0 ? (
-        <p className="mt-4 text-sm text-muted-foreground">
-          No staged questions are currently
-          available for this session.
-        </p>
-      ) : (
-        <>
-          <label
-            htmlFor="manual-question"
-            className="mt-4 block text-sm font-medium"
+      <AnimatePresence initial={false}>
+        {selectorOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
           >
-            Question
-          </label>
+            <fieldset className="rounded-md border border-border bg-background p-4" disabled={delivering}>
+              <legend className="sr-only">Choose a question to send</legend>
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="font-semibold">Choose a question to send</p>
+                <p className="text-sm text-muted-foreground">It opens for every connected student straight away.</p>
+              </div>
 
-          <select
-            id="manual-question"
-            value={selectedQuestionId}
-            disabled={delivering}
-            onChange={(event) =>
-              setSelectedQuestionId(
-                event.target.value,
-              )
-            }
-            className="mt-2 w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
-          >
-            {questions.map(
-              (question) => (
-                <option
-                  key={question.id}
-                  value={question.id}
-                >
-                  {question.prompt}
-                </option>
-              ),
-            )}
-          </select>
+              {loading ? (
+                <p role="status" className="mt-3 text-sm text-muted-foreground">Loading ready questions…</p>
+              ) : questions.length === 0 ? (
+                <p className="mt-3 text-sm text-muted-foreground">
+                  No questions are ready for this session. Mark some ready to send in the material review.
+                </p>
+              ) : (
+                <ul className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
+                  {questions.map((question) => {
+                    const selected = question.id === selectedQuestionId
+                    return (
+                      <li key={question.id}>
+                        <label
+                          className={cn(
+                            'flex cursor-pointer gap-3 rounded-md border px-3 py-2.5 transition-colors',
+                            selected ? 'border-primary bg-accent' : 'border-border bg-card hover:border-input',
+                          )}
+                        >
+                          <input
+                            type="radio"
+                            name="manual-question"
+                            value={question.id}
+                            checked={selected}
+                            onChange={() => setSelectedQuestionId(question.id)}
+                            className="mt-1 accent-[var(--primary)]"
+                          />
+                          <span className="min-w-0">
+                            <span className={cn('block text-sm', selected && 'font-semibold text-accent-foreground')}>
+                              {question.prompt}
+                            </span>
+                            {(question.sourceSlide !== null || (question.options?.length ?? 0) > 0) && (
+                              <span className="mt-0.5 block text-xs text-muted-foreground">
+                                {[
+                                  question.options?.length ? `${question.options.length} options` : null,
+                                  question.sourceSlide !== null ? `slide ${question.sourceSlide}` : null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(', ')}
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
 
-          {selectedQuestion && (
-            <div className="mt-4 rounded-md border border-border p-4">
-              <p className="font-medium">
-                {
-                  selectedQuestion.prompt
-                }
-              </p>
-
-              {selectedQuestion.sourceSlide !==
-                null && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Source slide:{' '}
-                  {
-                    selectedQuestion.sourceSlide
-                  }
+              {error && (
+                <p role="alert" className="mt-3 text-sm text-critical">
+                  {error}
                 </p>
               )}
 
-              {selectedQuestion.options &&
-                selectedQuestion.options
-                  .length > 0 && (
-                  <ul className="mt-3 space-y-1 text-sm">
-                    {selectedQuestion.options.map(
-                      (
-                        option,
-                        index,
-                      ) => (
-                        <li
-                          key={`${index}-${option}`}
-                        >
-                          <span className="font-semibold">
-                            {String.fromCharCode(
-                              65 + index,
-                            )}
-                            .
-                          </span>{' '}
-                          {option}
-                        </li>
-                      ),
-                    )}
-                  </ul>
-                )}
-            </div>
-          )}
-
-          <button
-            type="button"
-            disabled={
-              !enabled ||
-              delivering ||
-              !selectedQuestionId
-            }
-            onClick={() =>
-              void triggerSelectedQuestion()
-            }
-            className="mt-4 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {delivering
-              ? 'Delivering...'
-              : 'Send checkpoint now'}
-          </button>
-        </>
-      )}
-
-      {error && (
-        <div
-          role="alert"
-          className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-        >
-          {error}
-        </div>
-      )}
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  disabled={!enabled || delivering || !selectedQuestionId}
+                  onClick={() => void triggerSelectedQuestion()}
+                  className={buttonStyles()}
+                >
+                  <Send size={15} aria-hidden />
+                  {delivering ? 'Sending…' : 'Send it'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectorOpen(false)
+                    setError(null)
+                  }}
+                  className={buttonStyles({ intent: 'quiet' })}
+                >
+                  Cancel
+                </button>
+              </div>
+            </fieldset>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

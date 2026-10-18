@@ -8,6 +8,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.session import MAX_COURSE_CODE_LENGTH, MAX_TITLE_LENGTH
+
 # Teams meeting IDs are opaque strings; this bounds them without assuming a shape.
 MAX_MEETING_ID_LENGTH = 256
 
@@ -25,11 +27,14 @@ class MeetingEventIn(BaseModel):
     meeting_id: str = Field(min_length=1, max_length=MAX_MEETING_ID_LENGTH)
     course_code: str | None = Field(
         default=None,
+        max_length=MAX_COURSE_CODE_LENGTH,
         description="Creates a session for a meeting that starts with none linked. "
         "Ignored once the meeting has a session.",
     )
     title: str | None = Field(
-        default=None, description="The created session's title. Defaults to 'Teams meeting'."
+        default=None,
+        max_length=MAX_TITLE_LENGTH,
+        description="The created session's title. Defaults to 'Teams meeting'.",
     )
 
 

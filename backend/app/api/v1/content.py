@@ -30,6 +30,7 @@ from app.schemas.common import Page
 from app.schemas.content import (
     MaterialOut,
     MaterialStatus,
+    MaterialUpdateRequest,
     QuestionBulkReviewRequest,
     QuestionBulkReviewResult,
     QuestionOut,
@@ -37,10 +38,16 @@ from app.schemas.content import (
 )
 from app.schemas.identity import ConsentType, Role
 from app.services.extraction import CONTENT_TYPES
+from app.services.material_edits import (
+    course_codes,
+    delete_material,
+    remove_stored_file,
+    update_material,
+)
 from app.services.material_pages import page_previews
 from app.services.question_ownership import filter_owned_questions, get_owned_question
 from app.services.regeneration import regenerate
-from app.services.uploads import accept_upload, get_question_generator
+from app.services.uploads import accept_upload, get_material_storage, get_question_generator
 
 # Every route here, the review actions included, is lecturer and admin work,
 # so the role guard sits on the router. Ownership narrows a lecturer down to
@@ -122,10 +129,9 @@ async def list_materials(
         uploaded_by_user_id=uploaded_by_user_id,
     )
 
+    codes = await course_codes(db, {m.course_id for m in materials if m.course_id})
     return Page[MaterialOut](
-        items=[
-            MaterialOut.model_validate(material, from_attributes=True) for material in materials
-        ],
+        items=[_material_out(material, codes) for material in materials],
         total=total,
         limit=page.limit,
         offset=page.offset,
@@ -160,9 +166,58 @@ async def get_material(
     # The page preview is only on the single-material read. Built for every
     # row of a list it would load the full text of every upload a lecturer has.
     pages = page_previews(await repository.list_elements(material.id))
+    codes = await course_codes(db, {material.course_id} if material.course_id else set())
+    return _material_out(material, codes).model_copy(update={"pages": pages})
+
+
+def _material_out(material, codes: dict[UUID, str]) -> MaterialOut:  # noqa: ANN001 - app.models.Material
     return MaterialOut.model_validate(material, from_attributes=True).model_copy(
-        update={"pages": pages}
+        update={"course_code": codes.get(material.course_id) if material.course_id else None}
     )
+
+
+@router.patch("/{material_id}", response_model=MaterialOut)
+@audit_action("MATERIAL_UPDATED")
+async def edit_material(
+    material_id: UUID,
+    payload: MaterialUpdateRequest,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> MaterialOut:
+    """Rename a material, or file it under a course: its questions are then
+    offered only to that course's sessions. Send course_code as null to file
+    it under none."""
+    material = await update_material(
+        db,
+        principal,
+        material_id,
+        filename=payload.filename,
+        course_code=payload.course_code,
+        set_course="course_code" in payload.model_fields_set,
+    )
+    await db.commit()
+    codes = await course_codes(db, {material.course_id} if material.course_id else set())
+    return _material_out(material, codes)
+
+
+@router.delete("/{material_id}", status_code=status.HTTP_204_NO_CONTENT)
+@audit_action("MATERIAL_DELETED")
+async def remove_material(
+    material_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> None:
+    """Delete a material with its questions and what was read from it.
+    Refused (409) while it is still processing, or once any of its questions
+    has been delivered in a class, whose history it is."""
+    storage = get_material_storage()
+    await delete_material(db, principal, material_id, storage)
+    await db.commit()
+    await remove_stored_file(storage, material_id)
 
 
 @router.get("/{material_id}/questions", response_model=Page[QuestionOut])

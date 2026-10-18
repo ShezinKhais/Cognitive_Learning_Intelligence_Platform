@@ -50,7 +50,7 @@ const {
   downloadSessionReportPdf,
 } = await import('../src/features/reports/sessionReportsApi.ts')
 
-const { ApiError, saveAccessToken } =
+const { ApiError, clearAccessToken, saveAccessToken } =
   await import('../src/api.ts')
 
 const SESSION_ID = '00000000-0000-4000-8000-000000000001'
@@ -123,9 +123,15 @@ test('requesting a report sends an authenticated POST to the session route', asy
 })
 
 test('report generation is blocked locally without an access token', async () => {
-  mockFetch(() => {
-    throw new Error('Fetch must not be called')
+  // With no token in memory the refresh cookie is tried first, as a reload
+  // does; refused, the protected route is never called.
+  mockFetch((url) => {
+    if (url.endsWith('/auth/refresh')) return jsonResponse({}, 401)
+    if (url.endsWith('/auth/logout')) return new Response(null, { status: 204 })
+    throw new Error('The protected route must not be called')
   })
+  // The token is held in memory now, not in the storage beforeEach clears.
+  await clearAccessToken()
 
   await assert.rejects(
     requestSessionReport(SESSION_ID),
@@ -135,7 +141,10 @@ test('report generation is blocked locally without an access token', async () =>
       error.code === 'UNAUTHENTICATED',
   )
 
-  assert.equal(calls.length, 0)
+  assert.deepEqual(
+    calls.map((call) => call.url).filter((url) => !url.includes('/auth/')),
+    [],
+  )
 })
 
 test('report status retrieval uses the protected report endpoint', async () => {
@@ -198,7 +207,7 @@ test('the report API handles non-JSON server errors safely', async () => {
       error instanceof ApiError &&
       error.status === 503 &&
       error.code === 'HTTP_ERROR' &&
-      error.message === 'HTTP 503',
+      error.message === 'C.L.I.P is not responding right now. Try again in a minute.',
   )
 })
 
@@ -243,9 +252,15 @@ test('PDF downloads use a safe fallback filename', async () => {
 })
 
 test('PDF downloads are blocked locally without authentication', async () => {
-  mockFetch(() => {
-    throw new Error('Fetch must not be called')
+  // With no token in memory the refresh cookie is tried first, as a reload
+  // does; refused, the protected route is never called.
+  mockFetch((url) => {
+    if (url.endsWith('/auth/refresh')) return jsonResponse({}, 401)
+    if (url.endsWith('/auth/logout')) return new Response(null, { status: 204 })
+    throw new Error('The protected route must not be called')
   })
+  // The token is held in memory now, not in the storage beforeEach clears.
+  await clearAccessToken()
 
   await assert.rejects(
     downloadSessionReportPdf(REPORT_ID),
@@ -255,7 +270,10 @@ test('PDF downloads are blocked locally without authentication', async () => {
       error.code === 'UNAUTHENTICATED',
   )
 
-  assert.equal(calls.length, 0)
+  assert.deepEqual(
+    calls.map((call) => call.url).filter((url) => !url.includes('/auth/')),
+    [],
+  )
 })
 
 test('PDF requests preserve backend 403 authorization failures', async () => {
