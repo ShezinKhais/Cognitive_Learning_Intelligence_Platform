@@ -1,9 +1,10 @@
 # Camera attention recordings (#159)
 
-The recorder's CSV files go in this folder. Each row is one camera frame turned
-into numbers (head angles, how open the eyes are, where the iris sits) plus the
-label the person was acting out. There is no video, image or face landmark in
-them, and participants appear only as codes (P1, P2, ...).
+The recorder's CSV files go in this folder; they are not committed. Each row is
+one camera frame turned into numbers (head angles, how open the eyes are, where
+the iris sits) plus the label the person was acting out. There is no video,
+image or face landmark in them, and participants appear only as codes (P1, P2,
+...).
 
 ## Recording
 
@@ -33,7 +34,10 @@ should also do the first row without them, if they can.
 
 ## Evaluating
 
-From `frontend/`: `npm run eval:attention`. It writes
-`backend/tests/eval/CV_EVALUATION.md` with the before and after numbers and
-their confidence intervals, and prints the tuned thresholds to copy into
-`DEFAULT_THRESHOLDS` in `frontend/src/features/attention/signals.ts`.
+From `frontend/`: `npm run eval:attention`. It leaves one participant out at a
+time, tunes the angle limits on the others, tests on that person, and writes
+the tables to `RESULTS.md` in this folder. `CV_EVALUATION.md` (one folder up)
+is the written report built on those tables.
+
+The CSV files are not committed (`.gitignore`): the team chose to keep even
+derived recordings off GitHub. Whoever runs the evaluation keeps them.

@@ -1,5 +1,5 @@
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision'
-import { calibrate, classifyFace, faceFeatures, type Calibration, type FaceFeatures } from './signals'
+import { calibrate, classifyFace, faceFeatures, thresholdsFor, type Calibration, type FaceFeatures } from './signals'
 
 // How long the student looks at the screen to calibrate, in the timestamps
 // the frames carry (milliseconds).
@@ -46,7 +46,7 @@ self.onmessage = async (event: MessageEvent) => {
       }
       self.postMessage({
         type: 'observation',
-        value: classifyFace(features, undefined, calibration),
+        value: classifyFace(features, thresholdsFor(calibration), calibration),
         ...(withFeatures ? { features } : {}),
       })
     }

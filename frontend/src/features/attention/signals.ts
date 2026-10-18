@@ -56,8 +56,9 @@ export interface FaceFeatures {
 
 /**
  * Where "facing the screen" ends. The proxy values are the hand-set ones from
- * #63; the angle limits apply when MediaPipe supplies a pose and are the ones
- * to set from data (scripts/evaluate-attention.ts, CV_EVALUATION.md).
+ * #63. The angle limits apply when MediaPipe supplies a pose and were tuned on
+ * six team members' recordings (backend/tests/eval/CV_EVALUATION.md): these
+ * for a student who has not calibrated, CALIBRATED_THRESHOLDS for one who has.
  */
 export interface Thresholds {
   minFaceWidth: number
@@ -75,14 +76,30 @@ export const DEFAULT_THRESHOLDS: Thresholds = {
   minFaceWidth: 0.03,
   maxYawProxy: 0.22,
   maxRollProxy: 0.3,
-  maxYawDegrees: 25,
-  maxPitchDegrees: 20,
+  maxYawDegrees: 10,
+  maxPitchDegrees: 30,
   maxRollDegrees: 20,
   minEyeWidth: 0.005,
   minOpenEyeRatio: 0.12,
   irisX: [0.2, 0.8],
   irisY: [0.1, 0.9],
 }
+
+/**
+ * With the student's own centre known, pitch can be strict enough to tell the
+ * screen from notes on the desk; without it, it has to allow for every camera
+ * height, which is why DEFAULT_THRESHOLDS is looser.
+ */
+export const CALIBRATED_THRESHOLDS: Thresholds = {
+  ...DEFAULT_THRESHOLDS,
+  maxYawDegrees: 15,
+  maxPitchDegrees: 16,
+  maxRollDegrees: 15,
+  irisX: [0.25, 0.75],
+}
+
+export const thresholdsFor = (calibration: Calibration | null): Thresholds =>
+  calibration ? CALIBRATED_THRESHOLDS : DEFAULT_THRESHOLDS
 
 /**
  * One student's own "looking at the screen": the head angles and iris

@@ -9,11 +9,11 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import {
-  CONDITIONS, LABELS, balancedAccuracy, bootstrap, calibrations, confusion, coverage, folds, parseCsv,
+  CONDITIONS, LABELS, ORIGINAL_THRESHOLDS, balancedAccuracy, bootstrap, calibrations, confusion, coverage, folds, parseCsv,
   precision, recall, score, tune,
   type Condition, type Counts, type Frame, type Label, type Settings,
 } from '../eval/evaluation.ts'
-import { DEFAULT_THRESHOLDS, type Thresholds } from '../src/features/attention/signals.ts'
+import { CALIBRATED_THRESHOLDS, DEFAULT_THRESHOLDS, type Thresholds } from '../src/features/attention/signals.ts'
 
 const [folder, ...rest] = process.argv.slice(2)
 if (!folder) throw new Error('usage: evaluate-attention.ts <folder of CSV files> [--out report.md]')
@@ -34,7 +34,7 @@ const { folds: rounds, by } = folds(frames)
 const tuned = rounds.map(fold => ({ ...fold, plain: tune(fold.tune, false), calibrated: tune(fold.tune, true) }))
 const testFrames = tuned.flatMap(fold => fold.test)
 const foldOf = (f: Frame) => by === 'participant' ? tuned.find(fold => fold.held === f.participant)! : tuned[0]
-const before = { thresholds: DEFAULT_THRESHOLDS, calibrated: false }
+const before = { thresholds: ORIGINAL_THRESHOLDS, calibrated: false }
 const tunedPlain: Settings = f => ({ thresholds: foldOf(f).plain.thresholds, calibrated: false })
 const tunedCalibrated: Settings = f => ({ thresholds: foldOf(f).calibrated.thresholds, calibrated: true })
 
@@ -125,38 +125,42 @@ if (by === 'participant') {
   say()
 }
 
-const chosen = rows[2]
-say(`## What each label was read as (${chosen.name})`)
-say()
-say('| Label | On screen | Away | No reading |')
-say('|---|---|---|---|')
-for (const [label, row] of confusion(chosen.frames, chosen.setting)) {
-  const total = row.onScreen + row.away + row.noReading
-  say(`| ${label} | ${row.onScreen} (${pct(row.onScreen / total)}) | ${row.away} (${pct(row.away / total)}) | ${row.noReading} (${pct(row.noReading / total)}) |`)
-}
-say()
-say(`## By condition (${chosen.name}, held-out, all rounds pooled)`)
-say()
-say('| Condition | Value | Clips | Face present: recall | Looking: precision | Looking: recall |')
-say('|---|---|---|---|---|---|')
-for (const [condition, values] of Object.entries(CONDITIONS) as [Condition, readonly string[]][]) {
-  for (const value of values) {
-    const of = chosen.frames.filter(f => f.conditions[condition] === value)
-    if (!of.length) continue
-    say(`| ${condition} | ${value} | ${clipsOf(of)} | ${metric(of, chosen.setting, s => s.face, recall)} | ${metric(of, chosen.setting, s => s.looking, precision)} | ${metric(of, chosen.setting, s => s.looking, recall)} |`)
+// Both tuned rows ship: one for students who calibrate, one for those who do not.
+for (const chosen of [rows[2], rows[3]]) {
+  say(`## What each label was read as (${chosen.name})`)
+  say()
+  say('| Label | On screen | Away | No reading |')
+  say('|---|---|---|---|')
+  for (const [label, row] of confusion(chosen.frames, chosen.setting)) {
+    const total = row.onScreen + row.away + row.noReading
+    say(`| ${label} | ${row.onScreen} (${pct(row.onScreen / total)}) | ${row.away} (${pct(row.away / total)}) | ${row.noReading} (${pct(row.noReading / total)}) |`)
   }
+  say()
+  say(`## By condition (${chosen.name}, held-out, all rounds pooled)`)
+  say()
+  say('| Condition | Value | Clips | Face present: recall | Looking: precision | Looking: recall |')
+  say('|---|---|---|---|---|---|')
+  for (const [condition, values] of Object.entries(CONDITIONS) as [Condition, readonly string[]][]) {
+    for (const value of values) {
+      const of = chosen.frames.filter(f => f.conditions[condition] === value)
+      if (!of.length) continue
+      say(`| ${condition} | ${value} | ${clipsOf(of)} | ${metric(of, chosen.setting, s => s.face, recall)} | ${metric(of, chosen.setting, s => s.looking, precision)} | ${metric(of, chosen.setting, s => s.looking, recall)} |`)
+    }
+  }
+  say()
 }
-say()
 const show = (t: Thresholds) => `maxYawDegrees: ${t.maxYawDegrees}, maxPitchDegrees: ${t.maxPitchDegrees}, maxRollDegrees: ${t.maxRollDegrees}, irisX: [${t.irisX.join(', ')}]`
 say('## Thresholds')
 say()
-say(`- Starting limits: \`${show(DEFAULT_THRESHOLDS)}\``)
+say(`- Starting limits (#63): \`${show(ORIGINAL_THRESHOLDS)}\``)
 say(`- Tuned on every recording, without calibration: \`${show(finalPlain.thresholds)}\` (balanced accuracy on those recordings ${pct(finalPlain.balancedAccuracy)})`)
 say(`- Tuned on every recording, with calibration: \`${show(finalCalibrated.thresholds)}\` (${pct(finalCalibrated.balancedAccuracy)})`)
 say()
 say('These are the limits to ship. The held-out results above estimate how they do on a new person, since each round tuned the same way without that person.')
 say()
-say('Copy the chosen values into `DEFAULT_THRESHOLDS` in `frontend/src/features/attention/signals.ts`, and the threshold test in `tests/attention.test.ts`.')
+say(`- Shipped in \`signals.ts\`: \`DEFAULT_THRESHOLDS\` ${show(DEFAULT_THRESHOLDS)}; \`CALIBRATED_THRESHOLDS\` ${show(CALIBRATED_THRESHOLDS)}.`)
+say()
+say('If the tuned values above differ from the shipped ones, copy them into `signals.ts` and the threshold test in `tests/attention.test.ts`.')
 say()
 say('## Limits')
 say()

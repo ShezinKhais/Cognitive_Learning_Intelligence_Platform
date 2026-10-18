@@ -55,7 +55,7 @@ test('the first summary covers only time since local sensing began', () => {
 // -- #159: head pose, calibration and the evaluation ---------------------------
 
 import {
-  DEFAULT_THRESHOLDS, calibrate, classifyFace, faceFeatures, poseFromMatrix, type FaceFeatures,
+  CALIBRATED_THRESHOLDS, DEFAULT_THRESHOLDS, calibrate, classifyFace, faceFeatures, poseFromMatrix, thresholdsFor, type FaceFeatures,
 } from '../src/features/attention/signals.ts'
 import {
   balancedAccuracy, bootstrap, count, dropCountdown, framesToCsv, parseCsv, folds, precision, recall, tune, type Frame,
@@ -81,16 +81,17 @@ test('pose angles come from the transformation matrix', () => {
 test('looking down at notes is not forward once a pose is known', () => {
   // The landmark proxies alone read this face as forward.
   assert.equal(observeFace([face()], [rotation('x', 0)]).forward, true)
-  assert.equal(observeFace([face()], [rotation('x', 30)]).forward, false)
-  assert.equal(observeFace([face()], [rotation('x', 30)]).head, 'turned')
+  assert.equal(observeFace([face()], [rotation('x', 35)]).forward, false)
+  assert.equal(observeFace([face()], [rotation('x', 35)]).head, 'turned')
   assert.equal(observeFace([face()], [rotation('y', 40)]).forward, false)
 })
 
-test('the starting thresholds are the ones written down', () => {
-  assert.deepEqual(
-    { yaw: DEFAULT_THRESHOLDS.maxYawDegrees, pitch: DEFAULT_THRESHOLDS.maxPitchDegrees, roll: DEFAULT_THRESHOLDS.maxRollDegrees },
-    { yaw: 25, pitch: 20, roll: 20 },
-  )
+test('the thresholds are the ones tuned in CV_EVALUATION.md', () => {
+  const limits = (t: typeof DEFAULT_THRESHOLDS) => ({ yaw: t.maxYawDegrees, pitch: t.maxPitchDegrees, roll: t.maxRollDegrees, irisX: t.irisX })
+  assert.deepEqual(limits(DEFAULT_THRESHOLDS), { yaw: 10, pitch: 30, roll: 20, irisX: [0.2, 0.8] })
+  assert.deepEqual(limits(CALIBRATED_THRESHOLDS), { yaw: 15, pitch: 16, roll: 15, irisX: [0.25, 0.75] })
+  assert.equal(thresholdsFor(null), DEFAULT_THRESHOLDS)
+  assert.equal(thresholdsFor({ yaw: 0, pitch: 0, roll: 0, irisX: 0.5, irisY: 0.5 }), CALIBRATED_THRESHOLDS)
 })
 
 function looking(pitch: number, irisX = 0.5): FaceFeatures {

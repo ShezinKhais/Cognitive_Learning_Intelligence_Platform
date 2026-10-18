@@ -253,6 +253,11 @@ export function folds(frames: Frame[]): { folds: Fold[]; by: 'participant' | 'cl
   return { by: 'clip', folds: [{ held: 'held-out clips', tune: frames.filter(f => !held.has(f.clip)), test: frames.filter(f => held.has(f.clip)) }] }
 }
 
+/** #63's hand-set limits: the "before" of every comparison, and where tuning starts. */
+export const ORIGINAL_THRESHOLDS: Thresholds = {
+  ...DEFAULT_THRESHOLDS, maxYawDegrees: 25, maxPitchDegrees: 20, maxRollDegrees: 20, irisX: [0.2, 0.8],
+}
+
 /** The angle limits tried. The proxies, eye and face-size limits stay as they are. */
 export const GRID = {
   maxYawDegrees: [10, 15, 20, 25, 30, 35],
@@ -264,12 +269,12 @@ export const GRID = {
 /** The thresholds with the best balanced accuracy on `frames`; ties keep the earlier (stricter) one. */
 export function tune(frames: Frame[], calibrated: boolean): { thresholds: Thresholds; balancedAccuracy: number | null } {
   const byKey = calibrations(frames)
-  let best = { thresholds: DEFAULT_THRESHOLDS, balancedAccuracy: balancedAccuracy(score(frames, { thresholds: DEFAULT_THRESHOLDS, calibrated }, byKey).looking) }
+  let best = { thresholds: ORIGINAL_THRESHOLDS, balancedAccuracy: balancedAccuracy(score(frames, { thresholds: ORIGINAL_THRESHOLDS, calibrated }, byKey).looking) }
   for (const maxYawDegrees of GRID.maxYawDegrees) {
     for (const maxPitchDegrees of GRID.maxPitchDegrees) {
       for (const maxRollDegrees of GRID.maxRollDegrees) {
         for (const irisX of GRID.irisX) {
-          const thresholds = { ...DEFAULT_THRESHOLDS, maxYawDegrees, maxPitchDegrees, maxRollDegrees, irisX }
+          const thresholds = { ...ORIGINAL_THRESHOLDS, maxYawDegrees, maxPitchDegrees, maxRollDegrees, irisX }
           const value = balancedAccuracy(score(frames, { thresholds, calibrated }, byKey).looking)
           if (value !== null && (best.balancedAccuracy === null || value > best.balancedAccuracy)) {
             best = { thresholds, balancedAccuracy: value }
