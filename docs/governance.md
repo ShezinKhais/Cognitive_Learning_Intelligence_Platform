@@ -132,6 +132,17 @@ erased while their history rows remain. If the history database is down, both fl
 before they touch the main data. These cases are tested against a real second database in
 `test_retention.py` and `test_deletion_requests.py`.
 
+## An erasure and a purge at the same time
+
+Erasing a student takes a lock on the student's row before it touches the history
+database, and keeps it until the main database commits. A purge takes the same lock
+on every student in the sessions it is about to archive. So a purge that meets an
+erasure in progress waits for it and then finds nothing of that student left to
+archive, and an erasure that starts during a purge waits for the purge. Either order
+ends with the student's history erased. `tests/test_erasure_purge_race.py` pauses an
+erasure between its two commits, starts a purge, and checks that the purge waits and
+that no history is left.
+
 ## The audit log
 
 Every deletion step and every purge writes an entry: who did it (empty for a

@@ -254,6 +254,13 @@ async def execute(
     _require(request, "approved", "executed")
 
     if request.target_type == "student":
+        # Held until the caller commits. A purge archiving this student waits for
+        # it, so it cannot add their history back between the two erasures.
+        await db.scalar(
+            select(Student.student_id)
+            .where(Student.student_id == request.target_id)
+            .with_for_update()
+        )
         history_rows = await _erase_history(request.target_id, history)
         outcome = (await erase_student(db, request.target_id)).as_counts()
         if history_rows is not None:
