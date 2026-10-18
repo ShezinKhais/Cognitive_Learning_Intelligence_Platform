@@ -61,7 +61,9 @@ def test_teams_lecturer_tab_has_a_matching_frontend_route() -> None:
 ENTRY_POINT = API_TS.parent / "main.tsx"
 
 # Bare specifiers ('react', 'lucide-react') are dependencies, not our source.
-RELATIVE_IMPORT = re.compile(r"""(?:from\s+|import\s*(?:\(\s*)?)['"](\.{1,2}/[^'"]+|@/[^'"]+)['"]""")
+RELATIVE_IMPORT = re.compile(
+    r"""(?:from\s+|import\s*(?:\(\s*)?)['"](\.{1,2}/[^'"]+|@/[^'"]+)['"]"""
+)
 # Vite bundles worker entry points separately; they are not ordinary imports.
 WORKER_IMPORT = re.compile(
     r"""new\s+(?:SharedWorker|Worker)\s*\(\s*new\s+URL\s*\(\s*['"]"""
