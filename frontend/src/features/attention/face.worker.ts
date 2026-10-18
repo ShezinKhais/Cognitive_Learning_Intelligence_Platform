@@ -28,6 +28,8 @@ self.onmessage = async (event: MessageEvent) => {
     } else if (type === 'calibrate') {
       calibration = null
       calibrating = { until: null, frames: [] }
+    } else if (type === 'cancel-calibration') {
+      calibrating = null
     } else if (type === 'frame' && detector) {
       const result = detector.detectForVideo(frame, timestamp)
       const features = faceFeatures(

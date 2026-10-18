@@ -1,7 +1,7 @@
 import { Camera, Crosshair, Info, Mic, Power, ShieldCheck } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { getCurrentUser, recordConsent } from '../../api'
-import { calibrateCamera, startCamera, startMicrophone } from './localSensors'
+import { calibrateCamera, startCamera, startMicrophone, type CalibrationResult } from './localSensors'
 import { useAttentionReporter } from './useAttentionReporter'
 import { useLocalSensor } from './useLocalSensor'
 import type { AttentionSummary, FaceObservation } from './signals'
@@ -18,7 +18,7 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
   const [savedConsent, setSavedConsent] = useState({ monitoring: false, camera: false, microphone: false })
   const [savingConsent, setSavingConsent] = useState(false)
   const [message, setMessage] = useState('')
-  const [calibration, setCalibration] = useState<'none' | 'running' | 'done' | 'failed'>('none')
+  const [calibration, setCalibration] = useState<'none' | 'running' | CalibrationResult>('none')
   const {
     status: cameraStatus, latest: face, start: enableCamera, stop: stopCamera,
     drain: drainCamera, isActive: cameraActive, isStartingOrActive: cameraStartingOrActive,
@@ -120,7 +120,7 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
   // A new camera start forgets the old calibration, as the worker does.
   useEffect(() => { if (cameraStatus !== 'on') setCalibration('none') }, [cameraStatus])
   function startCalibration() {
-    if (calibrateCamera(ok => setCalibration(ok ? 'done' : 'failed'))) setCalibration('running')
+    if (calibrateCamera(setCalibration)) setCalibration('running')
   }
 
   const running = cameraStatus === 'on' || microphoneStatus === 'on'
@@ -225,6 +225,7 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
                 <span className="text-sm text-foreground">
                   {calibration === 'done' && 'Calibrated to where you look. Only the offsets are kept, on this device.'}
                   {calibration === 'failed' && 'That did not work: your face was not clearly facing the screen. The standard settings are used.'}
+                  {calibration === 'timeout' && 'The camera stopped sending pictures, so calibration did not finish. The standard settings are used.'}
                   {calibration === 'none' && 'Optional. Helps if your camera is off to one side.'}
                   {calibration === 'running' && 'Keep looking at the middle of the screen.'}
                 </span>

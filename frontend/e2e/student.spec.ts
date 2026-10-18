@@ -126,6 +126,18 @@ for (const action of ['Toggle session connection', 'Toggle sensor mount', 'Rejec
   })
 }
 
+test('calibration gives up when the camera stops sending frames', async ({ page }) => {
+  await optIn(page, 'camera')
+  await page.getByRole('button', { name: 'Turn on' }).click()
+  await expect(page.getByRole('button', { name: 'Stop camera', exact: true })).toBeVisible({ timeout: 60_000 })
+  // A muted track sends no frames, so calibration has no timestamp to end on.
+  await page.evaluate(() => Object.defineProperty(MediaStreamTrack.prototype, 'muted', { configurable: true, get: () => true }))
+  await page.getByRole('button', { name: 'Calibrate: look at the screen for 3 seconds' }).click()
+  await expect(page.getByRole('button', { name: 'Look at the screen…' })).toBeDisabled()
+  await expect(page.getByText('The camera stopped sending pictures, so calibration did not finish.')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('button', { name: 'Calibrate: look at the screen for 3 seconds' })).toBeEnabled()
+})
+
 test('keyboard, IME composition, source rendering and reduced-motion scrolling', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   let requests = 0
