@@ -198,7 +198,7 @@ async def login(
     limiter.begin(ip_address)
 
     try:
-        token = await _authenticate(payload, ip_address, settings, db)
+        token = await _authenticate(payload, settings, db)
     except AuthenticationError:
         limiter.record_failure(ip_address)
         raise
@@ -219,7 +219,6 @@ async def login(
 
 async def _authenticate(
     payload: LoginRequest,
-    ip_address: str,
     settings: Settings,
     db: AsyncSession,
 ) -> TokenResponse:
