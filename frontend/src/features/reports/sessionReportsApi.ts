@@ -2,10 +2,8 @@ import {
   ApiError,
   apiAuthenticatedGet,
   apiAuthenticatedRequest,
-  apiUrl,
-  clearAccessToken,
-  getAccessToken,
-} from '../../api'
+  authenticatedFetch,
+} from '../../api.ts'
 
 import type {
   ReportJob,
@@ -90,41 +88,15 @@ async function pdfError(
 export async function downloadSessionReportPdf(
   reportId: string,
 ): Promise<ReportPdfDownload> {
-  const token =
-    getAccessToken()
-
-  if (!token) {
-    throw new ApiError(
-      401,
-      'UNAUTHENTICATED',
-      'Login is required.',
-    )
-  }
-
   const response =
-    await fetch(
-      apiUrl(
-        `/reports/${encodeURIComponent(
-          reportId,
-        )}/pdf`,
-      ),
-      {
-        headers: {
-          Authorization:
-            `Bearer ${token}`,
-        },
-      },
+    await authenticatedFetch(
+      `/reports/${encodeURIComponent(
+        reportId,
+      )}/pdf`,
     )
 
   if (!response.ok) {
-    const error =
-      await pdfError(response)
-
-    if (response.status === 401) {
-      clearAccessToken()
-    }
-
-    throw error
+    throw await pdfError(response)
   }
 
   return {

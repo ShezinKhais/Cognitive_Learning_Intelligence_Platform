@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import {
   Navigate,
   Outlet,
@@ -11,11 +12,9 @@ import StaffTeamsBoundary from './components/StaffTeamsBoundary'
 import { StudentAppProvider } from './features/student/StudentAppContext'
 import AccessDeniedPage from './pages/AccessDeniedPage'
 import AdminConsole from './pages/AdminConsole'
-import AdminGovernancePage from './pages/AdminGovernancePage'
 import ConsentPage from './pages/ConsentPage'
 import LecturerLiveSessionPage from './pages/LecturerLiveSessionPage'
 import LecturerMaterialsPage from './pages/LecturerMaterialsPage'
-import LecturerSessionReportPage from './pages/LecturerSessionReportPage'
 import LecturerSessionsPage from './pages/LecturerSessionsPage'
 import LoginPage from './pages/LoginPage'
 import ProtectedStudentPage from './pages/ProtectedStudentPage'
@@ -28,6 +27,9 @@ import TeamsConfigPage from './pages/TeamsConfigPage'
 import TeamsLecturerMeetingPage from './pages/TeamsLecturerMeetingPage'
 import TeamsMeetingEntryPage from './pages/TeamsMeetingEntryPage'
 import TeamsMeetingPage from './pages/TeamsMeetingPage'
+
+const AdminGovernancePage = lazy(() => import('./pages/AdminGovernancePage'))
+const LecturerSessionReportPage = lazy(() => import('./pages/LecturerSessionReportPage'))
 
 // Sends whoever arrives at the root, or at a page that does not exist, to
 // their own home. Always sending them to /student told every lecturer and
@@ -133,7 +135,11 @@ export default function App() {
 
         <Route
           path="/admin/governance"
-          element={<AdminGovernancePage />}
+          element={
+            <Suspense fallback={<p role="status">Loading governance...</p>}>
+              <AdminGovernancePage />
+            </Suspense>
+          }
         />
       </Route>
 
@@ -182,7 +188,11 @@ export default function App() {
 
         <Route
           path="/lecturer/sessions/:sessionId/report"
-          element={<LecturerSessionReportPage />}
+          element={
+            <Suspense fallback={<p role="status">Loading report...</p>}>
+              <LecturerSessionReportPage />
+            </Suspense>
+          }
         />
 
         <Route

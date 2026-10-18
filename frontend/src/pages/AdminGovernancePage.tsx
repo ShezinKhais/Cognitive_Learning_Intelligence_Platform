@@ -775,7 +775,7 @@ export default function AdminGovernancePage() {
         )
 
         setNotice(
-          'Approved session deletion executed.',
+          'Approved deletion request executed.',
         )
       }
 
@@ -1182,7 +1182,7 @@ export default function AdminGovernancePage() {
               <p className="mt-1 text-sm text-muted-foreground">
                 A different administrator
                 must approve a request
-                before a session deletion
+                before a deletion request
                 can be executed.
               </p>
             </div>
@@ -1285,18 +1285,6 @@ export default function AdminGovernancePage() {
               Request deletion
             </button>
           </form>
-
-          {targetType ===
-            'student' && (
-            <p className="mt-3 text-xs text-muted-foreground">
-              Student deletion
-              requests may be reviewed,
-              but individual-student
-              erasure is not yet
-              executable by the current
-              backend contract.
-            </p>
-          )}
 
           <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
             <div>
@@ -1546,12 +1534,12 @@ export default function AdminGovernancePage() {
                       request.request_id && (
                       <div
                         role="group"
-                        aria-label="Confirm irreversible session deletion"
+                        aria-label="Confirm irreversible deletion"
                         className="mt-4 rounded-lg border border-destructive/40 bg-destructive/10 p-4"
                       >
                         <p className="text-sm font-semibold">
                           Confirm permanent
-                          session deletion
+                          data deletion
                         </p>
 
                         <p className="mt-1 text-sm text-muted-foreground">
@@ -1624,18 +1612,6 @@ export default function AdminGovernancePage() {
                         </div>
                       </div>
                     )}
-
-                    {request.status ===
-                      'approved' &&
-                      request.target_type ===
-                        'student' && (
-                        <p className="mt-3 text-xs text-muted-foreground">
-                          Student erasure
-                          execution is not
-                          available in the
-                          current backend.
-                        </p>
-                      )}
                   </article>
                 ),
               )
@@ -1835,20 +1811,12 @@ export default function AdminGovernancePage() {
                       </p>
                     )}
 
-                    <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+                    <div className="mt-3 text-xs text-muted-foreground">
                       <p>
                         Actor:{' '}
                         <span className="break-all font-mono text-foreground">
                           {entry.user_id ??
                             'System'}
-                        </span>
-                      </p>
-
-                      <p>
-                        IP address:{' '}
-                        <span className="break-all font-mono text-foreground">
-                          {entry.ip_address ??
-                            'Unavailable'}
                         </span>
                       </p>
                     </div>

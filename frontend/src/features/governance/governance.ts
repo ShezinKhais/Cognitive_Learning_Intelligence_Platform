@@ -37,7 +37,6 @@ export interface AuditEntry {
   user_id: string | null
   action_type: string
   timestamp: string
-  ip_address: string | null
   target_type: string | null
   target_id: string | null
   details: Record<
@@ -115,8 +114,7 @@ export function canExecuteDeletion(
   request: DeletionRequest,
 ): boolean {
   return (
-    request.status === 'approved' &&
-    request.target_type === 'session'
+    request.status === 'approved'
   )
 }
 
