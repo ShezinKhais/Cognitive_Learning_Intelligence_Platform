@@ -14,7 +14,7 @@
     "eval:attention": "node --experimental-strip-types scripts/evaluate-attention.ts ../backend/tests/eval/cv --out ../backend/tests/eval/cv/RESULTS.md",
     "build:e2e": "npm run prepare:attention && vite build --config vite.e2e.config.ts",
     "test:browser": "playwright test",
-    "check:browser": "tsc --ignoreConfig --noEmit --module esnext --moduleResolution bundler --target es2022 --lib es2022,dom --skipLibCheck e2e/student.spec.ts playwright.config.ts vite.e2e.config.ts",
+    "check:browser": "tsc --ignoreConfig --noEmit --module esnext --moduleResolution bundler --target es2022 --lib es2022,dom --skipLibCheck e2e/student.spec.ts e2e/recorder.spec.ts playwright.config.ts vite.e2e.config.ts",
     "preview": "vite preview"
   },
   "dependencies": {

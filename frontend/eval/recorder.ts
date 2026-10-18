@@ -31,6 +31,10 @@ let stream: MediaStream | undefined
 let worker: Worker | undefined
 let timer: ReturnType<typeof setInterval> | undefined
 let busy = false
+// A start waits on the camera permission prompt. Every stop bumps the
+// generation, so a start that was stopped meanwhile drops what it gets.
+let generation = 0
+let starting = false
 let recording: { label: Label; clip: string; startedAt: number; conditions: Record<Condition, string> } | null = null
 
 const selects = {} as Record<Condition, HTMLSelectElement>
@@ -58,15 +62,15 @@ for (const [label, instruction] of Object.entries(LABELS) as [Label, string][]) 
 
 function refresh() {
   const on = Boolean(worker)
-  start.disabled = on || !consent.checked
-  stop.disabled = !on
+  start.disabled = on || starting || !consent.checked
+  stop.disabled = !on && !starting
   for (const button of labelButtons) button.disabled = !on || recording !== null || !/^P\d+$/.test(participant.value.trim())
   counter.textContent = `${clips} clips, ${frames.length} frames recorded.`
   download.disabled = discard.disabled = frames.length === 0
 }
 participant.oninput = refresh
 // Unticking consent turns the camera off at once, not just the Start button.
-consent.onchange = () => { if (!consent.checked && worker) stopCamera('Consent withdrawn. Camera off.'); else refresh() }
+consent.onchange = () => { if (!consent.checked && (worker || starting)) stopCamera('Consent withdrawn. Camera off.'); else refresh() }
 
 function record(label: Label) {
   clips += 1
@@ -125,9 +129,25 @@ function keep(features: FaceFeatures) {
 }
 
 start.onclick = async () => {
-  stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 320 }, height: { ideal: 240 } }, audio: false })
+  const mine = ++generation
+  const current = () => mine === generation && consent.checked
+  starting = true
+  status.textContent = 'Waiting for the camera…'
+  refresh()
+  let acquired: MediaStream
+  try {
+    acquired = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 320 }, height: { ideal: 240 } }, audio: false })
+  } catch {
+    if (mine === generation) { starting = false; status.textContent = 'The camera could not be started.'; refresh() }
+    return
+  }
+  if (!current()) { acquired.getTracks().forEach(track => track.stop()); return }
+  stream = acquired
   preview.srcObject = stream
-  await preview.play()
+  await preview.play().catch(() => undefined)
+  // A stop or a withdrawal during play() has already turned everything off.
+  if (!current()) { acquired.getTracks().forEach(track => track.stop()); return }
+  starting = false
   worker = new Worker(new URL('../src/features/attention/face.worker.ts', import.meta.url), { type: 'module' })
   worker.onmessage = event => {
     if (event.data.type === 'ready') { status.textContent = 'Camera ready. Pick a clip to record.'; sendFrames() }
@@ -153,6 +173,8 @@ function sendFrames() {
 }
 
 function stopCamera(message: string) {
+  generation += 1
+  starting = false
   clearInterval(timer)
   worker?.terminate()
   worker = undefined

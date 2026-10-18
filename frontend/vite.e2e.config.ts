@@ -26,6 +26,6 @@ export default defineConfig({
       })
     },
   }],
-  build: { outDir: 'dist-e2e', rollupOptions: { input: 'e2e/harness/index.html' } },
+  build: { outDir: 'dist-e2e', rollupOptions: { input: ['e2e/harness/index.html', 'eval/attention-recorder.html'] } },
   preview: { host: '127.0.0.1', port: 4174, strictPort: true },
 })

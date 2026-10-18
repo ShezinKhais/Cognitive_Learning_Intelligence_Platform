@@ -58,7 +58,9 @@ stay with the evaluator and are not committed.
   never tuned on, and every person gets a result.
 - **Tuning** searches yaw, pitch and roll limits and the iris box for the best
   balanced accuracy on "looking at the screen", separately with and without
-  calibration.
+  calibration. With calibration on, a person whose calibration is missing or
+  refused is judged with the uncalibrated limits, as the app does; every set
+  in these recordings had a usable calibration, so no number depends on it.
 - **Balanced accuracy** averages "looking" recognised and "not looking"
   recognised, so the many "away" clips do not swamp the "screen" ones. A frame
   with no gaze reading (eyes closed, no face, two faces) counts as "not looking".
