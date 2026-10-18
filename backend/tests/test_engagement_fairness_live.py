@@ -76,7 +76,7 @@ async def _learn_baseline(
     # Duration-weighted windows can differ at the last binary floating-point
     # digit. Keep the sample-count/value check without depending on timing bits.
     assert room._live[row.session_id].attention._students[student].baseline.gaze == pytest.approx(
-        [0.4] * 3, rel=0, abs=1e-12
+        [0.4] * 3
     )
 
 

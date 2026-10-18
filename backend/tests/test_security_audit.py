@@ -23,9 +23,11 @@ from fastapi.testclient import TestClient
 
 from app.auth.store import ADMIN_ID, LECTURER_ID, STUDENT_ID
 from app.main import app as application
+from app.repositories.student_repository import StudentRepository
 from app.schemas.identity import Role
 
-from .session_support import add_course, create_session, sign_in_as
+from .dev_credentials import STUDENT_PASSWORD
+from .session_support import add_course, add_question, create_session, enrol, sign_in_as
 
 METHODS = ("get", "post", "put", "patch", "delete")
 
@@ -317,14 +319,52 @@ def test_without_terms_consent_nothing_is_served(db, app, method: str, path: str
     )
 
 
-def test_no_published_route_is_an_unimplemented_stub(db, app) -> None:  # noqa: ANN001
-    """The merged session and summary routes must never regress to 501."""
+async def test_session_and_summary_routes_serve_a_created_resource(db, app) -> None:  # noqa: ANN001
+    """Previously stubbed routes must return persisted data, not just avoid 501."""
     client, factory, created = db
+    course = await add_course(factory, created)
+    await enrol(factory, course)
+    async with factory() as database:
+        student = await StudentRepository(database).get_by_user_id(STUDENT_ID)
+        assert student is not None
+        student_id = student.student_id
     sign_in_as(app, LECTURER_ID, Role.LECTURER)
-    answering = {
-        (method, path) for method, path in AUDIENCE if call(client, method, path).status_code == 501
-    }
-    assert not answering, sorted(answering)
+    session = create_session(client, course, "Route implementation audit")
+    session_id = session["id"]
+    await add_question(db, course, LECTURER_ID)
+    assert client.post(f"/api/v1/sessions/{session_id}/start").status_code == 200
+    detail = client.get(f"/api/v1/sessions/{session_id}")
+    assert detail.status_code == 200
+    assert detail.json()["id"] == session_id
+    assert client.post(f"/api/v1/sessions/{session_id}/end").status_code == 200
+    sign_in_as(app, STUDENT_ID, Role.STUDENT)
+    responses = client.get(f"/api/v1/sessions/{session_id}/responses")
+    assert responses.status_code == 200
+    assert responses.json()["items"] == []
+    summary = client.get(f"/api/v1/sessions/{session_id}/summary/{student_id}")
+    assert summary.status_code == 200
+    assert summary.json()["questions_attempted"] == 0
+    assert summary.json()["engagement"]["score"] is None
+
+
+def test_refresh_bootstrap_accepts_a_real_signed_in_user(client: TestClient) -> None:
+    """Current main uses bearer refresh; cookie migration needs its own contract update."""
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "student@clip.example.com", "password": STUDENT_PASSWORD},
+    )
+    assert login.status_code == 200
+    refreshed = client.post(
+        "/api/v1/auth/refresh",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+    )
+    assert refreshed.status_code == 200
+    me = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {refreshed.json()['access_token']}"},
+    )
+    assert me.status_code == 200
+    assert me.json()["id"] == str(STUDENT_ID)
 
 
 # -- startup refuses an unknown environment ------------------------------------------------

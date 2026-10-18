@@ -11,8 +11,10 @@ production/real-tenant sign-off. No other open PR was merged for this audit.
    mount. After the HTTP refresh mechanism replaced it, reconnects still sent
    the old token, which could cause an unnecessary sign-in. Each handshake now
    reads current storage. A token removed before reconnect is never sent.
-   Six browser regression cases exercise the actual hooks over Playwright's
-   mocked WebSocket transport (refresh and removal for each hook).
+   On an authentication close (4001), each hook now attempts refresh once and
+   reconnects, signing out if recovery fails or the renewed handshake is refused.
+   Recovery is cancelled on unmount. Browser regressions exercise the actual
+   hooks over Playwright's mocked WebSocket transport.
 2. **Security audit inventory did not cover merged routes.** The full main
    suite failed because refresh and three student-review routes were missing
    from its explicit audience map. These are now classified; review routes
@@ -27,7 +29,7 @@ production/real-tenant sign-off. No other open PR was merged for this audit.
 4. **Timing-sensitive floating-point assertion.** A full-suite rerun exposed
    four fairness-test failures in the shared baseline helper: duration-weighted
    `0.4` sometimes becomes `0.39999999999999997`. Its three values are now
-   checked with absolute tolerance `1e-12` and no relative tolerance. Production
+   checked with the default `pytest.approx` tolerance, matching #162/#163. Production
    scoring, sample count and consent-purge checks are unchanged.
 
 The existing PostgreSQL REST/WebSocket integration test now continues past
@@ -45,18 +47,23 @@ An isolated `pgvector/pgvector:pg16` test container was used on
   Failures: the route inventory fixed above, and the known local WMF conversion
   limitation below. The skip is real OCR without local Tesseract.
 - After fixes, focused database-backed security, token-refresh, student-review,
-  student-summary and combined integration tests: **223 passed**.
+  student-summary and combined integration tests passed in the original audit.
   A subsequent full local run passed **2,688**, skipped **1**, and failed the
   known WMF case plus four instances of the floating-point assertion described
   above; those four are addressed by the follow-up test-only correction.
-- Frontend unit/proxy tests: **105 passed**; lint, production build and browser
+- Frontend unit/proxy tests: **107 passed**; lint, production build and browser
   test type-check passed.
-- Docker Chromium browser suite: **29 passed**, including real self-hosted
+- Current Docker Chromium browser suite: **40 passed**, including real self-hosted
   camera/VAD startup with synthetic media, CPU throttling, denial/failure,
   consent withdrawal, track cleanup, keyboard/reduced motion, automated
-  accessibility checks and the six new socket regressions. These are not
+  accessibility checks and socket regressions. Branded Chrome/Edge need a fresh
+  CI run for this follow-up. These are not
   physical-device, real-image/voice accuracy or real Teams tests.
 - Backend lint/format and generated REST/WebSocket contract checks passed.
+- Current focused PostgreSQL security-audit, refresh, live-to-review integration
+  and fairness regression run: **204 passed**, using a fresh isolated database
+  `clip_pr161_review_20261018`, migrations through `c5d8e2f71a40`. No development
+  data or other workstream schema was used. The test container was stopped afterward.
 
 Full post-fix backend and branded Chrome/Edge results should be read from this
 PR's CI run; do not extrapolate them from the focused/local results above.
@@ -66,7 +73,7 @@ PR's CI run; do not extrapolate them from the focused/local results above.
 | Area | Current state and next step |
 | --- | --- |
 | Staff reporting/governance UI | Aliyeh's #146 remains open, with #151 staff hardening evidence also open. Recheck against Nour's final API before merging. |
-| Database governance | Nour's remaining Phase 7/8 work has no open PR at this snapshot. Database retention/deletion/cascade/backup/restore evidence and governance endpoints must arrive and be integrated. The purge runner currently registers upload-file cleanup, not a complete database-retention implementation. |
+| Database governance | Nour's #162 and #163 are open as of the 2026-10-18 review follow-up. Their database retention/deletion/cascade/backup/restore work must be reviewed and integrated separately, not duplicated here. |
 | Timetable/roster persistence | `backend/app/api/v1/identity.py` still parses/matches uploads without saving dated sessions or enrolments (`sessions_created=0`). Agree enrolment cardinality and timetable-to-date behaviour before implementing; do not silently move a student between courses. |
 | Breakout workflow | The AI2 follow-up adds student room-selection submission over the existing `room.confirm` event, with active/connected/paused checks and explicit error/unacknowledged states. It does not create Teams rooms or automatically assign students. Lecturer `room.status` presentation, recommendation review and final group controls remain separate work; no full group-formation claim is made. |
 | Historical engagement | Student review/summary intentionally report unavailable/insufficient data. No verified persisted record with confidence and signal availability is supplied; do not replace it with zero or infer comprehension from it. |
@@ -107,8 +114,23 @@ These are integration targets, not schema changes delivered by this PR.
 The remaining three gaps are therefore **not all completed by #161**. The
 safe AI2 connection is implemented without taking over the other workstreams.
 
-Student-room follow-up validation: 107 frontend unit/proxy tests passed, lint
-had no warnings, and build/browser type-check passed. The Docker Chromium
-suite passed 31 tests; after adding reconnect/no-auto-replay and automated
-accessibility assertions, both room tests passed again. The final branded
-Chrome/Edge results are recorded in this PR's CI, not inferred from Chromium.
+## Review follow-up — 2026-10-18
+
+- Removed the harness connection-status key: reconnect no longer remounts the
+  room form or erases its typed label. A browser assertion checks preservation.
+- Room notices only display room-specific refusals received after a submission;
+  unrelated `RATE_LIMITED`/`NOT_IN_SESSION` errors cannot override a sent notice.
+  There is still no server success receipt or request id: do not claim confirmed
+  membership or exact correlation for generic errors.
+- Replaced the misleading random-ID “no stubs” test with checks of a created
+  session, its response collection and its ended-session summary. The existing
+  live integration test checks a real submitted answer and matching review counts.
+- Added a real login → refresh → identity audit test for current main's bearer
+  contract. The proposed httpOnly-cookie/in-memory-token rework is not on main:
+  its integration must change refresh classification to cookie-authenticated,
+  test `X-CLIP-Refresh: 1` and logout, and replace localStorage harness seeding
+  with that final contract. No nonexistent logout route is added to this audit.
+- The fairness assertion now matches Nour's default `pytest.approx` tolerance.
+  Suggested dependency order for overlapping tests: #162, #163, then rebase #161
+  and rerun CI. This is a recommendation, not a merge or an agreement on behalf
+  of those owners; preserve all route-audit additions when resolving conflicts.

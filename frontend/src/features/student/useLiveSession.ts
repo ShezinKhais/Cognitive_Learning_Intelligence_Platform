@@ -31,6 +31,7 @@ import {
   actionForClose,
   isAccessRevocation,
 } from '../materials/closeCodes'
+import { recoverSocketAuthentication } from '../materials/socketAuthentication'
 import type { SessionStatus } from './types'
 import type { AttentionSummary } from '../attention/signals'
 import { roomSelection } from './breakoutRoom'
@@ -109,6 +110,7 @@ export function useLiveSession(
     let stopped = false
     let connectedOnce = false
     let retryCount = 0
+    let authenticationRetried = false
     let cursor = readCursor(sessionId)
 
     function scheduleReconnect(): void {
@@ -146,6 +148,7 @@ export function useLiveSession(
       })
       readyRef.current = false
 
+      let sentToken: string | null = null
       const currentSocket = new WebSocket(liveSocketUrl())
       socket = currentSocket
       socketRef.current = currentSocket
@@ -153,6 +156,7 @@ export function useLiveSession(
       currentSocket.addEventListener('open', () => {
         // A long-running page may have refreshed since its previous socket.
         const authToken = getAccessToken()
+        sentToken = authToken
         if (!authToken) {
           currentSocket.close(4001, 'authentication required')
           return
@@ -191,6 +195,7 @@ export function useLiveSession(
             return
           }
 
+          authenticationRetried = false
           connectedOnce = true
           readyRef.current = true
           retryCount = 0
@@ -352,7 +357,7 @@ export function useLiveSession(
         }
       })
 
-      currentSocket.addEventListener('close', (closeEvent) => {
+      currentSocket.addEventListener('close', async (closeEvent) => {
         if (socket === currentSocket) {
           socket = null
         }
@@ -367,6 +372,15 @@ export function useLiveSession(
         const closeAction = actionForClose(closeEvent.code)
 
         if (closeAction === 'sign-in') {
+          if (!authenticationRetried) {
+            authenticationRetried = true
+            const renewed = await recoverSocketAuthentication(sentToken)
+            if (stopped) return
+            if (renewed) {
+              connect()
+              return
+            }
+          }
           stopped = true
           clearAccessToken()
           window.location.assign('/login')

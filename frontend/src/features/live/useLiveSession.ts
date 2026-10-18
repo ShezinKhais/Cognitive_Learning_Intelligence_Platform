@@ -2,6 +2,7 @@ import {
   useEffect,
   useState,
 } from 'react'
+import { recoverSocketAuthentication } from '../materials/socketAuthentication'
 
 import {
   clearAccessToken,
@@ -481,6 +482,7 @@ setAlerts((current) => {
     let retryTimer: number | undefined
     let stopped = false
     let retryCount = 0
+    let authenticationRetried = false
     let lastSeq = 0
     let streamId: string | null = null
 
@@ -493,6 +495,7 @@ setAlerts((current) => {
         'connecting',
       )
 
+      let sentToken: string | null = null
       const currentSocket =
         new WebSocket(
           liveSocketUrl(),
@@ -504,6 +507,7 @@ setAlerts((current) => {
         'open',
         () => {
           const accessToken = getAccessToken()
+          sentToken = accessToken
           if (!accessToken) {
             currentSocket.close(4001, 'authentication required')
             return
@@ -567,6 +571,7 @@ setAlerts((current) => {
             )
           ) {
             retryCount = 0
+            authenticationRetried = false
 
             if (
               message.data
@@ -697,7 +702,7 @@ setAlerts((current) => {
 
       currentSocket.addEventListener(
         'close',
-        (event) => {
+        async (event) => {
           if (stopped) {
             return
           }
@@ -710,6 +715,15 @@ setAlerts((current) => {
           if (
             action === 'sign-in'
           ) {
+            if (!authenticationRetried) {
+              authenticationRetried = true
+              const renewed = await recoverSocketAuthentication(sentToken)
+              if (stopped) return
+              if (renewed) {
+                connect()
+                return
+              }
+            }
             stopped = true
 
             clearAccessToken()

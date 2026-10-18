@@ -9,6 +9,7 @@ import {
   getAccessToken,
 } from '../../api'
 import { actionForClose } from './closeCodes'
+import { recoverSocketAuthentication } from './socketAuthentication'
 import type {
   MaterialProgress,
   ProgressConnectionStatus,
@@ -105,6 +106,7 @@ export function useMaterialProgress(
     let retryTimer: number | undefined
     let stopped = false
     let retryCount = 0
+    let authenticationRetried = false
     let lastSeq = 0
     let streamId: string | null = null
     let connectedOnce = false
@@ -113,11 +115,13 @@ export function useMaterialProgress(
       if (stopped) return
 
       setStatus('connecting')
+      let sentToken: string | null = null
       const currentSocket = new WebSocket(progressSocketUrl())
       socket = currentSocket
 
       currentSocket.addEventListener('open', () => {
         const accessToken = getAccessToken()
+        sentToken = accessToken
         if (!accessToken) {
           currentSocket.close(4001, 'authentication required')
           return
@@ -157,6 +161,7 @@ export function useMaterialProgress(
         }
 
         if (message.type === 'ready') {
+          authenticationRetried = false
           const reconnected = connectedOnce
           connectedOnce = true
           retryCount = 0
@@ -186,11 +191,20 @@ export function useMaterialProgress(
         }
       })
 
-      currentSocket.addEventListener('close', (event) => {
+      currentSocket.addEventListener('close', async (event) => {
         if (stopped) return
 
         const action = actionForClose(event.code)
         if (action === 'sign-in') {
+          if (!authenticationRetried) {
+            authenticationRetried = true
+            const renewed = await recoverSocketAuthentication(sentToken)
+            if (stopped) return
+            if (renewed) {
+              connect()
+              return
+            }
+          }
           stopped = true
           clearAccessToken()
           window.location.assign('/login')

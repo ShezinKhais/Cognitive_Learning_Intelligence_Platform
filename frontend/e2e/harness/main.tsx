@@ -26,7 +26,7 @@ export function Harness() {
 function StudentSocket() {
   const { state, selectRoom } = useStudentSession('refresh-session', 'active')
   return <main>Student socket: {state.connection}
-    <BreakoutRoomSelection key={state.connection} onSelect={selectRoom} serverError={state.error}
+    <BreakoutRoomSelection onSelect={selectRoom} serverError={state.error}
       enabled={state.connection === 'connected' && state.sessionStatus === 'active' && !state.paused} />
   </main>
 }

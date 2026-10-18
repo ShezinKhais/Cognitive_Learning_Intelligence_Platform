@@ -54,11 +54,15 @@ test('student room selection uses only the existing event and respects live sess
   await send.click()
   await expect.poll(() => selections).toEqual([{ room_label: 'Room 2' }])
   await expect(page.getByRole('status')).toContainText('Room selection sent: Room 2')
+  connection!.send(JSON.stringify({ type: 'error', seq: 0, ts: new Date().toISOString(),
+    data: { code: 'RATE_LIMITED', detail: 'attention.summary is being sent too often' } }))
+  await expect(page.getByRole('status')).toContainText('Room selection sent: Room 2')
   expect(await page.evaluate(() => (window as any).probe.requests)).toBe(0)
   expect((await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([])
   connection!.close({ code: 1012, reason: 'service restart' })
   await expect.poll(() => connected).toBe(2)
   await expect(send).toBeEnabled()
+  await expect(page.getByLabel('Assigned room name')).toHaveValue('  Room   2  ')
   expect(selections).toEqual([{ room_label: 'Room 2' }]) // Never silently replay a selection.
   connection!.send(JSON.stringify({ type: 'error', seq: 0, ts: new Date().toISOString(),
     data: { code: 'ROOM_LIMIT', detail: 'No more rooms can be added.' } }))
@@ -81,6 +85,59 @@ test('room selection is unavailable without a ready live connection', async ({ p
 })
 
 for (const socket of ['student', 'lecturer', 'progress']) {
+  for (const refused of [false, true]) {
+    test(`${socket} socket ${refused ? 'signs in after a refused refresh' : 'refreshes once after authentication expires'}`, async ({ page }) => {
+      let refreshes = 0
+      const tokens: string[] = []
+      await page.route('**/api/v1/auth/refresh', route => {
+        refreshes++
+        return route.fulfill({ status: refused ? 401 : 200, json: refused ? {} : {
+          access_token: 'socket-renewed', expires_in: 3600, token_type: 'bearer', role: 'student',
+        } })
+      })
+      await page.route('**/login', route => route.fulfill({ contentType: 'text/html',
+        body: '<!doctype html><h1>Sign in</h1>' }))
+      await page.routeWebSocket('**/ws/session', ws => {
+        ws.onMessage(message => {
+          const event = JSON.parse(String(message))
+          if (event.type !== 'auth') return
+          tokens.push(event.data.token)
+          if (event.data.token === 'test-only') ws.close({ code: 4001, reason: 'expired' })
+        })
+      })
+      await page.goto(`/e2e/harness/index.html?socket=${socket}`)
+      if (refused) {
+        await expect(page).toHaveURL(/\/login$/)
+        expect(tokens).toEqual(['test-only'])
+      } else {
+        await expect.poll(() => tokens).toEqual(['test-only', 'socket-renewed'])
+        await expect(page).not.toHaveURL(/\/login$/)
+      }
+      expect(refreshes).toBe(1)
+    })
+  }
+
+  test(`${socket} socket does not loop when the renewed credential is rejected`, async ({ page }) => {
+    let refreshes = 0
+    const tokens: string[] = []
+    await page.route('**/api/v1/auth/refresh', route => {
+      refreshes++
+      return route.fulfill({ json: { access_token: 'still-refused', expires_in: 3600 } })
+    })
+    await page.route('**/login', route => route.fulfill({ contentType: 'text/html', body: '<h1>Sign in</h1>' }))
+    await page.routeWebSocket('**/ws/session', ws => ws.onMessage(message => {
+      const event = JSON.parse(String(message))
+      if (event.type === 'auth') {
+        tokens.push(event.data.token)
+        ws.close({ code: 4001, reason: 'refused' })
+      }
+    }))
+    await page.goto(`/e2e/harness/index.html?socket=${socket}`)
+    await expect(page).toHaveURL(/\/login$/)
+    expect(tokens).toEqual(['test-only', 'still-refused'])
+    expect(refreshes).toBe(1)
+  })
+
   test(`${socket} socket reconnect authenticates with the refreshed token`, async ({ page }) => {
     const tokens: string[] = []
     const connections: WebSocketRoute[] = []

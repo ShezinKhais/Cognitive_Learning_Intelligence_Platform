@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { roomSelection } from './breakoutRoom'
 import type { LiveErrorEvent } from './liveSessionTypes'
 
@@ -10,8 +10,12 @@ export function BreakoutRoomSelection({ enabled, onSelect, serverError }: {
   const id = useId()
   const [label, setLabel] = useState('')
   const [notice, setNotice] = useState('')
-  const rejected = serverError &&
-    ['ROOM_LIMIT', 'ROOM_LABEL_INVALID', 'NOT_IN_SESSION', 'RATE_LIMITED'].includes(serverError.code)
+  const errorAtSend = useRef<LiveErrorEvent | null>(null)
+  // Only room-specific refusals arriving after this send are relevant. Generic
+  // throttling/session errors have no request id and may belong to other traffic.
+  const rejected = notice.startsWith('Room selection sent:') && serverError &&
+    serverError !== errorAtSend.current &&
+    ['ROOM_LIMIT', 'ROOM_LABEL_INVALID'].includes(serverError.code)
   return <section aria-labelledby={`${id}-title`} className="mt-5 rounded-xl border border-border bg-card p-5">
     <h2 id={`${id}-title`} className="text-lg font-semibold">Your breakout room</h2>
     <p id={`${id}-help`} className="mt-2 text-sm text-muted-foreground">
@@ -25,6 +29,7 @@ export function BreakoutRoomSelection({ enabled, onSelect, serverError }: {
         setNotice('Enter a room name of 1–100 characters without control characters.')
         return
       }
+      errorAtSend.current = serverError
       setNotice(enabled && onSelect(selection.room_label)
         ? `Room selection sent: ${selection.room_label}. Ask your lecturer if you need confirmation.`
         : 'Not sent. Wait for the active live connection and try again.')
