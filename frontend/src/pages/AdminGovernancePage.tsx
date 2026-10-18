@@ -775,7 +775,7 @@ export default function AdminGovernancePage() {
         )
 
         setNotice(
-          'Approved session deletion executed.',
+          'Approved deletion request executed.',
         )
       }
 
@@ -1182,7 +1182,7 @@ export default function AdminGovernancePage() {
               <p className="mt-1 text-sm text-muted-foreground">
                 A different administrator
                 must approve a request
-                before a session deletion
+                before a deletion request
                 can be executed.
               </p>
             </div>
@@ -1539,7 +1539,7 @@ export default function AdminGovernancePage() {
                       >
                         <p className="text-sm font-semibold">
                           Confirm permanent
-                          session deletion
+                          data deletion
                         </p>
 
                         <p className="mt-1 text-sm text-muted-foreground">
@@ -1811,20 +1811,12 @@ export default function AdminGovernancePage() {
                       </p>
                     )}
 
-                    <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+                    <div className="mt-3 text-xs text-muted-foreground">
                       <p>
                         Actor:{' '}
                         <span className="break-all font-mono text-foreground">
                           {entry.user_id ??
                             'System'}
-                        </span>
-                      </p>
-
-                      <p>
-                        IP address:{' '}
-                        <span className="break-all font-mono text-foreground">
-                          {entry.ip_address ??
-                            'Unavailable'}
                         </span>
                       </p>
                     </div>

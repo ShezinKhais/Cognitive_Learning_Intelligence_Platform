@@ -37,7 +37,6 @@ export interface AuditEntry {
   user_id: string | null
   action_type: string
   timestamp: string
-  ip_address: string | null
   target_type: string | null
   target_id: string | null
   details: Record<
