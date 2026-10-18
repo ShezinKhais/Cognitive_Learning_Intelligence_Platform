@@ -31,8 +31,8 @@ METHODS = ("get", "post", "put", "patch", "delete")
 
 # Reachable without signing in, and why.
 PUBLIC = {
+    ("POST", "/api/v1/auth/refresh"): "renews a token, authenticated by the token itself",
     ("POST", "/api/v1/auth/login"): "how a user signs in",
-    ("POST", "/api/v1/auth/refresh"): "refresh token authenticates the request",
     ("GET", "/api/v1/health"): "liveness for a load balancer",
     ("GET", "/api/v1/ready"): "readiness for a load balancer",
     ("POST", "/api/v1/teams/messages"): "Teams bot endpoint, authenticated by Microsoft's token",
@@ -47,10 +47,10 @@ ADMIN_ONLY = "admins"
 MEMBER = "a member of the session, decided in the handler"
 
 AUDIENCE = {
-    ("POST", "/api/v1/auth/consent"): ANY_USER,
     ("GET", "/api/v1/student-reviews"): STUDENT_ONLY,
     ("GET", "/api/v1/student-reviews/{session_id}"): STUDENT_ONLY,
     ("GET", "/api/v1/student-reviews/{session_id}/responses/{response_id}/sources"): STUDENT_ONLY,
+    ("POST", "/api/v1/auth/consent"): ANY_USER,
     ("GET", "/api/v1/auth/me"): ANY_USER,
     ("POST", "/api/v1/admin/roster"): ADMIN_ONLY,
     ("POST", "/api/v1/admin/timetable"): ADMIN_ONLY,
