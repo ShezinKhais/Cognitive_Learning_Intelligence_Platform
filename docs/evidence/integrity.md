@@ -2,8 +2,8 @@
 
 | Check | Result | Detail |
 |---|---|---|
-| One migration head | PASS | e7c2a4f95b18 |
-| Database is at the head | PASS | e7c2a4f95b18 |
+| One migration head | PASS | a8d2f4c61b73 |
+| Database is at the head | PASS | a8d2f4c61b73 |
 | Schema matches the models | PASS | no differences |
 | Every constraint is validated | PASS | - |
 | Every index is valid | PASS | - |

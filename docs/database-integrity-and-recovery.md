@@ -13,9 +13,9 @@ never the live data. Each script prints a Markdown section, saved in
 | Check | Script | Result | Evidence |
 |---|---|---|---|
 | Integrity | `db_evidence.py integrity` | 6 of 6 checks pass | [integrity.md](evidence/integrity.md) |
-| Migration rollback | `db_evidence.py rollback` | 44 of 44 steps down and 44 of 44 back up | [rollback.md](evidence/rollback.md) |
+| Migration rollback | `db_evidence.py rollback` | 46 of 46 steps down and 46 of 46 back up | [rollback.md](evidence/rollback.md) |
 | Purge simulation | `db_purge_simulation.py --scale 5` | 9 of 9 checks pass | [purge-simulation.md](evidence/purge-simulation.md) |
-| Deletion test | `db_deletion_test.py` | 15 of 15 checks pass | [deletion-test.md](evidence/deletion-test.md) |
+| Deletion test | `db_deletion_test.py` | 16 of 16 checks pass | [deletion-test.md](evidence/deletion-test.md) |
 | Backup restoration | `db_restore_check.py` | 5 of 5 checks pass | [restore-drill.md](evidence/restore-drill.md) |
 | Performance queries | `db_performance.py --scale 10` | slowest query 37 ms, no missing index | [performance.md](evidence/performance.md) |
 
@@ -32,9 +32,9 @@ The schema was built from scratch by applying every migration, then checked:
 
 ## Migration rollback
 
-All 44 migrations were downgraded one step at a time from the head to the empty database,
+All 46 migrations were downgraded one step at a time from the head to the empty database,
 checking after each step that the database stood on the expected revision, then upgraded
-one step at a time back to the head. All 88 steps passed. After the full cycle the
+one step at a time back to the head. All 92 steps passed. After the full cycle the
 integrity checks still pass, so no migration leaves the schema different from the models.
 
 ## Purge simulation

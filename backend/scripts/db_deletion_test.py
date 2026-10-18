@@ -4,7 +4,8 @@
 
 Erases one student end to end on a throwaway database, with a real second
 database for history, and checks what went and what stayed. Also checks the
-approval rules and the failure-and-retry case. Never touches the live database.
+approval rules, the failure-and-retry case and an erasure racing a purge. Never
+touches the live database.
 Prints a Markdown section and exits 1 if a check failed.
 """
 
@@ -24,10 +25,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.history.database import create_history_tables
 from app.history.models import StudentSemesterSummary
+from app.history.repository import SemesterTotals, add_totals
 from app.models.attention_signal_summary import AttentionSignalSummary
 from app.models.audit_log import AuditLog
 from app.models.comprehension_result import ComprehensionResult
 from app.models.engagement_record import EngagementRecord
+from app.models.session import Session
 from app.models.session_participant import SessionParticipant
 from app.models.student import Student
 from app.models.student_response import StudentResponse
@@ -82,6 +85,95 @@ async def history_rows(factory: async_sessionmaker[AsyncSession], student_id: UU
             )
             or 0
         )
+
+
+async def erase_while_purging(
+    main: async_sessionmaker[AsyncSession],
+    history: async_sessionmaker[AsyncSession],
+    admin_one: UUID,
+    admin_two: UUID,
+) -> tuple[bool, int, int]:
+    """Erase a student while a purge is archiving a session they attended.
+
+    The erasure is paused after their history is erased and committed and before
+    the main commit: the moment a purge used to read the student and add their
+    history back. Returns whether the purge waited, and the student's history rows
+    before and after."""
+    ended = datetime.now(UTC) - timedelta(days=3650)
+    async with main() as db:
+        course = await db.scalar(select(Student.course_id).limit(1))
+        instructor = await db.scalar(select(Session.instructor_id).limit(1))
+        learner = User(name="Racing Student", role="student", email="race@sim.test")
+        db.add(learner)
+        await db.flush()
+        student = Student(
+            user_id=learner.user_id,
+            course_id=course,
+            consent_status="granted",
+            enrolled_at=ended.date(),
+        )
+        session = Session(
+            instructor_id=instructor,
+            course_id=course,
+            start_time=ended - timedelta(hours=1),
+            end_time=ended,
+            ended_at=ended,
+            mode="live",
+            status="ended",
+        )
+        db.add_all([student, session])
+        await db.flush()
+        db.add(SessionParticipant(session_id=session.session_id, student_id=student.student_id))
+        await db.flush()
+        request = await create_request(
+            db,
+            target_type="student",
+            target_id=student.student_id,
+            requested_by=admin_one,
+            reason="Race",
+        )
+        await approve(db, request.request_id, admin_id=admin_two)
+        student_id, request_id = student.student_id, request.request_id
+        await db.commit()
+    async with history() as db:
+        await add_totals(db, [SemesterTotals(student_id, course, "2001-H1", sessions_attended=1)])
+        await db.commit()
+    before = await history_rows(history, student_id)
+
+    in_the_gap, carry_on = asyncio.Event(), asyncio.Event()
+    real = deletion_module._erase_history
+
+    async def pause(student_to_erase, history_factory):  # noqa: ANN001
+        removed = await real(student_to_erase, history_factory)
+        in_the_gap.set()  # the history is erased and committed; the main commit is not
+        await carry_on.wait()
+        return removed
+
+    async def erase() -> None:
+        async with main() as db:
+            await execute(db, request_id, admin_id=admin_two, history=lambda: history)
+            await db.commit()
+
+    deletion_module._erase_history = pause
+    erasure = asyncio.create_task(erase())
+    purging = None
+    waited = False
+    try:
+        await asyncio.wait_for(in_the_gap.wait(), timeout=30)
+        purging = asyncio.create_task(
+            SessionDataPurge(lambda: main, history=lambda: history).purge(
+                ended + timedelta(days=1), 500
+            )
+        )
+        await asyncio.sleep(1)
+        waited = not purging.done()
+    finally:
+        carry_on.set()
+        deletion_module._erase_history = real
+        await asyncio.wait_for(erasure, timeout=30)
+        if purging is not None:
+            await asyncio.wait_for(purging, timeout=30)
+    return waited, before, await history_rows(history, student_id)
 
 
 async def run(name: str) -> int:
@@ -273,6 +365,11 @@ async def run(name: str) -> int:
             select(func.count()).select_from(Student).where(Student.student_id == midway)
         )
 
+    race_waited, race_before, race_after = await erase_while_purging(
+        main, history, admin_one, admin_two
+    )
+    race_note = "waited for" if race_waited else "did not wait for"
+
     checks = [
         (
             "The student's export matched their stored data",
@@ -349,6 +446,11 @@ async def run(name: str) -> int:
             "Running it again finishes the erasure",
             midway_final == "executed" and midway_gone,
             f"request {midway_final}",
+        ),
+        (
+            "An erasure racing a purge leaves no history behind",
+            race_waited and race_before > 0 and race_after == 0,
+            f"purge {race_note} the erasure; history {race_before} -> {race_after}",
         ),
     ]
 
