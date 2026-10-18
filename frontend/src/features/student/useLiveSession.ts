@@ -7,8 +7,6 @@ import {
 } from 'react'
 
 import {
-  clearAccessToken,
-  renewSession,
   getAccessToken,
 } from '../../api'
 import {
@@ -34,6 +32,7 @@ import {
 } from '../materials/closeCodes'
 import type { SessionStatus } from './types'
 import type { AttentionSummary } from '../attention/signals'
+import { renewAfterRefusal, signOutToLogin } from '../realtime/tokenRefusal'
 
 interface AnswerSubmission {
   selected_option?: number
@@ -371,29 +370,20 @@ export function useLiveSession(
           // The token may have run out while the tab slept: refresh it once
           // and reconnect before sending the student to sign in.
           tokenRenewed = true
-          void renewSession().then((outcome) => {
-            if (stopped) return
-            if (outcome === 'renewed') {
-              connect()
-              return
-            }
-            if (outcome === 'unreachable') {
-              // Signed in still; try the socket and the refresh again.
+          renewAfterRefusal({
+            stopped: () => stopped,
+            reconnect: connect,
+            retryLater: () => {
               tokenRenewed = false
               scheduleReconnect()
-              return
-            }
-            stopped = true
-            clearAccessToken()
-            window.location.assign('/login')
+            },
           })
           return
         }
 
         if (closeAction === 'sign-in') {
           stopped = true
-          clearAccessToken()
-          window.location.assign('/login')
+          signOutToLogin()
           return
         }
 

@@ -4,8 +4,6 @@ import {
 } from 'react'
 
 import {
-  clearAccessToken,
-  renewSession,
   getAccessToken,
 } from '../../api'
 import { actionForClose } from '../materials/closeCodes'
@@ -14,6 +12,7 @@ import {
   acknowledgeSessionAlert,
   getOpenSessionAlerts,
 } from './alertApi'
+import { renewAfterRefusal, signOutToLogin } from '../realtime/tokenRefusal'
 
 export type LiveConnectionStatus =
   | 'connecting'
@@ -728,22 +727,14 @@ setAlerts((current) => {
             // The token may have run out while the tab slept: refresh it once
             // and reconnect before sending the lecturer to sign in.
             tokenRenewed = true
-            void renewSession().then((outcome) => {
-              if (stopped) return
-              if (outcome === 'renewed') {
-                connect()
-                return
-              }
-              if (outcome === 'unreachable') {
-                // Signed in still; try the socket and the refresh again.
+            renewAfterRefusal({
+              stopped: () => stopped,
+              reconnect: connect,
+              retryLater: () => {
                 tokenRenewed = false
                 setConnectionStatus('disconnected')
                 retryTimer = window.setTimeout(connect, Math.min(1000 * 2 ** retryCount++, 10_000))
-                return
-              }
-              stopped = true
-              clearAccessToken()
-              window.location.assign('/login')
+              },
             })
             return
           }
@@ -753,11 +744,7 @@ setAlerts((current) => {
           ) {
             stopped = true
 
-            clearAccessToken()
-
-            window.location.assign(
-              '/login',
-            )
+            signOutToLogin()
 
             return
           }
