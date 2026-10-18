@@ -193,7 +193,7 @@ All are in `backend/app/core/config.py` and can be set in `backend/.env`.
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `DATA_RETENTION_DAYS` | 90 | Data older than this is deleted by the purge. At least 1. |
+| `DATA_RETENTION_DAYS` | 120 | Data older than this is deleted by the purge. At least 1. |
 | `RETENTION_PURGE_INTERVAL_HOURS` | 24.0 | How often the purge runs. |
 | `RETENTION_PURGE_TIMEOUT_MINUTES` | 30.0 | How long one run may take. A run cut short carries on at the next. |
 

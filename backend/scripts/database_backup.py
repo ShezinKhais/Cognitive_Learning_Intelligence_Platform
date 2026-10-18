@@ -69,10 +69,10 @@ def connection_args(url: URL) -> list[str]:
 
 def dump(url_text: str, out_dir: Path, prefix: str, now: datetime | None = None) -> Path:
     url = plain_url(url_text)
-    # Closed to everyone but the owner before pg_dump writes anything: the folder,
-    # when this creates it, and the file itself.
-    if not out_dir.exists():
-        out_dir.mkdir(parents=True, mode=0o700)
+    # Closed to everyone but the owner before pg_dump writes anything: the folder
+    # (created now, or an existing one tightened) and the file itself.
+    out_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+    out_dir.chmod(0o700)  # mkdir's mode only applies to a folder it creates
     stamp = (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ")
     path = out_dir / f"{prefix}-{stamp}.dump"
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

@@ -19,6 +19,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.history.database import resolve_history_factory
@@ -154,8 +155,14 @@ async def create_request(
         reason=reason,
         requested_by=requested_by,
     )
-    db.add(request)
-    await db.flush()
+    # The check above is not enough on its own: two requests filed at the same
+    # moment both pass it. The unique index on open requests is what refuses
+    # the second, and the savepoint keeps the caller's transaction usable.
+    try:
+        async with db.begin_nested():
+            db.add(request)
+    except IntegrityError as error:
+        raise AlreadyOpen(f"This {target_type} already has an open deletion request.") from error
     await _audit(db, "DELETION_REQUESTED", request, requested_by)
     return request
 

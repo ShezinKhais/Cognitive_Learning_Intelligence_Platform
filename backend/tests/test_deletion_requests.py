@@ -518,3 +518,15 @@ async def test_an_erasure_that_fails_after_the_history_commit_is_finished_by_run
 
     assert done.status == "executed"
     assert await count(db, Student, Student.student_id, world.student) == 0
+
+
+async def test_two_open_requests_for_one_target_cannot_exist_even_when_filed_together(
+    db, world, monkeypatch
+):
+    await request_session(db, world)
+    # Filed at the same moment, both requests would pass the open-request check.
+    # The database is what refuses the second.
+    monkeypatch.setattr("app.services.deletion_requests.OPEN_STATUSES", ())
+
+    with pytest.raises(AlreadyOpen):
+        await request_session(db, world)
