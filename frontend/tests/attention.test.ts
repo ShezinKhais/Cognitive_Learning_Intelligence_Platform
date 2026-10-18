@@ -115,6 +115,14 @@ test('too few frames, or a centre far off the screen, gives no calibration', () 
   assert.equal(calibrate(Array.from({ length: 10 }, () => looking(0, 0.9))), null)
 })
 
+test('a centre tilted up from a far or low camera is kept, one looking down at notes is not', () => {
+  // Sitting back from the laptop read as about 30 degrees up in the #159 recordings.
+  assert.ok(Math.abs(calibrate(Array.from({ length: 10 }, () => looking(-30)))!.pitch + 30) < 1e-6)
+  assert.equal(calibrate(Array.from({ length: 10 }, () => looking(-40))), null)
+  // Looking down at notes read 17 to 20 degrees down; past the limit it is refused.
+  assert.equal(calibrate(Array.from({ length: 10 }, () => looking(25))), null)
+})
+
 function frame(participant: string, clip: string, label: Frame['label'], pitch: number): Frame {
   return {
     participant, clip, label, t: 0,

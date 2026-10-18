@@ -187,6 +187,11 @@ export function observeFace(
 // looking at the screen, so no calibration is better than a wrong one.
 export const MIN_CALIBRATION_FRAMES = 6
 export const MAX_CALIBRATION_OFFSET_DEGREES = 20
+// Upward (negative pitch) is allowed further: sitting back from a laptop, or a
+// camera below eye level, reads as 23 to 30 degrees up while looking at the
+// screen (#159 recordings). Downward stays at the limit above, so a centre
+// taken while looking down at notes (17 to 20 degrees down) is still refused.
+export const MAX_CALIBRATION_UP_DEGREES = 35
 export const MAX_CALIBRATION_IRIS_OFFSET = 0.2
 
 function median(values: number[]): number {
@@ -206,8 +211,10 @@ export function calibrate(frames: FaceFeatures[]): Calibration | null {
     irisX: median(usable.map(f => (f.leftEye!.irisX + f.rightEye!.irisX) / 2)),
     irisY: median(usable.map(f => (f.leftEye!.irisY + f.rightEye!.irisY) / 2)),
   }
-  const plausible = [calibration.yaw, calibration.pitch, calibration.roll]
+  const plausible = [calibration.yaw, calibration.roll]
     .every(angle => Math.abs(angle) <= MAX_CALIBRATION_OFFSET_DEGREES)
+    && calibration.pitch <= MAX_CALIBRATION_OFFSET_DEGREES
+    && calibration.pitch >= -MAX_CALIBRATION_UP_DEGREES
     && Math.abs(calibration.irisX - 0.5) <= MAX_CALIBRATION_IRIS_OFFSET
     && Math.abs(calibration.irisY - 0.5) <= MAX_CALIBRATION_IRIS_OFFSET
   return plausible ? calibration : null
