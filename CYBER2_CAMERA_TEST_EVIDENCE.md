@@ -16,12 +16,22 @@ transmitted to the backend or used as a disengagement score.
 
 ## Automated verification
 
-- Frontend unit/proxy tests: 109 passed.
+- Frontend unit/proxy tests after Luna CV integration: 156 passed.
 - Away-duration helper tests: 4 passed.
 - Teams integration tests: 9 passed.
 - TypeScript production build: passed.
 - Frontend lint: 0 errors and 0 warnings.
 - Git whitespace check: passed.
+- Combined branch commit 706bc71: frontend build, lint and CI passed.
+- Playwright Chromium privacy regression tests: 10/10 passed on 2026-10-18 (44.7 seconds).
+- Verified saved opt-in, denial handling, pending device acquisition cancellation,
+  independent sensor shutdown, remote consent withdrawal and camera shutdown
+  on session disconnect, component unmount, consent rejection, pagehide and
+  page visibility changes.
+- The pending-acquisition test uses a controlled delayed media stream;
+  it is not a manual browser permission-dialog test.
+- These are browser automation results using test-controlled media devices,
+  not evidence of real Microsoft Teams or lower-spec-device acceptance.
 
 The reported test counts come from their respective runs and should
 not be added together without accounting for overlapping tests.
