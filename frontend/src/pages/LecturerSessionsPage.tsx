@@ -171,6 +171,7 @@ function SessionTime({ session }: { session: SessionSummary }) {
 function SessionRow({ session }: { session: SessionSummary }) {
   const finished = session.status === 'ended' || session.status === 'cancelled'
   const live = `/lecturer/sessions/${session.id}/live`
+  const results = `/lecturer/sessions/${session.id}/results`
   const report = `/lecturer/sessions/${session.id}/report`
   return (
     <div className="grid gap-3 px-5 py-4 sm:grid-cols-[1fr_auto] sm:items-center">
@@ -179,7 +180,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
           <Tag tone={statusTone(session)}>{statusLabel(session)}</Tag>
           <span className="text-sm font-semibold text-muted-foreground">{session.course_code}</span>
         </div>
-        <Link to={finished ? report : live} className="mt-1 block truncate text-[1.05rem] font-bold hover:underline">
+        <Link to={finished ? results : live} className="mt-1 block truncate text-[1.05rem] font-bold hover:underline">
           {session.title}
         </Link>
         <MetaLine
@@ -200,9 +201,14 @@ function SessionRow({ session }: { session: SessionSummary }) {
           </Link>
         )}
         {session.status !== 'prepared' && session.status !== 'cancelled' && (
-          <Link to={report} className={buttonStyles({ intent: finished ? 'secondary' : 'quiet' })}>
-            Report
-          </Link>
+          <>
+            <Link to={results} className={buttonStyles({ intent: finished ? 'secondary' : 'quiet' })}>
+              Results
+            </Link>
+            <Link to={report} className={buttonStyles({ intent: 'quiet' })}>
+              Report
+            </Link>
+          </>
         )}
       </div>
     </div>

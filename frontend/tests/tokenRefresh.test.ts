@@ -316,3 +316,46 @@ test('a failed refresh is not retried once the token has expired', async (t) => 
   clearAccessToken()
   slowRefresh = true
 })
+
+const { downloadSessionReportPdf } = await import('../src/features/reports/sessionReportsApi.ts')
+
+test('PDF download preserves a token refreshed during the request', async () => {
+  reset('old-token', true)
+
+  const originalFetch = globalThis.fetch
+  const pdfTokens: string[] = []
+
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    if (!String(url).endsWith('/reports/report-1/pdf')) {
+      return originalFetch(url, init)
+    }
+
+    const token = header(init, 'Authorization').replace('Bearer ', '')
+    pdfTokens.push(token)
+
+    if (pdfTokens.length === 1) {
+      saveAccessToken('fresh-overlap')
+      return new Response('{}', { status: 401 })
+    }
+
+    return new Response('%PDF-1.4', {
+      status: 200,
+      headers: {
+        'Content-Disposition': 'attachment; filename="lecture.pdf"',
+      },
+    })
+  }) as typeof fetch
+
+  try {
+    const result = await downloadSessionReportPdf('report-1')
+
+    assert.deepEqual(pdfTokens, ['old-token', 'fresh-overlap'])
+    assert.equal(await result.blob.text(), '%PDF-1.4')
+    assert.equal(result.filename, 'lecture.pdf')
+    assert.equal(getAccessToken(), 'fresh-overlap')
+    assert.equal(refreshes, 0)
+  } finally {
+    globalThis.fetch = originalFetch
+    void clearAccessToken()
+  }
+})

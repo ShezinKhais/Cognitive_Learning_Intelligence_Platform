@@ -4,26 +4,19 @@ import { Link, useParams } from 'react-router'
 
 import { ApiError } from '../api'
 import { buttonStyles } from '../components/ui/button'
-import { cn } from '../components/ui/cn'
 import { EmptyState, PageBody, PageHeader, Panel, Tag } from '../components/ui/primitives'
 import { difficultyLabel, type TopicDifficulty } from '../features/intelligence/topicRecovery'
 import { getSessionTopics } from '../features/intelligence/topicRecoveryApi'
 import SessionStrip, { StripLegend } from '../features/sessions/SessionStrip'
 import { formatWhen, statusLabel, statusTone } from '../features/sessions/format'
 import {
-  getReport,
   getSession,
   listAllResponses,
-  openReportPdf,
-  requestReport,
-  type ReportJob,
   type SessionResponse,
   type SessionSummary,
 } from '../features/sessions/sessionsApi'
-import { buildButton } from '../features/sessions/reportControls'
 import { stripFromResponses } from '../features/sessions/strip'
 
-const POLL_MS = 2000
 
 export default function SessionReportPage() {
   const { sessionId = '' } = useParams()
@@ -70,15 +63,21 @@ export default function SessionReportPage() {
     <>
       <PageHeader
         title={session.title}
-        tabTitle={`Report, ${session.title}`}
+        tabTitle={`Results, ${session.title}`}
         back={{ to: '/lecturer/sessions', label: 'Sessions' }}
         description={`${session.course_code}, ${formatWhen(session.ended_at ?? session.starts_at)}`}
         actions={
-          session.status === 'active' && (
-            <Link to={`/lecturer/sessions/${session.id}/live`} className={buttonStyles({ intent: 'secondary' })}>
-              Open live view
+          <>
+            {session.status === 'active' && (
+              <Link to={`/lecturer/sessions/${session.id}/live`} className={buttonStyles({ intent: 'secondary' })}>
+                Open live view
+              </Link>
+            )}
+            <Link to={`/lecturer/sessions/${session.id}/report`} className={buttonStyles()}>
+              <FileText size={16} aria-hidden />
+              Session report
             </Link>
-          )
+          </>
         }
       >
         <div className="mt-3">
@@ -106,12 +105,9 @@ export default function SessionReportPage() {
           )}
         </Panel>
 
-        <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-          <Panel title="Topics" description="Hardest first, from how each answer was marked.">
-            <TopicTable topics={topics} />
-          </Panel>
-          <ReportPanel sessionId={session.id} />
-        </div>
+        <Panel title="Topics" description="Hardest first, from how each answer was marked.">
+          <TopicTable topics={topics} />
+        </Panel>
       </PageBody>
     </>
   )
@@ -152,88 +148,5 @@ function TopicTable({ topics }: { topics: TopicDifficulty[] }) {
         )
       })}
     </ul>
-  )
-}
-
-function ReportPanel({ sessionId }: { sessionId: string }) {
-  const [job, setJob] = useState<ReportJob | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const pending = job?.status === 'queued' || job?.status === 'running'
-
-  useEffect(() => {
-    if (!job || !pending) return
-    const timer = setTimeout(() => {
-      getReport(job.report_id).then(setJob, () => {
-        // Nothing will move this job on now, so drop it and offer a fresh one.
-        setJob(null)
-        setError('The report stopped answering. Try building it again.')
-      })
-    }, POLL_MS)
-    return () => clearTimeout(timer)
-  }, [job, pending])
-
-  async function build() {
-    setError(null)
-    try {
-      setJob(await requestReport(sessionId))
-    } catch (caught: unknown) {
-      setError(caught instanceof ApiError ? caught.message : 'The report could not be started.')
-    }
-  }
-
-  const report = job?.status === 'ready' ? job.report : null
-  const button = buildButton(job?.status ?? null)
-
-  return (
-    <Panel
-      title="Session report"
-      description="Participation, topics and alerts, as a page you can keep or share as a PDF."
-    >
-      {(button === 'build' || button === 'retry') && (
-        <button type="button" className={cn(buttonStyles(), 'mb-3')} onClick={build}>
-          {button === 'retry' || error ? 'Try again' : 'Build the report'}
-        </button>
-      )}
-      {pending && <p role="status" className="text-muted-foreground">Building the report…</p>}
-      {job?.status === 'failed' && (
-        <p role="alert" className="text-critical">{job.error ?? job.message ?? 'The report could not be built.'}</p>
-      )}
-      {error && <p role="alert" className="mt-2 text-critical">{error}</p>}
-      {report && (
-        <div className="space-y-4">
-          <dl className="grid grid-cols-2 gap-4">
-            <Figure label="Students" value={report.participation.students} />
-            <Figure label="Answers" value={report.participation.answers} />
-            <Figure label="Missed answers" value={report.participation.missed_answers} />
-            <Figure label="Refocus prompts" value={report.participation.attention_prompts} />
-          </dl>
-          {report.alerts.length > 0 && (
-            <div>
-              <h3 className="font-semibold">Alerts raised</h3>
-              <ul className="mt-2 space-y-2 text-sm">
-                {report.alerts.map((alert) => (
-                  <li key={alert.alert_id} className="rounded-md border border-border px-3 py-2">
-                    {alert.message}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className={buttonStyles()}
-              onClick={() => job && openReportPdf(job.report_id).catch(() => setError('The PDF could not be opened.'))}
-            >
-              <FileText size={16} aria-hidden />
-              Open the PDF
-            </button>
-            <button type="button" className={buttonStyles({ intent: 'quiet' })} onClick={build}>
-              Build again
-            </button>
-          </div>
-        </div>
-      )}
-    </Panel>
   )
 }

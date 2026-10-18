@@ -31,6 +31,8 @@ const LecturerSessionsPage = lazy(() => import('./pages/LecturerSessionsPage'))
 const PlannedFeaturePage = lazy(() => import('./pages/PlannedFeaturePage'))
 const QuestionReview = lazy(() => import('./pages/QuestionReview'))
 const SessionReportPage = lazy(() => import('./pages/SessionReportPage'))
+const LecturerSessionReportPage = lazy(() => import('./pages/LecturerSessionReportPage'))
+const AdminGovernancePage = lazy(() => import('./pages/AdminGovernancePage'))
 const StudentHomePage = lazy(() => import('./pages/StudentHomePage'))
 const StudentLiveSessionPage = lazy(() => import('./pages/StudentLiveSessionPage'))
 const StudentReviewPage = lazy(() => import('./pages/StudentReviewPage'))
@@ -177,7 +179,7 @@ export default function App() {
               />
               <Route
                 path="/admin/governance"
-                element={<PlannedFeaturePage feature={PLANNED.governance} />}
+                element={<AdminGovernancePage />}
               />
             </Route>
           </Route>
@@ -233,8 +235,14 @@ export default function App() {
               />
 
               <Route
-                path="/lecturer/sessions/:sessionId/report"
+                path="/lecturer/sessions/:sessionId/results"
                 element={<SessionReportPage />}
+              />
+
+              {/* The report itself, built and downloaded as a PDF (Cyber 2). */}
+              <Route
+                path="/lecturer/sessions/:sessionId/report"
+                element={<LecturerSessionReportPage />}
               />
 
               <Route

@@ -46,7 +46,7 @@ export const NAVIGATION: Record<Role, readonly NavItem[]> = {
     { to: '/admin', label: 'Imports', icon: Upload },
     { to: '/admin/status', label: 'System status', icon: Activity },
     { to: '/admin/consideration', label: 'Special consideration', icon: HeartHandshake },
-    { to: '/admin/governance', label: 'Data governance', icon: ShieldCheck, planned: true },
+    { to: '/admin/governance', label: 'Data governance', icon: ShieldCheck },
   ],
 }
 

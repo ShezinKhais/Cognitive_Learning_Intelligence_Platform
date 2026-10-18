@@ -6,7 +6,6 @@ import type { PlannedFeature } from './plannedFeatures'
 const DEMOS = {
   groups: lazy(() => import('../features/demos/BreakoutDemo')),
   engagement: lazy(() => import('../features/demos/EngagementDemo')),
-  governance: lazy(() => import('../features/demos/GovernanceDemo')),
 }
 
 export default function PlannedFeaturePage({ feature }: { feature: PlannedFeature }) {

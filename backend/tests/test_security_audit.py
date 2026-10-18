@@ -48,6 +48,9 @@ ADMIN_ONLY = "admins"
 MEMBER = "a member of the session, decided in the handler"
 
 AUDIENCE = {
+    ("GET", "/api/v1/student-reviews"): STUDENT_ONLY,
+    ("GET", "/api/v1/student-reviews/{session_id}"): STUDENT_ONLY,
+    ("GET", "/api/v1/student-reviews/{session_id}/responses/{response_id}/sources"): STUDENT_ONLY,
     ("POST", "/api/v1/auth/consent"): ANY_USER,
     ("GET", "/api/v1/auth/me"): ANY_USER,
     ("POST", "/api/v1/admin/roster"): ADMIN_ONLY,
@@ -90,9 +93,6 @@ AUDIENCE = {
     ("GET", "/api/v1/admin/consideration-requests"): ADMIN_ONLY,
     ("POST", "/api/v1/admin/consideration-requests/{request_id}/approve"): ADMIN_ONLY,
     ("POST", "/api/v1/admin/consideration-requests/{request_id}/reject"): ADMIN_ONLY,
-    ("GET", "/api/v1/student-reviews"): STUDENT_ONLY,
-    ("GET", "/api/v1/student-reviews/{session_id}"): STUDENT_ONLY,
-    ("GET", "/api/v1/student-reviews/{session_id}/responses/{response_id}/sources"): STUDENT_ONLY,
 }
 
 # Routes with a published contract and no handler, so far. Each answers 501 to a

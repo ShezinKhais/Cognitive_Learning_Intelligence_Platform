@@ -6,7 +6,7 @@ export interface PlannedFeature {
   /** What already works today, so nobody waits for what is there. */
   today: readonly string[]
   /** The working preview shown on its page. */
-  demo: 'groups' | 'engagement' | 'governance'
+  demo: 'groups' | 'engagement'
 }
 
 export const PLANNED: Record<string, PlannedFeature> = {
@@ -36,19 +36,5 @@ export const PLANNED: Record<string, PlannedFeature> = {
       'It is not stored after the session yet, so there is no history to show',
     ],
     demo: 'engagement',
-  },
-  governance: {
-    title: 'Data governance',
-    summary: 'Keep what C.L.I.P stores within its retention period, and act on requests to delete it.',
-    will: [
-      'Preview what the retention purge would delete, and run it',
-      'Approve or refuse a request to delete a student’s data',
-      'Read the audit log of every change made for a user',
-    ],
-    today: [
-      'Uploaded files past the retention period are deleted every day',
-      'Every change made for a signed-in user is written to the audit log',
-    ],
-    demo: 'governance',
   },
 }
