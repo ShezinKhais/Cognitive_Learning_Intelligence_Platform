@@ -411,21 +411,75 @@ async def test_the_purge_needs_an_explicit_confirmation(governance, monkeypatch)
     assert fake.calls == []
 
 
-async def test_a_confirmed_purge_is_run_as_the_admin_who_asked(governance, monkeypatch):
+class FakeRunner:
+    """Stands in for the purge runner, so the route is tested and not the purge."""
+
+    def __init__(self, report):
+        self.report = report
+        self.runs = 0
+
+    async def run(self):
+        self.runs += 1
+        return self.report
+
+
+def use_runner(monkeypatch, **report):
+    from app.services.purge_runner import PurgeReport as RunnerReport
+
+    runner = FakeRunner(RunnerReport(cutoff=datetime.now(UTC), **report))
+    monkeypatch.setattr("app.api.v1.governance.get_purge_runner", lambda: runner)
+    monkeypatch.setattr("app.api.v1.governance.register_database_purges", lambda _runner: None)
+    return runner
+
+
+async def test_a_confirmed_purge_runs_through_the_runner_as_the_admin_who_asked(
+    governance, monkeypatch
+):
     world = governance
     fake = FakePurge()
     monkeypatch.setattr(retention, "purge_expired", fake)
+    runner = use_runner(
+        monkeypatch, deleted={"session-data": 3, "teams-roster-syncs": 1, "stored-uploads": 4}
+    )
     act_as(world, world.first)
 
     response = world.client.post(f"{BASE}/retention/run", json={"confirm": True})
 
     assert response.status_code == 200, response.text
-    assert response.json()["sessions"] == 2
-    assert response.json()["dry_run"] is False
-    [call] = fake.calls
-    assert call["dry_run"] is False
-    assert call["actor_id"] == world.first
-    assert call["retention_days"] == get_settings().data_retention_days
+    body = response.json()
+    assert (body["sessions"], body["roster_syncs"], body["dry_run"]) == (3, 1, False)
+    assert body["answers"] == 5  # counted just before the run, by the preview
+    assert runner.runs == 1
+    [preview] = fake.calls
+    assert preview["dry_run"] is True
+    assert preview["retention_days"] == get_settings().data_retention_days
+    entries = world.client.get(f"{BASE}/audit-log", params={"action_type": "RETENTION_RUN"})
+    assert any(
+        item["user_id"] == str(world.first) and item["details"]["sessions"] == 3
+        for item in entries.json()["items"]
+    )
+
+
+async def test_a_purge_is_refused_while_a_class_is_running(governance, monkeypatch):
+    world = governance
+    monkeypatch.setattr(retention, "purge_expired", FakePurge())
+    use_runner(monkeypatch, deleted={"session-data": 0}, interrupted=True, gave_way=True)
+    act_as(world, world.first)
+
+    response = world.client.post(f"{BASE}/retention/run", json={"confirm": True})
+
+    assert response.status_code == 409
+
+
+async def test_a_purge_that_could_not_run_is_reported_not_hidden(governance, monkeypatch):
+    world = governance
+    monkeypatch.setattr(retention, "purge_expired", FakePurge())
+    use_runner(monkeypatch, deleted={"session-data": 0}, failed=("session-data",))
+    act_as(world, world.first)
+
+    response = world.client.post(f"{BASE}/retention/run", json={"confirm": True})
+
+    assert response.status_code == 503
 
 
 # -- history ---------------------------------------------------------------------------------

@@ -27,6 +27,7 @@ from app.core.errors import (
     ConflictError,
     NotFoundError,
     PermissionError_,
+    ServiceUnavailableError,
     ValidationError,
 )
 from app.history.database import resolve_history_factory
@@ -51,6 +52,8 @@ from app.services.deletion_requests import (
     TargetNotFound,
     WrongState,
 )
+from app.services.purge_runner import get_purge_runner
+from app.services.retention_tasks import register_database_purges
 
 router = APIRouter(
     prefix="/governance",
@@ -228,16 +231,41 @@ async def run_retention(
     settings: AppSettings,
 ) -> RetentionReportOut:
     """Purge every session past the retention period, and the Teams roster
-    syncs past it. Cannot be undone, so the body must say `"confirm": true`.
-    Audited with the counts."""
+    syncs past it, through the same guarded, batched runner as the daily purge.
+    Nothing is deleted while a class is running (409), and the run stops between
+    batches if one starts. A task that fails is reported (503), not hidden.
+    Cannot be undone, so the body must say `"confirm": true`. The run is audited
+    with who asked; each batch also audits its counts, as the system. `answers`
+    is the count taken just before the run."""
     days = settings.data_retention_days
-    report = await retention.purge_expired(
+    before = await retention.purge_expired(db, dry_run=True, retention_days=days)
+    runner = get_purge_runner()
+    register_database_purges(runner)
+    report = await runner.run()
+    if report.gave_way and report.total == 0:
+        raise ConflictError("A class is running, so nothing was purged. Try again once it ends.")
+    if report.failed:
+        raise ServiceUnavailableError(
+            "Part of the purge could not run: " + ", ".join(report.failed) + ". "
+            "What was deleted is in the audit log, and the next run carries on."
+        )
+    sessions = report.deleted.get("session-data", 0)
+    roster_syncs = report.deleted.get("teams-roster-syncs", 0)
+    await audit_repository.record_event(
         db,
+        action_type="RETENTION_RUN",
+        user_id=principal.user_id,
+        target_type="retention",
+        details={"sessions": sessions, "roster_syncs": roster_syncs, "retention_days": days},
+    )
+    return RetentionReportOut(
+        cutoff=report.cutoff,
         dry_run=False,
         retention_days=days,
-        actor_id=principal.user_id,
+        sessions=sessions,
+        answers=before.answers,
+        roster_syncs=roster_syncs,
     )
-    return _report(report, days)
 
 
 # -- history ----------------------------------------------------------------------

@@ -149,7 +149,8 @@ would be personal data held without a purpose.
 | `DELETION_APPROVED` | An admin approves it |
 | `DELETION_REJECTED` | An admin rejects it |
 | `DELETION_EXECUTED` | A request is carried out, with counts |
-| `RETENTION_PURGE` | A purge runs, by an admin or the scheduler (no user), with counts |
+| `RETENTION_PURGE` | A purge batch runs, by the scheduler or an admin's run (no user), with counts |
+| `RETENTION_RUN` | An admin starts a purge by hand: who asked, and what it deleted |
 | `STUDENT_DATA_EXPORTED` | A student downloads their own data, with counts |
 | `HISTORY_VIEWED` | An admin reads a student's history, with the row count |
 

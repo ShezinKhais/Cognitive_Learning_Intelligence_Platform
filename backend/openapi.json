@@ -3704,7 +3704,7 @@
     },
     "/api/v1/governance/retention/run": {
       "post": {
-        "description": "Purge every session past the retention period, and the Teams roster\nsyncs past it. Cannot be undone, so the body must say `\"confirm\": true`.\nAudited with the counts.",
+        "description": "Purge every session past the retention period, and the Teams roster\nsyncs past it, through the same guarded, batched runner as the daily purge.\nNothing is deleted while a class is running (409), and the run stops between\nbatches if one starts. A task that fails is reported (503), not hidden.\nCannot be undone, so the body must say `\"confirm\": true`. The run is audited\nwith who asked; each batch also audits its counts, as the system. `answers`\nis the count taken just before the run.",
         "operationId": "run_retention_api_v1_governance_retention_run_post",
         "requestBody": {
           "content": {
