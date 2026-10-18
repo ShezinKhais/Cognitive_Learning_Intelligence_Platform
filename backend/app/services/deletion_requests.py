@@ -28,7 +28,9 @@ from app.models.deletion_request import DELETION_TARGETS, DeletionRequest
 from app.models.session import Session
 from app.models.student import Student
 from app.models.student_response import StudentResponse
+from app.models.teams_roster_sync import TeamsRosterSync
 from app.repositories.audit_repository import record_event
+from app.services.retention import TERMINAL_STATUSES
 from app.services.student_erasure import erase_student
 
 MAX_REASON_LENGTH = 500
@@ -198,6 +200,13 @@ async def reject(db: AsyncSession, request_id: UUID, *, admin_id: UUID) -> Delet
 
 
 async def _delete_session(db: AsyncSession, session_id: UUID) -> dict[str, int]:
+    """Delete a finished session and everything it holds, including the Teams
+    roster snapshots that name its participants, which would otherwise outlive it
+    until the roster purge. A session that is still running is refused: deleting it
+    mid-class would pull it out from under the answers still arriving."""
+    status = await db.scalar(select(Session.status).where(Session.session_id == session_id))
+    if status is not None and status not in TERMINAL_STATUSES:
+        raise WrongState("A session that has not ended or been cancelled cannot be deleted.")
     sessions = (
         await db.scalar(
             select(func.count()).select_from(Session).where(Session.session_id == session_id)
@@ -212,8 +221,11 @@ async def _delete_session(db: AsyncSession, session_id: UUID) -> dict[str, int]:
         )
         or 0
     )
+    roster_syncs = await db.execute(
+        delete(TeamsRosterSync).where(TeamsRosterSync.session_id == session_id)
+    )
     await db.execute(delete(Session).where(Session.session_id == session_id))
-    return {"sessions": sessions, "answers": answers}
+    return {"sessions": sessions, "answers": answers, "roster_syncs": roster_syncs.rowcount or 0}
 
 
 async def _erase_history(student_id: UUID, history: Callable[[], Any] | None) -> int | None:

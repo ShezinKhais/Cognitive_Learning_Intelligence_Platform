@@ -48,7 +48,9 @@ approves it, and only then can it be executed.
 
 Rules: the admin who made a request cannot approve it; a target has at most one open
 request; a request is decided once; nothing is deleted before approval. Executing a
-**session** request deletes the session and everything it holds. A session already
+**session** request deletes the session and everything it holds, including the Teams
+roster snapshots that name its participants. A session that has not ended or been
+cancelled is refused with a 409, because it may still be in a class. A session already
 removed by retention counts as done. Executing a **student** request erases that
 student's own data and anonymises their account (see 'Erasing a student').
 
@@ -59,9 +61,10 @@ The request row outlives what it deleted: `target_id` is deliberately not a fore
 Executing an approved student request removes the student's own data: answers and the
 labels on them, attention prompts, engagement and attention summaries, attendance and
 missed questions, and the student profile with its accessibility and
-special-consideration notes. Alerts and recommendations keep their class-level content
-and lose only the link to the student. Teams ids and names that point at the account
-are cleared.
+special-consideration notes. Alerts and recommendations about the student are deleted
+too, because their text is generated about the student and can describe them; the
+class-level ones, which name nobody, stay. Teams ids and names that point at the
+account are cleared.
 
 The account row stays so the audit log and consent records keep a valid reference, but
 it identifies nobody: the name becomes "Deleted student", the email a placeholder, and

@@ -191,7 +191,7 @@ async def test_the_whole_flow_deletes_the_session_and_keeps_the_trail(governance
     done = decide(world, request_id, "execute")
     assert done.status_code == 200, done.text
     assert done.json()["status"] == "executed"
-    assert done.json()["outcome"] == {"sessions": 1, "answers": 0}
+    assert done.json()["outcome"] == {"sessions": 1, "answers": 0, "roster_syncs": 0}
     assert not await session_exists(world)
 
     trail = world.client.get(f"{BASE}/audit-log", params={"target_id": str(world.session)})
@@ -317,6 +317,8 @@ async def test_a_student_request_erases_the_student_and_keeps_the_trail(governan
         "prompts",
         "engagement",
         "teams_records",
+        "alerts",
+        "recommendations",
     }
     async with world.factory() as db:
         remaining = await db.scalar(
