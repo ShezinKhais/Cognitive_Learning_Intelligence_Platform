@@ -94,6 +94,22 @@ export function unreadCount(notifications: readonly AppNotification[], read: Rea
   return notifications.filter((item) => !read.has(item.id)).length
 }
 
+/** What is left once the user has cleared some. An event cleared stays
+ * cleared, since its id is the same each time it is rebuilt. */
+export function withoutCleared(
+  notifications: readonly AppNotification[],
+  cleared: ReadonlySet<string>,
+): AppNotification[] {
+  return notifications.filter((item) => !cleared.has(item.id))
+}
+
+/** Ids kept per user: the newest few hundred, which is weeks of them. */
+export const KEPT_IDS = 200
+
+export function remembered(earlier: ReadonlySet<string>, added: readonly string[]): string[] {
+  return [...new Set([...earlier, ...added])].slice(-KEPT_IDS)
+}
+
 /** The most the panel lists. Older ones are still a week away from ageing
  * out, but past this many nobody reads them. */
 export const MAX_NOTIFICATIONS = 30

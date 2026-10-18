@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'motion/react'
-import { AlertTriangle, Bell, CheckCircle2, FileCheck2, Radio } from 'lucide-react'
+import { AlertTriangle, Bell, CheckCircle2, FileCheck2, Radio, X } from 'lucide-react'
 import { Link } from 'react-router'
 
 import { apiUrl, type CurrentUser } from '../../api'
@@ -14,7 +14,9 @@ import {
   badgeLabel,
   buildNotifications,
   groupByDay,
+  remembered,
   unreadCount,
+  withoutCleared,
   type AppNotification,
   type NotificationKind,
 } from './notifications'
@@ -55,16 +57,51 @@ const ICON: Record<NotificationKind, typeof Bell> = {
   problem: AlertTriangle,
 }
 
-function readKey(user: CurrentUser): string {
-  return `clip_read_notifications_${user.id}`
+type Kept = 'read' | 'cleared'
+
+// Sent when one bell changes what is kept, so the other (the phone menu and
+// the desktop menu each mount one) follows without waiting for a reload.
+const KEPT_CHANGED = 'clip-notifications-kept'
+
+function keptKey(user: CurrentUser, kept: Kept): string {
+  return `clip_${kept}_notifications_${user.id}`
 }
 
-function loadRead(user: CurrentUser): Set<string> {
+function loadKept(user: CurrentUser, kept: Kept): Set<string> {
   try {
-    return new Set(JSON.parse(window.localStorage.getItem(readKey(user)) ?? '[]') as string[])
+    return new Set(JSON.parse(window.localStorage.getItem(keptKey(user, kept)) ?? '[]') as string[])
   } catch {
     return new Set()
   }
+}
+
+/** Notification ids this user has read, or cleared, in this browser. */
+function useKept(user: CurrentUser, kept: Kept): [ReadonlySet<string>, (ids: readonly string[]) => void] {
+  const [ids, setIds] = useState(() => loadKept(user, kept))
+  useEffect(() => {
+    const reload = () => setIds(loadKept(user, kept))
+    reload()
+    window.addEventListener(KEPT_CHANGED, reload)
+    window.addEventListener('storage', reload)
+    return () => {
+      window.removeEventListener(KEPT_CHANGED, reload)
+      window.removeEventListener('storage', reload)
+    }
+  }, [user, kept])
+  const add = useCallback(
+    (added: readonly string[]) => {
+      const next = remembered(loadKept(user, kept), added)
+      setIds(new Set(next))
+      try {
+        window.localStorage.setItem(keptKey(user, kept), JSON.stringify(next))
+      } catch {
+        // Storage blocked: kept for this page only.
+      }
+      window.dispatchEvent(new Event(KEPT_CHANGED))
+    },
+    [user, kept],
+  )
+  return [ids, add]
 }
 
 async function readinessDown(): Promise<string[]> {
@@ -103,8 +140,9 @@ function useNotifications(user: CurrentUser): AppNotification[] {
 
 /** The bell in the side menu, with what is new for this user. */
 export default function NotificationBell({ user }: { user: CurrentUser }) {
-  const items = useNotifications(user)
-  const [read, setRead] = useState(() => loadRead(user))
+  const [cleared, clear] = useKept(user, 'cleared')
+  const items = withoutCleared(useNotifications(user), cleared)
+  const [read, remember] = useKept(user, 'read')
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
   const bell = useRef<HTMLButtonElement>(null)
@@ -112,19 +150,12 @@ export default function NotificationBell({ user }: { user: CurrentUser }) {
   const [place, setPlace] = useState<CSSProperties>({})
   const unread = unreadCount(items, read)
 
-  const remember = useCallback(
-    (ids: readonly string[]) => {
-      const next = new Set([...read, ...ids])
-      setRead(next)
-      try {
-        window.localStorage.setItem(readKey(user), JSON.stringify([...next].slice(-200)))
-      } catch {
-        // Storage blocked: they come back as unread next visit.
-      }
-    },
-    [read, user],
-  )
-  const markAllRead = useCallback(() => remember(items.map((item) => item.id)), [items, remember])
+  const markAllRead = () => remember(items.map((item) => item.id))
+  const clearAll = () => {
+    const ids = items.map((item) => item.id)
+    remember(ids)
+    clear(ids)
+  }
 
   useLayoutEffect(() => {
     if (!open) return
@@ -208,20 +239,34 @@ export default function NotificationBell({ user }: { user: CurrentUser }) {
             >
               <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2.5">
                 <p className="font-semibold">Notifications</p>
-                {unread > 0 && (
-                  <button
-                    type="button"
-                    onClick={markAllRead}
-                    className="rounded px-1.5 py-0.5 text-sm font-semibold text-primary hover:bg-muted"
-                  >
-                    Mark all read
-                  </button>
-                )}
+                <span className="flex items-center gap-1">
+                  {unread > 0 && (
+                    <button
+                      type="button"
+                      onClick={markAllRead}
+                      className="rounded px-1.5 py-0.5 text-sm font-semibold text-primary hover:bg-muted"
+                    >
+                      Mark all read
+                    </button>
+                  )}
+                  {items.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={clearAll}
+                      className="rounded px-1.5 py-0.5 text-sm font-semibold text-muted-foreground hover:bg-muted hover:text-foreground"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </span>
               </div>
               {items.length === 0 ? (
                 <div className="px-4 py-6 text-center">
                   <Illustration name="notifications" className="mx-auto mb-3 h-20 w-28" />
                   <p className="text-sm text-muted-foreground">Nothing new. You are up to date.</p>
+                  {cleared.size > 0 && (
+                    <p className="mt-1 text-xs text-muted-foreground">New notifications still show up here.</p>
+                  )}
                 </div>
               ) : (
                 <div className="max-h-96 min-h-0 overflow-auto">
@@ -231,18 +276,24 @@ export default function NotificationBell({ user }: { user: CurrentUser }) {
                         {group.label}
                       </h3>
                       <ul className="divide-y divide-border">
+                        <AnimatePresence initial={false}>
                         {group.items.map((item) => {
                           const Icon = ICON[item.kind]
                           const fresh = !read.has(item.id)
                           return (
-                            <li key={item.id}>
+                            <motion.li
+                              key={item.id}
+                              layout
+                              exit={{ opacity: 0, x: 24, transition: { duration: 0.16 } }}
+                              className="group relative"
+                            >
                               <Link
                                 to={item.to}
                                 onClick={() => {
                                   remember([item.id])
                                   setOpen(false)
                                 }}
-                                className={`flex gap-3 px-4 py-3 transition-colors hover:bg-muted ${fresh ? 'bg-primary/[0.06]' : ''}`}
+                                className={`flex gap-3 py-3 pl-4 pr-10 transition-colors hover:bg-muted ${fresh ? 'bg-primary/[0.06]' : ''}`}
                               >
                                 <Icon size={17} aria-hidden className={item.kind === 'problem' ? 'mt-0.5 shrink-0 text-critical' : item.kind === 'live' ? 'mt-0.5 shrink-0 text-primary' : 'mt-0.5 shrink-0 text-success'} />
                                 <span className="min-w-0 flex-1">
@@ -261,9 +312,22 @@ export default function NotificationBell({ user }: { user: CurrentUser }) {
                                   </span>
                                 )}
                               </Link>
-                            </li>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  remember([item.id])
+                                  clear([item.id])
+                                }}
+                                aria-label={`Remove: ${item.title}`}
+                                title="Remove"
+                                className="absolute right-2 bottom-2.5 rounded-md p-1.5 text-muted-foreground opacity-60 transition-opacity hover:bg-background hover:text-foreground hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100"
+                              >
+                                <X size={14} aria-hidden />
+                              </button>
+                            </motion.li>
                           )
                         })}
+                        </AnimatePresence>
                       </ul>
                     </section>
                   ))}
