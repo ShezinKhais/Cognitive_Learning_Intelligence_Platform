@@ -1,11 +1,12 @@
-// The recorder page (eval/attention-recorder.html), for #159. Runs the same
+// The recorder page (attention-recorder.html), for #159. Runs the same
 // face worker as the classroom, asks it for the features behind each
 // observation, and keeps those with the label being acted out. The video is
 // shown on this page only and never stored. Served by `npm run dev` at
-// /eval/attention-recorder.html; not part of the built app.
-import '../../index.css'
+// /eval/attention-recorder.html; not part of the built app, so it lives
+// outside src/.
+import '../src/index.css'
 import { CONDITIONS, LABELS, framesToCsv, type Condition, type Frame, type Label } from './evaluation.ts'
-import type { FaceFeatures } from './signals.ts'
+import type { FaceFeatures } from '../src/features/attention/signals.ts'
 
 const CLIP_SECONDS = 10
 const FRAME_MS = 250
@@ -127,7 +128,7 @@ start.onclick = async () => {
   stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 320 }, height: { ideal: 240 } }, audio: false })
   preview.srcObject = stream
   await preview.play()
-  worker = new Worker(new URL('./face.worker.ts', import.meta.url), { type: 'module' })
+  worker = new Worker(new URL('../src/features/attention/face.worker.ts', import.meta.url), { type: 'module' })
   worker.onmessage = event => {
     if (event.data.type === 'ready') { status.textContent = 'Camera ready. Pick a clip to record.'; sendFrames() }
     else if (event.data.type === 'observation') { busy = false; if (event.data.features) { show(event.data.features); keep(event.data.features) } }

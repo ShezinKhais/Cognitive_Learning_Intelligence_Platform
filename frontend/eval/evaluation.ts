@@ -8,7 +8,7 @@
 import {
   calibrate, classifyFace, DEFAULT_THRESHOLDS,
   type Calibration, type FaceFeatures, type FaceObservation, type Thresholds,
-} from './signals.ts'
+} from '../src/features/attention/signals.ts'
 
 /** What the person was asked to do during a clip. */
 export const LABELS = {

@@ -12,7 +12,7 @@ import {
   CONDITIONS, LABELS, balancedAccuracy, bootstrap, calibrations, confusion, coverage, folds, parseCsv,
   precision, recall, score, tune,
   type Condition, type Counts, type Frame, type Label, type Settings,
-} from '../src/features/attention/evaluation.ts'
+} from '../eval/evaluation.ts'
 import { DEFAULT_THRESHOLDS, type Thresholds } from '../src/features/attention/signals.ts'
 
 const [folder, ...rest] = process.argv.slice(2)

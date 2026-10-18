@@ -59,7 +59,7 @@ import {
 } from '../src/features/attention/signals.ts'
 import {
   balancedAccuracy, bootstrap, count, dropCountdown, framesToCsv, parseCsv, folds, precision, recall, tune, type Frame,
-} from '../src/features/attention/evaluation.ts'
+} from '../eval/evaluation.ts'
 
 /** A 4x4 column-major rotation about x (pitch) or y (yaw), in degrees. */
 function rotation(axis: 'x' | 'y', degrees: number): number[] {
