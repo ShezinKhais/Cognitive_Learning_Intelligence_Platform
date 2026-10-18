@@ -73,9 +73,8 @@ async def _learn_baseline(
             assert await room.record_attention(row.session_id, student, _gaze(0.4, True))
             await _close(room, row)
             offset += timedelta(seconds=5)
-    baseline = room._live[row.session_id].attention._students[student].baseline
-    # The baseline is a weighted mean, so allow for floating-point rounding.
-    assert baseline.gaze == pytest.approx([0.4] * 3)
+    gaze = room._live[row.session_id].attention._students[student].baseline.gaze
+    assert gaze == pytest.approx([0.4] * 3)
 
 
 async def test_an_accommodated_student_who_misses_questions_is_never_nudged_or_disengaged() -> None:
