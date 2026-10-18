@@ -64,7 +64,7 @@ async def test_audit_action_persists_successful_production_change() -> None:
 
     assert record.user_id == user_id
     assert record.action_type == "CONSENT_UPDATED"
-    assert record.ip_address == "203.0.113.10"
+    assert not hasattr(record, "ip_address")
 
 
 @pytest.mark.asyncio

@@ -162,7 +162,7 @@ normal dependency of the backend, so the image already includes it.
 
 The backend deletes upload files older than `DATA_RETENTION_DAYS` once a day (see
 [the retention purge](reports.md#the-retention-purge)), which is why the uploads sit on a
-volume the backend can write to. Database tables are not purged yet.
+volume the backend can write to. The same run purges the database tables (see [governance.md](governance.md)).
 
 Migrations run each time the backend container starts. Running them again when the
 database is current changes nothing.

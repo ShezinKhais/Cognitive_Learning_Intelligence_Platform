@@ -270,7 +270,6 @@ async def _authenticate(
         if not password_valid:
             locked = await security.record_failed_login(
                 user.id,
-                ip_address,
             )
 
             log.warning(
@@ -322,7 +321,6 @@ async def _authenticate(
     if settings.is_production:
         await security.record_successful_login(
             user.id,
-            ip_address,
         )
     else:
         security.reset_failed_logins(user.id)

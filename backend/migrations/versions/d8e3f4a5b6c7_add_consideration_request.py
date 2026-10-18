@@ -1,7 +1,7 @@
 """A student's request for special consideration, decided by an administrator.
 
 Revision ID: d8e3f4a5b6c7
-Revises: c5d8e2f71a40
+Revises: a8d2f4c61b73
 
 Until now an accommodation could only be set by editing the student row. The
 request records what was asked, for how long, and who decided, so approving
@@ -13,7 +13,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "d8e3f4a5b6c7"
-down_revision = "c5d8e2f71a40"
+down_revision = "a8d2f4c61b73"
 branch_labels = None
 depends_on = None
 

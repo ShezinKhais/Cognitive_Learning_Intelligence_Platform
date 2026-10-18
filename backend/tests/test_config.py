@@ -239,3 +239,37 @@ def test_the_default_room_limits_are_one_minute_and_three() -> None:
 
     assert settings.room_quiet_after_seconds == 60
     assert settings.room_needs_attention_after_seconds == 180
+
+
+STRONG_HISTORY_DB = "postgresql+asyncpg://clip:Xq7-tunnel-marmot-93@db:5432/clip_history"
+
+
+def test_production_rejects_a_history_database_on_localhost() -> None:
+    with pytest.raises(ValueError, match="HISTORY_DATABASE_URL points to localhost"):
+        Settings(
+            clip_env="production",
+            clip_secret_key=STRONG_KEY,
+            database_url=STRONG_DB,
+            history_database_url=STRONG_HISTORY_DB.replace("@db:", "@localhost:"),
+        )
+
+
+def test_production_rejects_a_weak_history_database_password() -> None:
+    with pytest.raises(ValueError, match="HISTORY_DATABASE_URL uses a well-known password"):
+        Settings(
+            clip_env="production",
+            clip_secret_key=STRONG_KEY,
+            database_url=STRONG_DB,
+            history_database_url=STRONG_HISTORY_DB.replace("Xq7-tunnel-marmot-93", "password"),
+        )
+
+
+def test_production_starts_with_a_properly_configured_history_database() -> None:
+    settings = Settings(
+        clip_env="production",
+        clip_secret_key=STRONG_KEY,
+        database_url=STRONG_DB,
+        history_database_url=STRONG_HISTORY_DB,
+    )
+
+    assert settings.is_production
