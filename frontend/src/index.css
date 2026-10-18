@@ -181,6 +181,13 @@
 @layer utilities {
   .animate-in-up { animation: fadeInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
   .animate-in-fade { animation: fadeIn 0.25s ease both; }
+  /* The camera calibration's three seconds (features/attention). */
+  .animate-fill-3s { animation: fillBar 3s linear both; }
+}
+
+@keyframes fillBar {
+  from { width: 0%; }
+  to   { width: 100%; }
 }
 
 @keyframes fadeInUp {
