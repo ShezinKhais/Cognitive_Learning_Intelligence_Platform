@@ -33,6 +33,7 @@ METHODS = ("get", "post", "put", "patch", "delete")
 
 # Reachable without signing in, and why.
 PUBLIC = {
+    ("POST", "/api/v1/auth/refresh"): "renews a token, authenticated by the token itself",
     ("POST", "/api/v1/auth/login"): "how a user signs in",
     ("GET", "/api/v1/health"): "liveness for a load balancer",
     ("GET", "/api/v1/ready"): "readiness for a load balancer",
@@ -48,12 +49,11 @@ ADMIN_ONLY = "admins"
 MEMBER = "a member of the session, decided in the handler"
 
 AUDIENCE = {
-    ("POST", "/api/v1/auth/consent"): ANY_USER,
-    ("GET", "/api/v1/auth/me"): ANY_USER,
-    ("POST", "/api/v1/auth/refresh"): ANY_USER,
     ("GET", "/api/v1/student-reviews"): STUDENT_ONLY,
     ("GET", "/api/v1/student-reviews/{session_id}"): STUDENT_ONLY,
     ("GET", "/api/v1/student-reviews/{session_id}/responses/{response_id}/sources"): STUDENT_ONLY,
+    ("POST", "/api/v1/auth/consent"): ANY_USER,
+    ("GET", "/api/v1/auth/me"): ANY_USER,
     ("POST", "/api/v1/admin/roster"): ADMIN_ONLY,
     ("POST", "/api/v1/admin/timetable"): ADMIN_ONLY,
     ("POST", "/api/v1/materials"): STAFF,
@@ -287,13 +287,12 @@ async def test_another_lecturer_cannot_touch_a_session_they_do_not_run(
         r
         for r in AUDIENCE
         # Authentication bootstrap does not expose session data and must work
-        # before terms are accepted. Refresh independently validates the bearer
-        # token and account (see test_token_refresh.py), not get_principal.
+        # before terms are accepted. Refresh is separately audited in PUBLIC
+        # and by the signed-in refresh test below.
         if r
         not in {
             ("POST", "/api/v1/auth/consent"),
             ("GET", "/api/v1/auth/me"),
-            ("POST", "/api/v1/auth/refresh"),
         }
     ],
 )

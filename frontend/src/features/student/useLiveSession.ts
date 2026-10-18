@@ -376,8 +376,13 @@ export function useLiveSession(
             authenticationRetried = true
             const renewed = await recoverSocketAuthentication(sentToken)
             if (stopped) return
-            if (renewed) {
+            if (renewed === 'renewed') {
               connect()
+              return
+            }
+            if (renewed === 'unreachable') {
+              authenticationRetried = false
+              scheduleReconnect()
               return
             }
           }

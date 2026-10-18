@@ -719,8 +719,16 @@ setAlerts((current) => {
               authenticationRetried = true
               const renewed = await recoverSocketAuthentication(sentToken)
               if (stopped) return
-              if (renewed) {
+              if (renewed === 'renewed') {
                 connect()
+                return
+              }
+              if (renewed === 'unreachable') {
+                authenticationRetried = false
+                setConnectionStatus('disconnected')
+                const delay = Math.min(1000 * 2 ** retryCount, 10_000)
+                retryCount += 1
+                retryTimer = window.setTimeout(connect, delay)
                 return
               }
             }

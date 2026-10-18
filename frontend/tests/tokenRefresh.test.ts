@@ -75,6 +75,49 @@ function reset(token: string, refreshable: boolean): void {
   saveAccessToken(token)
 }
 
+const { downloadSessionReportPdf } = await import('../src/features/reports/sessionReportsApi.ts')
+
+test('PDF download preserves a token refreshed during the request', async () => {
+  reset('old-token', true)
+
+  const originalFetch = globalThis.fetch
+  const pdfTokens: string[] = []
+
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    if (!String(url).endsWith('/reports/report-1/pdf')) {
+      return originalFetch(url, init)
+    }
+
+    const token = bearer(init)
+    pdfTokens.push(token)
+
+    if (pdfTokens.length === 1) {
+      saveAccessToken('fresh-overlap')
+      return new Response('{}', { status: 401 })
+    }
+
+    return new Response('%PDF-1.4', {
+      status: 200,
+      headers: {
+        'Content-Disposition': 'attachment; filename="lecture.pdf"',
+      },
+    })
+  }) as typeof fetch
+
+  try {
+    const result = await downloadSessionReportPdf('report-1')
+
+    assert.deepEqual(pdfTokens, ['old-token', 'fresh-overlap'])
+    assert.equal(await result.blob.text(), '%PDF-1.4')
+    assert.equal(result.filename, 'lecture.pdf')
+    assert.equal(getAccessToken(), 'fresh-overlap')
+    assert.equal(refreshes, 0)
+  } finally {
+    globalThis.fetch = originalFetch
+    clearAccessToken()
+  }
+})
+
 test('requests failing together share one refresh and each retry once', async () => {
   reset('expired', true)
 
@@ -103,6 +146,23 @@ test('a refresh the backend refuses signs the user out', async () => {
   // One try, one refresh, no retry with nothing.
   assert.equal(requests.length, 2)
 })
+
+for (const failure of ['offline', 503] as const) {
+  test(`an HTTP request preserves credentials when refresh is ${failure}`, async () => {
+    reset('expired', true)
+    failures = [failure]
+
+    await assert.rejects(apiAuthenticatedGet('/sessions/a/alerts'),
+      (error: unknown) => error instanceof ApiError && error.status === 503 && error.code === 'REFRESH_UNAVAILABLE')
+    assert.equal(getAccessToken(), 'expired')
+    assert.equal(refreshes, 1)
+
+    const recovered = await apiAuthenticatedGet<{ ok: string }>('/sessions/a/alerts')
+    assert.equal(recovered.ok, getAccessToken())
+    assert.equal(refreshes, 2)
+    clearAccessToken()
+  })
+}
 
 test('login is never refreshed or retried', async () => {
   reset('anything', true)

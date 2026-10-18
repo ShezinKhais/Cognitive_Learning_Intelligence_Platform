@@ -85,6 +85,34 @@ test('room selection is unavailable without a ready live connection', async ({ p
 })
 
 for (const socket of ['student', 'lecturer', 'progress']) {
+  for (const failure of ['offline', '503'] as const) {
+    test(`${socket} socket keeps credentials when refresh is ${failure} and recovers`, async ({ page }) => {
+      let refreshes = 0
+      const tokens: string[] = []
+      await page.route('**/api/v1/auth/refresh', route => {
+        refreshes++
+        if (refreshes === 1) return failure === 'offline'
+          ? route.abort('failed') : route.fulfill({ status: 503, json: {} })
+        return route.fulfill({ json: {
+          access_token: 'recovered-token', expires_in: 3600, token_type: 'bearer', role: 'student',
+        } })
+      })
+      await page.routeWebSocket('**/ws/session', ws => ws.onMessage(message => {
+        const event = JSON.parse(String(message))
+        if (event.type !== 'auth') return
+        tokens.push(event.data.token)
+        if (event.data.token === 'test-only') ws.close({ code: 4001, reason: 'expired' })
+      }))
+      await page.goto(`/e2e/harness/index.html?socket=${socket}`)
+      await expect.poll(() => refreshes).toBeGreaterThanOrEqual(1)
+      await expect(page).not.toHaveURL(/\/login$/)
+      await expect.poll(() => tokens).toEqual(['test-only', 'test-only', 'recovered-token'])
+      expect(refreshes).toBe(2)
+      expect(await page.evaluate(() => localStorage.getItem('clip_access_token'))).toBe('recovered-token')
+      await expect(page).not.toHaveURL(/\/login$/)
+    })
+  }
+
   for (const refused of [false, true]) {
     test(`${socket} socket ${refused ? 'signs in after a refused refresh' : 'refreshes once after authentication expires'}`, async ({ page }) => {
       let refreshes = 0

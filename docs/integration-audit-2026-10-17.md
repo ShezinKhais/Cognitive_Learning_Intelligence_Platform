@@ -51,17 +51,17 @@ An isolated `pgvector/pgvector:pg16` test container was used on
   A subsequent full local run passed **2,688**, skipped **1**, and failed the
   known WMF case plus four instances of the floating-point assertion described
   above; those four are addressed by the follow-up test-only correction.
-- Frontend unit/proxy tests: **107 passed**; lint, production build and browser
+- Frontend unit/proxy tests: **143 passed**; lint, production build and browser
   test type-check passed.
-- Current Docker Chromium browser suite: **40 passed**, including real self-hosted
+- Current Docker Chromium browser suite: **46 passed**, including real self-hosted
   camera/VAD startup with synthetic media, CPU throttling, denial/failure,
   consent withdrawal, track cleanup, keyboard/reduced motion, automated
   accessibility checks and socket regressions. Branded Chrome/Edge need a fresh
   CI run for this follow-up. These are not
   physical-device, real-image/voice accuracy or real Teams tests.
 - Backend lint/format and generated REST/WebSocket contract checks passed.
-- Current focused PostgreSQL security-audit, refresh, live-to-review integration
-  and fairness regression run: **204 passed**, using a fresh isolated database
+- Current focused PostgreSQL security-audit, refresh, live-to-review integration,
+  fairness and frontend-contract regression run: **211 passed**, using an isolated database
   `clip_pr161_review_20261018`, migrations through `c5d8e2f71a40`. No development
   data or other workstream schema was used. The test container was stopped afterward.
 
@@ -116,6 +116,21 @@ safe AI2 connection is implemented without taking over the other workstreams.
 
 ## Review follow-up — 2026-10-18
 
+- Merged main through `ec46d36` (#146/#151). Kept its default fairness
+  tolerance and removed duplicate route-inventory keys from the merge. Refresh
+  remains separately token-authenticated in PUBLIC, not a consent-gated route.
+- Socket refresh now distinguishes `renewed`, `refused` and `unreachable`.
+  Network/5xx failures keep credentials and use the existing bounded reconnect
+  backoff; only a definitive refusal signs out. Six browser cases cover an
+  interrupted request and HTTP 503 followed by recovery across all three hooks.
+- The shared authenticated HTTP path also treats an unavailable refresh as a
+  temporary 503 rather than replaying the stale 401 into global sign-out. Two
+  unit regressions verify preserved credentials and successful later recovery,
+  so concurrent REST checks cannot undo the socket fix during the same outage.
+  All 21 socket browser cases were rerun successfully after this final HTTP change.
+- #164 is still an unmerged dependency, not part of this branch. When it lands,
+  keep its `renewSession`/cookie-auth hooks and port these regression scenarios
+  to its in-memory-token harness; do not restore the older bearer-only hooks.
 - Removed the harness connection-status key: reconnect no longer remounts the
   room form or erases its typed label. A browser assertion checks preservation.
 - Room notices only display room-specific refusals received after a submission;

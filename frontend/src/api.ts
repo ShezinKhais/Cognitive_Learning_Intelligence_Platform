@@ -176,7 +176,14 @@ export async function authenticatedFetch(
   if (response.status !== 401) return response
   const latest = getAccessToken()
   const renewed = latest && latest !== token ? latest : await refreshAccessToken()
-  return renewed ? send(renewed) : response
+  if (renewed) return send(renewed)
+  // A refused refresh clears the credential. If it remains, refresh was
+  // temporarily unavailable: do not pass the stale 401 to request(), which
+  // would sign out every live socket along with this HTTP request.
+  if (getAccessToken()) {
+    throw new ApiError(503, 'REFRESH_UNAVAILABLE', 'Sign-in renewal is temporarily unavailable. Try again.')
+  }
+  return response
 }
 
 // Landing on / checks who the user is, then the page it redirects to checks
