@@ -97,7 +97,7 @@ function OpenCheckpoint({
           </p>
           <p className="mt-2 text-lg font-semibold leading-snug">{question.prompt}</p>
         </div>
-        <p aria-live="polite" className="shrink-0 text-right">
+        <p className="shrink-0 text-right">
           <span className="block text-3xl font-bold tabular-nums">{secondsRemaining}s</span>
           <span className="text-xs text-muted-foreground">left of {question.window_seconds}s</span>
         </p>

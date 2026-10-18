@@ -10,23 +10,30 @@ import AppShell from './AppShell'
  * guard above it verified and passed down as outlet context. */
 export default function ShellOutlet() {
   const user = useOutletContext<CurrentUser>()
-  const { pathname } = useLocation()
   return (
     <AppShell user={user}>
-      {/* A page fetched for the first time loads inside the shell, so the
-          navigation stays put rather than the screen going blank. */}
-      {/* Keyed by page, so leaving a page that failed clears the error. */}
-      <PageErrorBoundary key={pathname}>
-        <Suspense
-          fallback={
-            <PageBody>
-              <SkeletonRows label="Opening the page" />
-            </PageBody>
-          }
-        >
-          <Outlet />
-        </Suspense>
-      </PageErrorBoundary>
+      <PageOutlet />
     </AppShell>
+  )
+}
+
+/** The child page, inside the boundary and loading frame every shell page has. */
+export function PageOutlet() {
+  const { pathname } = useLocation()
+  return (
+    // A page fetched for the first time loads inside the shell, so the
+    // navigation stays put rather than the screen going blank. Keyed by page,
+    // so leaving a page that failed clears the error.
+    <PageErrorBoundary key={pathname}>
+      <Suspense
+        fallback={
+          <PageBody>
+            <SkeletonRows label="Opening the page" />
+          </PageBody>
+        }
+      >
+        <Outlet />
+      </Suspense>
+    </PageErrorBoundary>
   )
 }

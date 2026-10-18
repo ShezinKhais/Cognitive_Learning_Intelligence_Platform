@@ -3,7 +3,6 @@ import { Download, FileText, RefreshCw } from 'lucide-react'
 import { Link, useParams } from 'react-router'
 
 import { ApiError, clearAccessToken } from '../api'
-import SignOutButton from '../components/SignOutButton'
 import {
   reportFailureMessage,
   reportIsReady,
@@ -261,7 +260,7 @@ export default function LecturerSessionReportPage() {
     !activeJob || activeJob.status === 'failed'
 
   return (
-    <main className="min-h-screen bg-background">
+    <div className="bg-background">
       <header className="border-b border-border bg-card">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
           <div>
@@ -288,7 +287,6 @@ export default function LecturerSessionReportPage() {
             >
               Sessions
             </Link>
-            <SignOutButton />
           </div>
         </div>
       </header>
@@ -680,6 +678,6 @@ export default function LecturerSessionReportPage() {
           </>
         )}
       </div>
-    </main>
+    </div>
   )
 }

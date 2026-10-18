@@ -514,6 +514,8 @@ function QuestionCard({
 
   function onShortcut(event: KeyboardEvent<HTMLElement>) {
     if (editing || busy || event.target !== event.currentTarget) return
+    // Ctrl+R reloads and Ctrl+A selects; only a bare key is a shortcut.
+    if (event.ctrlKey || event.metaKey || event.altKey) return
     const action = shortcutFor(event.key)
     if (action === 'approve' && question.status === 'draft') void act('approved')
     else if (action === 'reject' && question.status === 'draft') void act('rejected')

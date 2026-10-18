@@ -135,6 +135,23 @@ test('a refresh the backend refuses signs the user out', async () => {
   )
 })
 
+test('an expired token while the backend is unreachable is an error, not a sign-out', async () => {
+  reset('expired', true)
+  failures.push('offline')
+
+  await assert.rejects(
+    apiAuthenticatedGet('/sessions/a/engagement'),
+    (error: unknown) => error instanceof ApiError && error.status === 503,
+  )
+  // Still signed in: the token is kept and no logout is sent.
+  assert.equal(getAccessToken(), 'expired')
+  assert.ok(!requests.some((line) => line.startsWith('/api/v1/auth/logout')))
+  // Once the backend answers again the same request goes through.
+  const answer = await apiAuthenticatedGet<{ ok: string }>('/sessions/a/engagement')
+  assert.equal(answer.ok, getAccessToken())
+  await clearAccessToken()
+})
+
 test('a reload signs back in with the cookie, and the token stays in memory', async () => {
   reset('anything', true)
   clearAccessToken()

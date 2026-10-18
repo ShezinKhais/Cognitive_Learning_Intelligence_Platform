@@ -33,10 +33,15 @@ export default function AdminConsiderationPage() {
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback((which: Show) => {
+    let current = true
+    setError(null)
     listRequests(which).then(
-      (page) => setRequests(page.items),
-      () => setError('The requests could not be loaded. Check your connection and reload.'),
+      (page) => current && setRequests(page.items),
+      () => current && setError('The requests could not be loaded. Check your connection and reload.'),
     )
+    return () => {
+      current = false
+    }
   }, [])
 
   useEffect(() => load(show), [load, show])

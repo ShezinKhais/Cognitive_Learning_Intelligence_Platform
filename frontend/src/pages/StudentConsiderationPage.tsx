@@ -31,7 +31,9 @@ type Until = 'term' | 'four-weeks' | 'date'
 function isoDay(offsetDays: number): string {
   const day = new Date()
   day.setDate(day.getDate() + offsetDays)
-  return day.toISOString().slice(0, 10)
+  // Local year, month and day: toISOString is UTC, a day behind before 04:00 here.
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`
 }
 
 /** Asking C.L.I.P to treat you differently in class. Decided by an
@@ -303,7 +305,7 @@ function RequestForm({ onSent, onCancel }: { onSent: (sent: ConsiderationRequest
           {step === 0 ? 'Cancel' : 'Back'}
         </button>
         {step < STEPS.length - 1 ? (
-          <button type="button" className={buttonStyles()} disabled={step === 0 && needs.size === 0} onClick={() => setStep((n) => n + 1)}>
+          <button type="button" className={buttonStyles()} disabled={(step === 0 && needs.size === 0) || (step === 1 && until === 'date' && !date)} onClick={() => setStep((n) => n + 1)}>
             Next
           </button>
         ) : (

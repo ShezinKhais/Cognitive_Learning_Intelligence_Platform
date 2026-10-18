@@ -47,7 +47,7 @@ export default function StudentLiveSessionPage() {
 
   if (!sessionId || !session) {
     return (
-      <main className="grid min-h-screen place-items-center bg-background p-6">
+      <div className="grid place-items-center bg-background p-6">
         <section className="w-full max-w-md rounded-xl border border-border bg-card p-6 text-center shadow-[var(--shadow-card)]">
           <h1 className="text-xl font-semibold">Session unavailable</h1>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -60,7 +60,7 @@ export default function StudentLiveSessionPage() {
             Return to sessions
           </Link>
         </section>
-      </main>
+      </div>
     )
   }
 
@@ -105,7 +105,7 @@ export function LiveSessionPanel({
     : 0
 
   return (
-    <main className={`min-h-screen bg-background px-4 py-5 ${compact ? '' : 'sm:px-6 sm:py-8'}`}>
+    <div className={`bg-background px-4 py-5 ${compact ? '' : 'sm:px-6 sm:py-8'}`}>
       <div className={`mx-auto ${compact ? 'max-w-xl' : 'max-w-4xl'}`}>
         <header className="rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)] sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -300,7 +300,7 @@ export function LiveSessionPanel({
             </div>
           </aside>
         )}
-    </main>
+    </div>
   )
 }
 

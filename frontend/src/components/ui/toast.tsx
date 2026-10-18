@@ -46,7 +46,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       >
         <AnimatePresence initial={false}>
           {toasts.map((toast) => (
-            <ToastCard key={toast.id} toast={toast} onDismiss={() => dismiss(toast.id)} />
+            <ToastCard key={toast.id} toast={toast} onDismiss={dismiss} />
           ))}
         </AnimatePresence>
       </div>
@@ -54,15 +54,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   )
 }
 
-function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
+function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number) => void }) {
   const [held, setHeld] = useState(false)
   const timer = useRef<number | undefined>(undefined)
 
   useEffect(() => {
     if (held) return
-    timer.current = window.setTimeout(onDismiss, SHOW_MS)
+    timer.current = window.setTimeout(() => onDismiss(toast.id), SHOW_MS)
     return () => window.clearTimeout(timer.current)
-  }, [held, onDismiss])
+  }, [held, onDismiss, toast.id])
 
   const Icon = toast.tone === 'problem' ? AlertTriangle : CheckCircle2
   return (
@@ -85,14 +85,14 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
           type="button"
           onClick={() => {
             toast.action?.run()
-            onDismiss()
+            onDismiss(toast.id)
           }}
           className="rounded-md px-2 py-1 font-semibold text-primary hover:bg-muted"
         >
           {toast.action.label}
         </button>
       )}
-      <button type="button" onClick={onDismiss} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground">
+      <button type="button" onClick={() => onDismiss(toast.id)} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground">
         <X size={15} aria-hidden />
         <span className="sr-only">Dismiss</span>
       </button>

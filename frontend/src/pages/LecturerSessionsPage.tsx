@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useId, useMemo, useState, type FormEvent } from 'react'
 import { Plus } from 'lucide-react'
 import { Link, useNavigate } from 'react-router'
 
@@ -132,9 +132,10 @@ export default function LecturerSessionsPage() {
 }
 
 function SessionList({ heading, sessions }: { heading: string; sessions: SessionSummary[] }) {
+  const id = useId()
   return (
-    <section className="mb-10" aria-labelledby={`group-${heading}`}>
-      <h2 id={`group-${heading}`} className="mb-3 text-lg font-bold">
+    <section className="mb-10" aria-labelledby={id}>
+      <h2 id={id} className="mb-3 text-lg font-bold">
         {heading} <span className="font-normal text-muted-foreground">{sessions.length}</span>
       </h2>
       <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">

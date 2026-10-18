@@ -252,8 +252,15 @@ export async function authenticatedFetch(
   const response = await send(token)
   if (response.status !== 401) return response
   const latest = accessToken
-  const renewed = latest && latest !== token ? latest : await refreshAccessToken()
-  return renewed ? send(renewed) : response
+  if (latest && latest !== token) return send(latest)
+  const renewal = await renew()
+  if (typeof renewal === 'object') return send(renewal.token)
+  // Offline for a moment is not signed out: request() clears the session on
+  // a 401, so this must not pass the expired token's 401 on.
+  if (renewal === 'unreachable') {
+    throw new ApiError(503, 'UNREACHABLE', 'The server could not be reached. Check your connection and try again.')
+  }
+  return response
 }
 
 // Landing on / checks who the user is, then the page it redirects to checks

@@ -8,6 +8,7 @@ import { apiUrl, type CurrentUser } from '../../api'
 import Illustration from '../../components/ui/Illustration'
 import { listMaterials } from '../materials/materialApi'
 import { listSessions } from '../sessions/sessionsApi'
+import { LIVE_SESSIONS_ENABLED } from '../student/studentApi'
 import { formatClock, formatRelative } from '../format/relativeTime'
 import {
   badgeLabel,
@@ -82,7 +83,9 @@ function useNotifications(user: CurrentUser): AppNotification[] {
     let cancelled = false
     async function load() {
       const [sessions, materials, down] = await Promise.all([
-        listSessions().then((page) => page.items, () => []),
+        user.role === 'student' && !LIVE_SESSIONS_ENABLED
+          ? Promise.resolve([])
+          : listSessions().then((page) => page.items, () => []),
         user.role === 'student' ? Promise.resolve([]) : listMaterials().catch(() => []),
         user.role === 'admin' ? readinessDown() : Promise.resolve([]),
       ])

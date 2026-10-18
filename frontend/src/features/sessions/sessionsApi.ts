@@ -1,5 +1,4 @@
-import { ApiError, apiAuthenticatedGet, apiAuthenticatedRequest, authenticatedFetch, type Page } from '../../api'
-import type { TopicDifficulty } from '../intelligence/topicRecovery'
+import { ApiError, apiAuthenticatedGet, type Page } from '../../api'
 
 export type SessionStatus = 'prepared' | 'active' | 'ending' | 'ended' | 'cancelled'
 
@@ -28,47 +27,6 @@ export interface SessionResponse {
   submitted_at: string
 }
 
-export type ReportStatus = 'queued' | 'running' | 'ready' | 'failed'
-
-export interface ReportAlert {
-  alert_id: string
-  kind: string
-  message: string
-  topic: string | null
-  raised_at: string
-  status: string
-}
-
-export interface SessionReport {
-  session_id: string
-  course_code: string
-  title: string
-  status: SessionStatus
-  starts_at: string | null
-  ended_at: string | null
-  generated_at: string
-  participation: {
-    students: number
-    questions_delivered: number
-    answers: number
-    missed_answers: number
-    attention_prompts: number
-  }
-  topics: TopicDifficulty[]
-  alerts: ReportAlert[]
-}
-
-export interface ReportJob {
-  report_id: string
-  session_id: string
-  status: ReportStatus
-  requested_at: string
-  finished_at: string | null
-  message: string | null
-  error: string | null
-  report: SessionReport | null
-}
-
 const session = (id: string) => `/sessions/${encodeURIComponent(id)}`
 
 export function listSessions(limit = 100): Promise<Page<SessionSummary>> {
@@ -90,27 +48,6 @@ export async function listAllResponses(id: string): Promise<SessionResponse[]> {
     all.push(...page.items)
     if (all.length >= page.total || page.items.length === 0) return all
   }
-}
-
-export function requestReport(id: string): Promise<ReportJob> {
-  return apiAuthenticatedRequest<ReportJob>(`${session(id)}/reports`, { method: 'POST' })
-}
-
-export function getReport(reportId: string): Promise<ReportJob> {
-  return apiAuthenticatedGet<ReportJob>(`/reports/${encodeURIComponent(reportId)}`)
-}
-
-/** The report PDF, fetched with the caller's token and opened from memory:
- * a plain link would carry no Authorization header. */
-export async function openReportPdf(reportId: string): Promise<void> {
-  const response = await authenticatedFetch(`/reports/${encodeURIComponent(reportId)}/pdf`)
-  if (!response.ok) {
-    throw new ApiError(response.status, 'PDF_UNAVAILABLE', 'The PDF could not be opened.')
-  }
-  const url = URL.createObjectURL(await response.blob())
-  window.open(url, '_blank', 'noopener')
-  // Long enough for the new tab to read it.
-  setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 
 export interface StudentSummary {

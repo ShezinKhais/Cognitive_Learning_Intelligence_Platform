@@ -6,6 +6,7 @@ import {
 
 import PageLoader from '../components/brand/PageLoader'
 import AppShell from '../components/shell/AppShell'
+import { PageOutlet } from '../components/shell/ShellOutlet'
 import { useStudentApp } from '../features/student/StudentAppContext'
 import { accessFor } from '../authRouting'
 
@@ -78,7 +79,7 @@ export default function ProtectedStudentPage({ withShell = false }: { withShell?
 
   return withShell ? (
     <AppShell user={currentUser}>
-      <Outlet />
+      <PageOutlet />
     </AppShell>
   ) : (
     <Outlet />
