@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Attention recorder (team only)</title>
+    <link rel="icon" href="data:," />
+  </head>
+  <body class="min-h-screen bg-background text-foreground">
+    <main class="mx-auto max-w-4xl px-4 py-8">
+      <header class="rounded-xl border border-border bg-card p-6 shadow-[var(--shadow-card)]">
+        <p class="text-sm font-semibold text-info">C.L.I.P team only · issue #159</p>
+        <h1 class="mt-1 text-2xl font-bold">Camera attention recorder</h1>
+        <p class="mt-2 text-sm text-muted-foreground">
+          Records labelled examples to measure how well the camera works. The picture stays in this
+          browser and is never saved: each frame keeps only a few numbers (head angles, how open the
+          eyes are, where the iris is) and the label you act out. Use a participant code, never a name.
+        </p>
+      </header>
+
+      <section class="mt-5 grid gap-5 md:grid-cols-[1fr_280px]">
+        <div class="rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)]">
+          <h2 class="font-semibold">1. Who and how</h2>
+          <label class="mt-3 flex items-start gap-2 text-sm">
+            <input type="checkbox" id="consent" class="mt-1 size-4" />
+            I agree to my face being analysed on this device for this test.
+          </label>
+          <label class="mt-3 block text-sm font-medium">Participant code
+            <input id="participant" placeholder="Type P1, P2, …" class="mt-1 block w-40 rounded-lg border border-border bg-input-background px-3 py-2" />
+          </label>
+          <div id="conditions" class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4"></div>
+          <div class="mt-4 flex gap-2">
+            <button id="start" disabled class="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-40">Start camera</button>
+            <button id="stop" disabled class="rounded-lg border border-border px-4 py-2 text-sm font-semibold disabled:opacity-40">Stop camera</button>
+          </div>
+        </div>
+        <div class="rounded-xl border border-border bg-card p-4 shadow-[var(--shadow-card)]">
+          <video id="preview" muted playsinline class="aspect-[4/3] w-full rounded-lg bg-black object-cover -scale-x-100"></video>
+          <p id="status" role="status" class="mt-3 text-sm font-semibold">Camera off.</p>
+          <dl id="live" class="mt-2 grid grid-cols-3 gap-2 text-center text-xs"></dl>
+        </div>
+      </section>
+
+      <section class="mt-5 rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)]">
+        <h2 class="font-semibold">2. Record a 10-second clip</h2>
+        <p class="mt-1 text-sm text-muted-foreground">Press one, get ready during the 2-second countdown, then do what it says until the bar fills.</p>
+        <div id="progress" class="mt-3 h-2 overflow-hidden rounded-full bg-muted"><div id="bar" class="h-full w-0 rounded-full bg-info"></div></div>
+        <div id="labels" class="mt-4 grid gap-2 sm:grid-cols-2"></div>
+      </section>
+
+      <section class="mt-5 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)]">
+        <h2 class="w-full font-semibold">3. Save</h2>
+        <p id="count" class="text-sm">0 clips, 0 frames recorded.</p>
+        <button id="download" disabled class="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-40">Download recordings (CSV)</button>
+        <button id="discard" disabled class="rounded-lg border border-border px-4 py-2 text-sm font-semibold disabled:opacity-40">Delete everything recorded here</button>
+      </section>
+    </main>
+    <script type="module" src="./recorder.ts"></script>
+  </body>
+</html>

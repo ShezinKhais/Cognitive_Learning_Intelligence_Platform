@@ -3,8 +3,8 @@ import AxeBuilder from '@axe-core/playwright'
 
 async function optIn(page: Page, sensor: 'camera' | 'microphone') {
   await page.getByLabel(`I opt in to ${sensor} indicators`).check()
-  await page.getByRole('button', { name: 'Save monitoring and selected device opt-in' }).click()
-  await expect(page.getByRole('button', { name: 'Enable selected' })).toBeEnabled()
+  await page.getByRole('button', { name: 'Save my choice' }).click()
+  await expect(page.getByRole('button', { name: 'Turn on' })).toBeEnabled()
 }
 
 test.beforeEach(async ({ page }) => {
@@ -34,13 +34,13 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('devices remain off until saved opt-in and explicit enable; denial is recoverable', async ({ page }) => {
-  await expect(page.getByRole('button', { name: 'Enable selected' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Turn on' })).toBeDisabled()
   await optIn(page, 'camera')
   expect(await page.evaluate(() => (window as any).probe.requests)).toBe(0)
   await page.evaluate(() => {
     navigator.mediaDevices.getUserMedia = async () => { throw new DOMException('Denied', 'NotAllowedError') }
   })
-  await page.getByRole('button', { name: 'Enable selected' }).click()
+  await page.getByRole('button', { name: 'Turn on' }).click()
   await expect(page.getByText('Camera: unavailable. Microphone: off.')).toBeVisible()
   await expect(page.getByRole('status')).toHaveText('Local sensing off')
   await expect(page.getByLabel('Ask about this session')).toBeEnabled()
@@ -49,16 +49,16 @@ test('devices remain off until saved opt-in and explicit enable; denial is recov
 test('microphone denial and consent-save failure never strand the interface', async ({ page }) => {
   await page.route('**/api/v1/auth/consent', route => route.fulfill({ status: 503, json: {} }))
   await page.getByLabel('I opt in to microphone indicators').check()
-  await page.getByRole('button', { name: 'Save monitoring and selected device opt-in' }).click()
+  await page.getByRole('button', { name: 'Save my choice' }).click()
   await expect(page.getByRole('alert')).toContainText('No device was started')
   expect(await page.evaluate(() => (window as any).probe.requests)).toBe(0)
   await page.unroute('**/api/v1/auth/consent')
-  await page.getByRole('button', { name: 'Save monitoring and selected device opt-in' }).click()
-  await expect(page.getByRole('button', { name: 'Enable selected' })).toBeEnabled()
+  await page.getByRole('button', { name: 'Save my choice' }).click()
+  await expect(page.getByRole('button', { name: 'Turn on' })).toBeEnabled()
   await page.evaluate(() => {
     navigator.mediaDevices.getUserMedia = async () => { throw new DOMException('Denied', 'NotAllowedError') }
   })
-  await page.getByRole('button', { name: 'Enable selected' }).click()
+  await page.getByRole('button', { name: 'Turn on' }).click()
   await expect(page.getByText('Camera: off. Microphone: unavailable.')).toBeVisible()
 })
 
@@ -72,9 +72,9 @@ test('cancel a pending permission request and release a late stream', async ({ p
     }
   })
   await optIn(page, 'camera')
-  await page.getByRole('button', { name: 'Enable selected' }).click()
+  await page.getByRole('button', { name: 'Turn on' }).click()
   await expect.poll(() => page.evaluate(() => typeof (window as any).releasePermission)).toBe('function')
-  await page.getByRole('button', { name: 'Disable all now' }).click()
+  await page.getByRole('button', { name: 'Turn everything off' }).click()
   await page.evaluate(() => (window as any).releasePermission())
   await expect.poll(() => page.evaluate(() => (window as any).probe.tracks.map((t: MediaStreamTrack) => t.readyState))).toEqual(['ended'])
   await expect(page.getByRole('status')).toHaveText('Local sensing off')
@@ -90,7 +90,7 @@ for (const sensor of ['camera', 'microphone'] as const) {
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
     await optIn(page, sensor)
     const start = Date.now()
-    await page.getByRole('button', { name: 'Enable selected' }).click()
+    await page.getByRole('button', { name: 'Turn on' }).click()
     await expect(page.getByRole('button', { name: `Stop ${sensor}`, exact: true })).toBeVisible({ timeout: 60_000 })
     const startupMs = Date.now() - start
     await expect.poll(() => page.evaluate(() => (window as any).probe.summaries.length), { timeout: 15_000 }).toBeGreaterThan(0)
@@ -109,7 +109,7 @@ for (const sensor of ['camera', 'microphone'] as const) {
     const measurement = { browser: context.browser()?.version(), sensor, startupMs, cpuThrottle: 4, summaries, externalRequests: external }
     console.log('Synthetic local-AI measurement:', JSON.stringify(measurement))
     await info.attach(`${sensor}-synthetic-performance.json`, { body: JSON.stringify(measurement), contentType: 'application/json' })
-    await page.getByRole('button', { name: 'Disable all now' }).click()
+    await page.getByRole('button', { name: 'Turn everything off' }).click()
     await expect.poll(() => page.evaluate(() => (window as any).probe.tracks.every((t: MediaStreamTrack) => t.readyState === 'ended'))).toBe(true)
     await expect(page.getByRole('status')).toHaveText('Local sensing off')
   })
@@ -118,7 +118,7 @@ for (const sensor of ['camera', 'microphone'] as const) {
 for (const action of ['Toggle session connection', 'Toggle sensor mount', 'Reject consent', 'pagehide', 'hidden']) {
   test(`camera releases tracks on ${action}`, async ({ page }) => {
     await optIn(page, 'camera')
-    await page.getByRole('button', { name: 'Enable selected' }).click()
+    await page.getByRole('button', { name: 'Turn on' }).click()
     await expect(page.getByRole('button', { name: 'Stop camera', exact: true })).toBeVisible({ timeout: 60_000 })
     if (action === 'pagehide') await page.evaluate(() => window.dispatchEvent(new Event('pagehide')))
     else if (action === 'hidden') await page.evaluate(() => {
@@ -129,6 +129,18 @@ for (const action of ['Toggle session connection', 'Toggle sensor mount', 'Rejec
     await expect.poll(() => page.evaluate(() => (window as any).probe.tracks.every((t: MediaStreamTrack) => t.readyState === 'ended'))).toBe(true)
   })
 }
+
+test('calibration gives up when the camera stops sending frames', async ({ page }) => {
+  await optIn(page, 'camera')
+  await page.getByRole('button', { name: 'Turn on' }).click()
+  await expect(page.getByRole('button', { name: 'Stop camera', exact: true })).toBeVisible({ timeout: 60_000 })
+  // A muted track sends no frames, so calibration has no timestamp to end on.
+  await page.evaluate(() => Object.defineProperty(MediaStreamTrack.prototype, 'muted', { configurable: true, get: () => true }))
+  await page.getByRole('button', { name: 'Calibrate: look at the screen for 3 seconds' }).click()
+  await expect(page.getByRole('button', { name: 'Look at the screen…' })).toBeDisabled()
+  await expect(page.getByText('The camera stopped sending pictures, so calibration did not finish.')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('button', { name: 'Calibrate: look at the screen for 3 seconds' })).toBeEnabled()
+})
 
 test('keyboard, IME composition, source rendering and reduced-motion scrolling', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
@@ -177,15 +189,15 @@ test('keyboard-only opt-in and disable controls are operable', async ({ page }) 
   await expect(checkbox).toBeChecked()
   await page.keyboard.press('Tab') // microphone checkbox
   await page.keyboard.press('Tab') // save
-  await expect(page.getByRole('button', { name: 'Save monitoring and selected device opt-in' })).toBeFocused()
+  await expect(page.getByRole('button', { name: 'Save my choice' })).toBeFocused()
   await page.keyboard.press('Enter')
-  await expect(page.getByRole('button', { name: 'Enable selected' })).toBeEnabled()
-  await page.getByRole('button', { name: 'Save monitoring and selected device opt-in' }).focus()
+  await expect(page.getByRole('button', { name: 'Turn on' })).toBeEnabled()
+  await page.getByRole('button', { name: 'Save my choice' }).focus()
   await page.keyboard.press('Tab')
-  await expect(page.getByRole('button', { name: 'Enable selected' })).toBeFocused()
+  await expect(page.getByRole('button', { name: 'Turn on' })).toBeFocused()
   await page.keyboard.press('Enter')
   await expect(page.getByRole('button', { name: 'Stop camera', exact: true })).toBeVisible({ timeout: 60_000 })
-  await page.getByRole('button', { name: 'Disable all now' }).focus()
+  await page.getByRole('button', { name: 'Turn everything off' }).focus()
   await page.keyboard.press('Enter')
   await expect(page.getByRole('status')).toHaveText('Local sensing off')
 })
@@ -194,7 +206,7 @@ test('missing self-hosted face model stops capture and explains unavailability',
   await page.route('**/attention/**/face_landmarker.task', route => route.abort())
   await page.route('**/attention/face_landmarker.task', route => route.abort())
   await optIn(page, 'camera')
-  await page.getByRole('button', { name: 'Enable selected' }).click()
+  await page.getByRole('button', { name: 'Turn on' }).click()
   await expect(page.getByText('Camera: unavailable. Microphone: off.')).toBeVisible({ timeout: 40_000 })
   await expect.poll(() => page.evaluate(() => (window as any).probe.tracks.every((t: MediaStreamTrack) => t.readyState === 'ended'))).toBe(true)
 })
@@ -202,8 +214,8 @@ test('missing self-hosted face model stops capture and explains unavailability',
 test('both sensors stop independently and disabling releases every track', async ({ page }) => {
   await page.getByLabel('I opt in to camera indicators').check()
   await page.getByLabel('I opt in to microphone indicators').check()
-  await page.getByRole('button', { name: 'Save monitoring and selected device opt-in' }).click()
-  await page.getByRole('button', { name: 'Enable selected' }).click()
+  await page.getByRole('button', { name: 'Save my choice' }).click()
+  await page.getByRole('button', { name: 'Turn on' }).click()
   await expect(page.getByRole('button', { name: 'Stop camera', exact: true })).toBeVisible({ timeout: 60_000 })
   await expect(page.getByRole('button', { name: 'Stop microphone', exact: true })).toBeVisible({ timeout: 60_000 })
   await page.getByRole('button', { name: 'Stop camera', exact: true }).click()
@@ -211,7 +223,7 @@ test('both sensors stop independently and disabling releases every track', async
   await expect.poll(() => page.evaluate(() => (window as any).probe.tracks.map(
     (track: MediaStreamTrack) => ({ kind: track.kind, state: track.readyState }),
   ))).toContainEqual({ kind: 'audio', state: 'live' })
-  await page.getByRole('button', { name: 'Disable all now' }).click()
+  await page.getByRole('button', { name: 'Turn everything off' }).click()
   await expect.poll(() => page.evaluate(() => (window as any).probe.tracks.every(
     (track: MediaStreamTrack) => track.readyState === 'ended',
   ))).toBe(true)
@@ -221,7 +233,7 @@ test('both sensors stop independently and disabling releases every track', async
 for (const sensor of ['camera', 'microphone'] as const) {
   test(`${sensor} stops on remote monitoring withdrawal and never auto-resumes`, async ({ page }) => {
     await optIn(page, sensor)
-    await page.getByRole('button', { name: 'Enable selected' }).click()
+    await page.getByRole('button', { name: 'Turn on' }).click()
     await expect(page.getByRole('button', { name: `Stop ${sensor}`, exact: true })).toBeVisible({ timeout: 60_000 })
     await page.route('**/api/v1/auth/me', route => route.fulfill({ json: {
       id: 'student', role: 'student', consents: [],
@@ -234,14 +246,14 @@ for (const sensor of ['camera', 'microphone'] as const) {
     await page.getByRole('button', { name: 'Toggle session connection' }).click()
     await page.getByRole('button', { name: 'Toggle session connection' }).click()
     await expect(page.getByRole('status')).toHaveText('Local sensing off')
-    await expect(page.getByRole('button', { name: 'Enable selected' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Turn on' })).toBeDisabled()
     expect(await page.evaluate(() => (window as any).probe.requests)).toBe(before)
   })
 }
 
 test('failed consent recheck releases the microphone while chat stays usable', async ({ page }) => {
   await optIn(page, 'microphone')
-  await page.getByRole('button', { name: 'Enable selected' }).click()
+  await page.getByRole('button', { name: 'Turn on' }).click()
   await expect(page.getByRole('button', { name: 'Stop microphone', exact: true })).toBeVisible({ timeout: 60_000 })
   await page.route('**/api/v1/auth/me', route => route.fulfill({ status: 503, json: {} }))
   await expect(page.getByRole('alert')).toContainText('Consent could not be verified', { timeout: 10_000 })
@@ -254,7 +266,7 @@ test('failed consent recheck releases the microphone while chat stays usable', a
 test('a missing VAD model releases audio and reports unavailability', async ({ page }) => {
   await page.route('**/attention/vad/*.onnx', route => route.abort())
   await optIn(page, 'microphone')
-  await page.getByRole('button', { name: 'Enable selected' }).click()
+  await page.getByRole('button', { name: 'Turn on' }).click()
   await expect(page.getByText('Camera: off. Microphone: unavailable.')).toBeVisible({ timeout: 40_000 })
   await expect.poll(() => page.evaluate(() => (window as any).probe.tracks.every(
     (track: MediaStreamTrack) => track.readyState === 'ended',
@@ -264,7 +276,7 @@ test('a missing VAD model releases audio and reports unavailability', async ({ p
 test('unsupported insecure context never requests a device', async ({ page }) => {
   await optIn(page, 'camera')
   await page.evaluate(() => Object.defineProperty(window, 'isSecureContext', { value: false }))
-  await page.getByRole('button', { name: 'Enable selected' }).click()
+  await page.getByRole('button', { name: 'Turn on' }).click()
   await expect(page.getByText('Camera: unavailable. Microphone: off.')).toBeVisible()
   expect(await page.evaluate(() => (window as any).probe.requests)).toBe(0)
 })

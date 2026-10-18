@@ -31,38 +31,210 @@ const LANDMARK = {
   leftIris: 468,
   rightIris: 473,
 } as const
-const MIN_FACE_WIDTH = 0.03
-const MAX_FORWARD_YAW = 0.22
-const MAX_FORWARD_ROLL = 0.3
-const MIN_EYE_WIDTH = 0.005
-const MIN_OPEN_EYE_RATIO = 0.12
-const IRIS_X_RANGE = [0.2, 0.8] as const
-const IRIS_Y_RANGE = [0.1, 0.9] as const
 
-/** Coarse camera-facing proxy, not eye tracking or an attention judgement. */
-export function observeFace(faces: Point[][]): FaceObservation {
-  const unavailable: FaceObservation = { face: null, forward: null, head: 'unavailable' }
-  if (!faces.length) return { ...unavailable, face: false }
-  if (faces.length !== 1) return unavailable
+/** Head angles in degrees, from MediaPipe's facial transformation matrix. */
+export interface PoseAngles { yaw: number; pitch: number; roll: number }
+/** One eye: how open it is (height / width) and where the iris sits in it (0 to 1). */
+export interface EyeFeatures { width: number; open: number; irisX: number; irisY: number }
+/**
+ * The numbers one frame is judged on. A frame is turned into these first and
+ * judged second (classifyFace), so the evaluation replays recorded features
+ * through exactly the judgement the browser makes, and no video is kept.
+ */
+export interface FaceFeatures {
+  faces: number
+  /** One face with every landmark used here present and finite. */
+  valid: boolean
+  width: number | null
+  /** Landmark proxies for head turn and tilt, used when there is no pose. */
+  yawProxy: number | null
+  rollProxy: number | null
+  pose: PoseAngles | null
+  leftEye: EyeFeatures | null
+  rightEye: EyeFeatures | null
+}
+
+/**
+ * Where "facing the screen" ends. The proxy values are the hand-set ones from
+ * #63. The angle limits apply when MediaPipe supplies a pose and were tuned on
+ * six team members' recordings (backend/tests/eval/CV_EVALUATION.md): these
+ * for a student who has not calibrated, CALIBRATED_THRESHOLDS for one who has.
+ */
+export interface Thresholds {
+  minFaceWidth: number
+  maxYawProxy: number
+  maxRollProxy: number
+  maxYawDegrees: number
+  maxPitchDegrees: number
+  maxRollDegrees: number
+  minEyeWidth: number
+  minOpenEyeRatio: number
+  irisX: readonly [number, number]
+  irisY: readonly [number, number]
+}
+export const DEFAULT_THRESHOLDS: Thresholds = {
+  minFaceWidth: 0.03,
+  maxYawProxy: 0.22,
+  maxRollProxy: 0.3,
+  maxYawDegrees: 10,
+  maxPitchDegrees: 30,
+  maxRollDegrees: 20,
+  minEyeWidth: 0.005,
+  minOpenEyeRatio: 0.12,
+  irisX: [0.2, 0.8],
+  irisY: [0.1, 0.9],
+}
+
+/**
+ * With the student's own centre known, pitch can be strict enough to tell the
+ * screen from notes on the desk; without it, it has to allow for every camera
+ * height, which is why DEFAULT_THRESHOLDS is looser.
+ */
+export const CALIBRATED_THRESHOLDS: Thresholds = {
+  ...DEFAULT_THRESHOLDS,
+  maxYawDegrees: 15,
+  maxPitchDegrees: 16,
+  maxRollDegrees: 15,
+  irisX: [0.25, 0.75],
+}
+
+export const thresholdsFor = (calibration: Calibration | null): Thresholds =>
+  calibration ? CALIBRATED_THRESHOLDS : DEFAULT_THRESHOLDS
+
+/**
+ * One student's own "looking at the screen": the head angles and iris
+ * position they hold while doing so. Kept in the browser only.
+ */
+export interface Calibration { yaw: number; pitch: number; roll: number; irisX: number; irisY: number }
+
+/** MediaPipe's 4x4 matrix is column-major: element (row, column) is data[column * 4 + row]. */
+export function poseFromMatrix(data: ArrayLike<number>): PoseAngles | null {
+  if (data.length < 16) return null
+  const r = (row: number, column: number) => data[column * 4 + row]
+  const degrees = 180 / Math.PI
+  const pose = {
+    yaw: Math.asin(Math.max(-1, Math.min(1, -r(2, 0)))) * degrees,
+    pitch: Math.atan2(r(2, 1), r(2, 2)) * degrees,
+    roll: Math.atan2(r(1, 0), r(0, 0)) * degrees,
+  }
+  return [pose.yaw, pose.pitch, pose.roll].every(Number.isFinite) ? pose : null
+}
+
+/** The numbers classifyFace needs, from the landmarks (and pose, if any) of every face found. */
+export function faceFeatures(faces: Point[][], matrices?: ArrayLike<number>[]): FaceFeatures {
+  const none: FaceFeatures = {
+    faces: faces.length, valid: false, width: null, yawProxy: null, rollProxy: null,
+    pose: null, leftEye: null, rightEye: null,
+  }
+  if (faces.length !== 1) return none
   const p = faces[0]
   const ids = Object.values(LANDMARK)
-  if (ids.some(i => !p[i] || ![p[i].x, p[i].y, p[i].z].every(Number.isFinite))) return unavailable
+  if (ids.some(i => !p[i] || ![p[i].x, p[i].y, p[i].z].every(Number.isFinite))) return none
   const width = Math.abs(p[LANDMARK.rightEyeOuter].x - p[LANDMARK.leftEyeOuter].x)
-  if (width < MIN_FACE_WIDTH) return { ...unavailable, face: true }
-  const yaw = Math.abs(p[LANDMARK.nose].x - (p[LANDMARK.leftEyeOuter].x + p[LANDMARK.rightEyeOuter].x) / 2) / width
-  const roll = Math.abs(p[LANDMARK.leftEyeOuter].y - p[LANDMARK.rightEyeOuter].y) / width
-  const head = yaw < MAX_FORWARD_YAW && roll < MAX_FORWARD_ROLL ? 'forward' : 'turned'
-  function eye(a: number, b: number, top: number, bottom: number, iris: number) {
+  function eye(a: number, b: number, top: number, bottom: number, iris: number): EyeFeatures {
     const w = Math.abs(p[a].x - p[b].x)
     const h = Math.abs(p[top].y - p[bottom].y)
-    if (w < MIN_EYE_WIDTH || h / w < MIN_OPEN_EYE_RATIO) return null
-    const x = (p[iris].x - Math.min(p[a].x, p[b].x)) / w
-    const y = (p[iris].y - Math.min(p[top].y, p[bottom].y)) / h
-    return x >= IRIS_X_RANGE[0] && x <= IRIS_X_RANGE[1] && y >= IRIS_Y_RANGE[0] && y <= IRIS_Y_RANGE[1]
+    return {
+      width: w,
+      open: w > 0 ? h / w : 0,
+      irisX: w > 0 ? (p[iris].x - Math.min(p[a].x, p[b].x)) / w : 0,
+      irisY: h > 0 ? (p[iris].y - Math.min(p[top].y, p[bottom].y)) / h : 0,
+    }
   }
-  const left = eye(LANDMARK.leftEyeOuter, LANDMARK.leftEyeInner, LANDMARK.leftEyeTop, LANDMARK.leftEyeBottom, LANDMARK.leftIris)
-  const right = eye(LANDMARK.rightEyeInner, LANDMARK.rightEyeOuter, LANDMARK.rightEyeTop, LANDMARK.rightEyeBottom, LANDMARK.rightIris)
-  return { face: true, head, forward: left === null || right === null ? null : head === 'forward' && left && right }
+  return {
+    faces: 1,
+    valid: true,
+    width,
+    yawProxy: width > 0 ? Math.abs(p[LANDMARK.nose].x - (p[LANDMARK.leftEyeOuter].x + p[LANDMARK.rightEyeOuter].x) / 2) / width : null,
+    rollProxy: width > 0 ? Math.abs(p[LANDMARK.leftEyeOuter].y - p[LANDMARK.rightEyeOuter].y) / width : null,
+    pose: matrices?.[0] ? poseFromMatrix(matrices[0]) : null,
+    leftEye: eye(LANDMARK.leftEyeOuter, LANDMARK.leftEyeInner, LANDMARK.leftEyeTop, LANDMARK.leftEyeBottom, LANDMARK.leftIris),
+    rightEye: eye(LANDMARK.rightEyeInner, LANDMARK.rightEyeOuter, LANDMARK.rightEyeTop, LANDMARK.rightEyeBottom, LANDMARK.rightIris),
+  }
+}
+
+/** Coarse camera-facing proxy, not eye tracking or an attention judgement. */
+export function classifyFace(
+  f: FaceFeatures,
+  t: Thresholds = DEFAULT_THRESHOLDS,
+  calibration: Calibration | null = null,
+): FaceObservation {
+  const unavailable: FaceObservation = { face: null, forward: null, head: 'unavailable' }
+  if (f.faces === 0) return { ...unavailable, face: false }
+  if (f.faces !== 1 || !f.valid || f.width === null) return unavailable
+  if (f.width < t.minFaceWidth) return { ...unavailable, face: true }
+  const c = calibration ?? { yaw: 0, pitch: 0, roll: 0, irisX: 0.5, irisY: 0.5 }
+  let forwardHead: boolean
+  if (f.pose) {
+    // Looking down at notes is a pitch the landmark proxies cannot see.
+    forwardHead = Math.abs(f.pose.yaw - c.yaw) < t.maxYawDegrees
+      && Math.abs(f.pose.pitch - c.pitch) < t.maxPitchDegrees
+      && Math.abs(f.pose.roll - c.roll) < t.maxRollDegrees
+  } else {
+    forwardHead = f.yawProxy !== null && f.rollProxy !== null
+      && f.yawProxy < t.maxYawProxy && f.rollProxy < t.maxRollProxy
+  }
+  const head = forwardHead ? 'forward' : 'turned'
+  // The calibrated centre moves the iris box, so a student whose eyes rest
+  // off the middle is not read as looking away.
+  const shiftX = c.irisX - 0.5
+  const shiftY = c.irisY - 0.5
+  function eyeOnScreen(e: EyeFeatures | null): boolean | null {
+    if (!e || e.width < t.minEyeWidth || e.open < t.minOpenEyeRatio) return null
+    const x = e.irisX - shiftX
+    const y = e.irisY - shiftY
+    return x >= t.irisX[0] && x <= t.irisX[1] && y >= t.irisY[0] && y <= t.irisY[1]
+  }
+  const left = eyeOnScreen(f.leftEye)
+  const right = eyeOnScreen(f.rightEye)
+  return { face: true, head, forward: left === null || right === null ? null : forwardHead && left && right }
+}
+
+export function observeFace(
+  faces: Point[][],
+  matrices?: ArrayLike<number>[],
+  t: Thresholds = DEFAULT_THRESHOLDS,
+  calibration: Calibration | null = null,
+): FaceObservation {
+  return classifyFace(faceFeatures(faces, matrices), t, calibration)
+}
+
+// A calibration is a few seconds of looking at the screen. Fewer usable
+// frames, or a centre this far off straight ahead, means the student was not
+// looking at the screen, so no calibration is better than a wrong one.
+export const MIN_CALIBRATION_FRAMES = 6
+export const MAX_CALIBRATION_OFFSET_DEGREES = 20
+// Upward (negative pitch) is allowed further: sitting back from a laptop, or a
+// camera below eye level, reads as 23 to 30 degrees up while looking at the
+// screen (#159 recordings). Downward stays at the limit above, so a centre
+// taken while looking down at notes (17 to 20 degrees down) is still refused.
+export const MAX_CALIBRATION_UP_DEGREES = 35
+export const MAX_CALIBRATION_IRIS_OFFSET = 0.2
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
+}
+
+/** The student's own centre from frames taken while they looked at the screen, or null. */
+export function calibrate(frames: FaceFeatures[]): Calibration | null {
+  const usable = frames.filter(f => f.faces === 1 && f.valid && f.pose && f.leftEye && f.rightEye)
+  if (usable.length < MIN_CALIBRATION_FRAMES) return null
+  const calibration = {
+    yaw: median(usable.map(f => f.pose!.yaw)),
+    pitch: median(usable.map(f => f.pose!.pitch)),
+    roll: median(usable.map(f => f.pose!.roll)),
+    irisX: median(usable.map(f => (f.leftEye!.irisX + f.rightEye!.irisX) / 2)),
+    irisY: median(usable.map(f => (f.leftEye!.irisY + f.rightEye!.irisY) / 2)),
+  }
+  const plausible = [calibration.yaw, calibration.roll]
+    .every(angle => Math.abs(angle) <= MAX_CALIBRATION_OFFSET_DEGREES)
+    && calibration.pitch <= MAX_CALIBRATION_OFFSET_DEGREES
+    && calibration.pitch >= -MAX_CALIBRATION_UP_DEGREES
+    && Math.abs(calibration.irisX - 0.5) <= MAX_CALIBRATION_IRIS_OFFSET
+    && Math.abs(calibration.irisY - 0.5) <= MAX_CALIBRATION_IRIS_OFFSET
+  return plausible ? calibration : null
 }
 
 /** Null is absence, not a negative signal. Only the frozen wire shape leaves. */

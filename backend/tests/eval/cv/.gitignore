@@ -1,0 +1,2 @@
+# Recordings stay on the evaluator's machine; only RESULTS.md is committed.
+*.csv
