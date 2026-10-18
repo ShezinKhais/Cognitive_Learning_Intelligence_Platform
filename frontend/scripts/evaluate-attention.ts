@@ -1,17 +1,17 @@
 // Camera attention evaluation (#159). Not a test.
 //
 // Reads the recorder's CSV files (eval/attention-recorder.html), replays every
-// frame through classifyFace, tunes the angle limits on some participants and
-// reports on the others. Run from frontend/:
+// frame through classifyFace and, leaving one participant out at a time, tunes
+// the angle limits on everyone else and reports on that person. Run from frontend/:
 //
 //   node --experimental-strip-types scripts/evaluate-attention.ts ../backend/tests/eval/cv
 //   node --experimental-strip-types scripts/evaluate-attention.ts ../backend/tests/eval/cv --out ../backend/tests/eval/CV_EVALUATION.md
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import {
-  CONDITIONS, LABELS, balancedAccuracy, bootstrap, calibrations, confusion, coverage, parseCsv,
-  precision, recall, score, split, tune,
-  type Condition, type Counts, type Frame, type Label, type Setting,
+  CONDITIONS, LABELS, balancedAccuracy, bootstrap, calibrations, confusion, coverage, folds, parseCsv,
+  precision, recall, score, tune,
+  type Condition, type Counts, type Frame, type Label, type Settings,
 } from '../src/features/attention/evaluation.ts'
 import { DEFAULT_THRESHOLDS, type Thresholds } from '../src/features/attention/signals.ts'
 
@@ -28,21 +28,31 @@ for (const name of files) frames.push(...parseCsv(await readFile(path.join(folde
 // "Before" is #63's judgement: the landmark proxies, as if no pose came with the frame.
 const withoutPose = (fs: Frame[]) => fs.map(f => ({ ...f, features: { ...f.features, pose: null } }))
 
-const { tune: tuneFrames, test: testFrames, by } = split(frames)
-const tunedPlain = tune(tuneFrames, false)
-const tunedCalibrated = tune(tuneFrames, true)
+// Each fold tunes on everyone but one participant (or on two thirds of the
+// clips, with fewer than three people) and is judged on what it held out.
+const { folds: rounds, by } = folds(frames)
+const tuned = rounds.map(fold => ({ ...fold, plain: tune(fold.tune, false), calibrated: tune(fold.tune, true) }))
+const testFrames = tuned.flatMap(fold => fold.test)
+const foldOf = (f: Frame) => by === 'participant' ? tuned.find(fold => fold.held === f.participant)! : tuned[0]
+const before = { thresholds: DEFAULT_THRESHOLDS, calibrated: false }
+const tunedPlain: Settings = f => ({ thresholds: foldOf(f).plain.thresholds, calibrated: false })
+const tunedCalibrated: Settings = f => ({ thresholds: foldOf(f).calibrated.thresholds, calibrated: true })
 
-interface Row { name: string; frames: Frame[]; setting: Setting }
+interface Row { name: string; frames: Frame[]; setting: Settings }
 const rows: Row[] = [
-  { name: 'Before: landmark proxies (#63)', frames: withoutPose(testFrames), setting: { thresholds: DEFAULT_THRESHOLDS, calibrated: false } },
-  { name: 'Pose angles, starting limits', frames: testFrames, setting: { thresholds: DEFAULT_THRESHOLDS, calibrated: false } },
-  { name: 'After: pose angles, tuned limits', frames: testFrames, setting: { thresholds: tunedPlain.thresholds, calibrated: false } },
-  { name: 'After + calibration', frames: testFrames, setting: { thresholds: tunedCalibrated.thresholds, calibrated: true } },
+  { name: 'Before: landmark proxies (#63)', frames: withoutPose(testFrames), setting: before },
+  { name: 'Pose angles, starting limits', frames: testFrames, setting: before },
+  { name: 'After: pose angles, tuned limits', frames: testFrames, setting: tunedPlain },
+  { name: 'After + calibration', frames: testFrames, setting: tunedCalibrated },
 ]
+
+// What ships: the limits tuned on every recording.
+const finalPlain = tune(frames, false)
+const finalCalibrated = tune(frames, true)
 
 const pct = (value: number | null) => value === null ? 'n/a' : `${(value * 100).toFixed(1)}%`
 const ci = (interval: [number, number] | null) => interval ? ` (${pct(interval[0])}–${pct(interval[1])})` : ''
-function metric(fs: Frame[], setting: Setting, pick: (s: ReturnType<typeof score>) => Counts, measure: (c: Counts) => number | null) {
+function metric(fs: Frame[], setting: Settings, pick: (s: ReturnType<typeof score>) => Counts, measure: (c: Counts) => number | null) {
   const byKey = calibrations(fs)
   const value = measure(pick(score(fs, setting, byKey)))
   const interval = bootstrap(fs, sample => measure(pick(score(sample, setting, byKey))))
@@ -69,10 +79,10 @@ for (const [label, instruction] of Object.entries(LABELS) as [Label, string][]) 
 }
 say()
 say(by === 'participant'
-  ? `Tuned on ${clipsOf(tuneFrames)} clips from ${new Set(tuneFrames.map(f => f.participant)).size} participants; every result below is on the ${clipsOf(testFrames)} clips of the ${new Set(testFrames.map(f => f.participant)).size} held-out participant(s), never used to tune.`
-  : `Fewer than 3 participants, so clips are held out instead of people: tuned on ${clipsOf(tuneFrames)} clips, tested on ${clipsOf(testFrames)} others. The same people are in both, so these numbers are optimistic.`)
+  ? `Leave one participant out: ${people.length} rounds, each tuning the limits on ${people.length - 1} participants and testing on the one left out. Every result below is on a person the limits were not tuned on, and pools all ${people.length} rounds (${clipsOf(testFrames)} clips).`
+  : `Fewer than 3 participants, so clips are held out instead of people: tuned on ${clipsOf(tuned[0].tune)} clips, tested on ${clipsOf(testFrames)} others. The same people are in both, so these numbers are optimistic.`)
 say()
-say('## Before and after (held-out set)')
+say('## Before and after (held-out, all rounds pooled)')
 say()
 say('95% intervals in brackets, from 1000 bootstrap resamples of whole clips.')
 say()
@@ -85,6 +95,36 @@ say()
 say('Balanced accuracy counts a frame with no gaze reading as "not looking", as a five-second window with no forward frames does; it is what tuning maximises. "Two faces" gives no reading at all by design.')
 say()
 
+if (by === 'participant') {
+  const ba = (fs: Frame[], setting: Settings) => balancedAccuracy(score(fs, setting).looking)
+  const limits = (t: Thresholds) => `${t.maxYawDegrees}° / ${t.maxPitchDegrees}° / ${t.maxRollDegrees}°`
+  const perPerson = tuned.map(fold => ({
+    held: fold.held,
+    before: ba(withoutPose(fold.test), before),
+    after: ba(fold.test, { thresholds: fold.plain.thresholds, calibrated: false }),
+    calibrated: ba(fold.test, { thresholds: fold.calibrated.thresholds, calibrated: true }),
+    fold,
+  }))
+  say('## Per participant')
+  say()
+  say('Balanced accuracy on each person, with the limits tuned on everyone else. Yaw / pitch / roll are those limits, so the spread shows how much they depend on who is in the tuning set.')
+  say()
+  say('| Held out | Clips | Before | After | After + calibration | Tuned limits (yaw / pitch / roll) | With calibration |')
+  say('|---|---|---|---|---|---|---|')
+  for (const p of perPerson) {
+    say(`| ${p.held} | ${clipsOf(p.fold.test)} | ${pct(p.before)} | ${pct(p.after)} | ${pct(p.calibrated)} | ${limits(p.fold.plain.thresholds)} | ${limits(p.fold.calibrated.thresholds)} |`)
+  }
+  say()
+  const worst = (pick: (p: typeof perPerson[number]) => number | null) => {
+    const scored = perPerson.filter(p => pick(p) !== null)
+    if (!scored.length) return 'n/a'
+    const p = scored.reduce((a, b) => pick(b)! < pick(a)! ? b : a)
+    return `${pct(pick(p))} (${p.held})`
+  }
+  say(`Worst participant: before ${worst(p => p.before)}, after ${worst(p => p.after)}, after + calibration ${worst(p => p.calibrated)}.`)
+  say()
+}
+
 const chosen = rows[2]
 say(`## What each label was read as (${chosen.name})`)
 say()
@@ -95,7 +135,7 @@ for (const [label, row] of confusion(chosen.frames, chosen.setting)) {
   say(`| ${label} | ${row.onScreen} (${pct(row.onScreen / total)}) | ${row.away} (${pct(row.away / total)}) | ${row.noReading} (${pct(row.noReading / total)}) |`)
 }
 say()
-say(`## By condition (${chosen.name}, held-out set)`)
+say(`## By condition (${chosen.name}, held-out, all rounds pooled)`)
 say()
 say('| Condition | Value | Clips | Face present: recall | Looking: precision | Looking: recall |')
 say('|---|---|---|---|---|---|')
@@ -111,8 +151,10 @@ const show = (t: Thresholds) => `maxYawDegrees: ${t.maxYawDegrees}, maxPitchDegr
 say('## Thresholds')
 say()
 say(`- Starting limits: \`${show(DEFAULT_THRESHOLDS)}\``)
-say(`- Tuned without calibration: \`${show(tunedPlain.thresholds)}\` (balanced accuracy on the tuning set ${pct(tunedPlain.balancedAccuracy)})`)
-say(`- Tuned with calibration: \`${show(tunedCalibrated.thresholds)}\` (${pct(tunedCalibrated.balancedAccuracy)})`)
+say(`- Tuned on every recording, without calibration: \`${show(finalPlain.thresholds)}\` (balanced accuracy on those recordings ${pct(finalPlain.balancedAccuracy)})`)
+say(`- Tuned on every recording, with calibration: \`${show(finalCalibrated.thresholds)}\` (${pct(finalCalibrated.balancedAccuracy)})`)
+say()
+say('These are the limits to ship. The held-out results above estimate how they do on a new person, since each round tuned the same way without that person.')
 say()
 say('Copy the chosen values into `DEFAULT_THRESHOLDS` in `frontend/src/features/attention/signals.ts`, and the threshold test in `tests/attention.test.ts`.')
 say()

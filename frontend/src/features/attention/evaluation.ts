@@ -168,6 +168,8 @@ export function balancedAccuracy(c: Counts): number | null {
 }
 
 export interface Setting { thresholds: Thresholds; calibrated: boolean }
+/** One setting for every frame, or one per frame (each held-out person's own fold). */
+export type Settings = Setting | ((frame: Frame) => Setting)
 
 /** A calibration per participant and set of conditions, from their "calibrate" clips. */
 export function calibrations(frames: Frame[]): Map<string, Calibration> {
@@ -185,18 +187,21 @@ export function calibrations(frames: Frame[]): Map<string, Calibration> {
 }
 const calibrationKey = (f: Frame) => [f.participant, ...Object.values(f.conditions)].join('|')
 
-export function observe(frames: Frame[], setting: Setting, calibrationsByKey = calibrations(frames)): FaceObservation[] {
-  return frames.map(f => classifyFace(
-    f.features,
-    setting.thresholds,
-    setting.calibrated ? calibrationsByKey.get(calibrationKey(f)) ?? null : null,
-  ))
+export function observe(frames: Frame[], settings: Settings, calibrationsByKey = calibrations(frames)): FaceObservation[] {
+  return frames.map(f => {
+    const setting = typeof settings === 'function' ? settings(f) : settings
+    return classifyFace(
+      f.features,
+      setting.thresholds,
+      setting.calibrated ? calibrationsByKey.get(calibrationKey(f)) ?? null : null,
+    )
+  })
 }
 
 export interface Scores { face: Counts; looking: Counts }
 
 /** Face presence and looking-at-screen counts. Calibration clips are not scored. */
-export function score(frames: Frame[], setting: Setting, calibrationsByKey = calibrations(frames)): Scores {
+export function score(frames: Frame[], setting: Settings, calibrationsByKey = calibrations(frames)): Scores {
   const scored = frames.filter(f => f.label !== 'calibrate')
   const seen = observe(scored, setting, calibrationsByKey)
   return {
@@ -206,7 +211,7 @@ export function score(frames: Frame[], setting: Setting, calibrationsByKey = cal
 }
 
 /** Rows: what was asked. Columns: on screen, away, no reading. */
-export function confusion(frames: Frame[], setting: Setting, calibrationsByKey = calibrations(frames)) {
+export function confusion(frames: Frame[], setting: Settings, calibrationsByKey = calibrations(frames)) {
   const scored = frames.filter(f => f.label !== 'calibrate')
   const seen = observe(scored, setting, calibrationsByKey)
   const table = new Map<Label, { onScreen: number; away: number; noReading: number }>()
@@ -221,22 +226,31 @@ export function confusion(frames: Frame[], setting: Setting, calibrationsByKey =
   return table
 }
 
-// -- held-out split and tuning ------------------------------------------------------
+// -- held-out folds and tuning -----------------------------------------------------
+
+/** One round of the evaluation: tune on `tune`, report on `test`. */
+export interface Fold { held: string; tune: Frame[]; test: Frame[] }
 
 /**
- * Participants to tune on and to test on: every third one (in sorted order)
- * is held out. With fewer than three participants there is no fair split by
- * person, so clips are split instead and the report says so.
+ * Leave one participant out: each participant in turn is the test set and the
+ * limits are tuned on everyone else, so every result is on a person the limits
+ * never saw, and every person gets a result. With fewer than three
+ * participants there is no fair split by person, so every third clip is held
+ * out instead and the report says so.
  */
-export function split(frames: Frame[]): { tune: Frame[]; test: Frame[]; by: 'participant' | 'clip' } {
+export function folds(frames: Frame[]): { folds: Fold[]; by: 'participant' | 'clip' } {
   const people = [...new Set(frames.map(f => f.participant))].sort()
   if (people.length >= 3) {
-    const held = new Set(people.filter((_, i) => i % 3 === 2))
-    return { tune: frames.filter(f => !held.has(f.participant)), test: frames.filter(f => held.has(f.participant)), by: 'participant' }
+    return {
+      by: 'participant',
+      folds: people.map(held => ({
+        held, tune: frames.filter(f => f.participant !== held), test: frames.filter(f => f.participant === held),
+      })),
+    }
   }
   const clips = [...new Set(frames.map(f => f.clip))].sort()
   const held = new Set(clips.filter((_, i) => i % 3 === 2))
-  return { tune: frames.filter(f => !held.has(f.clip)), test: frames.filter(f => held.has(f.clip)), by: 'clip' }
+  return { by: 'clip', folds: [{ held: 'held-out clips', tune: frames.filter(f => !held.has(f.clip)), test: frames.filter(f => held.has(f.clip)) }] }
 }
 
 /** The angle limits tried. The proxies, eye and face-size limits stay as they are. */

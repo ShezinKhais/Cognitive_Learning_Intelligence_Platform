@@ -58,7 +58,7 @@ import {
   DEFAULT_THRESHOLDS, calibrate, classifyFace, faceFeatures, poseFromMatrix, type FaceFeatures,
 } from '../src/features/attention/signals.ts'
 import {
-  balancedAccuracy, bootstrap, count, dropCountdown, framesToCsv, parseCsv, precision, recall, split, tune, type Frame,
+  balancedAccuracy, bootstrap, count, dropCountdown, framesToCsv, parseCsv, folds, precision, recall, tune, type Frame,
 } from '../src/features/attention/evaluation.ts'
 
 /** A 4x4 column-major rotation about x (pitch) or y (yaw), in degrees. */
@@ -154,13 +154,24 @@ test('counts keep frames with no reading apart', () => {
   assert.equal(balancedAccuracy(c), (1 / 3 + 2 / 3) / 2)
 })
 
-test('the held-out split never tests on a participant it tuned on', () => {
-  const frames = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'].map(p => frame(p, 'c1', 'screen', 0))
-  const { tune: tuned, test: tested, by } = split(frames)
+test('every participant is held out once, and never tuned on in their own fold', () => {
+  const frames = ['P1', 'P2', 'P3', 'P4', 'P5'].map(p => frame(p, 'c1', 'screen', 0))
+  const { folds: rounds, by } = folds(frames)
   assert.equal(by, 'participant')
-  const overlap = tuned.filter(f => tested.some(g => g.participant === f.participant))
-  assert.deepEqual(overlap, [])
-  assert.deepEqual([...new Set(tested.map(f => f.participant))], ['P3', 'P6'])
+  assert.deepEqual(rounds.map(r => r.held), ['P1', 'P2', 'P3', 'P4', 'P5'])
+  for (const { held, tune: tuned, test: tested } of rounds) {
+    assert.deepEqual([...new Set(tested.map(f => f.participant))], [held])
+    assert.ok(tuned.every(f => f.participant !== held))
+  }
+})
+
+test('with fewer than three participants, clips are held out instead', () => {
+  const frames = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'].map(c => frame('P1', c, 'screen', 0))
+  const { folds: rounds, by } = folds(frames)
+  assert.equal(by, 'clip')
+  assert.equal(rounds.length, 1)
+  assert.deepEqual(rounds[0].test.map(f => f.clip), ['c3', 'c6'])
+  assert.ok(rounds[0].tune.every(f => !['c3', 'c6'].includes(f.clip)))
 })
 
 test('tuning picks a pitch limit that separates the screen from the desk', () => {

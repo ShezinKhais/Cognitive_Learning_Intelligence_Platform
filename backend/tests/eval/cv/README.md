@@ -17,8 +17,9 @@ them, and participants appear only as codes (P1, P2, ...).
 4. Download the CSV and put it here as `attention_P1.csv` (one file per person
    is easiest). Press "Delete everything recorded here" before the next person.
 
-Aim for at least 6 people, so the held-out set (every third person) has two,
-and for each person at least:
+Aim for at least 6 people. The evaluation leaves one person out at a time,
+tunes on the rest and tests on that person, so every person gets a result;
+three is the minimum for a split by person. For each person, at least:
 
 | Glasses | Lighting | Camera | Distance |
 |---|---|---|---|
