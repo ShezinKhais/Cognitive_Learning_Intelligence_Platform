@@ -107,8 +107,8 @@ async def _decide(
     await db.commit()
     if approve:
         # A student in a class right now is treated as accommodated from this
-        # moment, not only from their next join.
-        classroom.accommodations.set(student_user, True)
+        # moment, not only from their next join, and only until its last day.
+        classroom.accommodations.grant(student_user, decided.until)
     return decided
 
 

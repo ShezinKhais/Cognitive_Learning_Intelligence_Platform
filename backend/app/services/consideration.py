@@ -1,14 +1,16 @@
 """Special consideration: a student asks, an administrator decides.
 
-Owner: General CS, Phase 8. Approving a request records the accommodation on
-the student, which the live class already honours: an accommodated student
-is never sent a check-in prompt and never marked disengaged. Nothing about
-the request beyond that fact reaches a lecturer.
+Owner: General CS, Phase 8. An approved request is an accommodation the live
+class honours until its last day: an accommodated student is never sent a
+check-in prompt and never marked disengaged. It is read from the request
+itself, so it lapses on its own and never touches a need recorded on the
+student some other way. Nothing about the request beyond that fact reaches a
+lecturer.
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -29,8 +31,10 @@ from app.schemas.consideration import (
 
 # A request runs for at most this long; a longer need is asked for again.
 MAX_DAYS = 366
-# Recorded as the student's need on approval. Only its presence is read.
-ACCOMMODATION_TEXT = "Special consideration"
+
+
+def _today() -> date:
+    return datetime.now(UTC).date()
 
 
 def _out(row: ConsiderationRequest) -> ConsiderationOut:
@@ -69,7 +73,7 @@ async def my_request(db: AsyncSession, user_id: UUID) -> ConsiderationOut | None
 
 async def submit(db: AsyncSession, user_id: UUID, payload: ConsiderationCreate) -> ConsiderationOut:
     student = await _student(db, user_id)
-    today = datetime.now(UTC).date()
+    today = _today()
     if payload.until is not None and not today <= payload.until <= today + timedelta(MAX_DAYS):
         raise ValidationError("Choose a date from today to a year from now.", {"field": "until"})
     latest = await _latest(db, student.student_id)
@@ -96,6 +100,22 @@ async def withdraw(db: AsyncSession, user_id: UUID) -> ConsiderationOut:
     latest.status = "withdrawn"
     await db.flush()
     return _out(latest)
+
+
+async def in_force(db: AsyncSession, user_id: UUID) -> ConsiderationRequest | None:
+    """The student's approved request that still applies today, if any. When
+    several do, the one lasting longest, an open-ended one first."""
+    return await db.scalar(
+        select(ConsiderationRequest)
+        .join(Student, Student.student_id == ConsiderationRequest.student_id)
+        .where(
+            Student.user_id == user_id,
+            ConsiderationRequest.status == "approved",
+            ConsiderationRequest.until.is_(None) | (ConsiderationRequest.until >= _today()),
+        )
+        .order_by(ConsiderationRequest.until.desc().nulls_first())
+        .limit(1)
+    )
 
 
 async def list_requests(
@@ -141,6 +161,11 @@ async def decide(
         raise NotFoundError("That request was not found.", {"request_id": str(request_id)})
     if row.status != "pending":
         raise ConflictError(f"This request was already {row.status}.", {"status": row.status})
+    if approve and row.until is not None and row.until < _today():
+        raise ConflictError(
+            "The last day this request covers has passed, so it cannot be approved.",
+            {"until": row.until.isoformat()},
+        )
     row.status = "approved" if approve else "rejected"
     row.reviewed_by = reviewer_id
     row.reviewed_at = datetime.now(UTC)
@@ -149,6 +174,5 @@ async def decide(
     assert student is not None
     if approve:
         student.special_consideration_status = "approved"
-        StudentRepository.record_accommodation(student, ACCOMMODATION_TEXT)
     await db.flush()
     return _out(row), student.user_id
