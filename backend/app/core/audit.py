@@ -1,4 +1,8 @@
-"""Reusable audit logging for successful state-changing endpoints."""
+"""Reusable audit logging for successful state-changing endpoints.
+
+The address a request came from is deliberately not recorded: nothing uses it,
+and it would be personal data kept without a purpose.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +12,6 @@ from functools import wraps
 from inspect import signature
 from typing import Any, ParamSpec, TypeVar
 
-from fastapi import Request
 from sqlalchemy import event
 
 from app.models.audit_log import AuditLog
@@ -50,7 +53,6 @@ def audit_action(
 
             principal: Any = bound.arguments.get("principal")
             db: Any = bound.arguments.get("db")
-            request: Any = bound.arguments.get("request")
             settings: Any = bound.arguments.get("settings")
 
             if principal is None:
@@ -60,11 +62,6 @@ def audit_action(
 
             if user_id is None:
                 raise RuntimeError("Audited endpoints require a principal with user_id.")
-
-            ip_address = "unknown"
-
-            if isinstance(request, Request) and request.client is not None:
-                ip_address = request.client.host
 
             if settings is not None and settings.is_production:
                 if db is None:
@@ -83,7 +80,6 @@ def audit_action(
                         AuditLog(
                             user_id=user_id,
                             action_type=action_type,
-                            ip_address=ip_address,
                         )
                     )
                     recorded = True
@@ -105,10 +101,9 @@ def audit_action(
             else:
                 result = await func(*args, **kwargs)
                 log.info(
-                    "audit_event=%s user_id=%s ip_address=%s",
+                    "audit_event=%s user_id=%s",
                     action_type,
                     user_id,
-                    ip_address,
                 )
 
             return result
