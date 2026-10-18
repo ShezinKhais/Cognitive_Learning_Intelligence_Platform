@@ -5,6 +5,8 @@ import {
   type ReportJob,
 } from './sessionReports'
 
+export const MAX_REPORT_POLL_ATTEMPTS = 60
+
 export interface ReportPollingOptions {
   reportId: string
   sessionId: string
@@ -28,6 +30,7 @@ export interface ReportPollingOptions {
 export function startReportPolling(options: ReportPollingOptions): () => void {
   let active = true
   let timer: number | undefined
+  let attempts = 0
 
   const isCurrent = () =>
     active && options.currentSessionId() === options.sessionId
@@ -43,6 +46,8 @@ export function startReportPolling(options: ReportPollingOptions): () => void {
 
   async function poll(): Promise<void> {
     if (!isCurrent()) return
+
+    attempts++
 
     try {
       const updated = await options.fetchReport(options.reportId)
@@ -61,6 +66,15 @@ export function startReportPolling(options: ReportPollingOptions): () => void {
       options.onError(null)
 
       if (updated.status === 'queued' || updated.status === 'running') {
+        if (attempts >= MAX_REPORT_POLL_ATTEMPTS) {
+          active = false
+          options.onStop()
+          options.onError(
+            'The report is still being generated. Automatic status checks have stopped. Use Refresh to check again.',
+          )
+          return
+        }
+
         schedule(reportPollDelayMs(0))
       }
     } catch (caught: unknown) {

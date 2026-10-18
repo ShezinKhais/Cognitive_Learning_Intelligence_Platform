@@ -60,6 +60,12 @@ export default function LecturerSessionReportPage() {
   const activeJob =
     job && job.session_id === sessionId ? job : null
 
+  const pollingReportId = activeJob?.report_id
+  const pollingSessionId = activeJob?.session_id
+  const shouldPoll =
+    !automaticPollingStopped &&
+    (activeJob?.status === 'queued' || activeJob?.status === 'running')
+
   useEffect(() => {
     setJob(null)
     setError(null)
@@ -70,17 +76,13 @@ export default function LecturerSessionReportPage() {
   }, [sessionId])
 
   useEffect(() => {
-    if (
-      !activeJob ||
-      automaticPollingStopped ||
-      (activeJob.status !== 'queued' && activeJob.status !== 'running')
-    ) {
+    if (!shouldPoll || !pollingReportId || !pollingSessionId) {
       return
     }
 
     return startReportPolling({
-      reportId: activeJob.report_id,
-      sessionId: activeJob.session_id,
+      reportId: pollingReportId,
+      sessionId: pollingSessionId,
       currentSessionId: () => sessionIdRef.current,
       getFailures: () => pollFailureCount.current,
       setFailures: count => {
@@ -99,7 +101,7 @@ export default function LecturerSessionReportPage() {
         window.setTimeout(callback, delayMs),
       clearTimer: timer => window.clearTimeout(timer),
     })
-  }, [activeJob, automaticPollingStopped])
+  }, [pollingReportId, pollingSessionId, shouldPoll])
 
   async function generateReport() {
     if (!sessionId) return

@@ -1,5 +1,4 @@
 import { lazy, Suspense } from 'react'
-
 import {
   Navigate,
   Outlet,

@@ -35,7 +35,7 @@ Object.assign(globalThis, {
   },
 })
 
-const { startReportPolling } =
+const { startReportPolling, MAX_REPORT_POLL_ATTEMPTS } =
   await import('../src/features/reports/reportPolling.ts')
 const { getSessionReport } =
   await import('../src/features/reports/sessionReportsApi.ts')
@@ -225,6 +225,28 @@ test('polls through queued and running to ready, then stops scheduling', async (
   s.cancel()
 })
 
+test('stops polling when queued and running responses exceed the attempt limit', async () => {
+  const replies = Array.from({ length: MAX_REPORT_POLL_ATTEMPTS }, (_, index) =>
+    response(body(index % 2 === 0 ? 'queued' : 'running')),
+  )
+
+  const s = scenario(replies)
+
+  for (let i = 0; i < MAX_REPORT_POLL_ATTEMPTS; i++) {
+    await s.runNext()
+  }
+
+  assert.equal(s.calls(), MAX_REPORT_POLL_ATTEMPTS)
+  assert.equal(s.jobs.length, MAX_REPORT_POLL_ATTEMPTS)
+  assert.equal(s.stopped(), 1)
+  assert.equal(s.pending(), 0)
+  assert.match(
+    s.errors.at(-1) ?? '',
+    /Automatic status checks have stopped/,
+  )
+
+  s.cancel()
+})
 test('temporary HTTP failures apply bounded backoff and stop after four failures', async () => {
   const failures = Array.from(
     { length: 4 },
