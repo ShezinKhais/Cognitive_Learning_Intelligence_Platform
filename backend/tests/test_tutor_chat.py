@@ -14,6 +14,7 @@ No test here talks to a model. FakeTutorModel plays one.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from collections.abc import AsyncIterator, Sequence
 from types import SimpleNamespace
@@ -91,6 +92,8 @@ class FakeTutorModel:
         self.prompts: list[tuple[str, Sequence[Message]]] = []
         self.streaming = 0
         self.closed_streams = 0
+        # Set once a reply reaches HANG: the model is mid-answer and waiting.
+        self.hanging = asyncio.Event()
         # Database connections in use each time the model was asked to write.
         self.connections_held: list[int] = []
         self.connections_in_use = lambda: 0
@@ -119,6 +122,7 @@ class FakeTutorModel:
         try:
             for piece in self.reply:
                 if piece is HANG:
+                    self.hanging.set()
                     await asyncio.Event().wait()
                 if isinstance(piece, Exception):
                     raise piece
@@ -259,6 +263,7 @@ async def test_a_student_is_answered_from_the_sessions_material(db, app, tutor) 
     assert [e["citation"] for e in events if e["type"] == "citation"] == [
         {
             "id": str(live.chunk_id),
+            "number": 1,
             "material_title": "week1.pdf",
             "source_page": 3,
             "source_slide": None,
@@ -706,10 +711,10 @@ async def test_a_student_who_leaves_stops_the_model_and_may_ask_again(db, tutor)
     tutor.limiter.admit(STUDENT_ID)
 
 
-async def test_a_reader_who_stops_between_pieces_stops_the_model_at_once(db, tutor) -> None:
-    """The reader has part of the reply and asks for no more, while the model
-    is still writing. Nothing is waiting on the model at that moment, so only
-    closing the guard's stream on the way out reaches it."""
+async def test_a_reader_who_leaves_while_the_model_writes_stops_it_at_once(db, tutor) -> None:
+    """The student closes the chat while the model is still writing. The
+    answer is vetted whole before any of it is sent, so they have only the
+    acknowledgement; leaving has to reach the model through the guard."""
     _, factory, created = db
     course = await add_course(factory, created)
     await add_question(db, course, LECTURER_ID)
@@ -728,10 +733,15 @@ async def test_a_reader_who_stops_between_pieces_stops_the_model_at_once(db, tut
     )
 
     lines = exchange.lines("req-1", QUESTION)
+    assert json.loads(await anext(lines))["type"] == "accepted"
+    reading = asyncio.ensure_future(anext(lines))
     async with asyncio.timeout(WAIT_SECONDS):
-        while json.loads(await anext(lines))["type"] != "delta":
-            pass
+        await tutor.model.hanging.wait()
     assert tutor.model.streaming == 1
+    # How a dropped connection reaches the response: its task is cancelled.
+    reading.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await reading
     await lines.aclose()
 
     assert (tutor.model.streaming, tutor.model.closed_streams) == (0, 1)

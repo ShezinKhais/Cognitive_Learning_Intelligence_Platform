@@ -29,7 +29,7 @@ from app.schemas.consideration import (
 
 # A request runs for at most this long; a longer need is asked for again.
 MAX_DAYS = 366
-# Written to student.accessibility_need on approval. Only its presence is read.
+# Recorded as the student's need on approval. Only its presence is read.
 ACCOMMODATION_TEXT = "Special consideration"
 
 
@@ -149,8 +149,6 @@ async def decide(
     assert student is not None
     if approve:
         student.special_consideration_status = "approved"
-        # Kept if something is already recorded: that need is not this request's to replace.
-        if not (student.accessibility_need or "").strip():
-            student.accessibility_need = ACCOMMODATION_TEXT
+        StudentRepository.record_accommodation(student, ACCOMMODATION_TEXT)
     await db.flush()
     return _out(row), student.user_id

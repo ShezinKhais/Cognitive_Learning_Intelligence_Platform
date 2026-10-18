@@ -20,6 +20,13 @@ class StudentRepository:
         result = await self.session.execute(select(Student).where(Student.user_id == user_id))
         return result.scalar_one_or_none()
 
+    @staticmethod
+    def record_accommodation(student: Student, note: str) -> None:
+        """Mark the student as accommodated, which is all the live class reads.
+        A need already recorded is kept: it is not a request's to replace."""
+        if not (student.accessibility_need or "").strip():
+            student.accessibility_need = note
+
     async def student_ids_by_user(self, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, uuid.UUID]:
         """user_id -> student_id for those of these users who are students."""
         if not user_ids:
