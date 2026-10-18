@@ -3,7 +3,8 @@ import { AnimatePresence, LayoutGroup, motion } from 'motion/react'
 import { Keyboard, LogOut, Menu, Search, X } from 'lucide-react'
 import { Link, useLocation } from 'react-router'
 
-import { clearAccessToken, type CurrentUser } from '../../api'
+import type { CurrentUser } from '../../api'
+import { signOutToLogin } from '../../features/realtime/tokenRefusal'
 import { Wordmark as Brand } from '../brand/ClipMark'
 import { cn } from '../ui/cn'
 import NotificationBell from '../../features/notifications/NotificationBell'
@@ -288,10 +289,7 @@ function Account({ user, onShortcuts }: { user: CurrentUser; onShortcuts: () => 
         </p>
         <button
           type="button"
-          onClick={() => {
-            clearAccessToken()
-            window.location.assign('/login')
-          }}
+          onClick={() => void signOutToLogin()}
           className="mt-3 inline-flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <LogOut size={16} aria-hidden />

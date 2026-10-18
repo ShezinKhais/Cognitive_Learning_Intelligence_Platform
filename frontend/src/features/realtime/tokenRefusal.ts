@@ -1,9 +1,17 @@
 import { clearAccessToken, renewSession } from '../../api'
 
-/** End the sign-in and go to the sign-in page. */
-export function signOutToLogin(): void {
-  clearAccessToken()
-  window.location.assign('/login')
+/** The sign-in page's note when the server could not be told. */
+export const SIGN_OUT_INCOMPLETE = 'signout=incomplete'
+
+/**
+ * End the sign-in, wait for the server to drop the refresh cookie, then go
+ * to the sign-in page. Leaving first could cancel the request and leave the
+ * cookie, so the next page load would sign the same person back in. When the
+ * server cannot be reached, the sign-in page says so.
+ */
+export async function signOutToLogin(): Promise<void> {
+  const cleared = await clearAccessToken()
+  window.location.assign(cleared ? '/login' : `/login?${SIGN_OUT_INCOMPLETE}`)
 }
 
 /**

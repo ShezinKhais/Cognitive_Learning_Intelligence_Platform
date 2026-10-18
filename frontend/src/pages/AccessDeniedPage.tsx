@@ -9,8 +9,10 @@ import Illustration from '../components/ui/Illustration'
 export default function AccessDeniedPage() {
   const navigate = useNavigate()
 
-  function signInWithAnotherAccount(): void {
-    clearAccessToken()
+  async function signInWithAnotherAccount(): Promise<void> {
+    // The cookie has to be gone first, or the sign-in page signs this
+    // account straight back in.
+    await clearAccessToken()
     navigate('/login', { replace: true })
   }
 

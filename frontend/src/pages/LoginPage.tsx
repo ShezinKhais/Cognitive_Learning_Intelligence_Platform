@@ -7,6 +7,7 @@ import { ApiError, getCurrentUser, login, saveAccessToken } from '../api'
 import { hasRequiredConsent, intendedPathForRole } from '../authRouting'
 import { Wordmark } from '../components/brand/ClipMark'
 import { requestIntro } from '../components/shell/intro'
+import { SIGN_OUT_INCOMPLETE } from '../features/realtime/tokenRefusal'
 import ThemeSwitch from '../components/shell/ThemeSwitch'
 import { buttonStyles } from '../components/ui/button'
 import { cn } from '../components/ui/cn'
@@ -135,6 +136,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [capsLock, setCapsLock] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Signed out here, but the server could not be told to end the sign-in.
+  const signOutIncomplete = location.search.includes(SIGN_OUT_INCOMPLETE)
   const [submitting, setSubmitting] = useState(false)
   const passwordField = useRef<HTMLInputElement>(null)
   const form = useAnimationControls()
@@ -254,6 +257,13 @@ export default function LoginPage() {
                 <span className="block pt-1.5">Caps Lock is on.</span>
               </motion.p>
             </div>
+
+            {signOutIncomplete && !error && (
+              <p role="status" className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm">
+                You are signed out on this page, but C.L.I.P could not be reached to end the sign-in. On a shared
+                computer, close the browser.
+              </p>
+            )}
 
             {error && (
               <motion.p

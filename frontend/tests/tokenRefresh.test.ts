@@ -30,6 +30,10 @@ let requests: string[] = []
 let failures: Array<'offline' | number> = []
 // Off when timers are mocked, where a real wait would never end.
 let slowRefresh = true
+// How long the backend takes to answer a sign-out, and whether it can be reached.
+let logoutDelayMs = 0
+let logoutReachable = true
+let logoutKeptAlive = false
 
 function header(init: RequestInit | undefined, name: string): string {
   return new Headers(init?.headers).get(name) ?? ''
@@ -43,6 +47,9 @@ globalThis.fetch = (async (url: string, init?: RequestInit) => {
     return new Response('{}', { status: 401 })
   }
   if (path.endsWith('/auth/logout')) {
+    logoutKeptAlive = init?.keepalive === true
+    if (logoutDelayMs) await new Promise((resolve) => setTimeout(resolve, logoutDelayMs))
+    if (!logoutReachable) throw new TypeError('Failed to fetch')
     if (header(init, 'X-CLIP-Refresh') === '1') cookie = false
     return new Response(null, { status: 204 })
   }
@@ -203,6 +210,34 @@ test('a socket can tell a refused refresh from an unreachable backend', async ()
   cookie = false
   assert.equal(await renewSession(), 'refused')
   assert.equal(getAccessToken(), null)
+})
+
+test('sign-out resolves only once a slow backend has cleared the cookie', async () => {
+  reset('kept', true)
+  logoutDelayMs = 60
+  let settled = false
+  const signingOut = clearAccessToken().then((cleared) => {
+    settled = true
+    return cleared
+  })
+  // The token is gone at once; the cookie only when the backend answers.
+  assert.equal(getAccessToken(), null)
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.equal(settled, false)
+  assert.equal(cookie, true)
+  assert.equal(await signingOut, true)
+  assert.equal(cookie, false)
+  // Sent so a page leaving straight after cannot cancel it.
+  assert.equal(logoutKeptAlive, true)
+  logoutDelayMs = 0
+})
+
+test('sign-out says so when the backend cannot be reached', async () => {
+  reset('kept', true)
+  logoutReachable = false
+  assert.equal(await clearAccessToken(), false)
+  assert.equal(getAccessToken(), null)
+  logoutReachable = true
 })
 
 test('a wrong password does not sign anyone out', async () => {

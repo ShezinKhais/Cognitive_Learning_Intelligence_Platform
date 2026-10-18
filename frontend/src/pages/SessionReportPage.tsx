@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router'
 
 import { ApiError } from '../api'
 import { buttonStyles } from '../components/ui/button'
+import { cn } from '../components/ui/cn'
 import { EmptyState, PageBody, PageHeader, Panel, Tag } from '../components/ui/primitives'
 import { difficultyLabel, type TopicDifficulty } from '../features/intelligence/topicRecovery'
 import { getSessionTopics } from '../features/intelligence/topicRecoveryApi'
@@ -19,6 +20,7 @@ import {
   type SessionResponse,
   type SessionSummary,
 } from '../features/sessions/sessionsApi'
+import { buildButton } from '../features/sessions/reportControls'
 import { stripFromResponses } from '../features/sessions/strip'
 
 const POLL_MS = 2000
@@ -161,7 +163,11 @@ function ReportPanel({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     if (!job || !pending) return
     const timer = setTimeout(() => {
-      getReport(job.report_id).then(setJob, () => setError('The report stopped answering. Try building it again.'))
+      getReport(job.report_id).then(setJob, () => {
+        // Nothing will move this job on now, so drop it and offer a fresh one.
+        setJob(null)
+        setError('The report stopped answering. Try building it again.')
+      })
     }, POLL_MS)
     return () => clearTimeout(timer)
   }, [job, pending])
@@ -176,15 +182,16 @@ function ReportPanel({ sessionId }: { sessionId: string }) {
   }
 
   const report = job?.status === 'ready' ? job.report : null
+  const button = buildButton(job?.status ?? null)
 
   return (
     <Panel
       title="Session report"
       description="Participation, topics and alerts, as a page you can keep or share as a PDF."
     >
-      {!job && (
-        <button type="button" className={buttonStyles()} onClick={build}>
-          Build the report
+      {(button === 'build' || button === 'retry') && (
+        <button type="button" className={cn(buttonStyles(), 'mb-3')} onClick={build}>
+          {button === 'retry' || error ? 'Try again' : 'Build the report'}
         </button>
       )}
       {pending && <p role="status" className="text-muted-foreground">Building the report…</p>}

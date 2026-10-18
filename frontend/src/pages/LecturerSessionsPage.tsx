@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Plus } from 'lucide-react'
 import { Link, useNavigate } from 'react-router'
 
-import { ApiError, clearAccessToken } from '../api'
+import { ApiError } from '../api'
+import { signOutToLogin } from '../features/realtime/tokenRefusal'
 import { cn } from '../components/ui/cn'
 import { buttonStyles } from '../components/ui/button'
 import ListToolbar from '../components/ui/ListToolbar'
@@ -16,8 +17,7 @@ import { listSessions, type SessionSummary } from '../features/sessions/sessions
 type Load = { state: 'loading' } | { state: 'error'; message: string } | { state: 'ready'; sessions: SessionSummary[] }
 
 function signInAgain(): void {
-  clearAccessToken()
-  window.location.assign('/login')
+  void signOutToLogin()
 }
 
 export default function LecturerSessionsPage() {

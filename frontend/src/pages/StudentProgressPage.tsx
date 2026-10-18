@@ -7,7 +7,8 @@ import { buttonStyles } from '../components/ui/button'
 import { EmptyState, PageBody, PageHeader, Panel, SkeletonRows, Tag, type Tone } from '../components/ui/primitives'
 import SegmentedTabs from '../components/ui/SegmentedTabs'
 import { revisitFirst, topicProgress, type Mastery, type TopicProgress } from '../features/review/progress'
-import type { ReviewPage, ReviewSession, StudentReview } from '../features/review/reviewTypes'
+import { allReviews } from '../features/review/readAll'
+import type { StudentReview } from '../features/review/reviewTypes'
 
 const WORD: Record<Mastery, string> = { mastered: 'Mastered', partial: 'Partly there', struggling: 'Revisit this' }
 const TONE: Record<Mastery, Tone> = { mastered: 'good', partial: 'mixed', struggling: 'poor' }
@@ -20,17 +21,6 @@ const ADVICE: Record<Mastery, string> = {
 
 type Order = 'revisit' | 'name'
 
-/** Everything the student has finished, each with its answers. The list
- * route carries no answers, so each session is read once. */
-async function loadReviews(): Promise<StudentReview[]> {
-  const list = await apiAuthenticatedRequest<ReviewPage<ReviewSession>>('/student-reviews?limit=50&offset=0')
-  return Promise.all(
-    list.items.map((session) =>
-      apiAuthenticatedRequest<StudentReview>(`/student-reviews/${encodeURIComponent(session.id)}?limit=100&offset=0`),
-    ),
-  )
-}
-
 /** A student's topics across every finished session, from their own answers. */
 export default function StudentProgressPage() {
   const [reviews, setReviews] = useState<StudentReview[] | null>(null)
@@ -40,7 +30,7 @@ export default function StudentProgressPage() {
 
   useEffect(() => {
     let cancelled = false
-    loadReviews().then(
+    allReviews(apiAuthenticatedRequest).then(
       (loaded) => !cancelled && setReviews(loaded),
       () => !cancelled && setError('Your sessions could not be loaded. Check your connection and try again.'),
     )

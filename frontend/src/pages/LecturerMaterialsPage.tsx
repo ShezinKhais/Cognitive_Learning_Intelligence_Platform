@@ -3,7 +3,8 @@ import { AnimatePresence, motion } from 'motion/react'
 import { ChevronDown, FileText, Presentation, Upload } from 'lucide-react'
 import { Link } from 'react-router'
 
-import { ApiError, clearAccessToken } from '../api'
+import { ApiError } from '../api'
+import { signOutToLogin } from '../features/realtime/tokenRefusal'
 import { cn } from '../components/ui/cn'
 import { buttonStyles } from '../components/ui/button'
 import ListToolbar from '../components/ui/ListToolbar'
@@ -39,8 +40,7 @@ interface Uploading {
 }
 
 function signInAgain(): void {
-  clearAccessToken()
-  window.location.assign('/login')
+  void signOutToLogin()
 }
 
 export default function LecturerMaterialsPage() {

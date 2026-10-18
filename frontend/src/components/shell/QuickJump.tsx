@@ -3,7 +3,8 @@ import { AnimatePresence, motion } from 'motion/react'
 import { CornerDownLeft, LogOut, Monitor, Moon, Search, Sun, type LucideIcon } from 'lucide-react'
 import { useNavigate } from 'react-router'
 
-import { clearAccessToken, type CurrentUser } from '../../api'
+import type { CurrentUser } from '../../api'
+import { signOutToLogin } from '../../features/realtime/tokenRefusal'
 import { cn } from '../ui/cn'
 import { NAVIGATION } from './navigation'
 import { saveTheme } from './theme'
@@ -48,10 +49,7 @@ export default function QuickJump({ user, open, onClose }: { user: CurrentUser; 
         label: 'Sign out',
         hint: 'Account',
         icon: LogOut,
-        run: () => {
-          clearAccessToken()
-          window.location.assign('/login')
-        },
+        run: () => void signOutToLogin(),
       },
     ]
   }, [navigate, user.role])

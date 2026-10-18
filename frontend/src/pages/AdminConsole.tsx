@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
-import { apiUploadFile, ApiError, clearAccessToken, type TimetableImportResult } from '../api'
+import { apiUploadFile, ApiError, type TimetableImportResult } from '../api'
+import { signOutToLogin } from '../features/realtime/tokenRefusal'
 import { PageBody, PageHeader } from '../components/ui/primitives'
 
 type UploadKind = 'timetable' | 'roster'
@@ -55,8 +56,7 @@ function UploadPanel({ kind }: { kind: UploadKind }) {
       setState({ status: 'success', result, error: null, filename: file.name })
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
-        clearAccessToken()
-        window.location.assign('/login')
+        await signOutToLogin()
         return
       }
       const message = err instanceof ApiError ? err.message : 'Upload failed. Try again.'

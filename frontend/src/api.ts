@@ -109,16 +109,32 @@ authChannel?.addEventListener('message', (event: MessageEvent) => {
   if (event.data === 'signed-out') forgetAccessToken()
 })
 
+// Long enough for a slow server, short enough that a dead one does not
+// keep someone on a page they asked to leave.
+const LOGOUT_WAIT_MS = 5000
+
 /**
  * Sign out: forget the token here and in every other tab, and ask the
  * backend to drop the refresh cookie so a reload does not sign back in.
+ *
+ * Resolves true once the backend has cleared the cookie, false when it could
+ * not be reached in time. Await it before leaving the page: the request is
+ * sent with keepalive so navigating does not cancel it, but only its answer
+ * proves the cookie is gone.
  */
-export function clearAccessToken(): void {
+export function clearAccessToken(): Promise<boolean> {
   forgetAccessToken()
   authChannel?.postMessage('signed-out')
-  void fetch(apiUrl('/auth/logout'), { method: 'POST', headers: REFRESH_HEADERS }).catch(() => {
-    // Offline: the cookie ends with the sign-in anyway.
-  })
+  const cleared = fetch(apiUrl('/auth/logout'), {
+    method: 'POST',
+    headers: REFRESH_HEADERS,
+    keepalive: true,
+  }).then(
+    (response) => response.ok,
+    () => false,
+  )
+  const timedOut = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), LOGOUT_WAIT_MS))
+  return Promise.race([cleared, timedOut])
 }
 
 // Refresh and sign-out must carry this. Another site cannot add it without a
@@ -310,7 +326,7 @@ async function request<T>(
     // A wrong password at sign-in is a 401 too, and must not sign out the
     // user's other tabs.
     if (response.status === 401 && authenticated) {
-      clearAccessToken()
+      void clearAccessToken()
     }
 
     throw error
