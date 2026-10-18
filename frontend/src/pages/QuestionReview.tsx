@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react'
 import { Check } from 'lucide-react'
-import { useParams } from 'react-router'
+import { Link, useParams } from 'react-router'
 
 import {
   ApiError,
@@ -17,6 +17,8 @@ import { buttonStyles } from '../components/ui/button'
 import SegmentedTabs from '../components/ui/SegmentedTabs'
 import { useToast } from '../components/ui/toast'
 import { EmptyState, PageBody, PageHeader, Tag, type Tone, SkeletonRows } from '../components/ui/primitives'
+import { ProblemState } from '../components/ui/ProblemState'
+import { problemArt } from '../components/ui/problem'
 import { getMaterial } from '../features/materials/materialApi'
 import type { Material } from '../features/materials/types'
 import { sourceName } from '../features/materials/upload'
@@ -34,7 +36,7 @@ const PAGE_SIZE = 50
 type LoadState =
   | { status: 'loading' }
   | { status: 'ready'; questions: Question[]; total: number; offset: number; loadingMore: boolean }
-  | { status: 'error'; message: string }
+  | { status: 'error'; message: string; cause: unknown }
 
 const STATUS_TONE: Record<QuestionStatus, Tone> = {
   draft: 'neutral',
@@ -95,7 +97,7 @@ export default function QuestionReview() {
       .catch((err) => {
         if (cancelled) return
         const message = err instanceof ApiError ? err.message : 'Could not load questions.'
-        setState({ status: 'error', message })
+        setState({ status: 'error', message, cause: err })
       })
 
     return () => {
@@ -239,9 +241,15 @@ export default function QuestionReview() {
   const approvedIds = questions.filter((question) => question.status === 'approved').map((question) => question.id)
 
   const [material, setMaterial] = useState<Material | null>(null)
+  // An empty question list cannot tell a material with none from one that
+  // does not exist; the material itself can.
+  const [missing, setMissing] = useState(false)
   useEffect(() => {
     if (!materialId) return
-    getMaterial(materialId).then(setMaterial, () => undefined)
+    setMissing(false)
+    getMaterial(materialId).then(setMaterial, (caught: unknown) => {
+      if (caught instanceof ApiError && caught.status === 404) setMissing(true)
+    })
   }, [materialId])
   const source = material ? sourceName(material) : 'Page'
 
@@ -347,10 +355,24 @@ export default function QuestionReview() {
           )}
 
           {state.status === 'loading' && <SkeletonRows label="Loading questions" rows={4} />}
-          {state.status === 'error' && (
-            <p role="alert" className="rounded-md border border-critical/30 bg-critical/5 px-4 py-3 text-critical">{state.message}</p>
+          {missing ? (
+            <ProblemState
+              art="file-missing"
+              title="This material was not found"
+              action={
+                <Link to="/lecturer/materials" className={buttonStyles({ intent: 'secondary' })}>
+                  Back to materials
+                </Link>
+              }
+            >
+              It may have been deleted, or the link is out of date.
+            </ProblemState>
+          ) : state.status === 'error' && (
+            <ProblemState art={problemArt(state.cause)} title="The questions could not be loaded">
+              {state.message}
+            </ProblemState>
           )}
-          {state.status === 'ready' && counts.all === 0 && (
+          {!missing && state.status === 'ready' && counts.all === 0 && (
             <EmptyState title="No questions yet">
               Questions appear here once the material has been processed. If it has, it may have had too little text
               to draw questions from.

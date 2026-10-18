@@ -15,6 +15,8 @@ import { Wordmark } from '../components/brand/ClipMark'
 import PageLoader from '../components/brand/PageLoader'
 import { buttonStyles } from '../components/ui/button'
 import { cn } from '../components/ui/cn'
+import { ProblemState } from '../components/ui/ProblemState'
+import { problemArt } from '../components/ui/problem'
 
 export default function ConsentPage() {
   const navigate = useNavigate()
@@ -30,6 +32,7 @@ export default function ConsentPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [loadCause, setLoadCause] = useState<unknown>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -71,6 +74,7 @@ export default function ConsentPage() {
           return
         }
 
+        setLoadCause(caught)
         setError(
           caught instanceof Error
             ? caught.message
@@ -144,9 +148,9 @@ export default function ConsentPage() {
   if (!user) {
     return (
       <Frame>
-        <p role="alert" className="text-critical">
+        <ProblemState art={problemArt(loadCause)} title="Your account could not be loaded">
           {error ?? 'Could not load your account.'}
-        </p>
+        </ProblemState>
       </Frame>
     )
   }

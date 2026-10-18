@@ -2,20 +2,26 @@ import { Link } from 'react-router'
 
 import { buttonStyles } from '../components/ui/button'
 import { EmptyState, PageBody, PageHeader, Tag } from '../components/ui/primitives'
+import { ProblemState } from '../components/ui/ProblemState'
+import { problemArt } from '../components/ui/problem'
 import { useStudentApp } from '../features/student/StudentAppContext'
 import { LIVE_SESSIONS_ENABLED } from '../features/student/studentApi'
 import type { StudentSession } from '../features/student/types'
 import { formatWhen, groupSessions, statusLabel, statusTone } from '../features/sessions/format'
 
 export default function StudentHomePage() {
-  const { authStatus, currentUser, sessions, error } = useStudentApp()
+  const { authStatus, currentUser, sessions, error, cause } = useStudentApp()
 
   if (authStatus === 'checking') {
     return <MessagePanel title="Loading your sessions" message="Checking your account and sessions…" />
   }
   if (authStatus === 'error') {
     return (
-      <MessagePanel title="Your sessions could not be loaded" message={error ?? 'An unexpected error occurred.'} isError />
+      <PageBody>
+        <ProblemState art={problemArt(cause)} title="Your sessions could not be loaded">
+          {error ?? 'An unexpected error occurred.'}
+        </ProblemState>
+      </PageBody>
     )
   }
   if (authStatus === 'unauthenticated' || !currentUser) {

@@ -5,6 +5,8 @@ import { Link } from 'react-router'
 import { apiAuthenticatedRequest } from '../api'
 import { buttonStyles } from '../components/ui/button'
 import { EmptyState, PageBody, PageHeader, Panel, SkeletonRows, Tag, type Tone } from '../components/ui/primitives'
+import { ProblemState } from '../components/ui/ProblemState'
+import { problemArt, problemOf, type Problem } from '../components/ui/problem'
 import SegmentedTabs from '../components/ui/SegmentedTabs'
 import { revisitFirst, topicProgress, type Mastery, type TopicProgress } from '../features/review/progress'
 import { allReviews } from '../features/review/readAll'
@@ -24,7 +26,7 @@ type Order = 'revisit' | 'name'
 /** A student's topics across every finished session, from their own answers. */
 export default function StudentProgressPage() {
   const [reviews, setReviews] = useState<StudentReview[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<Problem | null>(null)
   const [order, setOrder] = useState<Order>('revisit')
   const [open, setOpen] = useState<string | null>(null)
 
@@ -32,7 +34,8 @@ export default function StudentProgressPage() {
     let cancelled = false
     allReviews(apiAuthenticatedRequest).then(
       (loaded) => !cancelled && setReviews(loaded),
-      () => !cancelled && setError('Your sessions could not be loaded. Check your connection and try again.'),
+      (caught: unknown) =>
+        !cancelled && setError(problemOf(caught, 'Your sessions could not be loaded. Check your connection and try again.')),
     )
     return () => {
       cancelled = true
@@ -51,7 +54,9 @@ export default function StudentProgressPage() {
       />
       <PageBody>
         {error ? (
-          <EmptyState title="This could not be loaded">{error}</EmptyState>
+          <ProblemState art={problemArt(error.cause)} title="Your progress could not be loaded">
+            {error.message}
+          </ProblemState>
         ) : !reviews ? (
           <SkeletonRows label="Loading your topics" />
         ) : topics.length === 0 ? (

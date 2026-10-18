@@ -7,6 +7,8 @@ import {
 import PageLoader from '../components/brand/PageLoader'
 import AppShell from '../components/shell/AppShell'
 import { PageOutlet } from '../components/shell/ShellOutlet'
+import { ProblemState } from '../components/ui/ProblemState'
+import { problemArt } from '../components/ui/problem'
 import { useStudentApp } from '../features/student/StudentAppContext'
 import { accessFor } from '../authRouting'
 
@@ -20,6 +22,7 @@ export default function ProtectedStudentPage({ withShell = false }: { withShell?
     authStatus,
     currentUser,
     error,
+    cause,
   } = useStudentApp()
 
   if (authStatus === 'checking') {
@@ -28,14 +31,9 @@ export default function ProtectedStudentPage({ withShell = false }: { withShell?
 
   if (authStatus === 'error') {
     return (
-      <StatusPanel
-        title="Could not verify your account"
-        message={
-          error ??
-          'An unexpected authentication error occurred.'
-        }
-        isError
-      />
+      <ProblemState fullScreen art={problemArt(cause)} title="C.L.I.P could not check your account">
+        {error ?? 'An unexpected authentication error occurred.'}
+      </ProblemState>
     )
   }
 
@@ -83,38 +81,5 @@ export default function ProtectedStudentPage({ withShell = false }: { withShell?
     </AppShell>
   ) : (
     <Outlet />
-  )
-}
-
-function StatusPanel({
-  title,
-  message,
-  isError = false,
-}: {
-  title: string
-  message: string
-  isError?: boolean
-}) {
-  return (
-    <main className="min-h-screen grid place-items-center p-8">
-      <div
-        role={isError ? 'alert' : 'status'}
-        className="w-full max-w-md rounded-xl border border-border bg-card p-6"
-      >
-        <h1
-          className={
-            isError
-              ? 'text-xl font-semibold text-critical'
-              : 'text-xl font-semibold'
-          }
-        >
-          {title}
-        </h1>
-
-        <p className="mt-2 text-sm text-muted-foreground">
-          {message}
-        </p>
-      </div>
-    </main>
   )
 }

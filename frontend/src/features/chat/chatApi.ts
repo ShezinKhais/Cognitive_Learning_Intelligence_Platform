@@ -1,4 +1,4 @@
-import { authenticatedFetch } from '../../api'
+import { authenticatedFetch, statusMessage } from '../../api'
 import { parseNdjsonLine } from './chatProtocol'
 import type { ChatStreamEvent } from './chatTypes'
 
@@ -33,7 +33,7 @@ export async function streamChat(request: ChatRequest): Promise<void> {
   )
 
   if (!response.ok) {
-    let detail = `The tutor could not respond (HTTP ${response.status}).`
+    let detail = `The tutor could not respond. ${statusMessage(response.status)}`
     try {
       const body = await response.json()
       detail = body?.error?.message ?? detail

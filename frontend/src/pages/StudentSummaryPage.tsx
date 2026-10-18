@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 
-import { ApiError } from '../api'
 import { buttonStyles } from '../components/ui/button'
-import { EmptyState, PageBody, PageHeader, Panel, Tag, type Tone } from '../components/ui/primitives'
+import { PageBody, PageHeader, Panel, Tag, type Tone } from '../components/ui/primitives'
+import { ProblemState } from '../components/ui/ProblemState'
+import { problemArt, problemOf, isNotFound, type Problem } from '../components/ui/problem'
 import SessionStrip, { StripLegend } from '../features/sessions/SessionStrip'
 import { formatWhen } from '../features/sessions/format'
 import {
@@ -26,7 +27,7 @@ export default function StudentSummaryPage() {
   const [session, setSession] = useState<SessionSummary | null>(null)
   const [answers, setAnswers] = useState<SessionResponse[] | null>(null)
   const [summary, setSummary] = useState<StudentSummary | null | 'none'>('none')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<Problem | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -39,7 +40,7 @@ export default function StudentSummaryPage() {
       setSummary(studentId ? await getStudentSummary(sessionId, studentId).catch(() => null) : null)
     }
     load().catch((caught: unknown) => {
-      if (!cancelled) setError(caught instanceof ApiError ? caught.message : 'This session could not be loaded.')
+      if (!cancelled) setError(problemOf(caught, 'This session could not be loaded.'))
     })
     return () => {
       cancelled = true
@@ -49,9 +50,14 @@ export default function StudentSummaryPage() {
   if (error) {
     return (
       <PageBody>
-        <EmptyState title="This session could not be loaded" action={<Link to="/student" className={buttonStyles({ intent: 'secondary' })}>Back to my sessions</Link>}>
-          {error}
-        </EmptyState>
+        <ProblemState
+          art={problemArt(error.cause)}
+          title={isNotFound(error) ? 'This session was not found' : 'This session could not be loaded'}
+          retry={isNotFound(error) ? undefined : () => window.location.reload()}
+          action={<Link to="/student" className={buttonStyles({ intent: 'secondary' })}>Back to my sessions</Link>}
+        >
+          {isNotFound(error) ? 'It may have been deleted, or the link is out of date.' : error.message}
+        </ProblemState>
       </PageBody>
     )
   }

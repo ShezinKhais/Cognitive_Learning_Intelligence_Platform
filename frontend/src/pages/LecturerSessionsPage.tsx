@@ -8,13 +8,15 @@ import { cn } from '../components/ui/cn'
 import { buttonStyles } from '../components/ui/button'
 import ListToolbar from '../components/ui/ListToolbar'
 import { EmptyState, MetaLine, PageBody, PageHeader, Panel, Tag, SkeletonRows } from '../components/ui/primitives'
+import { ProblemState } from '../components/ui/ProblemState'
+import { problemArt } from '../components/ui/problem'
 import { countBy, filterSessions, type SessionFilter } from '../features/format/listFilters'
 import { sinceVerb } from '../features/format/relativeTime'
 import { createSession } from '../features/live/sessionActions'
 import { formatWhen, groupOf, groupSessions, statusLabel, statusTone } from '../features/sessions/format'
 import { listSessions, type SessionSummary } from '../features/sessions/sessionsApi'
 
-type Load = { state: 'loading' } | { state: 'error'; message: string } | { state: 'ready'; sessions: SessionSummary[] }
+type Load = { state: 'loading' } | { state: 'error'; message: string; cause: unknown } | { state: 'ready'; sessions: SessionSummary[] }
 
 function signInAgain(): void {
   void signOutToLogin()
@@ -36,6 +38,7 @@ export default function LecturerSessionsPage() {
         setLoad({
           state: 'error',
           message: error instanceof ApiError ? error.message : 'Sessions could not be loaded. Check your connection.',
+          cause: error,
         })
       })
     return () => {
@@ -65,9 +68,9 @@ export default function LecturerSessionsPage() {
 
         {load.state === 'loading' && <SkeletonRows label="Loading your sessions" />}
         {load.state === 'error' && (
-          <p role="alert" className="rounded-md border border-critical/30 bg-critical/5 px-4 py-3 text-critical">
+          <ProblemState art={problemArt(load.cause)} title="Your sessions could not be loaded">
             {load.message}
-          </p>
+          </ProblemState>
         )}
 
         {load.state === 'ready' && sessions.length === 0 && !creating && (

@@ -207,7 +207,7 @@ test('the report API handles non-JSON server errors safely', async () => {
       error instanceof ApiError &&
       error.status === 503 &&
       error.code === 'HTTP_ERROR' &&
-      error.message === 'HTTP 503',
+      error.message === 'C.L.I.P is not responding right now. Try again in a minute.',
   )
 })
 

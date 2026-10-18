@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import { FileText } from 'lucide-react'
 import { Link, useParams } from 'react-router'
 
-import { ApiError } from '../api'
 import { buttonStyles } from '../components/ui/button'
-import { EmptyState, PageBody, PageHeader, Panel, Tag } from '../components/ui/primitives'
+import { PageBody, PageHeader, Panel, Tag } from '../components/ui/primitives'
+import { ProblemState } from '../components/ui/ProblemState'
+import { problemArt, problemOf, isNotFound, type Problem } from '../components/ui/problem'
 import { difficultyLabel, type TopicDifficulty } from '../features/intelligence/topicRecovery'
 import { getSessionTopics } from '../features/intelligence/topicRecoveryApi'
 import SessionStrip, { StripLegend } from '../features/sessions/SessionStrip'
@@ -23,7 +24,7 @@ export default function SessionReportPage() {
   const [session, setSession] = useState<SessionSummary | null>(null)
   const [responses, setResponses] = useState<SessionResponse[] | null>(null)
   const [topics, setTopics] = useState<TopicDifficulty[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<Problem | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -35,7 +36,7 @@ export default function SessionReportPage() {
         setTopics(hardest)
       })
       .catch((caught: unknown) => {
-        if (!cancelled) setError(caught instanceof ApiError ? caught.message : 'This session could not be loaded.')
+        if (!cancelled) setError(problemOf(caught, 'This session could not be loaded.'))
       })
     return () => {
       cancelled = true
@@ -45,9 +46,14 @@ export default function SessionReportPage() {
   if (error) {
     return (
       <PageBody>
-        <EmptyState title="This session could not be loaded" action={<Link to="/lecturer/sessions" className={buttonStyles({ intent: 'secondary' })}>Back to sessions</Link>}>
-          {error}
-        </EmptyState>
+        <ProblemState
+          art={problemArt(error.cause)}
+          title={isNotFound(error) ? 'This session was not found' : 'This session could not be loaded'}
+          retry={isNotFound(error) ? undefined : () => window.location.reload()}
+          action={<Link to="/lecturer/sessions" className={buttonStyles({ intent: 'secondary' })}>Back to sessions</Link>}
+        >
+          {isNotFound(error) ? 'It may have been deleted, or the link is out of date.' : error.message}
+        </ProblemState>
       </PageBody>
     )
   }

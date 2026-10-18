@@ -9,6 +9,8 @@ import { cn } from '../components/ui/cn'
 import { buttonStyles } from '../components/ui/button'
 import ListToolbar from '../components/ui/ListToolbar'
 import { EmptyState, MetaLine, PageBody, PageHeader, Tag, SkeletonRows } from '../components/ui/primitives'
+import { ProblemState } from '../components/ui/ProblemState'
+import { problemArt, problemOf, type Problem } from '../components/ui/problem'
 import { countBy, filterMaterials, materialState, type MaterialFilter } from '../features/format/listFilters'
 import { sinceVerb } from '../features/format/relativeTime'
 import { MaterialActionForm, MaterialMenu, type MaterialActionMode } from '../features/materials/MaterialActions'
@@ -49,6 +51,7 @@ export default function LecturerMaterialsPage() {
   const [progress, setProgress] = useState<Record<string, MaterialProgress>>({})
   const [uploading, setUploading] = useState<Uploading[]>([])
   const [problem, setProblem] = useState<string | null>(null)
+  const [loadFailed, setLoadFailed] = useState<Problem | null>(null)
   const [open, setOpen] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const [query, setQuery] = useState('')
@@ -72,8 +75,9 @@ export default function LecturerMaterialsPage() {
       .then((found) => setMaterials([...found].sort((a, b) => Date.parse(b.uploaded_at) - Date.parse(a.uploaded_at))))
       .catch((caught: unknown) => {
         if (caught instanceof ApiError && caught.status === 401) return signInAgain()
+        // Uploading still works, so the page stays usable.
         setMaterials([])
-        setProblem('Your materials could not be loaded. Check your connection and reload the page.')
+        setLoadFailed(problemOf(caught, 'Check your connection and reload the page.'))
       })
   }, [])
 
@@ -183,7 +187,13 @@ export default function LecturerMaterialsPage() {
 
         {materials === null && <SkeletonRows label="Loading your materials" />}
 
-        {empty && (
+        {empty && loadFailed && (
+          <ProblemState art={problemArt(loadFailed.cause)} title="Your materials could not be loaded">
+            {loadFailed.message} You can still upload a file.
+          </ProblemState>
+        )}
+
+        {empty && !loadFailed && (
           <EmptyState
             art="add-files"
             title="No materials yet"

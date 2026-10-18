@@ -4,6 +4,7 @@ import { RefreshCw } from 'lucide-react'
 import { apiGet, apiUrl, type Health } from '../api'
 import { buttonStyles } from '../components/ui/button'
 import { PageBody, PageHeader, Panel, Tag } from '../components/ui/primitives'
+import { ProblemState } from '../components/ui/ProblemState'
 
 interface Dependency {
   name: string
@@ -64,11 +65,11 @@ export default function AdminStatusPage() {
         }
       />
       <PageBody>
-        {error && (
-          <p role="alert" className="mb-6 rounded-md border border-critical/30 bg-critical/5 px-4 py-3 text-critical">
+        {error && !checking ? (
+          <ProblemState art="server-down" title="The C.L.I.P server did not answer" retry={check}>
             {error}
-          </p>
-        )}
+          </ProblemState>
+        ) : (
         <div className="grid gap-6 md:grid-cols-2">
           <Panel
             title="Services"
@@ -104,6 +105,7 @@ export default function AdminStatusPage() {
             )}
           </Panel>
         </div>
+        )}
       </PageBody>
     </>
   )

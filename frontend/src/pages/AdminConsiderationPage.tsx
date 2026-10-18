@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { ApiError } from '../api'
 import { buttonStyles } from '../components/ui/button'
 import { EmptyState, MetaLine, PageBody, PageHeader, SkeletonRows, Tag, type Tone } from '../components/ui/primitives'
+import { ProblemState } from '../components/ui/ProblemState'
+import { problemArt, problemOf, type Problem } from '../components/ui/problem'
 import SegmentedTabs from '../components/ui/SegmentedTabs'
 import { useToast } from '../components/ui/toast'
 import {
@@ -30,14 +32,15 @@ type Show = 'pending' | 'all'
 export default function AdminConsiderationPage() {
   const [show, setShow] = useState<Show>('pending')
   const [requests, setRequests] = useState<AdminConsiderationRequest[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<Problem | null>(null)
 
   const load = useCallback((which: Show) => {
     let current = true
     setError(null)
     listRequests(which).then(
       (page) => current && setRequests(page.items),
-      () => current && setError('The requests could not be loaded. Check your connection and reload.'),
+      (caught: unknown) =>
+        current && setError(problemOf(caught, 'The requests could not be loaded. Check your connection and try again.')),
     )
     return () => {
       current = false
@@ -68,7 +71,9 @@ export default function AdminConsiderationPage() {
       />
       <PageBody>
         {error ? (
-          <EmptyState title="This could not be loaded">{error}</EmptyState>
+          <ProblemState art={problemArt(error.cause)} title="The requests could not be loaded" retry={() => load(show)}>
+            {error.message}
+          </ProblemState>
         ) : !requests ? (
           <SkeletonRows label="Loading requests" />
         ) : requests.length === 0 ? (

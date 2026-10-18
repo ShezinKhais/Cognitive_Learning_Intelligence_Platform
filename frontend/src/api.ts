@@ -290,11 +290,24 @@ export class ApiError extends Error {
   }
 }
 
+/** What to tell a person when the server gave no message of its own. */
+export function statusMessage(status: number): string {
+  if (status === 401) return 'Your sign-in has expired. Sign in again to carry on.'
+  if (status === 403) return 'Your account does not have access to this.'
+  if (status === 404) return 'This could not be found. It may have been removed, or the link is out of date.'
+  if (status === 429) return 'Too many requests at once. Wait a moment and try again.'
+  if (status === 502 || status === 503 || status === 504) {
+    return 'C.L.I.P is not responding right now. Try again in a minute.'
+  }
+  if (status >= 500) return 'Something went wrong on the C.L.I.P server. Try again in a minute.'
+  return `The request could not be completed (error ${status}).`
+}
+
 async function readErrorEnvelope(
   response: Response,
 ): Promise<ApiError> {
   let code = 'HTTP_ERROR'
-  let message = `HTTP ${response.status}`
+  let message = statusMessage(response.status)
 
   try {
     const body = await response.json()

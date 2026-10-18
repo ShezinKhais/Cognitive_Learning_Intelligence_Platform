@@ -5,6 +5,8 @@ import { Link, useParams } from 'react-router'
 import { buttonStyles } from '../components/ui/button'
 import { cn } from '../components/ui/cn'
 import { EmptyState, MetaLine, PageBody, PageHeader, Panel, SkeletonRows, Tag } from '../components/ui/primitives'
+import { ProblemState } from '../components/ui/ProblemState'
+import { problemArt } from '../components/ui/problem'
 import SegmentedTabs from '../components/ui/SegmentedTabs'
 import { formatRelative, sinceVerb } from '../features/format/relativeTime'
 import { comprehensionText, comprehensionTone, needsReview, reviewError } from '../features/review/reviewDisplay'
@@ -31,7 +33,7 @@ export function StudentReviewHistoryPage() {
         {error ? (
           // The list has no one session to be missing, so a 404 here means
           // the route itself is not on this server.
-          <LoadError message={status === 404 ? reviewError(501) : error} retry={retry} />
+          <LoadError message={status === 404 ? reviewError(501) : error} status={status === 404 ? 501 : status} retry={retry} />
         ) : !data ? (
           <SkeletonRows label="Loading your past sessions" />
         ) : data.items.length === 0 ? (
@@ -84,7 +86,7 @@ type AnswerFilter = 'all' | 'revisit'
 function Review({ sessionId }: { sessionId: string }) {
   const [offset, setOffset] = useState(0)
   const [filter, setFilter] = useState<AnswerFilter>('all')
-  const { data, error, retry } = useReviewResource<StudentReview>(
+  const { data, error, status, retry } = useReviewResource<StudentReview>(
     `/student-reviews/${encodeURIComponent(sessionId)}?limit=${PAGE_SIZE}&offset=${offset}`,
   )
   const back = { to: '/student/reviews', label: 'Past sessions' }
@@ -94,7 +96,7 @@ function Review({ sessionId }: { sessionId: string }) {
       <>
         <PageHeader title="Session review" back={back} />
         <PageBody>
-          <LoadError message={error} retry={retry} />
+          <LoadError message={error} status={status} retry={retry} />
         </PageBody>
       </>
     )
@@ -240,7 +242,17 @@ function Sources({ sessionId, responseId }: { sessionId: string; responseId: str
   const { data, error, retry } = useReviewResource<ReviewSources>(
     `/student-reviews/${encodeURIComponent(sessionId)}/responses/${encodeURIComponent(responseId)}/sources`,
   )
-  if (error) return <LoadError message={error} retry={retry} />
+  // Inside one answer, so a line rather than a full panel.
+  if (error) {
+    return (
+      <p role="alert" className="text-sm text-muted-foreground">
+        The source could not be loaded.{' '}
+        <button type="button" onClick={retry} className="font-semibold text-primary underline underline-offset-2">
+          Try again
+        </button>
+      </p>
+    )
+  }
   if (!data) return <p role="status" className="text-sm text-muted-foreground">Finding the source…</p>
   if (data.items.length === 0) {
     return (
@@ -270,20 +282,22 @@ function Sources({ sessionId, responseId }: { sessionId: string; responseId: str
   )
 }
 
-function LoadError({ message, retry }: { message: string; retry: () => void }) {
+function LoadError({ message, retry, status }: { message: string; retry: () => void; status?: number }) {
   return (
-    <div role="alert">
-      <EmptyState
-        title="This could not be loaded"
-        action={
-          <button type="button" onClick={retry} className={buttonStyles({ intent: 'secondary' })}>
-            Try again
-          </button>
-        }
-      >
-        {message}
-      </EmptyState>
-    </div>
+    <ProblemState
+      art={status === undefined ? 'offline' : problemArt(status)}
+      title={status === 404 ? 'This review was not found' : 'This could not be loaded'}
+      retry={status === 404 ? undefined : retry}
+      action={
+        status === 404 ? (
+          <Link to="/student/reviews" className={buttonStyles({ intent: 'secondary' })}>
+            Past sessions
+          </Link>
+        ) : undefined
+      }
+    >
+      {message}
+    </ProblemState>
   )
 }
 

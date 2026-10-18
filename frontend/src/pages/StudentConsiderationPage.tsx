@@ -5,6 +5,8 @@ import { Check } from 'lucide-react'
 import { ApiError } from '../api'
 import { buttonStyles } from '../components/ui/button'
 import { MetaLine, PageBody, PageHeader, Panel, SkeletonRows, Tag, type Tone } from '../components/ui/primitives'
+import { ProblemState } from '../components/ui/ProblemState'
+import { problemArt, problemOf, type Problem } from '../components/ui/problem'
 import {
   getMyRequest,
   NEED_LABEL,
@@ -41,12 +43,12 @@ function isoDay(offsetDays: number): string {
 export default function StudentConsiderationPage() {
   const [current, setCurrent] = useState<ConsiderationRequest | null | undefined>(undefined)
   const [asking, setAsking] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<Problem | null>(null)
 
   useEffect(() => {
     getMyRequest().then(
       (mine) => setCurrent(mine.current),
-      () => setError('Your request could not be loaded. Check your connection and reload.'),
+      (caught: unknown) => setError(problemOf(caught, 'Check your connection and try again.')),
     )
   }, [])
 
@@ -59,8 +61,11 @@ export default function StudentConsiderationPage() {
         description="Ask for C.L.I.P to treat you differently in class, without having to explain why to your lecturer."
       />
       <PageBody>
-        {error && <p role="alert" className="mb-4 text-critical">{error}</p>}
-        {current === undefined && !error ? (
+        {error ? (
+          <ProblemState art={problemArt(error.cause)} title="Your request could not be loaded">
+            {error.message}
+          </ProblemState>
+        ) : current === undefined ? (
           <SkeletonRows label="Loading your request" rows={1} />
         ) : showForm ? (
           <RequestForm

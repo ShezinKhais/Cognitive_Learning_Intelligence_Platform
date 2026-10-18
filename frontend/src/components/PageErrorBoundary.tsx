@@ -1,7 +1,6 @@
 import { Component, type ReactNode } from 'react'
-import { RefreshCw } from 'lucide-react'
 
-import { buttonStyles } from './ui/button'
+import { ProblemState } from './ui/ProblemState'
 
 // When the page last reloaded itself for a missing chunk. Within a minute of
 // that it shows the message instead, so a chunk that is truly gone cannot
@@ -52,34 +51,17 @@ export default class PageErrorBoundary extends Component<Props, State> {
     if (error === null) return this.props.children
 
     const chunk = isChunkError(error)
-    return (
-      <div
-        role="alert"
-        className={
-          this.props.fullScreen
-            ? 'grid min-h-screen place-items-center bg-background px-5'
-            : 'mx-auto max-w-6xl px-5 py-16 sm:px-8'
-        }
+    const problem = (
+      <ProblemState
+        fullScreen={this.props.fullScreen}
+        art={chunk ? 'offline' : 'page-crash'}
+        title={chunk ? 'This page could not load' : 'Something went wrong on this page'}
       >
-        <div className="max-w-md">
-          <h1 className="text-xl font-bold">
-            {chunk ? 'This page could not load' : 'Something went wrong on this page'}
-          </h1>
-          <p className="mt-2 text-muted-foreground">
-            {chunk
-              ? 'C.L.I.P may have been updated, or the connection dropped. Reloading fetches the latest version.'
-              : 'Reload to try again. If it keeps happening, tell your administrator.'}
-          </p>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className={`${buttonStyles()} mt-5`}
-          >
-            <RefreshCw size={16} aria-hidden />
-            Reload
-          </button>
-        </div>
-      </div>
+        {chunk
+          ? 'C.L.I.P may have been updated, or the connection dropped. Reloading fetches the latest version.'
+          : 'Reload to try again. If it keeps happening, tell your administrator.'}
+      </ProblemState>
     )
+    return this.props.fullScreen ? problem : <div className="mx-auto max-w-6xl px-5 py-10 sm:px-8">{problem}</div>
   }
 }
