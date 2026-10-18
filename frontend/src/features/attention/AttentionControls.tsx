@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { getCurrentUser, recordConsent } from '../../api'
 import { startCamera, startMicrophone } from './localSensors'
+import { awayDurationSeconds, nextAwayStart } from './awayDuration'
 import { useAttentionReporter } from './useAttentionReporter'
 import { useLocalSensor } from './useLocalSensor'
 import type { AttentionSummary, FaceObservation } from './signals'
@@ -17,6 +18,9 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
   const [savedConsent, setSavedConsent] = useState({ monitoring: false, camera: false, microphone: false })
   const [savingConsent, setSavingConsent] = useState(false)
   const [message, setMessage] = useState('')
+  const awayStart = useRef<number | null>(null)
+  const lastFaceObservationAt = useRef<number | null>(null)
+  const [awaySeconds, setAwaySeconds] = useState<number | null>(null)
   const {
     status: cameraStatus, latest: face, start: enableCamera, stop: stopCamera,
     drain: drainCamera, isActive: cameraActive, isStartingOrActive: cameraStartingOrActive,
@@ -27,6 +31,40 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
     drain: drainMicrophone, isActive: microphoneActive, isStartingOrActive: microphoneStartingOrActive,
     startedAt: microphoneStartedAt,
   } = useLocalSensor<boolean | null>('Microphone', startMicrophone, null, 200, setMessage)
+  // Local-only timer. Missing or stale observations never count as away.
+  useEffect(() => {
+    if (!enabled || cameraStatus !== 'on') {
+      awayStart.current = null
+      lastFaceObservationAt.current = null
+      setAwaySeconds(null)
+      return
+    }
+
+    const now = performance.now()
+    lastFaceObservationAt.current = now
+    awayStart.current = nextAwayStart(awayStart.current, face.forward, now)
+    setAwaySeconds(awayDurationSeconds(awayStart.current, now))
+  }, [enabled, cameraStatus, face])
+
+  useEffect(() => {
+    if (!enabled || cameraStatus !== 'on') return
+
+    const timer = window.setInterval(() => {
+      const now = performance.now()
+      if (
+        lastFaceObservationAt.current === null ||
+        now - lastFaceObservationAt.current >= 2000
+      ) {
+        awayStart.current = null
+        setAwaySeconds(null)
+        return
+      }
+
+      setAwaySeconds(awayDurationSeconds(awayStart.current, now))
+    }, 250)
+
+    return () => window.clearInterval(timer)
+  }, [enabled, cameraStatus])
   const stopAll = useCallback(() => { stopCamera(); stopMicrophone() }, [stopCamera, stopMicrophone])
   const refuseSignal = useCallback(() => {
     stopAll()
@@ -156,6 +194,12 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
       </div>
       <p className="mt-3 text-sm">Camera: {cameraStatus}. Microphone: {microphoneStatus}.</p>
       {cameraStatus === 'on' && <p className="text-sm">Face: {face.face === null ? 'unavailable' : face.face ? 'detected' : 'not detected'}. Head direction: {face.head}. Gaze estimate: {face.forward === null ? 'unavailable' : face.forward ? 'camera-facing' : 'away from camera'}.</p>}
+      {cameraStatus === 'on' && (
+        <p className="mt-2 text-sm" aria-live="off">
+          Continuous camera-away estimate:{' '}
+          {awaySeconds === null ? 'unavailable' : `${awaySeconds} seconds`}
+        </p>
+      )}
       {microphoneStatus === 'on' && <p className="text-sm">Voice activity: {speaking === null ? 'unavailable' : speaking ? 'detected' : 'not detected'}.</p>}
       {!enabled && <p className="mt-2 text-sm text-muted-foreground">Available while connected to an active, unpaused session.</p>}
       <p className="mt-2 text-xs text-muted-foreground">Sensing stops when you leave, hide this page, or disconnect. It never resumes automatically. Disable stops sensing without changing saved consent.</p>
