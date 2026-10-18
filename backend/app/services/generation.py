@@ -542,6 +542,24 @@ async def verify_draft(client, model: str, draft: DraftQuestion, chunks) -> str 
     return None if supported is None else verification_reason(draft, supported)
 
 
+# The most multiple choice questions asked for in one reply. A local model
+# asked for many more writes a long JSON reply and is likelier to break it,
+# and one broken reply loses every question in it.
+DRAFTS_PER_CALL = 5
+
+
+def batches(
+    chunks: Sequence[RetrievedChunk], wanted: int
+) -> list[tuple[list[RetrievedChunk], int]]:
+    """Split a request for `wanted` drafts into calls of at most DRAFTS_PER_CALL,
+    each shown its own share of the chunks, so they ask about different pages
+    rather than the same ones again."""
+    calls = max(1, min(len(chunks), -(-wanted // DRAFTS_PER_CALL)))
+    shares = [list(chunks[index::calls]) for index in range(calls)]
+    counts = [wanted // calls + (1 if index < wanted % calls else 0) for index in range(calls)]
+    return [(share, count) for share, count in zip(shares, counts, strict=True) if share and count]
+
+
 @dataclass(frozen=True)
 class GenerationOutcome:
     """What generation produced, and what it threw away."""
@@ -754,7 +772,15 @@ class QuestionGenerator:
         if question_type is not None:
             return self._kept(await self._draft(chunks, wanted, usable, question_type))
 
-        accepted = self._kept(await self._draft(chunks, wanted, usable))
+        accepted: list[DraftQuestion] = []
+        seen: set[str] = set()
+        for share, count in batches(usable, wanted):
+            for draft in self._kept(await self._draft(chunks, count, share)):
+                # Two calls can still land on the same idea.
+                key = " ".join(draft.prompt.lower().split())
+                if key not in seen:
+                    seen.add(key)
+                    accepted.append(draft)
         # Counted from the MCQs kept, not those asked for, so the ratio holds
         # when the checks reject some, and no MCQs means no short answers.
         short_answers = free_text_count(len(accepted))

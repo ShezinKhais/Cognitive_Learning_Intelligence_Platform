@@ -34,6 +34,7 @@ const SessionReportPage = lazy(() => import('./pages/SessionReportPage'))
 const StudentHomePage = lazy(() => import('./pages/StudentHomePage'))
 const StudentLiveSessionPage = lazy(() => import('./pages/StudentLiveSessionPage'))
 const StudentReviewPage = lazy(() => import('./pages/StudentReviewPage'))
+const StudentProgressPage = lazy(() => import('./pages/StudentProgressPage'))
 const StudentReviewHistoryPage = lazy(() =>
   import('./pages/StudentReviewPage').then((page) => ({ default: page.StudentReviewHistoryPage })),
 )
@@ -118,7 +119,7 @@ export default function App() {
             />
             <Route
               path="progress"
-              element={<PlannedFeaturePage feature={PLANNED.progress} />}
+              element={<StudentProgressPage />}
             />
             <Route
               path="consideration"
