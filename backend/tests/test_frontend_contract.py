@@ -150,6 +150,7 @@ def test_reachability_follows_lazy_dynamic_imports(tmp_path: Path) -> None:
         "dependency.ts",
     }
 
+
 def test_asset_url_does_not_make_a_worker_reachable(tmp_path: Path) -> None:
     (tmp_path / "main.tsx").write_text(
         "const asset = new URL('./unused.worker.ts', import.meta.url)", encoding="utf-8"
