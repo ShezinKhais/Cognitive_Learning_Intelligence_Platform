@@ -1,3 +1,5 @@
+import { lazy, Suspense } from 'react'
+
 import {
   Navigate,
   Outlet,
@@ -26,6 +28,9 @@ import TeamsConfigPage from './pages/TeamsConfigPage'
 import TeamsLecturerMeetingPage from './pages/TeamsLecturerMeetingPage'
 import TeamsMeetingEntryPage from './pages/TeamsMeetingEntryPage'
 import TeamsMeetingPage from './pages/TeamsMeetingPage'
+
+const AdminGovernancePage = lazy(() => import('./pages/AdminGovernancePage'))
+const LecturerSessionReportPage = lazy(() => import('./pages/LecturerSessionReportPage'))
 
 // Sends whoever arrives at the root, or at a page that does not exist, to
 // their own home. Always sending them to /student told every lecturer and
@@ -128,6 +133,15 @@ export default function App() {
           path="/admin"
           element={<AdminConsole />}
         />
+
+        <Route
+          path="/admin/governance"
+          element={
+            <Suspense fallback={<p role="status">Loading governance...</p>}>
+              <AdminGovernancePage />
+            </Suspense>
+          }
+        />
       </Route>
 
       {/* Lecturers, and admins who can review on any lecturer's behalf per
@@ -171,6 +185,15 @@ export default function App() {
         <Route
           path="/lecturer/sessions/:sessionId/live"
           element={<LecturerLiveSessionPage />}
+        />
+
+        <Route
+          path="/lecturer/sessions/:sessionId/report"
+          element={
+            <Suspense fallback={<p role="status">Loading report...</p>}>
+              <LecturerSessionReportPage />
+            </Suspense>
+          }
         />
 
         <Route
