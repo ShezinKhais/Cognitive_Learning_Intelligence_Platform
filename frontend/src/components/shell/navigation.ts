@@ -40,11 +40,12 @@ export const NAVIGATION: Record<Role, readonly NavItem[]> = {
     { to: '/student', label: 'My sessions', icon: BookOpen, matches: ['/student/session/'] },
     { to: '/student/reviews', label: 'Past sessions', icon: History },
     { to: '/student/progress', label: 'Progress over time', icon: TrendingUp },
-    { to: '/student/consideration', label: 'Special consideration', icon: HeartHandshake, planned: true },
+    { to: '/student/consideration', label: 'Special consideration', icon: HeartHandshake },
   ],
   admin: [
     { to: '/admin', label: 'Imports', icon: Upload },
     { to: '/admin/status', label: 'System status', icon: Activity },
+    { to: '/admin/consideration', label: 'Special consideration', icon: HeartHandshake },
     { to: '/admin/governance', label: 'Data governance', icon: ShieldCheck, planned: true },
   ],
 }

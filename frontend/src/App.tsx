@@ -35,6 +35,8 @@ const StudentHomePage = lazy(() => import('./pages/StudentHomePage'))
 const StudentLiveSessionPage = lazy(() => import('./pages/StudentLiveSessionPage'))
 const StudentReviewPage = lazy(() => import('./pages/StudentReviewPage'))
 const StudentProgressPage = lazy(() => import('./pages/StudentProgressPage'))
+const StudentConsiderationPage = lazy(() => import('./pages/StudentConsiderationPage'))
+const AdminConsiderationPage = lazy(() => import('./pages/AdminConsiderationPage'))
 const StudentReviewHistoryPage = lazy(() =>
   import('./pages/StudentReviewPage').then((page) => ({ default: page.StudentReviewHistoryPage })),
 )
@@ -123,7 +125,7 @@ export default function App() {
             />
             <Route
               path="consideration"
-              element={<PlannedFeaturePage feature={PLANNED.consideration} />}
+              element={<StudentConsiderationPage />}
             />
           </Route>
 
@@ -168,6 +170,10 @@ export default function App() {
               <Route
                 path="/admin/status"
                 element={<AdminStatusPage />}
+              />
+              <Route
+                path="/admin/consideration"
+                element={<AdminConsiderationPage />}
               />
               <Route
                 path="/admin/governance"

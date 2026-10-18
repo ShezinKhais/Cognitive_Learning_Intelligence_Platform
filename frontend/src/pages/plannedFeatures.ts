@@ -6,7 +6,7 @@ export interface PlannedFeature {
   /** What already works today, so nobody waits for what is there. */
   today: readonly string[]
   /** The working preview shown on its page. */
-  demo: 'groups' | 'engagement' | 'progress' | 'governance' | 'consideration'
+  demo: 'groups' | 'engagement' | 'governance'
 }
 
 export const PLANNED: Record<string, PlannedFeature> = {
@@ -37,16 +37,6 @@ export const PLANNED: Record<string, PlannedFeature> = {
     ],
     demo: 'engagement',
   },
-  progress: {
-    title: 'Progress over time',
-    summary: 'Your topics across every session, so you know what to revisit before an exam.',
-    will: [
-      'See which topics you have mastered and which keep coming back',
-      'Open the slides a topic came from',
-    ],
-    today: ['Each finished session has its own summary under My sessions'],
-    demo: 'progress',
-  },
   governance: {
     title: 'Data governance',
     summary: 'Keep what C.L.I.P stores within its retention period, and act on requests to delete it.',
@@ -60,19 +50,5 @@ export const PLANNED: Record<string, PlannedFeature> = {
       'Every change made for a signed-in user is written to the audit log',
     ],
     demo: 'governance',
-  },
-  consideration: {
-    title: 'Special consideration',
-    summary: 'Ask for C.L.I.P to treat you differently in class, without having to explain why to your lecturer.',
-    will: [
-      'Choose what you need: no camera, no eye-tracking, more time, or no check-in prompts',
-      'Say for how long, with an optional supporting document',
-      'An administrator approves it, and your lecturer only learns that you have one',
-    ],
-    today: [
-      'An accommodated student is never prompted and never marked disengaged',
-      'Their answer speed is counted as typical, so their score cannot give them away',
-    ],
-    demo: 'consideration',
   },
 }

@@ -48,14 +48,3 @@ export const SAMPLE_TERM = [
   { week: 9, title: 'Privacy by design', engaged: 79, right: 70 },
   { week: 10, title: 'Incident response', engaged: 81, right: 75 },
 ] as const
-
-export type Mastery = 'mastered' | 'partial' | 'struggling'
-
-export const SAMPLE_TOPICS: readonly { topic: string; from: string; weeks: readonly (Mastery | null)[] }[] = [
-  { topic: 'STRIDE categories', from: 'Week 2, slides 4 to 9', weeks: ['partial', 'mastered', null, 'mastered', null, null, 'mastered', null, null, null] },
-  { topic: 'Password hashing', from: 'Week 3, slides 11 to 15', weeks: [null, null, 'struggling', 'partial', null, 'partial', null, 'mastered', null, null] },
-  { topic: 'Role-based access', from: 'Week 4, slides 2 to 8', weeks: [null, null, null, 'struggling', 'struggling', null, 'partial', null, null, null] },
-  { topic: 'Block cipher modes', from: 'Week 5, slides 6 to 12', weeks: [null, null, null, null, 'struggling', 'partial', null, null, 'partial', null] },
-  { topic: 'Session tokens', from: 'Week 7, slides 3 to 10', weeks: [null, null, null, null, null, null, 'mastered', 'mastered', null, null] },
-  { topic: 'Cross-site scripting', from: 'Week 8, slides 5 to 14', weeks: [null, null, null, null, null, null, null, 'partial', 'mastered', 'mastered'] },
-]
