@@ -318,36 +318,39 @@ def _digest(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()[:8]
 
 
-def screen_question(raw: str, *, open_question: OpenQuestion | None = None) -> Admitted | Refused:
+def screen_question(
+    raw: str, *, open_question: OpenQuestion | None = None, log_event: bool = True
+) -> Admitted | Refused:
     """Decide whether a student's question may reach the model.
 
     Refuses an attempt to override or read the tutor's rules, in any disguise
     the screening variants cover, and any question about the open one. A
     request for the answer is admitted as hint-only, since a student stuck on
-    practice material is exactly who the tutor is for.
+    practice material is exactly who the tutor is for. `log_event=False` is
+    for a question screened again, already logged when it was first asked.
     """
     if not isinstance(raw, str):
         return Refused(GuardCategory.EMPTY, REFUSAL_REASONS[GuardCategory.EMPTY])
     if len(raw) > MAX_QUESTION_CHARS:
-        return _refuse(GuardCategory.TOO_LONG, raw)
+        return _refuse(GuardCategory.TOO_LONG, raw, log_event=log_event)
     text = strip_unsafe_characters(raw)
     if not text:
-        return _refuse(GuardCategory.EMPTY, raw)
+        return _refuse(GuardCategory.EMPTY, raw, log_event=log_event)
 
     if has_mixed_script_word(text) or _BLOB.search(text) or _SPACED_OUT.search(text):
-        return _refuse(GuardCategory.OBFUSCATION, text)
+        return _refuse(GuardCategory.OBFUSCATION, text, log_event=log_event)
 
     variants = screening_variants(text)
     if any(looks_like_instruction(v) or _OVERRIDE.search(v) for v in variants):
-        return _refuse(GuardCategory.INJECTION, text)
+        return _refuse(GuardCategory.INJECTION, text, log_event=log_event)
     if any(_LEAK.search(v) for v in variants):
-        return _refuse(GuardCategory.PROMPT_LEAK, text)
+        return _refuse(GuardCategory.PROMPT_LEAK, text, log_event=log_event)
 
     wants_answer = any(_WANTS_ANSWER.search(v) for v in variants)
     if open_question is not None and (
         wants_answer or _refers_to_open_question(text, open_question)
     ):
-        return _refuse(GuardCategory.OPEN_QUESTION, text)
+        return _refuse(GuardCategory.OPEN_QUESTION, text, log_event=log_event)
     return Admitted(question=text, hint_only=wants_answer)
 
 
@@ -356,8 +359,8 @@ def screen_question(raw: str, *, open_question: OpenQuestion | None = None) -> A
 _LOGGED = frozenset({GuardCategory.INJECTION, GuardCategory.PROMPT_LEAK, GuardCategory.OBFUSCATION})
 
 
-def _refuse(category: GuardCategory, text: str) -> Refused:
-    if category in _LOGGED:
+def _refuse(category: GuardCategory, text: str, *, log_event: bool = True) -> Refused:
+    if log_event and category in _LOGGED:
         # Category, length and a short digest: enough to see one student repeating
         # an attack, and nothing of what they typed.
         log.warning(
@@ -477,7 +480,7 @@ def screen_earlier(
     """
     kept: list[EarlierTurn] = []
     for turn in list(turns)[-MAX_EARLIER_TURNS:]:
-        admission = screen_question(turn.question, open_question=open_question)
+        admission = screen_question(turn.question, open_question=open_question, log_event=False)
         if isinstance(admission, Refused):
             continue
         answer = strip_unsafe_characters(turn.answer)[:MAX_ANSWER_CHARS]

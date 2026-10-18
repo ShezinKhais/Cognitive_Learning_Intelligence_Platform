@@ -10,10 +10,11 @@ lecturer.
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ConflictError, NotFoundError, ValidationError
@@ -21,6 +22,7 @@ from app.models.consideration_request import ConsiderationRequest
 from app.models.course import Course
 from app.models.student import Student
 from app.models.user import User
+from app.realtime.accommodations import today as _today
 from app.repositories.student_repository import StudentRepository
 from app.schemas.common import Page
 from app.schemas.consideration import (
@@ -31,10 +33,6 @@ from app.schemas.consideration import (
 
 # A request runs for at most this long; a longer need is asked for again.
 MAX_DAYS = 366
-
-
-def _today() -> date:
-    return datetime.now(UTC).date()
 
 
 def _out(row: ConsiderationRequest) -> ConsiderationOut:
@@ -87,7 +85,13 @@ async def submit(db: AsyncSession, user_id: UUID, payload: ConsiderationCreate) 
         status="pending",
     )
     db.add(row)
-    await db.flush()
+    try:
+        # A unique index allows one waiting request per student, so two sent
+        # at once cannot both get past the check above.
+        async with db.begin_nested():
+            await db.flush()
+    except IntegrityError:
+        raise ConflictError("You already have a request waiting for a decision.", {}) from None
     await db.refresh(row)
     return _out(row)
 
@@ -127,10 +131,10 @@ async def list_requests(
         .join(User, User.user_id == Student.user_id)
         .join(Course, Course.id == Student.course_id)
     )
-    count = select(func.count()).select_from(ConsiderationRequest)
     if pending_only:
         base = base.where(ConsiderationRequest.status == "pending")
-        count = count.where(ConsiderationRequest.status == "pending")
+    # Counted over the same joins as the items, so the total is what pages.
+    count = select(func.count()).select_from(base.subquery())
     rows = await db.execute(
         # Waiting ones first, oldest first, so nobody waits longest.
         base.order_by(
@@ -170,9 +174,10 @@ async def decide(
     row.reviewed_by = reviewer_id
     row.reviewed_at = datetime.now(UTC)
     row.decision_note = note.strip() or None if note else None
-    student = await db.get(Student, row.student_id)
-    assert student is not None
-    if approve:
-        student.special_consideration_status = "approved"
+    student_user = await db.scalar(
+        select(Student.user_id).where(Student.student_id == row.student_id)
+    )
+    if student_user is None:
+        raise NotFoundError("That student was not found.", {"request_id": str(request_id)})
     await db.flush()
-    return _out(row), student.user_id
+    return _out(row), student_user

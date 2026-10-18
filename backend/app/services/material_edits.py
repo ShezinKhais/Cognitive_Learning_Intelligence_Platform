@@ -26,10 +26,12 @@ from app.models.delivered_question import DeliveredQuestion
 from app.models.material import Material
 from app.models.question import Question
 from app.models.rag_chunk import RagChunk
+from app.models.session import Session
 from app.models.student_response import StudentResponse
 from app.repositories.course_repository import CourseRepository
 from app.repositories.material_repository import MaterialRepository
 from app.schemas.identity import Role
+from app.schemas.session import SessionStatus
 from app.services.storage import MAX_DISPLAY_NAME, MaterialStorage
 
 log = logging.getLogger("clip.materials")
@@ -100,6 +102,28 @@ async def delete_material(
             {"material_id": str(material_id), "status": material.status},
         )
     its_questions = select(Question.question_id).where(Question.source_material_id == material.id)
+    # Locked before the check, so a class cannot deliver one of them between
+    # the check and the delete: a delivery waits, then finds it gone.
+    await db.execute(
+        select(Question.question_id)
+        .where(Question.source_material_id == material.id)
+        .with_for_update()
+    )
+    staged = await db.scalar(
+        select(
+            exists().where(
+                Question.source_material_id == material.id,
+                Question.session_id == Session.session_id,
+                Session.status.notin_([SessionStatus.ENDED, SessionStatus.CANCELLED]),
+            )
+        )
+    )
+    if staged:
+        raise ConflictError(
+            "Its questions are staged for a class that has not finished. Delete it after "
+            "that class, or unstage them first.",
+            {"material_id": str(material_id)},
+        )
     used = await db.scalar(
         select(
             exists().where(DeliveredQuestion.question_id.in_(its_questions))

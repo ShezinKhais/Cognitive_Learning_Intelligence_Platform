@@ -195,13 +195,15 @@ async def login(
 
     ip_address = request.client.host if request.client is not None else "unknown"
     limiter = get_login_address_limiter()
-    limiter.check(ip_address)
+    limiter.begin(ip_address)
 
     try:
         token = await _authenticate(payload, ip_address, settings, db)
     except AuthenticationError:
         limiter.record_failure(ip_address)
         raise
+    finally:
+        limiter.end(ip_address)
 
     claims = decode_access_token(token.access_token, settings)
     refresh_token, max_age = create_refresh_token(

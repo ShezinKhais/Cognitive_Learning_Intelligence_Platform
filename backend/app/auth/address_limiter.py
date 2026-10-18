@@ -40,6 +40,10 @@ class LoginAddressLimiter:
         self._window = window_seconds
         self._clock = clock
         self._failures: dict[str, deque[float]] = {}
+        # Attempts checked but not yet decided. They count against the
+        # address, so a burst sent at once cannot all pass the check before
+        # the first of them has failed.
+        self._in_flight: dict[str, int] = {}
 
     def _recent(self, address: str, now: float) -> deque[float] | None:
         failures = self._failures.get(address)
@@ -60,12 +64,26 @@ class LoginAddressLimiter:
         """
         now = self._clock()
         failures = self._recent(address, now)
-        if failures is not None and len(failures) >= self._max_failures:
-            retry_after = max(1, round(self._window - (now - failures[0])))
+        failed = len(failures) if failures is not None else 0
+        if failed + self._in_flight.get(address, 0) >= self._max_failures:
+            oldest = failures[0] if failures else now
+            retry_after = max(1, round(self._window - (now - oldest)))
             raise RateLimitedError(
                 "Too many sign-in attempts from this network. Try again in a few minutes.",
                 {"retry_after_seconds": retry_after},
             )
+
+    def begin(self, address: str) -> None:
+        """check(), then hold a place for this attempt until end()."""
+        self.check(address)
+        self._in_flight[address] = self._in_flight.get(address, 0) + 1
+
+    def end(self, address: str) -> None:
+        held = self._in_flight.get(address, 0) - 1
+        if held > 0:
+            self._in_flight[address] = held
+        else:
+            self._in_flight.pop(address, None)
 
     def record_failure(self, address: str) -> None:
         now = self._clock()
@@ -83,6 +101,7 @@ class LoginAddressLimiter:
 
     def reset(self) -> None:
         self._failures.clear()
+        self._in_flight.clear()
 
 
 @lru_cache

@@ -121,3 +121,22 @@ def test_production_sends_the_cookie_to_a_teams_iframe_only_over_https() -> None
     for attribute in ("HttpOnly", "Secure", "Partitioned", "Path=/api/v1/auth", "Max-Age=60"):
         assert attribute in set_cookie
     assert "samesite=none" in set_cookie.lower()
+
+
+def test_attempts_still_being_checked_count_against_the_address() -> None:
+    # A burst sent at once must not all pass the check before the first of
+    # them has been recorded as a failure.
+    limiter = LoginAddressLimiter(3, 600, Clock())
+    for _ in range(3):
+        limiter.begin("203.0.113.9")
+    with pytest.raises(RateLimitedError):
+        limiter.begin("203.0.113.9")
+
+    # Decided attempts free their place; only failures stay counted.
+    limiter.record_failure("203.0.113.9")
+    for _ in range(3):
+        limiter.end("203.0.113.9")
+    limiter.begin("203.0.113.9")
+    limiter.begin("203.0.113.9")
+    with pytest.raises(RateLimitedError):
+        limiter.begin("203.0.113.9")

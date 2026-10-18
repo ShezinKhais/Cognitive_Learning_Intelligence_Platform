@@ -9,7 +9,7 @@ from app.models.material import Material
 from app.models.question import Question
 from app.schemas.identity import Role
 
-from .session_support import add_course, add_lecturer, add_question, sign_in_as
+from .session_support import add_course, add_lecturer, add_question, create_session, sign_in_as
 
 
 async def _material_of(factory, question_id):  # noqa: ANN001, ANN202
@@ -78,3 +78,21 @@ async def test_another_lecturers_material_is_missing(db, app) -> None:  # noqa: 
 
     assert client.delete(f"/api/v1/materials/{material}").status_code == 404
     assert client.patch(f"/api/v1/materials/{material}", json={"filename": "x"}).status_code == 404
+
+
+async def test_a_material_staged_for_an_unfinished_class_cannot_be_deleted(db, app) -> None:  # noqa: ANN001
+    client, factory, created = db
+    course = await add_course(factory, created)
+    question = await add_question(db, course, LECTURER_ID, status="approved")
+    material = await _material_of(factory, question)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    session_id = create_session(client, course)["id"]
+    async with factory() as session:
+        await session.execute(
+            update(Question).where(Question.question_id == question).values(session_id=session_id)
+        )
+        await session.commit()
+
+    assert client.delete(f"/api/v1/materials/{material}").status_code == 409
+    async with factory() as session:
+        assert await session.get(Question, question) is not None

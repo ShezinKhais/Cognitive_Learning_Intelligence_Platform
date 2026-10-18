@@ -3,7 +3,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, String, func
+from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Index, String, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,6 +16,13 @@ class ConsiderationRequest(Base):
         CheckConstraint(
             "status IN ('pending', 'approved', 'rejected', 'withdrawn')",
             name="ck_consideration_request_status",
+        ),
+        # One request waiting per student.
+        Index(
+            "uq_consideration_request_one_pending",
+            "student_id",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
         ),
     )
 

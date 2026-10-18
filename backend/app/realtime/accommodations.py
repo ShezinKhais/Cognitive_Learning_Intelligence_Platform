@@ -23,6 +23,11 @@ from app.repositories.student_repository import StudentRepository
 log = logging.getLogger("clip.accommodations")
 
 
+def today() -> date:
+    """The day an accommodation's last day is compared with, everywhere."""
+    return _today()
+
+
 def _today() -> date:
     return datetime.now(UTC).date()
 

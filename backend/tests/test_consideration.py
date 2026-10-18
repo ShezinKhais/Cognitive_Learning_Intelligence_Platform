@@ -76,7 +76,6 @@ async def test_a_request_is_sent_seen_by_an_admin_and_approved(db, app) -> None:
     # The accommodation lives on the request; the student's own record of a
     # need is not the request's to write.
     assert student.accessibility_need is None
-    assert student.special_consideration_status == "approved"
     # Honoured by a class the student is in now, not only from the next join.
     assert STUDENT_ID in classroom.accommodations
 
@@ -186,8 +185,6 @@ async def test_a_request_past_its_last_day_cannot_be_approved(db, app, monkeypat
     late = client.post(f"{ADMIN}/{request_id}/approve", json={})
     assert late.status_code == 409
     assert STUDENT_ID not in classroom.accommodations
-    student = await _student_row(factory)
-    assert student.special_consideration_status is None
     # It can still be refused, so it does not sit pending forever.
     assert client.post(f"{ADMIN}/{request_id}/reject", json={}).json()["status"] == "rejected"
 
@@ -224,3 +221,17 @@ def test_granting_never_shortens_an_accommodation_already_held() -> None:
     registry.grant(a, None)
     registry.grant(a, date(2000, 1, 1))
     assert a in registry
+
+
+async def test_the_database_holds_one_waiting_request_per_student(db, app) -> None:  # noqa: ANN001
+    from sqlalchemy.exc import IntegrityError
+
+    client, factory, _ = await _enrolled(db, app)
+    assert client.post(MINE, json={"needs": ["pace"]}).status_code == 201
+    async with factory() as session:
+        student = await session.scalar(
+            select(Student.student_id).where(Student.user_id == STUDENT_ID)
+        )
+        session.add(ConsiderationRequest(student_id=student, needs=["gaze"], status="pending"))
+        with pytest.raises(IntegrityError):
+            await session.flush()
