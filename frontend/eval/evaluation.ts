@@ -167,7 +167,11 @@ export function balancedAccuracy(c: Counts): number | null {
   return (c.tp / positives + (c.tn + c.noReadingFalse) / negatives) / 2
 }
 
-export interface Setting { thresholds: Thresholds; calibrated: boolean }
+/**
+ * `uncalibrated` is what the app falls back to when calibration is on but this
+ * person has none (missing or refused), as thresholdsFor does in the worker.
+ */
+export interface Setting { thresholds: Thresholds; calibrated: boolean; uncalibrated?: Thresholds }
 /** One setting for every frame, or one per frame (each held-out person's own fold). */
 export type Settings = Setting | ((frame: Frame) => Setting)
 
@@ -190,11 +194,9 @@ const calibrationKey = (f: Frame) => [f.participant, ...Object.values(f.conditio
 export function observe(frames: Frame[], settings: Settings, calibrationsByKey = calibrations(frames)): FaceObservation[] {
   return frames.map(f => {
     const setting = typeof settings === 'function' ? settings(f) : settings
-    return classifyFace(
-      f.features,
-      setting.thresholds,
-      setting.calibrated ? calibrationsByKey.get(calibrationKey(f)) ?? null : null,
-    )
+    const calibration = setting.calibrated ? calibrationsByKey.get(calibrationKey(f)) ?? null : null
+    const thresholds = setting.calibrated && !calibration ? setting.uncalibrated ?? setting.thresholds : setting.thresholds
+    return classifyFace(f.features, thresholds, calibration)
   })
 }
 
@@ -267,15 +269,17 @@ export const GRID = {
 }
 
 /** The thresholds with the best balanced accuracy on `frames`; ties keep the earlier (stricter) one. */
-export function tune(frames: Frame[], calibrated: boolean): { thresholds: Thresholds; balancedAccuracy: number | null } {
+export function tune(
+  frames: Frame[], calibrated: boolean, uncalibrated?: Thresholds,
+): { thresholds: Thresholds; balancedAccuracy: number | null } {
   const byKey = calibrations(frames)
-  let best = { thresholds: ORIGINAL_THRESHOLDS, balancedAccuracy: balancedAccuracy(score(frames, { thresholds: ORIGINAL_THRESHOLDS, calibrated }, byKey).looking) }
+  let best = { thresholds: ORIGINAL_THRESHOLDS, balancedAccuracy: balancedAccuracy(score(frames, { thresholds: ORIGINAL_THRESHOLDS, calibrated, uncalibrated }, byKey).looking) }
   for (const maxYawDegrees of GRID.maxYawDegrees) {
     for (const maxPitchDegrees of GRID.maxPitchDegrees) {
       for (const maxRollDegrees of GRID.maxRollDegrees) {
         for (const irisX of GRID.irisX) {
           const thresholds = { ...ORIGINAL_THRESHOLDS, maxYawDegrees, maxPitchDegrees, maxRollDegrees, irisX }
-          const value = balancedAccuracy(score(frames, { thresholds, calibrated }, byKey).looking)
+          const value = balancedAccuracy(score(frames, { thresholds, calibrated, uncalibrated }, byKey).looking)
           if (value !== null && (best.balancedAccuracy === null || value > best.balancedAccuracy)) {
             best = { thresholds, balancedAccuracy: value }
           }

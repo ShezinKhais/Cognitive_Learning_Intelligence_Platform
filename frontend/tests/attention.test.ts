@@ -58,7 +58,7 @@ import {
   CALIBRATED_THRESHOLDS, DEFAULT_THRESHOLDS, calibrate, classifyFace, faceFeatures, poseFromMatrix, thresholdsFor, type FaceFeatures,
 } from '../src/features/attention/signals.ts'
 import {
-  balancedAccuracy, bootstrap, count, dropCountdown, framesToCsv, parseCsv, folds, precision, recall, tune, type Frame,
+  balancedAccuracy, bootstrap, calibrations, count, dropCountdown, framesToCsv, parseCsv, folds, observe, precision, recall, tune, type Frame,
 } from '../eval/evaluation.ts'
 
 /** A 4x4 column-major rotation about x (pitch) or y (yaw), in degrees. */
@@ -181,6 +181,19 @@ test('with fewer than three participants, clips are held out instead', () => {
   assert.equal(rounds.length, 1)
   assert.deepEqual(rounds[0].test.map(f => f.clip), ['c3', 'c6'])
   assert.ok(rounds[0].tune.every(f => !['c3', 'c6'].includes(f.clip)))
+})
+
+test('with calibration on, a person without a usable one is judged as the app does', () => {
+  // Joel's case: 12 degrees of yaw passes the calibrated 15 but not the uncalibrated 10.
+  const turned = { ...frame('P1', 'c2', 'screen', 0), features: faceFeatures([face()], [rotation('y', 12)]) }
+  const setting = { thresholds: CALIBRATED_THRESHOLDS, calibrated: true, uncalibrated: DEFAULT_THRESHOLDS }
+  // No calibrate clip, or one refused (40 degrees down): the uncalibrated limits apply.
+  assert.equal(observe([turned], setting)[0].forward, false)
+  const refused = Array.from({ length: 10 }, () => frame('P1', 'c1', 'calibrate', 40))
+  assert.equal(observe([turned], setting, calibrations([...refused, turned]))[0].forward, false)
+  // A usable calibration, straight ahead: the calibrated limits apply.
+  const usable = Array.from({ length: 10 }, () => frame('P1', 'c1', 'calibrate', 0))
+  assert.equal(observe([turned], setting, calibrations([...usable, turned]))[0].forward, true)
 })
 
 test('tuning picks a pitch limit that separates the screen from the desk', () => {

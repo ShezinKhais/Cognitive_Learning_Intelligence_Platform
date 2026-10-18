@@ -31,12 +31,17 @@ const withoutPose = (fs: Frame[]) => fs.map(f => ({ ...f, features: { ...f.featu
 // Each fold tunes on everyone but one participant (or on two thirds of the
 // clips, with fewer than three people) and is judged on what it held out.
 const { folds: rounds, by } = folds(frames)
-const tuned = rounds.map(fold => ({ ...fold, plain: tune(fold.tune, false), calibrated: tune(fold.tune, true) }))
+// With calibration on, a person without one gets the uncalibrated limits, as
+// in the app; each fold uses its own, so nothing held out leaks in.
+const tuned = rounds.map(fold => {
+  const plain = tune(fold.tune, false)
+  return { ...fold, plain, calibrated: tune(fold.tune, true, plain.thresholds) }
+})
 const testFrames = tuned.flatMap(fold => fold.test)
 const foldOf = (f: Frame) => by === 'participant' ? tuned.find(fold => fold.held === f.participant)! : tuned[0]
 const before = { thresholds: ORIGINAL_THRESHOLDS, calibrated: false }
 const tunedPlain: Settings = f => ({ thresholds: foldOf(f).plain.thresholds, calibrated: false })
-const tunedCalibrated: Settings = f => ({ thresholds: foldOf(f).calibrated.thresholds, calibrated: true })
+const tunedCalibrated: Settings = f => ({ thresholds: foldOf(f).calibrated.thresholds, calibrated: true, uncalibrated: foldOf(f).plain.thresholds })
 
 interface Row { name: string; frames: Frame[]; setting: Settings }
 const rows: Row[] = [
@@ -48,7 +53,7 @@ const rows: Row[] = [
 
 // What ships: the limits tuned on every recording.
 const finalPlain = tune(frames, false)
-const finalCalibrated = tune(frames, true)
+const finalCalibrated = tune(frames, true, finalPlain.thresholds)
 
 const pct = (value: number | null) => value === null ? 'n/a' : `${(value * 100).toFixed(1)}%`
 const ci = (interval: [number, number] | null) => interval ? ` (${pct(interval[0])}–${pct(interval[1])})` : ''
@@ -102,7 +107,7 @@ if (by === 'participant') {
     held: fold.held,
     before: ba(withoutPose(fold.test), before),
     after: ba(fold.test, { thresholds: fold.plain.thresholds, calibrated: false }),
-    calibrated: ba(fold.test, { thresholds: fold.calibrated.thresholds, calibrated: true }),
+    calibrated: ba(fold.test, { thresholds: fold.calibrated.thresholds, calibrated: true, uncalibrated: fold.plain.thresholds }),
     fold,
   }))
   say('## Per participant')
