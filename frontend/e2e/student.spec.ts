@@ -9,7 +9,6 @@ async function optIn(page: Page, sensor: 'camera' | 'microphone') {
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
-    localStorage.setItem('clip_access_token', 'test-only')
     const state = { requests: 0, tracks: [] as MediaStreamTrack[], scroll: [] as unknown[], summaries: [] as unknown[] }
     Object.assign(window, { probe: state })
     const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
@@ -25,6 +24,11 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/v1/auth/**', route => route.fulfill({ json: {
     id: 'student', email: 'student@example.test', full_name: 'Test student', role: 'student',
     consents: ['engagement_monitoring', 'camera', 'microphone'],
+  } }))
+  // The token is kept in memory and fetched with the refresh cookie on load.
+  // Registered last, so it wins over the route above for this one path.
+  await page.route('**/api/v1/auth/refresh', route => route.fulfill({ json: {
+    access_token: 'test-only', token_type: 'bearer', expires_in: 3600, role: 'student',
   } }))
   await page.goto('/e2e/harness/index.html')
 })
