@@ -68,6 +68,7 @@ from app.schemas.events import (
 )
 from app.schemas.identity import ConsentType, Role
 from app.schemas.session import SessionStatus
+from app.services.consideration import in_force
 from app.services.session_lifecycle import joinable_session
 
 log = logging.getLogger("clip.ws")
@@ -307,7 +308,13 @@ async def session_socket(
                 if row is not None:
                     await classroom.restore(db, row)
                     if role is Role.STUDENT:
-                        classroom.accommodations.set(user_id, await has_accommodation(db, user_id))
+                        standing = await has_accommodation(db, user_id)
+                        granted = None if standing else await in_force(db, user_id)
+                        classroom.accommodations.set(
+                            user_id,
+                            standing or granted is not None,
+                            until=granted.until if granted else None,
+                        )
         except Exception:
             log.exception("could not check membership of session %s", session_id)
             await websocket.close(

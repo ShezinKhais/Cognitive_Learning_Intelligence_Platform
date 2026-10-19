@@ -8,7 +8,15 @@ import {
 } from 'react-router'
 
 import { ApiError } from '../api'
-import SignOutButton from '../components/SignOutButton'
+import { buttonStyles } from '../components/ui/button'
+import { PageHeader, Panel, Tag } from '../components/ui/primitives'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
+import LiveResults from '../features/live/LiveResults'
+import LiveStatusBar from '../features/live/LiveStatusBar'
+import ReadinessChecklist from '../features/live/ReadinessChecklist'
+import RoomsPanel from '../features/live/RoomsPanel'
+import { statusLabel, statusTone } from '../features/sessions/format'
+import { getSession, type SessionSummary } from '../features/sessions/sessionsApi'
 import LecturerAttentionPanel from '../features/attention/LecturerAttentionPanel'
 import type {
   LecturerEngagement,
@@ -24,7 +32,7 @@ import {
   getSessionTopics,
 } from '../features/intelligence/topicRecoveryApi'
 import LiveAlertsPanel from '../features/live/LiveAlertsPanel'
-import ManualQuestionTrigger from '../features/live/ManualQuestionTrigger'
+import CheckpointMonitor from '../features/live/CheckpointMonitor'
 import {
   endSession,
   getSessionReadiness,
@@ -47,14 +55,14 @@ function connectionLabel(
   }
 
   if (status === 'connecting') {
-    return 'Connecting...'
+    return 'Connecting…'
   }
 
   if (status === 'unavailable') {
-    return 'Unavailable'
+    return 'Live updates are not reaching this page'
   }
 
-  return 'Disconnected'
+  return 'Reconnecting…'
 }
 
 function sessionLabel(
@@ -64,10 +72,13 @@ function sessionLabel(
     return 'Waiting...'
   }
 
-  return (
-    status.charAt(0).toUpperCase() +
-    status.slice(1)
-  )
+  const labels: Record<string, string> = {
+    prepared: 'Not started',
+    active: 'Live',
+    ended: 'Ended',
+    cancelled: 'Cancelled',
+  }
+  return labels[status] ?? status
 }
 
 function questionCycleLabel(
@@ -114,24 +125,6 @@ function secondsUntilClose(
   )
 }
 
-function closeReasonLabel(
-  reason: string,
-): string {
-  if (reason === 'window_elapsed') {
-    return 'Response window ended'
-  }
-
-  if (reason === 'lecturer_closed') {
-    return 'Closed by lecturer'
-  }
-
-  if (reason === 'session_ended') {
-    return 'Session ended'
-  }
-
-  return 'Question closed'
-}
-
 export default function LecturerLiveSessionPage() {
   const { sessionId } =
     useParams<{
@@ -145,8 +138,22 @@ export default function LecturerLiveSessionPage() {
     closedQuestion,
     alerts,
     sessionNotice,
+    rooms,
     acknowledgeAlert,
   } = useLiveSession(sessionId)
+
+  // The session's title and course, for the header. The socket carries its
+  // live state; this is only what it is called.
+  const [details, setDetails] = useState<SessionSummary | null>(null)
+  const [confirmingEnd, setConfirmingEnd] = useState(false)
+  useEffect(() => {
+    if (!sessionId) return
+    let cancelled = false
+    getSession(sessionId).then((found) => !cancelled && setDetails(found), () => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId])
 
   const [
     actionInProgress,
@@ -594,274 +601,114 @@ export default function LecturerLiveSessionPage() {
     activeQuestion === null
 
   return (
-    <main className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              C.L.I.P lecturer workspace
-            </p>
+    <div>
 
-            <h1 className="mt-1 text-xl font-bold text-card-foreground">
-              Live Session
-            </h1>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
+      <PageHeader
+        title={details?.title ?? 'Live session'}
+        tabTitle={details ? `Live, ${details.title}` : 'Live session'}
+        back={{ to: '/lecturer/sessions', label: 'Sessions' }}
+        description={details ? details.course_code : undefined}
+        actions={
+          <>
+            {connectionStatus !== 'connected' && (
+              <span role="status" className="text-sm text-muted-foreground">
+                {connectionLabel(connectionStatus)}
+              </span>
+            )}
             {sessionId && (
-              <Link
-                to={`/lecturer/sessions/${encodeURIComponent(
-                  sessionId,
-                )}/report`}
-                className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
-              >
-                Session report
+              <Link to={`/lecturer/sessions/${sessionId}/report`} className={buttonStyles({ intent: 'secondary' })}>
+                Report
               </Link>
             )}
-
-            <Link
-              to="/lecturer/materials"
-              className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
-            >
-              Materials
-            </Link>
-
-            <SignOutButton />
+          </>
+        }
+      >
+        {details && (
+          <div className="mt-3">
+            <Tag tone={statusTone({ status: sessionState?.status ?? details.status, paused: sessionState?.paused ?? details.paused })}>
+              {statusLabel({ status: sessionState?.status ?? details.status, paused: sessionState?.paused ?? details.paused })}
+            </Tag>
           </div>
-        </div>
-      </header>
+        )}
+      </PageHeader>
+      {sessionState?.status === 'active' && (
+        <LiveStatusBar
+          paused={sessionState.paused}
+          startedAt={details?.starts_at}
+          participants={sessionState.participant_count}
+          questionOpen={activeQuestion !== null}
+          secondsRemaining={secondsRemaining}
+          canPause={canPause}
+          canResume={canResume}
+          canEnd={canEnd}
+          working={
+            actionInProgress === 'pause' || actionInProgress === 'resume' || actionInProgress === 'end'
+              ? actionInProgress
+              : null
+          }
+          onPause={() => void handleSessionAction('pause')}
+          onResume={() => void handleSessionAction('resume')}
+          onEnd={() => setConfirmingEnd(true)}
+        />
+      )}
 
-      <div className="mx-auto max-w-7xl px-5 py-8 sm:px-8">
-        <section className="rounded-xl border border-border bg-card p-6">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">
-                Session
-              </p>
+      <ConfirmDialog
+        open={confirmingEnd}
+        title={sessionState?.status === 'prepared' ? 'Cancel this session?' : 'End the class?'}
+        confirmLabel={sessionState?.status === 'prepared' ? 'Cancel the session' : 'End the class'}
+        cancelLabel={sessionState?.status === 'prepared' ? 'Keep it' : 'Keep teaching'}
+        busy={actionInProgress === 'end'}
+        onCancel={() => setConfirmingEnd(false)}
+        onConfirm={() => {
+          void handleSessionAction('end').finally(() => setConfirmingEnd(false))
+        }}
+      >
+        {sessionState?.status === 'prepared' ? (
+          <p>It will not run, and students can no longer join it. This cannot be undone.</p>
+        ) : (
+          <p>
+            Students are disconnected and no more questions are sent. Answers so far are kept for the report. A class
+            that has ended cannot be restarted.
+          </p>
+        )}
+      </ConfirmDialog>
 
-              <h2 className="mt-1 text-2xl font-semibold">
-                Lecturer Live Panel
-              </h2>
+      <div className="mx-auto max-w-6xl px-5 py-8 sm:px-8">
 
-              <p className="mt-2 text-sm text-muted-foreground">
-                Session ID:{' '}
-                {sessionId ??
-                  'Unavailable'}
-              </p>
-            </div>
-
-            <div className="rounded-full border border-border px-3 py-1 text-sm">
-              {connectionLabel(
-                connectionStatus,
-              )}
-            </div>
-          </div>
-        </section>
-
-        <div className="mt-6 grid gap-6 lg:grid-cols-2">
-          <section className="rounded-xl border border-border bg-card p-6">
-            <h2 className="text-lg font-semibold">
-              Session Controls
-            </h2>
-
-            <div className="mt-4">
-              <p className="text-sm text-muted-foreground">
-                Session status
-              </p>
-
-              <p className="mt-1 text-2xl font-semibold">
-                {sessionLabel(
-                  sessionState?.status,
-                )}
-              </p>
-            </div>
-
-            <div className="mt-4">
-              <p className="text-sm text-muted-foreground">
-                Question cycle
-              </p>
-
-              <p className="mt-1 font-medium">
-                {questionCycleLabel(
-                  sessionState?.status,
-                  sessionState?.paused,
-                )}
-              </p>
-            </div>
-
-            {sessionState?.status ===
-              'prepared' && (
-              <div className="mt-5 rounded-xl border border-border bg-muted/20 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h3 className="font-semibold">
-                      Content readiness
-                    </h3>
-
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Check that the session has usable material and approved questions before starting.
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void refreshReadiness()
-                    }
-                    disabled={
-                      readinessLoading ||
-                      isBusy
-                    }
-                    className="rounded-md border border-border px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {readinessLoading
-                      ? 'Checking...'
-                      : 'Check again'}
-                  </button>
-                </div>
-
-                {readinessLoading &&
-                  !readiness && (
-                    <p
-                      role="status"
-                      className="mt-4 text-sm text-muted-foreground"
-                    >
-                      Checking session readiness...
-                    </p>
-                  )}
-
-                {readinessError && (
-                  <div
-                    role="alert"
-                    className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-                  >
-                    {readinessError}
-                  </div>
-                )}
-
-                {readiness && (
-                  <div className="mt-4">
-                    <div
-                      role="status"
-                      className={
-                        readiness.ready
-                          ? 'rounded-md border border-border bg-background px-4 py-3'
-                          : 'rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3'
-                      }
-                    >
-                      <p className="font-medium">
-                        {readiness.ready
-                          ? 'Ready to start'
-                          : 'Not ready to start'}
-                      </p>
-
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {readiness.ready
-                          ? readiness.deliverable_questions > 0
-                            ? 'The session has approved content available for delivery.'
-                            : 'You can start now and stage questions during the session.'
-                          : 'Resolve the blockers below before starting the session.'}
-                      </p>
-                    </div>
-
-                    <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-md border border-border bg-background p-3">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                          Materials
-                        </dt>
-
-                        <dd className="mt-1 text-xl font-semibold">
-                          {readiness.materials_total}
-                        </dd>
-                      </div>
-
-                      <div className="rounded-md border border-border bg-background p-3">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                          Deliverable questions
-                        </dt>
-
-                        <dd className="mt-1 text-xl font-semibold">
-                          {readiness.deliverable_questions}
-                        </dd>
-                      </div>
-
-                      <div className="rounded-md border border-border bg-background p-3">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                          Processing
-                        </dt>
-
-                        <dd className="mt-1 text-xl font-semibold">
-                          {readiness.materials_processing}
-                        </dd>
-                      </div>
-
-                      <div className="rounded-md border border-border bg-background p-3">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                          Failed materials
-                        </dt>
-
-                        <dd className="mt-1 text-xl font-semibold">
-                          {readiness.materials_failed}
-                        </dd>
-                      </div>
-                    </dl>
-
-                    {readiness.blockers.length >
-                      0 && (
-                      <div className="mt-4">
-                        <h4 className="text-sm font-semibold">
-                          Blocking issues
-                        </h4>
-
-                        <ul className="mt-2 space-y-2">
-                          {readiness.blockers.map(
-                            (
-                              issue,
-                              index,
-                            ) => (
-                              <li
-                                key={`${issue.code}-${issue.material_id ?? 'session'}-${index}`}
-                                className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm"
-                              >
-                                {issue.message}
-                              </li>
-                            ),
-                          )}
-                        </ul>
-                      </div>
-                    )}
-
-                    {readiness.warnings.length >
-                      0 && (
-                      <div className="mt-4">
-                        <h4 className="text-sm font-semibold">
-                          Warnings
-                        </h4>
-
-                        <ul className="mt-2 space-y-2">
-                          {readiness.warnings.map(
-                            (
-                              issue,
-                              index,
-                            ) => (
-                              <li
-                                key={`${issue.code}-${issue.material_id ?? 'session'}-${index}`}
-                                className="rounded-md border border-border bg-background px-4 py-3 text-sm"
-                              >
-                                {issue.message}
-                              </li>
-                            ),
-                          )}
-                        </ul>
-                      </div>
-                    )}
-
-                    <p className="mt-4 text-xs text-muted-foreground">
-                      Readiness is checked again by the server when the session starts.
-                    </p>
-                  </div>
-                )}
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Panel
+            title="Class"
+            description={
+              sessionState?.status === 'prepared'
+                ? 'Check it is ready, then start the class.'
+                : sessionState?.status === 'active'
+                  ? 'Pause and end it from the bar above.'
+                  : 'Where the class stands.'
+            }
+          >
+            <dl className="grid grid-cols-2 gap-4">
+              <div>
+                <dt className="text-sm text-muted-foreground">Session</dt>
+                <dd className="mt-1 text-xl font-semibold">
+                  {sessionLabel(sessionState?.status)}
+                </dd>
               </div>
+              <div>
+                <dt className="text-sm text-muted-foreground">Questions</dt>
+                <dd className="mt-1 text-xl font-semibold">
+                  {questionCycleLabel(sessionState?.status, sessionState?.paused)}
+                </dd>
+              </div>
+            </dl>
+
+            {sessionState?.status === 'prepared' && (
+              <ReadinessChecklist
+                readiness={readiness}
+                loading={readinessLoading}
+                error={readinessError}
+                busy={isBusy}
+                onRefresh={() => void refreshReadiness()}
+              />
             )}
 
             {actionError && (
@@ -886,83 +733,28 @@ export default function LecturerLiveSessionPage() {
                       'start',
                     )
                   }
-                  className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  className={buttonStyles()}
                 >
                   {actionInProgress ===
                   'start'
                     ? 'Starting...'
                     : readinessLoading
-                      ? 'Checking readiness...'
-                      : 'Start Session'}
+                      ? 'Checking...'
+                      : 'Start the class'}
                 </button>
               )}
 
-              {sessionState?.status ===
-                'active' &&
-                !sessionState.paused && (
-                  <button
-                    type="button"
-                    disabled={
-                      !canPause
-                    }
-                    onClick={() =>
-                      void handleSessionAction(
-                        'pause',
-                      )
-                    }
-                    className="rounded-md border border-border px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {actionInProgress ===
-                    'pause'
-                      ? 'Pausing...'
-                      : 'Pause Session'}
-                  </button>
-                )}
-
-              {sessionState?.status ===
-                'active' &&
-                sessionState.paused && (
-                  <button
-                    type="button"
-                    disabled={
-                      !canResume
-                    }
-                    onClick={() =>
-                      void handleSessionAction(
-                        'resume',
-                      )
-                    }
-                    className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {actionInProgress ===
-                    'resume'
-                      ? 'Resuming...'
-                      : 'Resume Session'}
-                  </button>
-                )}
-
-              {(sessionState?.status ===
-                'prepared' ||
-                sessionState?.status ===
-                  'active') && (
+              {sessionState?.status === 'prepared' && (
                 <button
                   type="button"
-                  disabled={
-                    !canEnd
-                  }
-                  onClick={() =>
-                    void handleSessionAction(
-                      'end',
-                    )
-                  }
-                  className="rounded-md border border-border px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!canEnd}
+                  onClick={() => setConfirmingEnd(true)}
+                  className={buttonStyles({ intent: 'danger' })}
                 >
-                  {actionInProgress ===
-                  'end'
-                    ? 'Ending...'
-                    : 'End Session'}
+                  {actionInProgress === 'end' ? 'Cancelling...' : 'Cancel the session'}
                 </button>
               )}
+
 
               {(sessionState?.status ===
                 'ended' ||
@@ -974,15 +766,12 @@ export default function LecturerLiveSessionPage() {
                 </p>
               )}
             </div>
-          </section>
+          </Panel>
 
-          <section className="rounded-xl border border-border bg-card p-6">
-            <h2 className="text-lg font-semibold">
-              Participants
-            </h2>
-
-            <p className="mt-2 text-sm text-muted-foreground">
-              {sessionState?.status === 'prepared'
+          <Panel
+            title="Participants"
+            description={
+              sessionState?.status === 'prepared'
                 ? 'Connected and waiting for the session to start'
                 : sessionState?.status === 'active'
                   ? 'Currently connected students'
@@ -990,17 +779,16 @@ export default function LecturerLiveSessionPage() {
                     ? 'Session ended'
                     : sessionState?.status === 'cancelled'
                       ? 'Session cancelled'
-                      : 'Waiting for session state'}
-            </p>
-
-            <p className="mt-5 text-3xl font-semibold">
+                      : 'Waiting for session state'
+            }
+          >
+            <p className="text-3xl font-semibold tabular-nums">
               {sessionState?.status === 'ended' ||
               sessionState?.status === 'cancelled'
                 ? 0
-                : (sessionState?.participant_count ??
-                  '—')}
+                : (sessionState?.participant_count ?? '-')}
             </p>
-          </section>
+          </Panel>
 
           <LecturerAttentionPanel
             students={engagement}
@@ -1011,201 +799,33 @@ export default function LecturerLiveSessionPage() {
             }
           />
 
-          <section className="rounded-xl border border-border bg-card p-6 lg:col-span-2">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-semibold">
-                  Checkpoint Monitor
-                </h2>
+          <CheckpointMonitor
+            sessionId={sessionId}
+            delivered={sessionState?.questions_delivered ?? 0}
+            activeQuestion={activeQuestion}
+            closedQuestion={closedQuestion}
+            secondsRemaining={secondsRemaining}
+            canSend={canTriggerQuestion}
+          />
 
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Questions delivered:{' '}
-                  {sessionState?.questions_delivered ??
-                    0}
-                </p>
-              </div>
-
-              {activeQuestion && (
-                <div
-                  aria-live="polite"
-                  className="rounded-md border border-border px-4 py-2 text-center"
-                >
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Response window
-                  </p>
-
-                  <p className="mt-1 text-2xl font-semibold">
-                    {secondsRemaining}s
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {activeQuestion ? (
-              <div className="mt-6 rounded-xl border border-border bg-muted/30 p-5">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-info">
-                      Checkpoint in progress
-                    </p>
-
-                    <p className="mt-2 text-lg font-semibold">
-                      Question{' '}
-                      {sessionState?.questions_delivered ??
-                        1}
-                    </p>
-
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      This checkpoint is currently open for connected students.
-                    </p>
-                  </div>
-
-                  {activeQuestion.source_slide !==
-                    null && (
-                    <span className="rounded-full bg-background px-3 py-1 text-xs font-medium text-muted-foreground">
-                      Source slide{' '}
-                      {activeQuestion.source_slide}
-                    </span>
-                  )}
-                </div>
-
-                <details className="mt-5 rounded-lg border border-border bg-background">
-                  <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
-                    View question
-                  </summary>
-
-                  <div className="border-t border-border px-4 py-4">
-                    <p className="font-medium">
-                      {activeQuestion.prompt}
-                    </p>
-
-                    {activeQuestion.options &&
-                      activeQuestion.options.length >
-                        0 && (
-                        <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                          {activeQuestion.options.map(
-                            (
-                              option,
-                              index,
-                            ) => (
-                              <div
-                                key={`${index}-${option}`}
-                                className="rounded-md border border-border p-3 text-sm"
-                              >
-                                <span className="mr-2 font-semibold">
-                                  {String.fromCharCode(
-                                    65 +
-                                      index,
-                                  )}
-                                  .
-                                </span>
-
-                                {option}
-                              </div>
-                            ),
-                          )}
-                        </div>
-                      )}
-
-                    <p className="mt-4 text-xs text-muted-foreground">
-                      Response window:{' '}
-                      {
-                        activeQuestion.window_seconds
-                      }
-                      s
-                    </p>
-                  </div>
-                </details>
-              </div>
-            ) : closedQuestion ? (
-              <div className="mt-6 rounded-md border border-border p-5">
-                <p className="font-medium">
-                  {closeReasonLabel(
-                    closedQuestion.reason,
-                  )}
-                </p>
-
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Responses received:{' '}
-                  {
-                    closedQuestion.respondents
-                  }{' '}
-                  of{' '}
-                  {
-                    closedQuestion.eligible
-                  }{' '}
-                  eligible students.
-                </p>
-              </div>
-            ) : (
-              <p className="mt-6 text-sm text-muted-foreground">
-                No active question.
-              </p>
-            )}
-
-            <ManualQuestionTrigger
+          {sessionId && (
+            <LiveResults
               sessionId={sessionId}
-              enabled={
-                canTriggerQuestion
-              }
+              openQuestionId={activeQuestion?.question_id ?? null}
+              closedQuestionId={closedQuestion?.question_id ?? null}
             />
-          </section>
+          )}
 
-          <section className="rounded-xl border border-border bg-card p-6">
-            <h2 className="text-lg font-semibold">
-              Live Results
-            </h2>
+          <TopicRecoveryPanel
+            topics={topics}
+            loading={topicsLoading}
+            error={topicsError}
+          />
 
-            <p className="mt-2 text-sm text-muted-foreground">
-              Detailed response results
-              will appear when response
-              persistence is available.
-            </p>
-
-            {closedQuestion && (
-              <div className="mt-5">
-                <p className="text-3xl font-semibold">
-                  {
-                    closedQuestion.respondents
-                  }
-                  /
-                  {
-                    closedQuestion.eligible
-                  }
-                </p>
-
-                <p className="mt-1 text-sm text-muted-foreground">
-                  students responded
-                </p>
-              </div>
-            )}
-          </section>
-
-          <div>
-            {topicsLoading && (
-              <p
-                role="status"
-                className="mb-3 text-sm text-muted-foreground"
-              >
-                Loading topic recovery data...
-              </p>
-            )}
-
-            {topicsError && (
-              <div
-                role="alert"
-                className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-              >
-                {topicsError}
-              </div>
-            )}
-
-            <TopicRecoveryPanel
-              topics={topics}
-            />
-          </div>
+          <RoomsPanel rooms={rooms} />
 
           <LiveAlertsPanel
+            className="lg:col-span-2"
             alerts={alerts}
             sessionNotice={sessionNotice}
             onAcknowledge={
@@ -1214,6 +834,6 @@ export default function LecturerLiveSessionPage() {
           />
         </div>
       </div>
-    </main>
+    </div>
   )
 }

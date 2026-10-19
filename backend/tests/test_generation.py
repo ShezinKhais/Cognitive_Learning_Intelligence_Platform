@@ -446,3 +446,24 @@ def test_rejects_embedded_document_instruction_as_grounding():
     )
 
     assert any("embedded instructions" in reason for reason in reasons)
+
+
+def test_a_large_request_is_asked_for_in_small_calls_over_different_pages() -> None:
+    from app.services.generation import DRAFTS_PER_CALL, batches
+
+    pages = [
+        RetrievedChunk(
+            chunk_id=uuid.uuid4(), chunk_index=i, chunk_text=f"p{i}", source_page=i, distance=0.1
+        )
+        for i in range(12)
+    ]
+    calls = batches(pages, 15)
+    assert len(calls) == 3
+    assert sum(count for _, count in calls) == 15
+    assert all(count <= DRAFTS_PER_CALL for _, count in calls)
+    # Every page is shown once, to one call.
+    assert sorted(c.chunk_index for share, _ in calls for c in share) == list(range(12))
+    # The default of five stays a single call, as before.
+    assert batches(pages, 5) == [(pages, 5)]
+    # Never more calls than pages.
+    assert len(batches(pages[:2], 15)) == 2

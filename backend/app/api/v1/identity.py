@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
-from fastapi import APIRouter, Depends, Request, UploadFile, status
+from fastapi import APIRouter, Depends, Request, Response, UploadFile, status
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
@@ -22,6 +22,7 @@ from app.api.deps import (
     require_consents,
     require_roles,
 )
+from app.auth.address_limiter import get_login_address_limiter
 from app.auth.login_security import PersistentLoginSecurityStore
 from app.auth.service import granted_consents, renew_token
 from app.auth.store import (
@@ -30,7 +31,7 @@ from app.auth.store import (
     get_user_repository,
 )
 from app.core.audit import audit_action
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.errors import (
     AuthenticationError,
     PermissionError_,
@@ -40,7 +41,8 @@ from app.core.security import (
     DUMMY_PASSWORD_HASH,
     TokenValidationError,
     create_access_token,
-    extract_bearer_token,
+    create_refresh_token,
+    decode_access_token,
     verify_password,
 )
 from app.models.user import User
@@ -67,6 +69,51 @@ from app.services.timetable_import import (
 log = logging.getLogger("clip.security")
 
 GENERIC_LOGIN_ERROR = "Incorrect email or password."
+
+# The refresh token's cookie. httpOnly, so no script on the page can read it,
+# and scoped to the auth routes, so it travels with nothing else.
+REFRESH_COOKIE = "clip_refresh"
+REFRESH_COOKIE_PATH = "/api/v1/auth"
+# Refresh and sign-out must carry this header. A page on another site cannot
+# add a custom header without a CORS preflight, which production refuses, so
+# the cookie alone never refreshes or signs anyone out.
+REFRESH_HEADER = "X-CLIP-Refresh"
+
+
+def _set_refresh_cookie(response: Response, token: str, max_age: int, settings: Settings) -> None:
+    if settings.is_production:
+        # A Teams tab is a cross-site iframe, where only a SameSite=None
+        # cookie is sent; Partitioned keys it to the embedding site. Written
+        # by hand because Starlette sets Partitioned only on Python 3.14 and
+        # the image runs 3.12. A JWT is base64url and dots, so it needs no
+        # quoting.
+        response.headers.append(
+            "set-cookie",
+            f"{REFRESH_COOKIE}={token}; Max-Age={max_age}; Path={REFRESH_COOKIE_PATH}; "
+            "Secure; HttpOnly; SameSite=None; Partitioned",
+        )
+    else:
+        # Development runs on plain http, where a Secure cookie is dropped.
+        response.set_cookie(
+            REFRESH_COOKIE,
+            token,
+            max_age=max_age,
+            path=REFRESH_COOKIE_PATH,
+            httponly=True,
+            samesite="lax",
+        )
+
+
+def _clear_refresh_cookie(response: Response, settings: Settings) -> None:
+    # An empty value that expires at once replaces the cookie. It has to carry
+    # the same attributes, Partitioned included, or it is a different cookie.
+    _set_refresh_cookie(response, "", 0, settings)
+
+
+def _require_refresh_header(request: Request) -> None:
+    if request.headers.get(REFRESH_HEADER) != "1":
+        raise AuthenticationError("Sign in again.")
+
 
 router = APIRouter()
 
@@ -128,14 +175,54 @@ async def _read_upload_with_limit(
 @auth.post(
     "/login",
     response_model=TokenResponse,
+    responses={
+        429: {"description": "Too many failed sign-ins from this address recently."},
+    },
 )
 async def login(
     payload: LoginRequest,
     request: Request,
+    response: Response,
     settings: AppSettings,
     db: DbSession,
 ) -> TokenResponse:
-    """Authenticate a user and return a bearer token.
+    """Authenticate a user, return a bearer token and set the refresh cookie.
+
+    An address with too many recent failures is refused with 429 before the
+    password is checked. Every failure, whatever the reason, counts against
+    the address.
+    """
+
+    ip_address = request.client.host if request.client is not None else "unknown"
+    limiter = get_login_address_limiter()
+    limiter.begin(ip_address)
+
+    try:
+        token = await _authenticate(payload, settings, db)
+    except AuthenticationError:
+        limiter.record_failure(ip_address)
+        raise
+    finally:
+        limiter.end(ip_address)
+
+    claims = decode_access_token(token.access_token, settings)
+    refresh_token, max_age = create_refresh_token(
+        user_id=claims.user_id,
+        role=claims.role,
+        email=claims.email,
+        settings=settings,
+        auth_time=claims.auth_time,
+    )
+    _set_refresh_cookie(response, refresh_token, max_age, settings)
+    return token
+
+
+async def _authenticate(
+    payload: LoginRequest,
+    settings: Settings,
+    db: AsyncSession,
+) -> TokenResponse:
+    """Check the credentials and return a bearer token.
 
     Development uses the fixed Cyber 1 development identities.
     Production resolves users through Nour's persisted User table.
@@ -168,8 +255,6 @@ async def login(
 
         raise AuthenticationError(GENERIC_LOGIN_ERROR)
 
-    ip_address = request.client.host if request.client is not None else "unknown"
-
     if settings.is_production:
         security = PersistentLoginSecurityStore(db)
 
@@ -184,7 +269,6 @@ async def login(
         if not password_valid:
             locked = await security.record_failed_login(
                 user.id,
-                ip_address,
             )
 
             log.warning(
@@ -236,7 +320,6 @@ async def login(
     if settings.is_production:
         await security.record_successful_login(
             user.id,
-            ip_address,
         )
     else:
         security.reset_failed_logins(user.id)
@@ -263,21 +346,23 @@ async def refresh(
     settings: AppSettings,
     db: DbSession,
 ) -> TokenResponse:
-    """Swap a still-valid access token for a fresh one.
+    """A fresh access token for the holder of the refresh cookie.
 
     The client calls this shortly before its token expires, so a class longer
-    than the token's lifetime is not interrupted by a sign-in. The account is
-    checked again, and the sign-in itself still ends max_sign_in_hours after
-    the password was typed. An expired token cannot be refreshed: the user
-    signs in again.
+    than the token's lifetime is not interrupted by a sign-in, and on load,
+    since it keeps the access token in memory only. The account is checked
+    again, and the sign-in itself still ends max_sign_in_hours after the
+    password was typed. An access token cannot be refreshed: one taken from
+    the page ends at its own expiry.
     """
 
+    _require_refresh_header(request)
+    cookie = request.cookies.get(REFRESH_COOKIE)
+    if not cookie:
+        raise AuthenticationError("Sign in again.")
+
     try:
-        renewed = await renew_token(
-            extract_bearer_token(request.headers.get("Authorization")),
-            settings,
-            db,
-        )
+        renewed = await renew_token(cookie, settings, db)
     except TokenValidationError as exc:
         log.warning(
             "security_event=TOKEN_REFRESH_REFUSED reason=%s",
@@ -297,6 +382,28 @@ async def refresh(
         expires_in=renewed.expires_in,
         role=renewed.user.role,
     )
+
+
+@auth.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def logout(
+    request: Request,
+    settings: AppSettings,
+) -> Response:
+    """Drop the refresh cookie, so the sign-in cannot be renewed.
+
+    An access token already issued still works until its expiry, as before:
+    tokens are not revoked.
+    """
+
+    _require_refresh_header(request)
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    _clear_refresh_cookie(response, settings)
+    log.info("security_event=SIGNED_OUT")
+    return response
 
 
 @auth.get(

@@ -38,6 +38,17 @@ class DatabaseMeetingDirectory:
             )
             return result.scalar_one_or_none()
 
+    async def meetings_for(self, session_ids: list[UUID]) -> dict[UUID, str]:
+        if not session_ids:
+            return {}
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(TeamsMeetingLink.session_id, TeamsMeetingLink.meeting_id).where(
+                    TeamsMeetingLink.session_id.in_(session_ids)
+                )
+            )
+            return dict(result.tuples().all())
+
     async def link_if_absent(self, meeting_id: str, session_id: UUID) -> UUID:
         """Keep the first session linked to a meeting and return its ID."""
         async with self._session_factory() as session:

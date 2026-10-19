@@ -5,15 +5,14 @@ import {
 } from 'react'
 
 import {
-  clearAccessToken,
   getAccessToken,
 } from '../../api'
 import { actionForClose } from './closeCodes'
-import { recoverSocketAuthentication } from './socketAuthentication'
 import type {
   MaterialProgress,
   ProgressConnectionStatus,
 } from './types'
+import { renewAfterRefusal, signOutToLogin } from '../realtime/tokenRefusal'
 
 interface ServerEvent {
   type: string
@@ -106,24 +105,30 @@ export function useMaterialProgress(
     let retryTimer: number | undefined
     let stopped = false
     let retryCount = 0
-    let authenticationRetried = false
     let lastSeq = 0
     let streamId: string | null = null
     let connectedOnce = false
+    // One refresh per refusal; any message after it proves the new token.
+    let tokenRenewed = false
 
     function connect() {
       if (stopped) return
 
       setStatus('connecting')
-      let sentToken: string | null = null
       const currentSocket = new WebSocket(progressSocketUrl())
+      currentSocket.addEventListener('message', () => {
+        tokenRenewed = false
+      })
       socket = currentSocket
 
       currentSocket.addEventListener('open', () => {
-        const accessToken = getAccessToken()
-        sentToken = accessToken
-        if (!accessToken) {
-          currentSocket.close(4001, 'authentication required')
+        const currentToken = getAccessToken()
+        if (stopped || !currentToken) {
+          currentSocket.close()
+          if (!stopped) {
+            stopped = true
+            void signOutToLogin()
+          }
           return
         }
         const data: {
@@ -131,7 +136,8 @@ export function useMaterialProgress(
           last_seq: number
           stream_id?: string
         } = {
-          token: accessToken,
+          // The latest, so a reconnect after a refresh sends the new token.
+          token: currentToken,
           // Zero matters when the socket connects after a very fast upload:
           // it asks the server to replay progress emitted before READY.
           last_seq: lastSeq,
@@ -161,7 +167,6 @@ export function useMaterialProgress(
         }
 
         if (message.type === 'ready') {
-          authenticationRetried = false
           const reconnected = connectedOnce
           connectedOnce = true
           retryCount = 0
@@ -191,31 +196,27 @@ export function useMaterialProgress(
         }
       })
 
-      currentSocket.addEventListener('close', async (event) => {
+      currentSocket.addEventListener('close', (event) => {
         if (stopped) return
 
         const action = actionForClose(event.code)
+        if (action === 'sign-in' && !tokenRenewed) {
+          // The token may have run out while the tab slept: refresh it once
+          // and reconnect before sending the lecturer to sign in.
+          tokenRenewed = true
+          renewAfterRefusal({
+            stopped: () => stopped,
+            reconnect: connect,
+            retryLater: () => {
+              tokenRenewed = false
+              retryTimer = window.setTimeout(connect, Math.min(1000 * 2 ** retryCount++, 10_000))
+            },
+          })
+          return
+        }
         if (action === 'sign-in') {
-          if (!authenticationRetried) {
-            authenticationRetried = true
-            const renewed = await recoverSocketAuthentication(sentToken)
-            if (stopped) return
-            if (renewed === 'renewed') {
-              connect()
-              return
-            }
-            if (renewed === 'unreachable') {
-              authenticationRetried = false
-              setStatus('disconnected')
-              const delay = Math.min(1000 * 2 ** retryCount, 10_000)
-              retryCount += 1
-              retryTimer = window.setTimeout(connect, delay)
-              return
-            }
-          }
           stopped = true
-          clearAccessToken()
-          window.location.assign('/login')
+          signOutToLogin()
           return
         }
         if (action === 'stop') {

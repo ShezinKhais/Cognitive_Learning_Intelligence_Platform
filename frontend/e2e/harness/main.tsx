@@ -7,6 +7,11 @@ import { useLiveSession as useLecturerSession } from '../../src/features/live/us
 import { useMaterialProgress } from '../../src/features/materials/useMaterialProgress'
 import { BreakoutRoomSelection } from '../../src/features/student/BreakoutRoomSelection'
 import '../../src/index.css'
+import { saveAccessToken, getAccessToken, clearAccessToken } from '../../src/api'
+
+// Test entry only: exercise the same memory-only credentials as production.
+Object.assign(window, { testAuth: { saveAccessToken, getAccessToken, clearAccessToken } })
+saveAccessToken('test-only')
 
 export function Harness() {
   const [enabled, setEnabled] = useState(true)
@@ -24,9 +29,9 @@ export function Harness() {
   </main>
 }
 function StudentSocket() {
-  const { state, selectRoom } = useStudentSession('refresh-session', 'active')
+  const { state, confirmRoom } = useStudentSession('refresh-session', 'active')
   return <main>Student socket: {state.connection}
-    <BreakoutRoomSelection onSelect={selectRoom} serverError={state.error}
+    <BreakoutRoomSelection onSelect={confirmRoom} serverError={state.error}
       enabled={state.connection === 'connected' && state.sessionStatus === 'active' && !state.paused} />
   </main>
 }

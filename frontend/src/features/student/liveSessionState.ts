@@ -18,6 +18,8 @@ export interface LiveSessionState {
   paused: boolean
   participantCount: number
   questionsDelivered: number
+  /** Questions this student's answer was stored for, this session. */
+  answeredIds: readonly string[]
   checkpoint: CheckpointState | null
   completedCheckpoint: CheckpointState | null
   attentionPrompt: AttentionPrompt | null
@@ -57,6 +59,7 @@ export function initialLiveSessionState(
     paused,
     participantCount: 0,
     questionsDelivered: 0,
+    answeredIds: [],
     checkpoint: null,
     completedCheckpoint: null,
     attentionPrompt: null,
@@ -322,6 +325,9 @@ export function liveSessionReducer(
             ...state,
             checkpoint: null,
             completedCheckpoint: updated,
+            answeredIds: state.answeredIds.includes(checkpoint.question.question_id)
+              ? state.answeredIds
+              : [...state.answeredIds, checkpoint.question.question_id],
           }
         : {
             ...state,

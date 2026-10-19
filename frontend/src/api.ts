@@ -2,9 +2,6 @@
 
 export const API_BASE = '/api/v1'
 
-const ACCESS_TOKEN_KEY = 'clip_access_token'
-const ACCESS_TOKEN_EXPIRES_KEY = 'clip_access_token_expires_at'
-
 // A token is swapped for a fresh one this long before it expires, so a class
 // that runs past the token's lifetime is not ended by a sign-in. The sign-in
 // itself still ends when the backend's cap says so.
@@ -62,36 +59,95 @@ export function apiUrl(path: string): string {
   return `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`
 }
 
+// The access token lives in this tab's memory and nowhere else, so a script
+// injected into the page finds nothing in storage to carry away. What keeps
+// a user signed in across reloads and tabs is the refresh cookie, which is
+// httpOnly: the browser sends it to /auth/refresh and no script can read it.
+let accessToken: string | null = null
+let accessTokenExpiresAt = 0
+// Moves on at every sign-out, so a refresh that was already on its way
+// cannot sign the user back in when it lands.
+let signOuts = 0
+
+// Where earlier builds kept the token. Cleared on load, so a token left there
+// by one is not lying around for anything to read.
+const LEGACY_TOKEN_KEYS = ['clip_access_token', 'clip_access_token_expires_at']
+try {
+  for (const key of LEGACY_TOKEN_KEYS) window.localStorage?.removeItem(key)
+} catch {
+  // Storage blocked: nothing was kept there either.
+}
+
 export function getAccessToken(): string | null {
-  return window.localStorage.getItem(ACCESS_TOKEN_KEY)
+  return accessToken
 }
 
 export function saveAccessToken(token: string, expiresIn?: number): void {
   forgetCurrentUser()
-  window.localStorage.setItem(ACCESS_TOKEN_KEY, token)
-  if (expiresIn === undefined) {
-    window.localStorage.removeItem(ACCESS_TOKEN_EXPIRES_KEY)
-  } else {
-    window.localStorage.setItem(ACCESS_TOKEN_EXPIRES_KEY, String(Date.now() + expiresIn * 1000))
-  }
+  accessToken = token
+  accessTokenExpiresAt = expiresIn === undefined ? 0 : Date.now() + expiresIn * 1000
   scheduleRefresh()
 }
 
-export function clearAccessToken(): void {
+function forgetAccessToken(): void {
   forgetCurrentUser()
-  window.localStorage.removeItem(ACCESS_TOKEN_KEY)
-  window.localStorage.removeItem(ACCESS_TOKEN_EXPIRES_KEY)
+  signOuts += 1
+  accessToken = null
+  accessTokenExpiresAt = 0
   scheduleRefresh()
 }
+
+// Other tabs hold their own token in memory. Signing out in one tells the
+// rest, so none carries on as the user who just left.
+// Only in a page: under Node, as in the tests, an open channel keeps the
+// process from exiting.
+const authChannel =
+  typeof BroadcastChannel === 'undefined' || typeof document === 'undefined'
+    ? undefined
+    : new BroadcastChannel('clip-auth')
+authChannel?.addEventListener('message', (event: MessageEvent) => {
+  if (event.data === 'signed-out') forgetAccessToken()
+})
+
+// Long enough for a slow server, short enough that a dead one does not
+// keep someone on a page they asked to leave.
+const LOGOUT_WAIT_MS = 5000
+
+/**
+ * Sign out: forget the token here and in every other tab, and ask the
+ * backend to drop the refresh cookie so a reload does not sign back in.
+ *
+ * Resolves true once the backend has cleared the cookie, false when it could
+ * not be reached in time. Await it before leaving the page: the request is
+ * sent with keepalive so navigating does not cancel it, but only its answer
+ * proves the cookie is gone.
+ */
+export function clearAccessToken(): Promise<boolean> {
+  forgetAccessToken()
+  authChannel?.postMessage('signed-out')
+  const cleared = fetch(apiUrl('/auth/logout'), {
+    method: 'POST',
+    headers: REFRESH_HEADERS,
+    keepalive: true,
+  }).then(
+    (response) => response.ok,
+    () => false,
+  )
+  const timedOut = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), LOGOUT_WAIT_MS))
+  return Promise.race([cleared, timedOut])
+}
+
+// Refresh and sign-out must carry this. Another site cannot add it without a
+// CORS preflight, which the backend refuses, so the cookie alone does nothing.
+const REFRESH_HEADERS = { 'X-CLIP-Refresh': '1' }
 
 let refreshTimer: ReturnType<typeof setTimeout> | undefined
 
 function scheduleRefresh(retry = false): void {
   if (refreshTimer !== undefined) clearTimeout(refreshTimer)
   refreshTimer = undefined
-  const expiresAt = Number(window.localStorage.getItem(ACCESS_TOKEN_EXPIRES_KEY))
-  if (!getAccessToken() || !expiresAt) return
-  const left = expiresAt - Date.now()
+  if (!accessToken || !accessTokenExpiresAt) return
+  const left = accessTokenExpiresAt - Date.now()
   if (retry && left <= 0) return
   const wait = retry
     ? Math.min(REFRESH_RETRY_MS, left)
@@ -99,59 +155,80 @@ function scheduleRefresh(retry = false): void {
   refreshTimer = setTimeout(() => void refreshAccessToken(), wait)
 }
 
-let refreshing: Promise<string | null> | null = null
+type Renewal = { token: string } | 'refused' | 'unreachable'
 
-/**
- * Swap the current token for a fresh one, and return it, or null when the
- * user has to sign in again. Every caller waiting at once shares one request,
- * so the live page's polls do not each refresh, and tabs take turns, so two
- * never send the same token.
- */
-export function refreshAccessToken(): Promise<string | null> {
+let refreshing: Promise<Renewal> | null = null
+
+function renew(): Promise<Renewal> {
   refreshing ??= renewToken().finally(() => {
     refreshing = null
   })
   return refreshing
 }
 
-async function renewToken(): Promise<string | null> {
-  const before = getAccessToken()
-  const exchange = async (): Promise<string | null> => {
-    const current = getAccessToken()
-    // Another tab refreshed while this one waited its turn.
-    if (!current || current !== before) return current
-    let response: Response
-    try {
-      response = await fetch(apiUrl('/auth/refresh'), {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${current}` },
-      })
-    } catch {
-      // Offline for a moment: the token is kept and the refresh tried again.
-      scheduleRefresh(true)
-      return null
-    }
-    if (response.status === 401) {
-      clearAccessToken()
-      return null
-    }
-    if (!response.ok) {
-      scheduleRefresh(true)
-      return null
-    }
-    const renewed = (await response.json()) as LoginResponse
-    saveAccessToken(renewed.access_token, renewed.expires_in)
-    return renewed.access_token
-  }
-  const locks = typeof navigator === 'undefined' ? undefined : navigator.locks
-  return locks ? locks.request('clip-token-refresh', exchange) : exchange()
+/**
+ * Get a fresh token with the refresh cookie, and return it, or null when the
+ * user has to sign in again or the backend could not be reached. Every caller
+ * waiting at once shares one request, so the live page's polls do not each
+ * refresh.
+ */
+export async function refreshAccessToken(): Promise<string | null> {
+  const renewal = await renew()
+  return typeof renewal === 'object' ? renewal.token : null
 }
 
-// Another tab's refresh moves this tab's timer too.
-window.addEventListener?.('storage', (event) => {
-  if (event.key === ACCESS_TOKEN_KEY || event.key === ACCESS_TOKEN_EXPIRES_KEY) scheduleRefresh()
-})
-scheduleRefresh()
+/**
+ * Get a fresh token, saying why when there is none: 'refused' means sign in
+ * again, 'unreachable' means try again later and keep the user signed in. A
+ * socket refused for its token needs the difference, so a dropped connection
+ * at that moment does not end someone's class.
+ */
+export async function renewSession(): Promise<'renewed' | 'refused' | 'unreachable'> {
+  const renewal = await renew()
+  return typeof renewal === 'object' ? 'renewed' : renewal
+}
+
+async function renewToken(): Promise<Renewal> {
+  const asked = signOuts
+  let response: Response
+  try {
+    response = await fetch(apiUrl('/auth/refresh'), {
+      method: 'POST',
+      headers: REFRESH_HEADERS,
+    })
+  } catch {
+    // Offline for a moment: the token is kept and the refresh tried again.
+    scheduleRefresh(true)
+    return 'unreachable'
+  }
+  if (response.status === 401) {
+    forgetAccessToken()
+    return 'refused'
+  }
+  if (!response.ok) {
+    scheduleRefresh(true)
+    return 'unreachable'
+  }
+  const renewed = (await response.json()) as LoginResponse
+  if (signOuts !== asked) return 'refused'
+  saveAccessToken(renewed.access_token, renewed.expires_in)
+  return { token: renewed.access_token }
+}
+
+/**
+ * The token for this tab, fetched with the refresh cookie when the tab has
+ * none yet, as after a reload or in a new tab. Null means nobody is signed
+ * in. Throws when the backend cannot be reached, so the page can say so
+ * rather than send someone who is signed in to the sign-in page.
+ */
+export async function restoreSession(): Promise<string | null> {
+  if (accessToken) return accessToken
+  const renewal = await renew()
+  if (renewal === 'unreachable') {
+    throw new ApiError(503, 'UNREACHABLE', 'Could not reach C.L.I.P. Check your connection and reload.')
+  }
+  return renewal === 'refused' ? null : renewal.token
+}
 
 /**
  * fetch with the caller's token. A 401 is answered by one refresh and one
@@ -163,7 +240,7 @@ export async function authenticatedFetch(
   path: string,
   options: RequestInit = {},
 ): Promise<Response> {
-  const token = getAccessToken()
+  const token = accessToken ?? (await restoreSession())
   if (!token) {
     throw new ApiError(401, 'UNAUTHENTICATED', 'Login is required.')
   }
@@ -174,14 +251,14 @@ export async function authenticatedFetch(
   }
   const response = await send(token)
   if (response.status !== 401) return response
-  const latest = getAccessToken()
-  const renewed = latest && latest !== token ? latest : await refreshAccessToken()
-  if (renewed) return send(renewed)
-  // A refused refresh clears the credential. If it remains, refresh was
-  // temporarily unavailable: do not pass the stale 401 to request(), which
-  // would sign out every live socket along with this HTTP request.
-  if (getAccessToken()) {
-    throw new ApiError(503, 'REFRESH_UNAVAILABLE', 'Sign-in renewal is temporarily unavailable. Try again.')
+  const latest = accessToken
+  if (latest && latest !== token) return send(latest)
+  const renewal = await renew()
+  if (typeof renewal === 'object') return send(renewal.token)
+  // Offline for a moment is not signed out: request() clears the session on
+  // a 401, so this must not pass the expired token's 401 on.
+  if (renewal === 'unreachable') {
+    throw new ApiError(503, 'UNREACHABLE', 'The server could not be reached. Check your connection and try again.')
   }
   return response
 }
@@ -213,11 +290,24 @@ export class ApiError extends Error {
   }
 }
 
+/** What to tell a person when the server gave no message of its own. */
+export function statusMessage(status: number): string {
+  if (status === 401) return 'Your sign-in has expired. Sign in again to carry on.'
+  if (status === 403) return 'Your account does not have access to this.'
+  if (status === 404) return 'This could not be found. It may have been removed, or the link is out of date.'
+  if (status === 429) return 'Too many requests at once. Wait a moment and try again.'
+  if (status === 502 || status === 503 || status === 504) {
+    return 'C.L.I.P is not responding right now. Try again in a minute.'
+  }
+  if (status >= 500) return 'Something went wrong on the C.L.I.P server. Try again in a minute.'
+  return `The request could not be completed (error ${status}).`
+}
+
 async function readErrorEnvelope(
   response: Response,
 ): Promise<ApiError> {
   let code = 'HTTP_ERROR'
-  let message = `HTTP ${response.status}`
+  let message = statusMessage(response.status)
 
   try {
     const body = await response.json()
@@ -253,8 +343,10 @@ async function request<T>(
   if (!response.ok) {
     const error = await readErrorEnvelope(response)
 
-    if (response.status === 401) {
-      clearAccessToken()
+    // A wrong password at sign-in is a 401 too, and must not sign out the
+    // user's other tabs.
+    if (response.status === 401 && authenticated) {
+      void clearAccessToken()
     }
 
     throw error

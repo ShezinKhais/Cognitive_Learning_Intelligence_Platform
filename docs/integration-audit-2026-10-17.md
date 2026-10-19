@@ -1,5 +1,8 @@
 # Merged-main integration audit — 2026-10-17
 
+Historical snapshot. For the current merged-main follow-up and port/deployment
+checks, use [the 2026-10-19 integration audit](integration-audit-2026-10-19.md).
+
 Baseline: `b9c21ba` (main after #140, #144, #145 and #150 merged).
 This is tested integration evidence, not a guarantee of zero bugs or a
 production/real-tenant sign-off. No other open PR was merged for this audit.

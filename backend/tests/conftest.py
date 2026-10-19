@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.deps import Principal, get_principal
+from app.auth.address_limiter import get_login_address_limiter
 from app.auth.store import (
     ADMIN_ID,
     LECTURER_ID,
@@ -54,6 +55,7 @@ def reset_dev_identity_state():
     settings = get_settings()
 
     get_login_security_store().reset()
+    get_login_address_limiter().reset()
     get_consent_repository(settings).clear()
     # What live classes last saw of each user's consent, which would
     # otherwise outlive the store it was read from.
@@ -62,6 +64,7 @@ def reset_dev_identity_state():
     yield
 
     get_login_security_store().reset()
+    get_login_address_limiter().reset()
     get_consent_repository(settings).clear()
     classroom.consents = ConsentRegistry()
 

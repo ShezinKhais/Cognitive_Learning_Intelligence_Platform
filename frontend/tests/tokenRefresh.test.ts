@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-// api.ts reads the token from localStorage and calls fetch; both are stubbed.
-const store = new Map<string, string>()
+// api.ts clears where earlier builds kept the token and calls fetch; both are
+// stubbed. The token itself is only ever in memory.
+const store = new Map<string, string>([
+  ['clip_access_token', 'left-by-an-old-build'],
+  ['clip_access_token_expires_at', '1'],
+])
 Object.assign(globalThis, {
   window: {
     localStorage: {
@@ -13,11 +17,10 @@ Object.assign(globalThis, {
   },
 })
 
-// Without Web Locks, so the sharing tested here is this tab's own.
-Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true })
-
-// The backend: a token is good until it is refreshed, and refreshing a token
-// the backend no longer accepts is a 401.
+// The backend. The refresh cookie is the browser's, so it is modelled as a
+// flag: while it holds, a refresh carrying the header returns a new token.
+// Access tokens are good until the next one is issued.
+let cookie = false
 let valid = new Set<string>()
 let refreshes = 0
 let issued = 0
@@ -27,17 +30,28 @@ let requests: string[] = []
 let failures: Array<'offline' | number> = []
 // Off when timers are mocked, where a real wait would never end.
 let slowRefresh = true
+// How long the backend takes to answer a sign-out, and whether it can be reached.
+let logoutDelayMs = 0
+let logoutReachable = true
+let logoutKeptAlive = false
 
-function bearer(init?: RequestInit): string {
-  return new Headers(init?.headers).get('Authorization')?.replace('Bearer ', '') ?? ''
+function header(init: RequestInit | undefined, name: string): string {
+  return new Headers(init?.headers).get(name) ?? ''
 }
 
 globalThis.fetch = (async (url: string, init?: RequestInit) => {
   const path = String(url)
-  const token = bearer(init)
+  const token = header(init, 'Authorization').replace('Bearer ', '')
   requests.push(`${path} ${token}`)
   if (path.endsWith('/auth/login')) {
     return new Response('{}', { status: 401 })
+  }
+  if (path.endsWith('/auth/logout')) {
+    logoutKeptAlive = init?.keepalive === true
+    if (logoutDelayMs) await new Promise((resolve) => setTimeout(resolve, logoutDelayMs))
+    if (!logoutReachable) throw new TypeError('Failed to fetch')
+    if (header(init, 'X-CLIP-Refresh') === '1') cookie = false
+    return new Response(null, { status: 204 })
   }
   if (path.endsWith('/auth/refresh')) {
     refreshes += 1
@@ -45,17 +59,18 @@ globalThis.fetch = (async (url: string, init?: RequestInit) => {
     const failure = failures.shift()
     if (failure === 'offline') throw new TypeError('Failed to fetch')
     if (failure !== undefined) return new Response('{}', { status: failure })
-    if (!valid.has(token)) return new Response('{}', { status: 401 })
-    valid.delete(token)
+    // The backend never reads a bearer here.
+    if (token) return new Response('{}', { status: 400 })
+    if (!cookie || header(init, 'X-CLIP-Refresh') !== '1') return new Response('{}', { status: 401 })
     issued += 1
     const fresh = `fresh-${issued}`
-    valid.add(fresh)
+    valid = new Set([fresh])
     return new Response(
       JSON.stringify({ access_token: fresh, token_type: 'bearer', expires_in: 3600, role: 'lecturer' }),
       { status: 200 },
     )
   }
-  if (!token.startsWith('fresh-')) return new Response('{}', { status: 401 })
+  if (!valid.has(token)) return new Response('{}', { status: 401 })
   return new Response(JSON.stringify({ ok: token }), { status: 200 })
 }) as typeof fetch
 
@@ -65,57 +80,27 @@ const {
   clearAccessToken,
   getAccessToken,
   login,
+  renewSession,
+  restoreSession,
   saveAccessToken,
 } = await import('../src/api.ts')
 
-function reset(token: string, refreshable: boolean): void {
-  valid = new Set(refreshable ? [token] : [])
+const settle = async () => {
+  for (let i = 0; i < 10; i += 1) await new Promise((resolve) => setImmediate(resolve))
+}
+
+// Signed in with this token; the cookie is still good or not.
+function reset(token: string, signedIn: boolean): void {
+  cookie = signedIn
+  valid = new Set()
   refreshes = 0
   requests = []
   saveAccessToken(token)
 }
 
-const { downloadSessionReportPdf } = await import('../src/features/reports/sessionReportsApi.ts')
-
-test('PDF download preserves a token refreshed during the request', async () => {
-  reset('old-token', true)
-
-  const originalFetch = globalThis.fetch
-  const pdfTokens: string[] = []
-
-  globalThis.fetch = (async (url: string, init?: RequestInit) => {
-    if (!String(url).endsWith('/reports/report-1/pdf')) {
-      return originalFetch(url, init)
-    }
-
-    const token = bearer(init)
-    pdfTokens.push(token)
-
-    if (pdfTokens.length === 1) {
-      saveAccessToken('fresh-overlap')
-      return new Response('{}', { status: 401 })
-    }
-
-    return new Response('%PDF-1.4', {
-      status: 200,
-      headers: {
-        'Content-Disposition': 'attachment; filename="lecture.pdf"',
-      },
-    })
-  }) as typeof fetch
-
-  try {
-    const result = await downloadSessionReportPdf('report-1')
-
-    assert.deepEqual(pdfTokens, ['old-token', 'fresh-overlap'])
-    assert.equal(await result.blob.text(), '%PDF-1.4')
-    assert.equal(result.filename, 'lecture.pdf')
-    assert.equal(getAccessToken(), 'fresh-overlap')
-    assert.equal(refreshes, 0)
-  } finally {
-    globalThis.fetch = originalFetch
-    clearAccessToken()
-  }
+test('nothing is left where earlier builds kept the token', () => {
+  assert.equal(store.has('clip_access_token'), false)
+  assert.equal(store.has('clip_access_token_expires_at'), false)
 })
 
 test('requests failing together share one refresh and each retry once', async () => {
@@ -143,37 +128,149 @@ test('a refresh the backend refuses signs the user out', async () => {
   )
   assert.equal(refreshes, 1)
   assert.equal(getAccessToken(), null)
-  // One try, one refresh, no retry with nothing.
-  assert.equal(requests.length, 2)
+  // One try, one refresh, no retry with nothing, then the cookie is dropped.
+  assert.deepEqual(
+    requests.map((line) => line.split(' ')[0]),
+    ['/api/v1/auth/me', '/api/v1/auth/refresh', '/api/v1/auth/logout'],
+  )
 })
 
-for (const failure of ['offline', 503] as const) {
-  test(`an HTTP request preserves credentials when refresh is ${failure}`, async () => {
-    reset('expired', true)
-    failures = [failure]
+test('an expired token while the backend is unreachable is an error, not a sign-out', async () => {
+  reset('expired', true)
+  failures.push('offline')
 
-    await assert.rejects(apiAuthenticatedGet('/sessions/a/alerts'),
-      (error: unknown) => error instanceof ApiError && error.status === 503 && error.code === 'REFRESH_UNAVAILABLE')
-    assert.equal(getAccessToken(), 'expired')
-    assert.equal(refreshes, 1)
+  await assert.rejects(
+    apiAuthenticatedGet('/sessions/a/engagement'),
+    (error: unknown) => error instanceof ApiError && error.status === 503,
+  )
+  // Still signed in: the token is kept and no logout is sent.
+  assert.equal(getAccessToken(), 'expired')
+  assert.ok(!requests.some((line) => line.startsWith('/api/v1/auth/logout')))
+  // Once the backend answers again the same request goes through.
+  const answer = await apiAuthenticatedGet<{ ok: string }>('/sessions/a/engagement')
+  assert.equal(answer.ok, getAccessToken())
+  await clearAccessToken()
+})
 
-    const recovered = await apiAuthenticatedGet<{ ok: string }>('/sessions/a/alerts')
-    assert.equal(recovered.ok, getAccessToken())
-    assert.equal(refreshes, 2)
-    clearAccessToken()
-  })
-}
-
-test('login is never refreshed or retried', async () => {
+test('a reload signs back in with the cookie, and the token stays in memory', async () => {
   reset('anything', true)
   clearAccessToken()
+  await settle()
+  cookie = true
+  requests = []
+
+  const token = await restoreSession()
+
+  assert.ok(token?.startsWith('fresh-'))
+  assert.equal(getAccessToken(), token)
+  assert.equal(store.size, 0)
+  // A second caller uses the token already held.
+  assert.equal(await restoreSession(), token)
+  assert.equal(refreshes, 1)
+  clearAccessToken()
+})
+
+test('with no cookie a reload is signed out, not an error', async () => {
+  reset('anything', false)
+  clearAccessToken()
+  await settle()
+
+  assert.equal(await restoreSession(), null)
+})
+
+test('an unreachable backend at reload is an error, not a sign-out', async () => {
+  reset('anything', true)
+  clearAccessToken()
+  await settle()
+  cookie = true
+  failures = ['offline']
+
+  await assert.rejects(
+    restoreSession(),
+    (error: unknown) => error instanceof ApiError && error.status === 503,
+  )
+  assert.equal(cookie, true)
+})
+
+test('signing out drops the cookie, so a reload does not sign back in', async () => {
+  reset('anything', true)
+
+  clearAccessToken()
+  await settle()
+
+  assert.equal(getAccessToken(), null)
+  assert.equal(cookie, false)
+  assert.equal(await restoreSession(), null)
+})
+
+test('a refresh still on its way when the user signs out does not sign them back in', async () => {
+  reset('kept', true)
+  clearAccessToken()
+  cookie = true
+  // A reload's refresh, then sign-out before it is answered. The backend
+  // answers the refresh first, while the cookie still holds.
+  const restoring = restoreSession()
+  clearAccessToken()
+  cookie = true
+  assert.equal(await restoring, null)
+  assert.equal(getAccessToken(), null)
+})
+
+test('a socket can tell a refused refresh from an unreachable backend', async () => {
+  reset('kept', true)
+  failures = ['offline']
+  assert.equal(await renewSession(), 'unreachable')
+  // Still signed in, so the class carries on once the network is back.
+  assert.equal(getAccessToken(), 'kept')
+  assert.equal(await renewSession(), 'renewed')
+
+  cookie = false
+  assert.equal(await renewSession(), 'refused')
+  assert.equal(getAccessToken(), null)
+})
+
+test('sign-out resolves only once a slow backend has cleared the cookie', async () => {
+  reset('kept', true)
+  logoutDelayMs = 60
+  let settled = false
+  const signingOut = clearAccessToken().then((cleared) => {
+    settled = true
+    return cleared
+  })
+  // The token is gone at once; the cookie only when the backend answers.
+  assert.equal(getAccessToken(), null)
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.equal(settled, false)
+  assert.equal(cookie, true)
+  assert.equal(await signingOut, true)
+  assert.equal(cookie, false)
+  // Sent so a page leaving straight after cannot cancel it.
+  assert.equal(logoutKeptAlive, true)
+  logoutDelayMs = 0
+})
+
+test('sign-out says so when the backend cannot be reached', async () => {
+  reset('kept', true)
+  logoutReachable = false
+  assert.equal(await clearAccessToken(), false)
+  assert.equal(getAccessToken(), null)
+  logoutReachable = true
+})
+
+test('a wrong password does not sign anyone out', async () => {
+  reset('anything', true)
+  requests = []
 
   await assert.rejects(login('a@b.c', 'wrong'))
+
   assert.deepEqual(requests, ['/api/v1/auth/login '])
+  assert.equal(getAccessToken(), 'anything')
+  assert.equal(cookie, true)
+  clearAccessToken()
 })
 
 test('the token is refreshed before it expires, without waiting for a 401', async () => {
-  valid = new Set(['about-to-expire'])
+  cookie = true
   refreshes = 0
   // Inside the five minutes before expiry, so the refresh is due at once.
   saveAccessToken('about-to-expire', 60)
@@ -188,12 +285,9 @@ test('the token is refreshed before it expires, without waiting for a 401', asyn
 test('a refresh that fails while the token is valid is tried again until one works', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1_000_000 })
   slowRefresh = false
-  valid = new Set(['due'])
+  cookie = true
   refreshes = 0
   failures = ['offline', 503]
-  const settle = async () => {
-    for (let i = 0; i < 10; i += 1) await new Promise((resolve) => setImmediate(resolve))
-  }
 
   // Two minutes left, so the refresh is due at once.
   saveAccessToken('due', 120)
@@ -219,12 +313,9 @@ test('a refresh that fails while the token is valid is tried again until one wor
 test('a failed refresh is not retried once the token has expired', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 2_000_000 })
   slowRefresh = false
-  valid = new Set(['nearly-gone'])
+  cookie = true
   refreshes = 0
   failures = ['offline', 'offline', 'offline']
-  const settle = async () => {
-    for (let i = 0; i < 10; i += 1) await new Promise((resolve) => setImmediate(resolve))
-  }
 
   // Forty seconds left: one try now, one retry at 30s, none after expiry.
   saveAccessToken('nearly-gone', 40)
@@ -241,4 +332,47 @@ test('a failed refresh is not retried once the token has expired', async (t) => 
   failures = []
   clearAccessToken()
   slowRefresh = true
+})
+
+const { downloadSessionReportPdf } = await import('../src/features/reports/sessionReportsApi.ts')
+
+test('PDF download preserves a token refreshed during the request', async () => {
+  reset('old-token', true)
+
+  const originalFetch = globalThis.fetch
+  const pdfTokens: string[] = []
+
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    if (!String(url).endsWith('/reports/report-1/pdf')) {
+      return originalFetch(url, init)
+    }
+
+    const token = header(init, 'Authorization').replace('Bearer ', '')
+    pdfTokens.push(token)
+
+    if (pdfTokens.length === 1) {
+      saveAccessToken('fresh-overlap')
+      return new Response('{}', { status: 401 })
+    }
+
+    return new Response('%PDF-1.4', {
+      status: 200,
+      headers: {
+        'Content-Disposition': 'attachment; filename="lecture.pdf"',
+      },
+    })
+  }) as typeof fetch
+
+  try {
+    const result = await downloadSessionReportPdf('report-1')
+
+    assert.deepEqual(pdfTokens, ['old-token', 'fresh-overlap'])
+    assert.equal(await result.blob.text(), '%PDF-1.4')
+    assert.equal(result.filename, 'lecture.pdf')
+    assert.equal(getAccessToken(), 'fresh-overlap')
+    assert.equal(refreshes, 0)
+  } finally {
+    globalThis.fetch = originalFetch
+    void clearAccessToken()
+  }
 })

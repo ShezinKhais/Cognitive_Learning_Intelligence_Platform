@@ -3,7 +3,8 @@ import { Download, FileText, RefreshCw } from 'lucide-react'
 import { Link, useParams } from 'react-router'
 
 import { ApiError, clearAccessToken } from '../api'
-import SignOutButton from '../components/SignOutButton'
+import { buttonStyles } from '../components/ui/button'
+import { ProblemState } from '../components/ui/ProblemState'
 import {
   reportFailureMessage,
   reportIsReady,
@@ -17,6 +18,7 @@ import {
   getSessionReport,
   requestSessionReport,
 } from '../features/reports/sessionReportsApi'
+import { getSession } from '../features/sessions/sessionsApi'
 
 function dateLabel(value: string | null): string {
   if (!value) return 'Unavailable'
@@ -56,6 +58,20 @@ export default function LecturerSessionReportPage() {
     useState(false)
 
   const pollFailureCount = useRef(0)
+
+  // A report can only be asked for a session that exists; a stale link
+  // otherwise shows a Generate button that can only fail.
+  const [missingSession, setMissingSession] = useState<string | null>(null)
+  useEffect(() => {
+    if (!sessionId) return
+    let cancelled = false
+    getSession(sessionId).catch((caught: unknown) => {
+      if (!cancelled && caught instanceof ApiError && caught.status === 404) setMissingSession(sessionId)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId])
 
   const activeJob =
     job && job.session_id === sessionId ? job : null
@@ -260,8 +276,26 @@ export default function LecturerSessionReportPage() {
   const canGenerate =
     !activeJob || activeJob.status === 'failed'
 
+  if (missingSession && missingSession === sessionId) {
+    return (
+      <div className="mx-auto max-w-6xl px-5 py-10 sm:px-8">
+        <ProblemState
+          art="report-warning"
+          title="This session was not found"
+          action={
+            <Link to="/lecturer/sessions" className={buttonStyles({ intent: 'secondary' })}>
+              Back to sessions
+            </Link>
+          }
+        >
+          There is no report to make: the session may have been deleted, or the link is out of date.
+        </ProblemState>
+      </div>
+    )
+  }
+
   return (
-    <main className="min-h-screen bg-background">
+    <div className="bg-background">
       <header className="border-b border-border bg-card">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
           <div>
@@ -288,7 +322,6 @@ export default function LecturerSessionReportPage() {
             >
               Sessions
             </Link>
-            <SignOutButton />
           </div>
         </div>
       </header>
@@ -680,6 +713,6 @@ export default function LecturerSessionReportPage() {
           </>
         )}
       </div>
-    </main>
+    </div>
   )
 }

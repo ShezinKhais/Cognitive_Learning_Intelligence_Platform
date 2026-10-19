@@ -26,6 +26,10 @@ function citation(value: unknown): ChatCitation | null {
   const sourcePage = nullableNumber(item.source_page)
   const sourceSlide = nullableNumber(item.source_slide)
   const excerpt = item.excerpt === null ? null : nonEmpty(item.excerpt)
+  const number =
+    typeof item.number === 'number' && Number.isInteger(item.number) && item.number > 0
+      ? item.number
+      : undefined
 
   if (
     !id ||
@@ -37,6 +41,7 @@ function citation(value: unknown): ChatCitation | null {
 
   return {
     id,
+    ...(number === undefined ? {} : { number }),
     material_title: materialTitle,
     source_page: sourcePage,
     source_slide: sourceSlide,

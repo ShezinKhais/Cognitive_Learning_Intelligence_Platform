@@ -52,13 +52,13 @@ class StudentResponse(Base):
     )
     session_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("session.session_id"),
+        ForeignKey("session.session_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     student_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("student.student_id"),
+        ForeignKey("student.student_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

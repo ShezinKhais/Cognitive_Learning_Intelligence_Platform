@@ -20,7 +20,7 @@ class BreakoutRoom(Base):
 
     session_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("session.session_id"),
+        ForeignKey("session.session_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

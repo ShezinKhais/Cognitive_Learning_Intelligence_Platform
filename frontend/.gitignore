@@ -26,3 +26,4 @@ public/attention/
 *.njsproj
 *.sln
 *.sw?
+deployment-test-results/

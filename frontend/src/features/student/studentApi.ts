@@ -1,8 +1,8 @@
 import {
   ApiError,
   apiAuthenticatedGet,
-  getAccessToken,
   getCurrentUser,
+  restoreSession,
 } from '../../api'
 
 import type {
@@ -28,11 +28,11 @@ export const LIVE_SESSIONS_ENABLED =
  */
 export const phaseOneStudentApi: StudentApi = {
   async getCurrentStudent() {
-    if (!getAccessToken()) {
-      return null
-    }
-
     try {
+      if (!(await restoreSession())) {
+        return null
+      }
+
       return await getCurrentUser()
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {

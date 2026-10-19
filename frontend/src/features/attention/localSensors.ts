@@ -1,6 +1,36 @@
 import type { FaceObservation } from './signals'
 
 const assets = new URL(`${import.meta.env.BASE_URL}attention/`, location.origin).href
+// The camera's worker while it runs, so the page can ask it to calibrate.
+let cameraWorker: Worker | undefined
+export type CalibrationResult = 'done' | 'failed' | 'timeout'
+let calibrated: ((result: CalibrationResult) => void) | undefined
+let calibrationTimer: ReturnType<typeof setTimeout> | undefined
+// Calibration ends on frame timestamps, and no frames come while the camera is
+// muted or stalled, so it gives up after this long rather than wait forever.
+export const CALIBRATION_TIMEOUT_MS = 8000
+
+/**
+ * Ask the running camera to learn this student's own centre from the next
+ * three seconds of frames. `done` hears whether a usable calibration was
+ * found, or that frames stopped coming. False when no camera is running.
+ */
+export function calibrateCamera(done: (result: CalibrationResult) => void): boolean {
+  if (!cameraWorker) return false
+  const worker = cameraWorker
+  clearTimeout(calibrationTimer)
+  calibrated = done
+  calibrationTimer = setTimeout(() => {
+    if (calibrated !== done) return
+    calibrated = undefined
+    // The worker stops collecting too, so it cannot calibrate later unseen.
+    worker.postMessage({ type: 'cancel-calibration' })
+    done('timeout')
+  }, CALIBRATION_TIMEOUT_MS)
+  worker.postMessage({ type: 'calibrate' })
+  return true
+}
+
 export function stopTracks(stream: MediaStream): void {
   stream.getTracks().forEach(track => track.stop())
 }
@@ -28,6 +58,7 @@ export async function startCamera(signal: AbortSignal, report: (value: FaceObser
   const stop = () => {
     if (stream) stopTracks(stream)
     worker?.terminate()
+    if (cameraWorker === worker) { cameraWorker = undefined; calibrated = undefined; clearTimeout(calibrationTimer) }
     clearInterval(timer)
     clearTimeout(deadline)
     video.pause()
@@ -60,10 +91,16 @@ export async function startCamera(signal: AbortSignal, report: (value: FaceObser
         if (event.data.type === 'ready') finish()
         else if (event.data.type === 'error') { finish(new Error('Camera processing unavailable')); stop(); failed() }
         else if (event.data.type === 'observation') { busy = false; report(event.data.value) }
+        else if (event.data.type === 'calibrated') {
+          clearTimeout(calibrationTimer)
+          calibrated?.(event.data.ok ? 'done' : 'failed')
+          calibrated = undefined
+        }
       }
       worker!.postMessage({ type: 'init', base: assets })
     })
     signal.throwIfAborted()
+    cameraWorker = worker
     timer = setInterval(async () => {
       if (busy || signal.aborted || video.readyState < 2 || stream?.getVideoTracks()[0]?.muted) return
       busy = true

@@ -7,7 +7,6 @@ import {
 } from 'react'
 
 import {
-  clearAccessToken,
   getAccessToken,
 } from '../../api'
 import {
@@ -31,9 +30,9 @@ import {
   actionForClose,
   isAccessRevocation,
 } from '../materials/closeCodes'
-import { recoverSocketAuthentication } from '../materials/socketAuthentication'
 import type { SessionStatus } from './types'
 import type { AttentionSummary } from '../attention/signals'
+import { renewAfterRefusal, signOutToLogin } from '../realtime/tokenRefusal'
 import { roomSelection } from './breakoutRoom'
 
 interface AnswerSubmission {
@@ -110,8 +109,9 @@ export function useLiveSession(
     let stopped = false
     let connectedOnce = false
     let retryCount = 0
-    let authenticationRetried = false
     let cursor = readCursor(sessionId)
+    // One refresh per refusal; any message after it proves the new token.
+    let tokenRenewed = false
 
     function scheduleReconnect(): void {
       if (stopped || reconnectTimer !== undefined) return
@@ -148,21 +148,26 @@ export function useLiveSession(
       })
       readyRef.current = false
 
-      let sentToken: string | null = null
       const currentSocket = new WebSocket(liveSocketUrl())
+      currentSocket.addEventListener('message', () => {
+        tokenRenewed = false
+      })
       socket = currentSocket
       socketRef.current = currentSocket
 
       currentSocket.addEventListener('open', () => {
-        // A long-running page may have refreshed since its previous socket.
-        const authToken = getAccessToken()
-        sentToken = authToken
-        if (!authToken) {
-          currentSocket.close(4001, 'authentication required')
+        const currentToken = getAccessToken()
+        if (stopped || !currentToken) {
+          currentSocket.close()
+          if (!stopped) {
+            stopped = true
+            void signOutToLogin()
+          }
           return
         }
         const data = buildAuthPayload(
-          authToken,
+          // The latest, so a reconnect after a refresh sends the new token.
+          currentToken,
           sessionId,
           cursor,
         )
@@ -195,7 +200,6 @@ export function useLiveSession(
             return
           }
 
-          authenticationRetried = false
           connectedOnce = true
           readyRef.current = true
           retryCount = 0
@@ -357,7 +361,7 @@ export function useLiveSession(
         }
       })
 
-      currentSocket.addEventListener('close', async (closeEvent) => {
+      currentSocket.addEventListener('close', (closeEvent) => {
         if (socket === currentSocket) {
           socket = null
         }
@@ -371,24 +375,24 @@ export function useLiveSession(
 
         const closeAction = actionForClose(closeEvent.code)
 
-        if (closeAction === 'sign-in') {
-          if (!authenticationRetried) {
-            authenticationRetried = true
-            const renewed = await recoverSocketAuthentication(sentToken)
-            if (stopped) return
-            if (renewed === 'renewed') {
-              connect()
-              return
-            }
-            if (renewed === 'unreachable') {
-              authenticationRetried = false
+        if (closeAction === 'sign-in' && !tokenRenewed) {
+          // The token may have run out while the tab slept: refresh it once
+          // and reconnect before sending the student to sign in.
+          tokenRenewed = true
+          renewAfterRefusal({
+            stopped: () => stopped,
+            reconnect: connect,
+            retryLater: () => {
+              tokenRenewed = false
               scheduleReconnect()
-              return
-            }
-          }
+            },
+          })
+          return
+        }
+
+        if (closeAction === 'sign-in') {
           stopped = true
-          clearAccessToken()
-          window.location.assign('/login')
+          signOutToLogin()
           return
         }
 
@@ -695,14 +699,21 @@ export function useLiveSession(
     [send, state.attentionPrompt],
   )
 
-  return {
-    state,
-    selectRoom: (label: string): boolean => {
+  // The student's own answer to "which room are you in"; the lecturer sees
+  // the room's activity, never what is said in it.
+  const confirmRoom = useCallback(
+    (label: string): boolean => {
       const selection = roomSelection(label)
-      if (!selection || state.connection !== 'connected' || state.sessionStatus !== 'active' || state.paused) return false
+      if (!selection || state.sessionStatus !== 'active' || state.paused) return false
       dispatch({ type: 'clear-error' })
       return send('room.confirm', selection)
     },
+    [send, state.sessionStatus, state.paused],
+  )
+
+  return {
+    state,
+    confirmRoom,
     attentionConsentRejected: state.attentionConsentRejected,
     sendAttention: (value: AttentionSummary) => {
       const socket = socketRef.current

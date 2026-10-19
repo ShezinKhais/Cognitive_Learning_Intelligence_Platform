@@ -1,240 +1,236 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
+import { ChevronDown, FileText } from 'lucide-react'
 import { Link, useParams } from 'react-router'
-import SignOutButton from '../components/SignOutButton'
-import {
-  comprehensionText,
-  needsReview,
-} from '../features/review/reviewDisplay'
-import type {
-  ReviewAnswer,
-  ReviewPage,
-  ReviewSession,
-  ReviewSources,
-  StudentReview,
-} from '../features/review/reviewTypes'
+
+import { buttonStyles } from '../components/ui/button'
+import { cn } from '../components/ui/cn'
+import { EmptyState, MetaLine, PageBody, PageHeader, Panel, SkeletonRows, Tag } from '../components/ui/primitives'
+import { ProblemState } from '../components/ui/ProblemState'
+import { problemArt } from '../components/ui/problem'
+import SegmentedTabs from '../components/ui/SegmentedTabs'
+import { formatRelative, sinceVerb } from '../features/format/relativeTime'
+import { comprehensionText, comprehensionTone, needsReview, reviewError } from '../features/review/reviewDisplay'
+import type { ReviewAnswer, ReviewPage, ReviewSession, ReviewSources, StudentReview } from '../features/review/reviewTypes'
 import { useReviewResource } from '../features/review/useReviewResource'
 
-const button =
-  'inline-flex rounded-lg border border-border px-4 py-2 text-sm font-medium disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2'
-const card = 'rounded-xl border border-border bg-card p-5'
+const PAGE_SIZE = 20
 
+/** Every finished session a student can look back on. Works when live
+ * sessions are switched off, since it does not need the session list. */
 export function StudentReviewHistoryPage() {
   const [offset, setOffset] = useState(0)
-  const { data, error, retry } = useReviewResource<ReviewPage<ReviewSession>>(
-    `/student-reviews?limit=20&offset=${offset}`,
+  const { data, error, status, retry } = useReviewResource<ReviewPage<ReviewSession>>(
+    `/student-reviews?limit=${PAGE_SIZE}&offset=${offset}`,
   )
+
   return (
-    <main className="mx-auto min-h-screen max-w-4xl space-y-6 px-6 py-10">
-      <div className="flex items-center justify-between gap-4">
-        <Link className="text-info underline" to="/student">
-          Student workspace
-        </Link>
-        <SignOutButton />
-      </div>
-      <header>
-        <p className="text-sm text-info">Your learning history</p>
-        <h1 className="mt-2 text-3xl font-bold">Review past sessions</h1>
-        <p className="mt-2 text-muted-foreground">
-          Revisit your own answers and the source material after a session ends.
-        </p>
-      </header>
-      {error ? (
-        <LoadError message={error} retry={retry} />
-      ) : !data ? (
-        <p role="status">Loading session history…</p>
-      ) : (
-        <>
-          {data.items.length === 0 ? (
-            <p className={card}>
-              No completed sessions are available for review yet.
-            </p>
-          ) : (
-            <ul className="space-y-4">
+    <>
+      <PageHeader
+        title="Past sessions"
+        description="Go back over your own answers, with the slides each question came from."
+      />
+      <PageBody>
+        {error ? (
+          // The list has no one session to be missing, so a 404 here means
+          // the route itself is not on this server.
+          <LoadError message={status === 404 ? reviewError(501) : error} status={status === 404 ? 501 : status} retry={retry} />
+        ) : !data ? (
+          <SkeletonRows label="Loading your past sessions" />
+        ) : data.items.length === 0 ? (
+          <EmptyState art="lecture" title="Nothing to look back on yet">
+            A session appears here once it has ended.
+          </EmptyState>
+        ) : (
+          <>
+            <ul className="divide-y divide-border rounded-lg border border-border bg-card">
               {data.items.map((session) => (
-                <li key={session.id} className={card}>
-                  <p className="text-sm text-muted-foreground">
-                    {session.course_code}
-                  </p>
-                  <h2 className="mt-1 text-xl font-semibold">
-                    <Link
-                      className="text-info underline"
-                      to={`/student/reviews/${session.id}`}
-                    >
-                      {session.title}
-                    </Link>
-                  </h2>
-                  <p className="mt-2 text-sm">
-                    {session.ended_at
-                      ? `Ended ${new Date(session.ended_at).toLocaleString()}`
-                      : 'Session ended'}
-                  </p>
+                <li key={session.id}>
+                  <Link
+                    to={`/student/reviews/${session.id}`}
+                    className="group flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-muted/50"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-semibold group-hover:text-primary">{session.title}</span>
+                      <MetaLine
+                        className="mt-0.5"
+                        items={[session.course_code, session.ended_at ? sinceVerb('Ended', session.ended_at) : 'Ended']}
+                      />
+                    </span>
+                    <span className="shrink-0 text-sm font-semibold text-primary">Review</span>
+                  </Link>
                 </li>
               ))}
             </ul>
-          )}
-          <Pagination
-            offset={offset}
-            limit={20}
-            total={data.total}
-            change={setOffset}
-          />
-        </>
-      )}
-    </main>
+            <Pager offset={offset} total={data.total} onChange={setOffset} noun="sessions" />
+          </>
+        )}
+      </PageBody>
+    </>
   )
 }
 
 export default function StudentReviewPage() {
   const { sessionId } = useParams<{ sessionId: string }>()
-  return sessionId ? (
-    <Review key={sessionId} sessionId={sessionId} />
-  ) : (
-    <p role="alert">Session review unavailable.</p>
-  )
+  if (!sessionId) {
+    return (
+      <PageBody>
+        <EmptyState title="This review could not be found" />
+      </PageBody>
+    )
+  }
+  return <Review key={sessionId} sessionId={sessionId} />
 }
+
+type AnswerFilter = 'all' | 'revisit'
 
 function Review({ sessionId }: { sessionId: string }) {
   const [offset, setOffset] = useState(0)
-  const [onlyReview, setOnlyReview] = useState(false)
-  const { data, error, retry } = useReviewResource<StudentReview>(
-    `/student-reviews/${encodeURIComponent(sessionId)}?limit=20&offset=${offset}`,
+  const [filter, setFilter] = useState<AnswerFilter>('all')
+  const { data, error, status, retry } = useReviewResource<StudentReview>(
+    `/student-reviews/${encodeURIComponent(sessionId)}?limit=${PAGE_SIZE}&offset=${offset}`,
   )
+  const back = { to: '/student/reviews', label: 'Past sessions' }
+
+  if (error) {
+    return (
+      <>
+        <PageHeader title="Session review" back={back} />
+        <PageBody>
+          <LoadError message={error} status={status} retry={retry} />
+        </PageBody>
+      </>
+    )
+  }
+  if (!data) {
+    return (
+      <>
+        <PageHeader title="Session review" back={back} />
+        <PageBody>
+          <SkeletonRows label="Loading your answers" />
+        </PageBody>
+      </>
+    )
+  }
+
+  const toRevisit = data.answers.filter(needsReview)
+  const shown = filter === 'revisit' ? toRevisit : data.answers
+
   return (
-    <main className="mx-auto min-h-screen max-w-4xl space-y-6 px-6 py-10">
-      <div className="flex items-center justify-between gap-4">
-        <Link className="text-info underline" to="/student/reviews">
-          ← All session reviews
-        </Link>
-        <SignOutButton />
-      </div>
-      <h1 className="text-3xl font-bold">
-        {data ? data.session.title : 'Session review'}
-      </h1>
-      {error ? (
-        <LoadError message={error} retry={retry} />
-      ) : !data ? (
-        <p role="status">Loading your feedback…</p>
-      ) : (
-        <>
-          <p className="text-muted-foreground">
-            {data.session.course_code} · Only your answers are shown. No class
-            rankings or combined learning score.
-          </p>
-          <section className={card} aria-labelledby="comprehension-heading">
-            <h2 id="comprehension-heading" className="text-xl font-semibold">
-              Comprehension — your answers
-            </h2>
-            <p className="mt-2">
-              {data.questions_attempted} answered · {data.questions_missed}{' '}
-              recorded unanswered
-            </p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Unanswered questions are not marked wrong. Classifications are
-              estimates from stored answer evaluations, not a measure of
-              attention.
-            </p>
-          </section>
-          <section className={card} aria-labelledby="engagement-heading">
-            <h2 id="engagement-heading" className="text-xl font-semibold">
-              Engagement — separate from understanding
-            </h2>
-            <p className="mt-2 font-medium">Insufficient verified data</p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {data.engagement.explanation}
-            </p>
-          </section>
-          <section aria-labelledby="answers-heading" className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 id="answers-heading" className="text-xl font-semibold">
-                Answer review
-              </h2>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={onlyReview}
-                  onChange={(event) => setOnlyReview(event.target.checked)}
-                />
-                Only answers needing review on this page
-              </label>
-            </div>
-            {data.answers.length === 0 && (
-              <p className={card}>
-                No answers were recorded for you on this page. There is no
-                comprehension result to infer.
-              </p>
-            )}
-            {onlyReview &&
-              data.answers.length > 0 &&
-              !data.answers.some(needsReview) && (
-                <p role="status">
-                  No answers needing review on this page. Unclassified answers
-                  can be seen by clearing the filter.
-                </p>
+    <>
+      <PageHeader
+        title={data.session.title}
+        tabTitle={`Review, ${data.session.title}`}
+        back={back}
+        description={
+          <>
+            {data.session.course_code}
+            {data.session.ended_at && `, ${sinceVerb('ended', data.session.ended_at)}`}. Only your own answers,
+            never a ranking against the class.
+          </>
+        }
+        actions={
+          <Link to={`/student/session/${sessionId}/summary`} className={buttonStyles({ intent: 'secondary' })}>
+            Topic summary
+          </Link>
+        }
+      />
+      <PageBody>
+        <div className="grid gap-6 md:grid-cols-2">
+          <Panel title="Your answers" description="Unanswered questions are not counted as wrong.">
+            <p className="text-lg">
+              <strong>{data.questions_attempted}</strong> answered
+              {data.questions_missed > 0 && (
+                <>
+                  , <strong>{data.questions_missed}</strong> not answered
+                </>
               )}
-            {data.answers
-              .filter((answer) => !onlyReview || needsReview(answer))
-              .map((answer) => (
-                <Answer key={answer.id} answer={answer} sessionId={sessionId} />
+            </p>
+          </Panel>
+          <Panel title="Engagement" description="Kept apart from how well you understood.">
+            <p className="font-semibold">Not recorded for this session</p>
+            <p className="mt-1 text-sm text-muted-foreground">{data.engagement.explanation}</p>
+          </Panel>
+        </div>
+
+        <section aria-labelledby="answers-heading" className="mt-10">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 id="answers-heading" className="text-lg font-bold">
+              Answer by answer
+            </h2>
+            {data.answers.length > 0 && (
+              <SegmentedTabs
+                label="Show answers"
+                dense
+                value={filter}
+                onChange={setFilter}
+                segments={[
+                  { key: 'all', label: `All ${data.answers.length}` },
+                  { key: 'revisit', label: `To revisit ${toRevisit.length}` },
+                ]}
+              />
+            )}
+          </div>
+
+          {data.answers.length === 0 ? (
+            <EmptyState title="No answers from you in this session">
+              With nothing answered, there is nothing to say about what you understood.
+            </EmptyState>
+          ) : shown.length === 0 ? (
+            <EmptyState title="Nothing to revisit on this page">
+              Every marked answer here was right. Answers without a mark are under All.
+            </EmptyState>
+          ) : (
+            <ol className="space-y-3">
+              {shown.map((answer) => (
+                <li key={answer.id}>
+                  <Answer answer={answer} sessionId={sessionId} />
+                </li>
               ))}
-            <Pagination
-              offset={offset}
-              limit={20}
-              total={data.total}
-              change={setOffset}
-            />
-          </section>
-        </>
-      )}
-    </main>
+            </ol>
+          )}
+          <Pager offset={offset} total={data.total} onChange={setOffset} noun="answers" />
+        </section>
+      </PageBody>
+    </>
   )
 }
 
-function Answer({
-  answer,
-  sessionId,
-}: {
-  answer: ReviewAnswer
-  sessionId: string
-}) {
-  const [showSources, setShowSources] = useState(false)
-  const sourceId = `sources-${answer.id}`
+function Answer({ answer, sessionId }: { answer: ReviewAnswer; sessionId: string }) {
+  const [open, setOpen] = useState(false)
+  const sourcesId = useId()
+  const revisit = needsReview(answer)
+  const uncertain = answer.confidence !== null && answer.confidence < 0.6
+
   return (
-    <article className={card}>
-      <p className="text-sm text-info">
-        {answer.topic || 'Topic not specified'}
-      </p>
-      <h3 className="mt-2 font-semibold whitespace-pre-wrap">
-        {answer.question}
-      </h3>
-      <p className="mt-3 text-sm font-medium">Your answer</p>
-      <p className="mt-1 whitespace-pre-wrap break-words">{answer.answer}</p>
-      <p className="mt-3 font-medium">{comprehensionText(answer)}</p>
-      {answer.confidence !== null && (
-        <p className="mt-1 text-sm text-muted-foreground">
-          Classification confidence: {Math.round(answer.confidence * 100)}% —
-          not a grade.
+    <article className="rounded-lg border border-border bg-card px-5 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <MetaLine items={[answer.topic ?? 'No topic', formatRelative(answer.submitted_at)]} />
+        <Tag tone={comprehensionTone(answer)}>{comprehensionText(answer)}</Tag>
+      </div>
+      <h3 className="mt-2 whitespace-pre-wrap font-semibold">{answer.question}</h3>
+      <p className="mt-3 text-sm font-semibold text-muted-foreground">Your answer</p>
+      <p className="mt-0.5 whitespace-pre-wrap break-words">{answer.answer}</p>
+      {answer.label && answer.confidence !== null && !uncertain && (
+        <p className="mt-2 text-sm text-muted-foreground">
+          {Math.round(answer.confidence * 100)}% sure of this reading. It is an estimate, not a grade.
         </p>
       )}
-      {needsReview(answer) && (
-        <p className="mt-2 text-sm">
-          Revisit the source, explain the idea in your own words, and ask your
-          lecturer about anything unclear.
-        </p>
+      {revisit && (
+        <p className="mt-2 text-sm">Read the slide again, put the idea in your own words, and ask your lecturer about anything still unclear.</p>
       )}
       <button
-        className={`${button} mt-4`}
-        aria-expanded={showSources}
-        aria-controls={sourceId}
-        onClick={() => setShowSources((value) => !value)}
+        type="button"
+        aria-expanded={open}
+        aria-controls={sourcesId}
+        onClick={() => setOpen((value) => !value)}
+        className={cn(buttonStyles({ intent: revisit ? 'secondary' : 'quiet' }), 'mt-3', !revisit && '-ml-3')}
       >
-        {showSources
-          ? 'Hide source chunks'
-          : needsReview(answer)
-            ? 'Review relevant source chunks'
-            : 'View source chunks'}
+        <FileText size={15} aria-hidden />
+        {open ? 'Hide the source' : 'Show where this came from'}
+        <ChevronDown size={15} aria-hidden className={cn('transition-transform', open && 'rotate-180')} />
       </button>
-      {showSources && (
-        <div id={sourceId} className="mt-4">
+      {open && (
+        <div id={sourcesId} className="mt-3">
           <Sources sessionId={sessionId} responseId={answer.id} />
         </div>
       )}
@@ -242,110 +238,104 @@ function Answer({
   )
 }
 
-function Sources({
-  sessionId,
-  responseId,
-}: {
-  sessionId: string
-  responseId: string
-}) {
+function Sources({ sessionId, responseId }: { sessionId: string; responseId: string }) {
   const { data, error, retry } = useReviewResource<ReviewSources>(
     `/student-reviews/${encodeURIComponent(sessionId)}/responses/${encodeURIComponent(responseId)}/sources`,
   )
-  if (error) return <LoadError message={error} retry={retry} />
-  if (!data) return <p role="status">Loading source chunks…</p>
-  if (!data.items.length)
+  // Inside one answer, so a line rather than a full panel.
+  if (error) {
     return (
-      <p role="status">
-        Source chunks are unavailable or no longer retained. Ask your lecturer
-        for the relevant material; no source has been invented.
+      <p role="alert" className="text-sm text-muted-foreground">
+        The source could not be loaded.{' '}
+        <button type="button" onClick={retry} className="font-semibold text-primary underline underline-offset-2">
+          Try again
+        </button>
       </p>
     )
+  }
+  if (!data) return <p role="status" className="text-sm text-muted-foreground">Finding the source…</p>
+  if (data.items.length === 0) {
+    return (
+      <p role="status" className="text-sm text-muted-foreground">
+        The source is no longer kept. Ask your lecturer for the slides; nothing is made up to fill the gap.
+      </p>
+    )
+  }
   return (
-    <section aria-label="Relevant source chunks" className="space-y-3">
+    <section aria-label="Where this question came from" className="space-y-2">
       {data.items.map((source) => (
-        <article
-          key={source.chunk_id}
-          id={`source-${responseId}-${source.chunk_id}`}
-          className="rounded-lg border border-border p-4"
-        >
-          <h4 className="font-medium">
-            <a
-              className="text-info underline"
-              href={`#source-${responseId}-${source.chunk_id}`}
-            >
-              {source.material_title}
-              {source.source_page !== null
-                ? ` · Page / slide ${source.source_page}`
-                : ''}
-            </a>
-          </h4>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {source.match === 'excerpt'
-              ? 'Contains the question’s source excerpt'
-              : 'Same-page context; exact source passage not verified'}
-          </p>
-          <p className="mt-3 whitespace-pre-wrap break-words text-sm">
-            {source.text}
-          </p>
-        </article>
+        <blockquote key={source.chunk_id} className="rounded-md border-l-2 border-primary bg-muted/40 px-4 py-3">
+          <MetaLine
+            items={[
+              <span key="title" className="font-semibold text-foreground">{source.material_title}</span>,
+              source.source_page !== null ? `Page or slide ${source.source_page}` : null,
+              source.match === 'excerpt' ? 'The passage the question came from' : 'Same page, passage not confirmed',
+            ]}
+          />
+          <p className="mt-2 whitespace-pre-wrap break-words text-sm">{source.text}</p>
+        </blockquote>
       ))}
       {data.has_more && (
-        <p className="text-sm">
-          Showing the first five matching chunks. Ask your lecturer for the
-          complete page.
-        </p>
+        <p className="text-sm text-muted-foreground">These are the first five matches. Your lecturer has the whole page.</p>
       )}
     </section>
   )
 }
 
-function LoadError({ message, retry }: { message: string; retry: () => void }) {
+function LoadError({ message, retry, status }: { message: string; retry: () => void; status?: number }) {
   return (
-    <div role="alert" className={card}>
-      <p>{message}</p>
-      <button className={`${button} mt-3`} onClick={retry}>
-        Try again
-      </button>
-      <Link className="ml-4 text-info underline" to="/login">
-        Sign in
-      </Link>
-    </div>
+    <ProblemState
+      art={status === undefined ? 'offline' : problemArt(status)}
+      title={status === 404 ? 'This review was not found' : 'This could not be loaded'}
+      retry={status === 404 ? undefined : retry}
+      action={
+        status === 404 ? (
+          <Link to="/student/reviews" className={buttonStyles({ intent: 'secondary' })}>
+            Past sessions
+          </Link>
+        ) : undefined
+      }
+    >
+      {message}
+    </ProblemState>
   )
 }
 
-function Pagination({
+function Pager({
   offset,
-  limit,
   total,
-  change,
+  noun,
+  onChange,
 }: {
   offset: number
-  limit: number
   total: number
-  change: (value: number) => void
+  noun: string
+  onChange: (offset: number) => void
 }) {
+  if (total <= PAGE_SIZE) return null
   return (
-    <nav aria-label="Pagination" className="flex flex-wrap items-center gap-4">
-      <button
-        className={button}
-        disabled={offset === 0}
-        onClick={() => change(Math.max(0, offset - limit))}
-      >
-        Previous
-      </button>
-      <span className="text-sm">
-        {total === 0
-          ? '0 items'
-          : `${Math.min(offset + 1, total)}–${Math.min(offset + limit, total)} of ${total}`}
+    <nav aria-label={`More ${noun}`} className="mt-5 flex flex-wrap items-center justify-between gap-3">
+      <span className="text-sm text-muted-foreground tabular-nums">
+        {offset + 1} to {Math.min(offset + PAGE_SIZE, total)} of {total} {noun}
       </span>
-      <button
-        className={button}
-        disabled={offset + limit >= total}
-        onClick={() => change(offset + limit)}
-      >
-        Next
-      </button>
+      <span className="flex gap-2">
+        <button
+          type="button"
+          className={buttonStyles({ intent: 'secondary' })}
+          disabled={offset === 0}
+          onClick={() => onChange(Math.max(0, offset - PAGE_SIZE))}
+        >
+          Previous
+        </button>
+        <button
+          type="button"
+          className={buttonStyles({ intent: 'secondary' })}
+          disabled={offset + PAGE_SIZE >= total}
+          onClick={() => onChange(offset + PAGE_SIZE)}
+        >
+          Next
+        </button>
+      </span>
     </nav>
   )
 }

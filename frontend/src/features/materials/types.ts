@@ -48,6 +48,8 @@ export interface Material {
   error: string | null
   uploaded_at: string
   warnings?: string[] | null
+  /** The course it is filed under, if any. */
+  course_code?: string | null
   pages?: MaterialPagePreview[] | null
 }
 
@@ -64,15 +66,3 @@ export type ProgressConnectionStatus =
   | 'disconnected'
   // The server refused the connection in a way retrying cannot fix.
   | 'unavailable'
-
-export const PROCESSING_STAGES: Array<{
-  key: Exclude<MaterialStage, 'failed'>
-  label: string
-}> = [
-  { key: 'validating', label: 'Validating' },
-  { key: 'extracting', label: 'Extracting' },
-  { key: 'chunking', label: 'Chunking' },
-  { key: 'embedding', label: 'Embedding' },
-  { key: 'generating', label: 'Generating' },
-  { key: 'done', label: 'Complete' },
-]

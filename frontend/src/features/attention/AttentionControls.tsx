@@ -1,6 +1,7 @@
+import { Camera, Crosshair, Info, Mic, Power, ShieldCheck } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { getCurrentUser, recordConsent } from '../../api'
-import { startCamera, startMicrophone } from './localSensors'
+import { calibrateCamera, startCamera, startMicrophone, type CalibrationResult } from './localSensors'
 import { useAttentionReporter } from './useAttentionReporter'
 import { useLocalSensor } from './useLocalSensor'
 import type { AttentionSummary, FaceObservation } from './signals'
@@ -17,6 +18,7 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
   const [savedConsent, setSavedConsent] = useState({ monitoring: false, camera: false, microphone: false })
   const [savingConsent, setSavingConsent] = useState(false)
   const [message, setMessage] = useState('')
+  const [calibration, setCalibration] = useState<'none' | 'running' | CalibrationResult>('none')
   const {
     status: cameraStatus, latest: face, start: enableCamera, stop: stopCamera,
     drain: drainCamera, isActive: cameraActive, isStartingOrActive: cameraStartingOrActive,
@@ -100,7 +102,7 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
         camera: previous.camera || choice.camera,
         microphone: previous.microphone || choice.microphone,
       }))
-      setMessage('Opt-in saved. Enable selected to start local sensing.')
+      setMessage('Choice saved. Press Turn on to start.')
     } catch {
       setMessage('Opt-in could not be saved. No device was started.')
     } finally {
@@ -115,51 +117,166 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
     else await enableMicrophone()
   }
 
+  // A new camera start forgets the old calibration, as the worker does.
+  useEffect(() => { if (cameraStatus !== 'on') setCalibration('none') }, [cameraStatus])
+  function startCalibration() {
+    if (calibrateCamera(setCalibration)) setCalibration('running')
+  }
+
   const running = cameraStatus === 'on' || microphoneStatus === 'on'
   const pending = cameraStatus === 'starting' || microphoneStatus === 'starting'
   const selectedConsented = savedConsent.monitoring &&
     (!choice.camera || savedConsent.camera) &&
     (!choice.microphone || savedConsent.microphone)
+  const sensing = running ? 'Local sensing active — raw media is not uploaded'
+    : pending ? 'Starting — your device may be active while models load' : 'Local sensing off'
+  const statusOf = (sensor: Sensor) => sensor === 'camera' ? cameraStatus : microphoneStatus
   return (
-    <section aria-label="Optional local indicators" className="mt-5 rounded-xl border border-border bg-card p-5">
-      <h2 className="text-lg font-semibold">Optional local indicators</h2>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Camera frames and audio stay on this device. If you opt in, only five-second summaries of
-        face presence, estimated camera-facing gaze and voice activity are shared with this session.
-        These estimates do not prove attention or understanding. Neither device is required.
-      </p>
-      <p role="status" className="mt-3 font-medium">
-        {running ? 'Local sensing active — raw media is not uploaded' : pending ? 'Starting — your device may be active while models load' : 'Local sensing off'}
-      </p>
-      <div className="mt-3 flex flex-wrap gap-4">
-        {(['camera', 'microphone'] as const).map(sensor => (
-          <label key={sensor} className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={choice[sensor]} disabled={savingConsent || (sensor === 'camera' ? cameraStatus : microphoneStatus) === 'on' || (sensor === 'camera' ? cameraStatus : microphoneStatus) === 'starting'}
-              onChange={event => setChoice(previous => ({ ...previous, [sensor]: event.target.checked }))} />
-            I opt in to {sensor} indicators
-          </label>
-        ))}
+    <section aria-label="Optional local indicators"
+      className="mt-5 rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)] sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <span aria-hidden="true" className="grid size-10 shrink-0 place-items-center rounded-full bg-info/10 text-info">
+            <ShieldCheck size={20} />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold">Optional local indicators</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Your camera and microphone stay on this device. Only a short summary is shared every
+              five seconds. Neither is required.
+            </p>
+          </div>
+        </div>
+        <p role="status" className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground">
+          <span aria-hidden="true" className={`size-2 rounded-full ${running ? 'bg-success' : pending ? 'bg-warning' : 'bg-muted-foreground'}`} />
+          {sensing}
+        </p>
       </div>
-      <div className="mt-3 flex flex-wrap gap-2">
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {(['camera', 'microphone'] as const).map(sensor => {
+          const Icon = sensor === 'camera' ? Camera : Mic
+          const deviceStatus = statusOf(sensor)
+          return (
+            <label key={sensor}
+              className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-muted/50 has-[:checked]:border-info has-[:checked]:bg-info/5">
+              <input type="checkbox" className="mt-1 size-4 shrink-0 accent-[var(--info)]" checked={choice[sensor]}
+                disabled={savingConsent || deviceStatus === 'on' || deviceStatus === 'starting'}
+                onChange={event => setChoice(previous => ({ ...previous, [sensor]: event.target.checked }))} />
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <Icon aria-hidden="true" size={16} className="shrink-0 text-info" />
+                  I opt in to {sensor} indicators
+                </span>
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  {sensor === 'camera'
+                    ? 'Whether a face is in view and roughly facing the screen.'
+                    : 'Whether you are speaking. No words are heard or kept.'}
+                </span>
+              </span>
+              <DevicePill status={deviceStatus} />
+            </label>
+          )
+        })}
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
         <button type="button" disabled={!enabled || savingConsent || pending || running || (!choice.camera && !choice.microphone)}
           onClick={() => { void saveOptIn() }}
-          className="rounded-lg border border-border px-4 py-2 text-sm font-semibold disabled:opacity-50">
-          {savingConsent ? 'Saving opt-in…' : 'Save monitoring and selected device opt-in'}
+          className="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted disabled:opacity-50">
+          {savingConsent ? 'Saving…' : 'Save my choice'}
         </button>
         <button type="button" disabled={!enabled || savingConsent || !selectedConsented || pending || (!choice.camera && !choice.microphone)}
           onClick={() => { if (choice.camera) void enable('camera'); if (choice.microphone) void enable('microphone') }}
-          className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50">Enable selected</button>
-        <button type="button" onClick={stopAll} className="rounded-lg border border-border px-4 py-2 text-sm font-semibold">Disable all now</button>
-        {running && (['camera', 'microphone'] as const).filter(sensor => (sensor === 'camera' ? cameraStatus : microphoneStatus) === 'on').map(sensor => (
-          <button key={sensor} type="button" onClick={() => sensor === 'camera' ? stopCamera() : stopMicrophone()} className="rounded-lg border border-border px-3 py-2 text-sm">Stop {sensor}</button>
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50">
+          <Power aria-hidden="true" size={15} />
+          Turn on
+        </button>
+        <button type="button" onClick={stopAll}
+          className="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted">Turn everything off</button>
+        {running && (['camera', 'microphone'] as const).filter(sensor => statusOf(sensor) === 'on').map(sensor => (
+          <button key={sensor} type="button" onClick={() => sensor === 'camera' ? stopCamera() : stopMicrophone()}
+            className="rounded-lg border border-border px-3 py-2 text-sm hover:bg-muted">Stop {sensor}</button>
         ))}
       </div>
-      <p className="mt-3 text-sm">Camera: {cameraStatus}. Microphone: {microphoneStatus}.</p>
-      {cameraStatus === 'on' && <p className="text-sm">Face: {face.face === null ? 'unavailable' : face.face ? 'detected' : 'not detected'}. Head direction: {face.head}. Gaze estimate: {face.forward === null ? 'unavailable' : face.forward ? 'camera-facing' : 'away from camera'}.</p>}
-      {microphoneStatus === 'on' && <p className="text-sm">Voice activity: {speaking === null ? 'unavailable' : speaking ? 'detected' : 'not detected'}.</p>}
-      {!enabled && <p className="mt-2 text-sm text-muted-foreground">Available while connected to an active, unpaused session.</p>}
-      <p className="mt-2 text-xs text-muted-foreground">Sensing stops when you leave, hide this page, or disconnect. It never resumes automatically. Disable stops sensing without changing saved consent.</p>
-      {message && <p role="alert" className="mt-3 text-sm">{message}</p>}
+      <p className="mt-2 text-xs text-foreground">Camera: {cameraStatus}. Microphone: {microphoneStatus}.</p>
+
+      {(cameraStatus === 'on' || microphoneStatus === 'on') && (
+        <div className="mt-4 rounded-lg bg-muted/60 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-foreground">What your device sees right now</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {cameraStatus === 'on' && <>
+              <Chip good={face.face} label={`Face: ${face.face === null ? 'unavailable' : face.face ? 'detected' : 'not detected'}`} />
+              <Chip good={face.head === 'unavailable' ? null : face.head === 'forward'} label={`Head: ${face.head}`} />
+              <Chip good={face.forward} label={`Gaze: ${face.forward === null ? 'unavailable' : face.forward ? 'facing the screen' : 'away from the screen'}`} />
+            </>}
+            {microphoneStatus === 'on' && (
+              <Chip good={speaking === null ? null : true} label={`Voice: ${speaking === null ? 'unavailable' : speaking ? 'speaking' : 'quiet'}`} />
+            )}
+          </div>
+          {cameraStatus === 'on' && (
+            <div className="mt-3 border-t border-border pt-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <button type="button" disabled={calibration === 'running'} onClick={startCalibration}
+                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-semibold hover:bg-muted disabled:opacity-60">
+                  <Crosshair aria-hidden="true" size={15} />
+                  {calibration === 'running' ? 'Look at the screen…' : calibration === 'done' ? 'Calibrate again' : 'Calibrate: look at the screen for 3 seconds'}
+                </button>
+                <span className="text-sm text-foreground">
+                  {calibration === 'done' && 'Calibrated to where you look. Only the offsets are kept, on this device.'}
+                  {calibration === 'failed' && 'That did not work: your face was not clearly facing the screen. The standard settings are used.'}
+                  {calibration === 'timeout' && 'The camera stopped sending pictures, so calibration did not finish. The standard settings are used.'}
+                  {calibration === 'none' && 'Optional. Helps if your camera is off to one side.'}
+                  {calibration === 'running' && 'Keep looking at the middle of the screen.'}
+                </span>
+              </div>
+              {calibration === 'running' && (
+                <div aria-hidden="true" className="mt-2 h-1.5 overflow-hidden rounded-full bg-card">
+                  <div className="animate-fill-3s h-full rounded-full bg-info" />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      <details className="mt-4 text-sm">
+        <summary className="cursor-pointer font-medium text-foreground underline underline-offset-2">What is shared, and what is not</summary>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+          <li>Shared every five seconds: whether a face was present, the share of time facing the screen, and whether you spoke.</li>
+          <li>Never shared or stored: video, audio, images, face measurements or what you said.</li>
+          <li>These are rough estimates. They do not prove attention or understanding.</li>
+          <li>Sensing stops when you leave, hide this page, or disconnect, and never restarts on its own. Turning it off does not change your saved choice.</li>
+        </ul>
+      </details>
+      {!enabled && <p className="mt-3 text-sm text-muted-foreground">Available while connected to an active, unpaused session.</p>}
+      {message && (
+        <p role="alert" className="mt-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm">
+          <Info aria-hidden="true" size={16} className="mt-0.5 shrink-0 text-warning" />
+          <span>{message}</span>
+        </p>
+      )}
     </section>
+  )
+}
+
+// Colour is only in the dot; the words carry the meaning and stay high-contrast.
+const DOT = { good: 'bg-success', warn: 'bg-warning', bad: 'bg-critical', none: 'bg-muted-foreground' } as const
+
+function DevicePill({ status }: { status: 'off' | 'starting' | 'on' | 'unavailable' }) {
+  const dot = { on: DOT.good, starting: DOT.warn, unavailable: DOT.bad, off: DOT.none }[status]
+  return (
+    <span aria-hidden="true" className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-card px-2 py-0.5 text-xs font-semibold text-foreground">
+      <span className={`size-1.5 rounded-full ${dot}`} />{status}
+    </span>
+  )
+}
+
+function Chip({ good, label }: { good: boolean | null; label: string }) {
+  const dot = good === null ? DOT.none : good ? DOT.good : DOT.warn
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground">
+      <span aria-hidden="true" className={`size-1.5 rounded-full ${dot}`} />{label}
+    </span>
   )
 }

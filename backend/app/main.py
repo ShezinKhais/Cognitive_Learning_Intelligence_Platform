@@ -24,8 +24,9 @@ from app.services.ai_gateway import get_ai_gateway
 from app.services.live_wiring import install_live_store
 from app.services.material_recovery import SWEEP_EVERY, sweep_stranded
 from app.services.meeting_directory import meetings
-from app.services.purge_runner import purge_expired_data
+from app.services.purge_runner import get_purge_runner, purge_expired_data
 from app.services.reports import get_report_queue
+from app.services.retention_tasks import register_database_purges
 from app.services.scheduler import ScheduledJob, Scheduler
 from app.services.teams_notifications import notifications
 from app.services.uploads import get_background_processor
@@ -58,6 +59,7 @@ def housekeeping() -> Scheduler:
     processor = get_background_processor()
     reports = get_report_queue()
     purge_every = timedelta(hours=get_settings().retention_purge_interval_hours)
+    register_database_purges(get_purge_runner())
 
     async def expire_reports() -> None:
         # On the event loop, not in a thread: the queue is not thread-safe,
@@ -207,6 +209,10 @@ def create_app() -> FastAPI:
         response = await call_next(request)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
+        # nginx adds the page's own policy in a deployment (frontend/nginx.conf).
+        # An API answer is data, never a page, so nothing in it may load or run.
+        if not request.url.path.startswith(("/docs", "/redoc")):
+            response.headers.setdefault("Content-Security-Policy", "default-src 'none'")
         if request.url.path.startswith(API_V1):
             response.headers.setdefault("Cache-Control", "no-store")
         return response

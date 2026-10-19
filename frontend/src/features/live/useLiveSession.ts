@@ -2,17 +2,17 @@ import {
   useEffect,
   useState,
 } from 'react'
-import { recoverSocketAuthentication } from '../materials/socketAuthentication'
 
 import {
-  clearAccessToken,
   getAccessToken,
 } from '../../api'
 import { actionForClose } from '../materials/closeCodes'
+import { isRoomStatus, updateRooms, type RoomStatus } from './rooms'
 import {
   acknowledgeSessionAlert,
   getOpenSessionAlerts,
 } from './alertApi'
+import { renewAfterRefusal, signOutToLogin } from '../realtime/tokenRefusal'
 
 export type LiveConnectionStatus =
   | 'connecting'
@@ -106,6 +106,7 @@ interface UseLiveSessionResult {
   acknowledgeAlert: (
     alertId: string,
   ) => Promise<void>
+  rooms: RoomStatus[]
 }
 
 function liveSocketUrl(): string {
@@ -359,6 +360,8 @@ export function useLiveSession(
     null,
   )
 
+  const [rooms, setRooms] = useState<RoomStatus[]>([])
+
   useEffect(() => {
     if (!sessionId) {
       return
@@ -482,9 +485,10 @@ setAlerts((current) => {
     let retryTimer: number | undefined
     let stopped = false
     let retryCount = 0
-    let authenticationRetried = false
     let lastSeq = 0
     let streamId: string | null = null
+    // One refresh per refusal; any message after it proves the new token.
+    let tokenRenewed = false
 
     function connect() {
       if (stopped) {
@@ -495,7 +499,6 @@ setAlerts((current) => {
         'connecting',
       )
 
-      let sentToken: string | null = null
       const currentSocket =
         new WebSocket(
           liveSocketUrl(),
@@ -503,13 +506,20 @@ setAlerts((current) => {
 
       socket = currentSocket
 
+      currentSocket.addEventListener('message', () => {
+        tokenRenewed = false
+      })
+
       currentSocket.addEventListener(
         'open',
         () => {
-          const accessToken = getAccessToken()
-          sentToken = accessToken
-          if (!accessToken) {
-            currentSocket.close(4001, 'authentication required')
+          const currentToken = getAccessToken()
+          if (stopped || !currentToken) {
+            currentSocket.close()
+            if (!stopped) {
+              stopped = true
+              void signOutToLogin()
+            }
             return
           }
           const data: {
@@ -518,7 +528,8 @@ setAlerts((current) => {
             last_seq?: number
             stream_id?: string
           } = {
-            token: accessToken,
+            // The latest, so a reconnect after a refresh sends the new token.
+            token: currentToken,
             session_id:
               activeSessionId,
           }
@@ -571,7 +582,6 @@ setAlerts((current) => {
             )
           ) {
             retryCount = 0
-            authenticationRetried = false
 
             if (
               message.data
@@ -680,6 +690,12 @@ setAlerts((current) => {
             return
           }
 
+          if (message.type === 'room.status' && isRoomStatus(message.data)) {
+            const update = message.data
+            setRooms((current) => updateRooms(current, update))
+            return
+          }
+
           if (
             message.type === 'error' &&
             isLiveSessionNotice(
@@ -702,7 +718,7 @@ setAlerts((current) => {
 
       currentSocket.addEventListener(
         'close',
-        async (event) => {
+        (event) => {
           if (stopped) {
             return
           }
@@ -713,32 +729,30 @@ setAlerts((current) => {
             )
 
           if (
+            action === 'sign-in' &&
+            !tokenRenewed
+          ) {
+            // The token may have run out while the tab slept: refresh it once
+            // and reconnect before sending the lecturer to sign in.
+            tokenRenewed = true
+            renewAfterRefusal({
+              stopped: () => stopped,
+              reconnect: connect,
+              retryLater: () => {
+                tokenRenewed = false
+                setConnectionStatus('disconnected')
+                retryTimer = window.setTimeout(connect, Math.min(1000 * 2 ** retryCount++, 10_000))
+              },
+            })
+            return
+          }
+
+          if (
             action === 'sign-in'
           ) {
-            if (!authenticationRetried) {
-              authenticationRetried = true
-              const renewed = await recoverSocketAuthentication(sentToken)
-              if (stopped) return
-              if (renewed === 'renewed') {
-                connect()
-                return
-              }
-              if (renewed === 'unreachable') {
-                authenticationRetried = false
-                setConnectionStatus('disconnected')
-                const delay = Math.min(1000 * 2 ** retryCount, 10_000)
-                retryCount += 1
-                retryTimer = window.setTimeout(connect, delay)
-                return
-              }
-            }
             stopped = true
 
-            clearAccessToken()
-
-            window.location.assign(
-              '/login',
-            )
+            signOutToLogin()
 
             return
           }
@@ -830,6 +844,7 @@ setAlerts((current) => {
     closedQuestion,
     alerts,
     sessionNotice,
+    rooms,
     acknowledgeAlert,
   }
 }

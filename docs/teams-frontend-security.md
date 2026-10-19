@@ -45,14 +45,10 @@ would prevent Microsoft Teams from embedding the application.
 
 ### Deployment TODO
 
-The final production hosting configuration must apply the
-`Content-Security-Policy` header above to the C.L.I.P frontend responses before
-the Microsoft Teams application is released.
-
-The hosting platform has not yet been finalized in this branch, so a
-platform-specific configuration is intentionally not added here. The deployed
-environment must verify the response header before the Teams integration is
-considered production-ready.
+The demo deployment's nginx (`frontend/nginx.conf`) sends this directive as
+part of a fuller policy, described in [deployment.md](deployment.md). Any other
+hosting must send the same header, and the deployed environment must verify it
+before the Teams integration is considered production-ready.
 
 ## Teams Simulation
 
