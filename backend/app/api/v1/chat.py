@@ -27,6 +27,7 @@ from app.schemas.chat import ChatRequest
 from app.schemas.identity import ConsentType, Role
 from app.schemas.session import SessionStatus
 from app.services import session_lifecycle, tutor_chat
+from app.services.tutor_guardrails import EarlierTurn
 
 router = APIRouter(
     prefix="/sessions",
@@ -88,7 +89,11 @@ async def session_chat(
     tutor_chat.get_chat_limiter().admit(principal.user_id)
 
     return StreamingResponse(
-        tutor_chat.TutorExchange(context).lines(payload.request_id, payload.question),
+        tutor_chat.TutorExchange(context).lines(
+            payload.request_id,
+            payload.question,
+            [EarlierTurn(question=turn.question, answer=turn.answer) for turn in payload.history],
+        ),
         media_type=tutor_chat.NDJSON,
         headers={
             "Cache-Control": "no-store",

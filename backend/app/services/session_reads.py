@@ -30,7 +30,7 @@ from app.models.student_response import StudentResponse
 from app.schemas.common import Page
 from app.schemas.identity import Role
 from app.schemas.session import ResponseOut, SessionOut
-from app.services.session_lifecycle import session_out
+from app.services.session_lifecycle import session_out, sessions_out
 
 
 def _enrolled_in(principal: Principal):  # noqa: ANN202 - a select
@@ -58,7 +58,7 @@ async def list_sessions(
     total = (await db.execute(count)).scalar_one()
     found = (await db.execute(rows.limit(limit).offset(offset))).scalars().all()
     return Page(
-        items=[await session_out(db, row) for row in found],
+        items=await sessions_out(db, list(found)),
         total=total,
         limit=limit,
         offset=offset,

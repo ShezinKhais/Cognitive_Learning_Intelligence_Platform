@@ -9,7 +9,6 @@ async function optIn(page: Page, sensor: 'camera' | 'microphone') {
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
-    localStorage.setItem('clip_access_token', 'test-only')
     const state = { requests: 0, tracks: [] as MediaStreamTrack[], scroll: [] as unknown[], summaries: [] as unknown[] }
     Object.assign(window, { probe: state })
     const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
@@ -25,6 +24,11 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/v1/auth/**', route => route.fulfill({ json: {
     id: 'student', email: 'student@example.test', full_name: 'Test student', role: 'student',
     consents: ['engagement_monitoring', 'camera', 'microphone'],
+  } }))
+  // The token is kept in memory and fetched with the refresh cookie on load.
+  // Registered last, so it wins over the route above for this one path.
+  await page.route('**/api/v1/auth/refresh', route => route.fulfill({ json: {
+    access_token: 'test-only', token_type: 'bearer', expires_in: 3600, role: 'student',
   } }))
   await page.goto('/e2e/harness/index.html')
 })
@@ -125,6 +129,18 @@ for (const action of ['Toggle session connection', 'Toggle sensor mount', 'Rejec
     await expect.poll(() => page.evaluate(() => (window as any).probe.tracks.every((t: MediaStreamTrack) => t.readyState === 'ended'))).toBe(true)
   })
 }
+
+test('calibration gives up when the camera stops sending frames', async ({ page }) => {
+  await optIn(page, 'camera')
+  await page.getByRole('button', { name: 'Turn on' }).click()
+  await expect(page.getByRole('button', { name: 'Stop camera', exact: true })).toBeVisible({ timeout: 60_000 })
+  // A muted track sends no frames, so calibration has no timestamp to end on.
+  await page.evaluate(() => Object.defineProperty(MediaStreamTrack.prototype, 'muted', { configurable: true, get: () => true }))
+  await page.getByRole('button', { name: 'Calibrate: look at the screen for 3 seconds' }).click()
+  await expect(page.getByRole('button', { name: 'Look at the screen…' })).toBeDisabled()
+  await expect(page.getByText('The camera stopped sending pictures, so calibration did not finish.')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('button', { name: 'Calibrate: look at the screen for 3 seconds' })).toBeEnabled()
+})
 
 test('keyboard, IME composition, source rendering and reduced-motion scrolling', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })

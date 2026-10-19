@@ -28,10 +28,16 @@ NOT_AUDITED = {
     # Nobody is signed in yet. Failed attempts and lockouts are logged and
     # counted by the login itself.
     ("POST", "/api/v1/auth/login"),
+    # A student asking for their own data to be erased. The deletion request
+    # service writes the audit entry itself (DELETION_REQUESTED).
+    ("POST", "/api/v1/me/deletion-request"),
     # Renews the caller's own token and changes nothing that is kept. Every
     # refresh and refusal is in the security log, and an audit row an hour
     # per signed-in user would bury the changes the log is for.
     ("POST", "/api/v1/auth/refresh"),
+    # Drops the caller's own refresh cookie and changes nothing that is kept.
+    # It is in the security log.
+    ("POST", "/api/v1/auth/logout"),
     # Authenticated by Bot Framework, not a user; acts through the meeting
     # routes' service, and each activity is logged.
     ("POST", "/api/v1/teams/messages"),
@@ -41,6 +47,15 @@ NOT_AUDITED = {
     # is none for the record to join. The material row it creates records
     # who uploaded it and when.
     ("POST", "/api/v1/materials"),
+    # Governance routes (BBIS, Phase 7). Not unaudited: each one's service writes
+    # its own audit entry in the same transaction, with the target and counts
+    # (docs/governance.md), always and not only in production. The decorator
+    # would add a second, poorer row for the same action.
+    ("POST", "/api/v1/governance/deletion-requests"),
+    ("POST", "/api/v1/governance/deletion-requests/{request_id}/approve"),
+    ("POST", "/api/v1/governance/deletion-requests/{request_id}/reject"),
+    ("POST", "/api/v1/governance/deletion-requests/{request_id}/execute"),
+    ("POST", "/api/v1/governance/retention/run"),
 }
 
 
@@ -123,9 +138,7 @@ async def test_an_audited_route_writes_its_record_in_production(db) -> None:  # 
                 )
             )
         ).all()
-        assert [(r.action_type, r.ip_address) for r in rows] == [
-            ("SESSION_CREATED", "203.0.113.20")
-        ]
+        assert [r.action_type for r in rows] == ["SESSION_CREATED"]
         await session.execute(delete(AuditLog).where(AuditLog.log_id.in_([r.log_id for r in rows])))
         await session.commit()
     assert made.title == "Audited"

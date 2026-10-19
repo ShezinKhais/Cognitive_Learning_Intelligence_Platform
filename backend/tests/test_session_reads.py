@@ -194,3 +194,38 @@ async def test_responses_of_a_session_someone_cannot_see_are_missing(db, app) ->
     sign_in_as(app, LECTURER_ID, Role.LECTURER)
 
     assert client.get(f"/api/v1/sessions/{theirs['id']}/responses").status_code == 404
+
+
+async def test_listing_sessions_takes_the_same_queries_however_many_there_are(db, app) -> None:  # noqa: ANN001
+    # Each session used to cost three queries of its own: its course code,
+    # its question count and its Teams meeting.
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+
+    client, factory, created = db
+    course = await add_course(factory, created)
+    lecturer = await add_lecturer(factory, created)
+    sign_in_as(app, lecturer, Role.LECTURER)
+    statements: list[str] = []
+
+    def count(conn, cursor, statement, *args) -> None:  # noqa: ANN001, ANN002
+        statements.append(statement)
+
+    def queries_to_list() -> int:
+        statements.clear()
+        event.listen(Engine, "before_cursor_execute", count)
+        try:
+            response = client.get("/api/v1/sessions")
+        finally:
+            event.remove(Engine, "before_cursor_execute", count)
+        assert response.status_code == 200, response.text
+        return len(statements)
+
+    create_session(client, course, "Week 1")
+    one = queries_to_list()
+    for week in range(2, 6):
+        create_session(client, course, f"Week {week}")
+    five = queries_to_list()
+
+    assert len(client.get("/api/v1/sessions").json()["items"]) == 5
+    assert five == one

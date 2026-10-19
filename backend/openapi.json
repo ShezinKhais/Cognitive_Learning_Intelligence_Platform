@@ -208,6 +208,84 @@
         "title": "AlertOut",
         "type": "object"
       },
+      "AuditEntryOut": {
+        "properties": {
+          "action_type": {
+            "title": "Action Type",
+            "type": "string"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Counts and identifiers, never content.",
+            "title": "Details"
+          },
+          "log_id": {
+            "format": "uuid",
+            "title": "Log Id",
+            "type": "string"
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          },
+          "target_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Type"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None for something the system did on its own.",
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "log_id",
+          "user_id",
+          "action_type",
+          "timestamp",
+          "target_type",
+          "target_id",
+          "details"
+        ],
+        "title": "AuditEntryOut",
+        "type": "object"
+      },
       "Body_import_roster_api_v1_admin_roster_post": {
         "properties": {
           "file": {
@@ -252,6 +330,15 @@
       },
       "ChatRequest": {
         "properties": {
+          "history": {
+            "description": "The exchanges before this one, oldest first, so a follow-up can refer to them. Screened again on the server; never cited.",
+            "items": {
+              "$ref": "#/components/schemas/ChatTurn"
+            },
+            "maxItems": 3,
+            "title": "History",
+            "type": "array"
+          },
           "question": {
             "maxLength": 2000,
             "minLength": 1,
@@ -271,6 +358,29 @@
           "question"
         ],
         "title": "ChatRequest",
+        "type": "object"
+      },
+      "ChatTurn": {
+        "description": "An earlier exchange the panel sends back with a follow-up. The server\nkeeps no conversation, so this is the client's word for it, and the guard\nscreens it again before the model sees it.",
+        "properties": {
+          "answer": {
+            "maxLength": 1500,
+            "minLength": 1,
+            "title": "Answer",
+            "type": "string"
+          },
+          "question": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "answer"
+        ],
+        "title": "ChatTurn",
         "type": "object"
       },
       "ComprehensionLabel": {
@@ -333,6 +443,427 @@
         ],
         "title": "ConsentType",
         "type": "string"
+      },
+      "ConsiderationAdminOut": {
+        "properties": {
+          "course_code": {
+            "title": "Course Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decision_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Note"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "needs": {
+            "items": {
+              "$ref": "#/components/schemas/ConsiderationNeed"
+            },
+            "title": "Needs",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "withdrawn"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "student_email": {
+            "title": "Student Email",
+            "type": "string"
+          },
+          "student_name": {
+            "title": "Student Name",
+            "type": "string"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          }
+        },
+        "required": [
+          "id",
+          "needs",
+          "until",
+          "note",
+          "status",
+          "created_at",
+          "reviewed_at",
+          "decision_note",
+          "student_name",
+          "student_email",
+          "course_code"
+        ],
+        "title": "ConsiderationAdminOut",
+        "type": "object"
+      },
+      "ConsiderationCreate": {
+        "properties": {
+          "needs": {
+            "items": {
+              "$ref": "#/components/schemas/ConsiderationNeed"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Needs",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Last day it applies; null for the term.",
+            "title": "Until"
+          }
+        },
+        "required": [
+          "needs"
+        ],
+        "title": "ConsiderationCreate",
+        "type": "object"
+      },
+      "ConsiderationDecision": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "ConsiderationDecision",
+        "type": "object"
+      },
+      "ConsiderationNeed": {
+        "enum": [
+          "camera",
+          "gaze",
+          "pace",
+          "prompts"
+        ],
+        "title": "ConsiderationNeed",
+        "type": "string"
+      },
+      "ConsiderationOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decision_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Note"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "needs": {
+            "items": {
+              "$ref": "#/components/schemas/ConsiderationNeed"
+            },
+            "title": "Needs",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "withdrawn"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          }
+        },
+        "required": [
+          "id",
+          "needs",
+          "until",
+          "note",
+          "status",
+          "created_at",
+          "reviewed_at",
+          "decision_note"
+        ],
+        "title": "ConsiderationOut",
+        "type": "object"
+      },
+      "DeletionRequestCreate": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why, in a few words. Never personal content.",
+            "title": "Reason"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_type": {
+            "enum": [
+              "session",
+              "student"
+            ],
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_type",
+          "target_id"
+        ],
+        "title": "DeletionRequestCreate",
+        "type": "object"
+      },
+      "DeletionRequestOut": {
+        "properties": {
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executed At"
+          },
+          "executed_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executed By"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What was deleted, as counts only.",
+            "title": "Outcome"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "requested_by": {
+            "format": "uuid",
+            "title": "Requested By",
+            "type": "string"
+          },
+          "status": {
+            "description": "requested, approved, rejected or executed.",
+            "title": "Status",
+            "type": "string"
+          },
+          "target_id": {
+            "format": "uuid",
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_type": {
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "target_type",
+          "target_id",
+          "status",
+          "reason",
+          "requested_by",
+          "requested_at",
+          "decided_by",
+          "decided_at",
+          "executed_by",
+          "executed_at",
+          "outcome"
+        ],
+        "title": "DeletionRequestOut",
+        "type": "object"
       },
       "DeliverableQuestionOut": {
         "description": "A staged question the current live session may deliver.",
@@ -546,6 +1077,89 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "HistoryOut": {
+        "properties": {
+          "enabled": {
+            "description": "False when no history database is configured.",
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "summaries": {
+            "items": {
+              "$ref": "#/components/schemas/HistorySummaryOut"
+            },
+            "title": "Summaries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "enabled",
+          "summaries"
+        ],
+        "title": "HistoryOut",
+        "type": "object"
+      },
+      "HistorySummaryOut": {
+        "properties": {
+          "course_id": {
+            "format": "uuid",
+            "title": "Course Id",
+            "type": "string"
+          },
+          "engagement_average": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None when nothing was recorded.",
+            "title": "Engagement Average"
+          },
+          "gaze_average": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None when nothing was recorded.",
+            "title": "Gaze Average"
+          },
+          "questions_attempted": {
+            "title": "Questions Attempted",
+            "type": "integer"
+          },
+          "questions_correct": {
+            "title": "Questions Correct",
+            "type": "integer"
+          },
+          "semester": {
+            "description": "Calendar half-year, such as 2026-H1.",
+            "title": "Semester",
+            "type": "string"
+          },
+          "sessions_attended": {
+            "title": "Sessions Attended",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "semester",
+          "course_id",
+          "sessions_attended",
+          "questions_attempted",
+          "questions_correct",
+          "engagement_average",
+          "gaze_average"
+        ],
+        "title": "HistorySummaryOut",
+        "type": "object"
+      },
       "LoginRequest": {
         "properties": {
           "email": {
@@ -554,6 +1168,7 @@
             "type": "string"
           },
           "password": {
+            "maxLength": 1024,
             "title": "Password",
             "type": "string"
           }
@@ -581,6 +1196,18 @@
           "content_type": {
             "title": "Content Type",
             "type": "string"
+          },
+          "course_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The course the material is filed under, if any.",
+            "title": "Course Code"
           },
           "error": {
             "anyOf": [
@@ -715,12 +1342,45 @@
         "title": "MaterialStatus",
         "type": "string"
       },
+      "MaterialUpdateRequest": {
+        "description": "Fields to change. Omit one to leave it; send course_code as null to\nfile the material under no course.",
+        "properties": {
+          "course_code": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Code"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          }
+        },
+        "title": "MaterialUpdateRequest",
+        "type": "object"
+      },
       "MeetingEventIn": {
         "description": "A meeting started or ended. Teams can deliver an event more than once,\nso one that finds the session already in that state changes nothing.",
         "properties": {
           "course_code": {
             "anyOf": [
               {
+                "maxLength": 20,
                 "type": "string"
               },
               {
@@ -742,6 +1402,7 @@
           "title": {
             "anyOf": [
               {
+                "maxLength": 200,
                 "type": "string"
               },
               {
@@ -779,6 +1440,198 @@
           "session_id"
         ],
         "title": "MeetingLinkRequest",
+        "type": "object"
+      },
+      "MyConsiderationOut": {
+        "description": "The student's most recent request, if any.",
+        "properties": {
+          "current": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConsiderationOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "current"
+        ],
+        "title": "MyConsiderationOut",
+        "type": "object"
+      },
+      "MyDeletionRequestCreate": {
+        "properties": {
+          "confirm": {
+            "description": "Must be true: the student was told this erases their data and cannot be undone.",
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why, in a few words. Optional.",
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "title": "MyDeletionRequestCreate",
+        "type": "object"
+      },
+      "MyDeletionRequestOut": {
+        "properties": {
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executed At"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "status": {
+            "description": "requested, approved, rejected or executed.",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "status",
+          "requested_at",
+          "decided_at",
+          "executed_at"
+        ],
+        "title": "MyDeletionRequestOut",
+        "type": "object"
+      },
+      "Page_AuditEntryOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEntryOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[AuditEntryOut]",
+        "type": "object"
+      },
+      "Page_ConsiderationAdminOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ConsiderationAdminOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[ConsiderationAdminOut]",
+        "type": "object"
+      },
+      "Page_DeletionRequestOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DeletionRequestOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[DeletionRequestOut]",
         "type": "object"
       },
       "Page_DeliverableQuestionOut_": {
@@ -1119,6 +1972,8 @@
           "correct_option": {
             "anyOf": [
               {
+                "exclusiveMaximum": 8.0,
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -1141,8 +1996,10 @@
             "anyOf": [
               {
                 "items": {
+                  "maxLength": 500,
                   "type": "string"
                 },
+                "maxItems": 8,
                 "type": "array"
               },
               {
@@ -1154,6 +2011,7 @@
           "prompt": {
             "anyOf": [
               {
+                "maxLength": 2000,
                 "type": "string"
               },
               {
@@ -1468,6 +2326,61 @@
         "title": "ResponseOut",
         "type": "object"
       },
+      "RetentionReportOut": {
+        "properties": {
+          "answers": {
+            "title": "Answers",
+            "type": "integer"
+          },
+          "cutoff": {
+            "description": "Data from sessions older than this is purged.",
+            "format": "date-time",
+            "title": "Cutoff",
+            "type": "string"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "retention_days": {
+            "title": "Retention Days",
+            "type": "integer"
+          },
+          "roster_syncs": {
+            "title": "Roster Syncs",
+            "type": "integer"
+          },
+          "sessions": {
+            "title": "Sessions",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cutoff",
+          "dry_run",
+          "retention_days",
+          "sessions",
+          "answers",
+          "roster_syncs"
+        ],
+        "title": "RetentionReportOut",
+        "type": "object"
+      },
+      "RetentionRunRequest": {
+        "properties": {
+          "confirm": {
+            "const": true,
+            "description": "Must be true. A purge cannot be undone.",
+            "title": "Confirm",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "title": "RetentionRunRequest",
+        "type": "object"
+      },
       "ReviewAnswer": {
         "properties": {
           "answer": {
@@ -1694,6 +2607,7 @@
       "SessionCreateRequest": {
         "properties": {
           "course_code": {
+            "maxLength": 20,
             "title": "Course Code",
             "type": "string"
           },
@@ -1710,6 +2624,7 @@
             "title": "Starts At"
           },
           "title": {
+            "maxLength": 200,
             "title": "Title",
             "type": "string"
           }
@@ -1965,6 +2880,102 @@
         ],
         "title": "SessionStatus",
         "type": "string"
+      },
+      "StudentDataExport": {
+        "properties": {
+          "account": {
+            "additionalProperties": true,
+            "title": "Account",
+            "type": "object"
+          },
+          "answers": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Answers",
+            "type": "array"
+          },
+          "attention_summaries": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Attention Summaries",
+            "type": "array"
+          },
+          "deletion_requests": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Deletion Requests",
+            "type": "array"
+          },
+          "engagement": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Engagement",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "history": {
+            "description": "Summaries kept per course and semester after session data is deleted.",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "missed_responses": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Missed Responses",
+            "type": "array"
+          },
+          "profile": {
+            "additionalProperties": true,
+            "title": "Profile",
+            "type": "object"
+          },
+          "prompts": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Prompts",
+            "type": "array"
+          },
+          "retention_days": {
+            "description": "Session data is deleted this many days after it ends.",
+            "title": "Retention Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "generated_at",
+          "retention_days",
+          "account",
+          "profile",
+          "answers",
+          "prompts",
+          "engagement",
+          "attention_summaries",
+          "missed_responses",
+          "deletion_requests",
+          "history"
+        ],
+        "title": "StudentDataExport",
+        "type": "object"
       },
       "StudentReview": {
         "properties": {
@@ -2363,6 +3374,186 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/admin/consideration-requests": {
+      "get": {
+        "description": "Requests to decide, oldest first; `show=all` adds the decided ones after them.",
+        "operationId": "list_requests_api_v1_admin_consideration_requests_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "show",
+            "required": false,
+            "schema": {
+              "default": "pending",
+              "enum": [
+                "pending",
+                "all"
+              ],
+              "title": "Show",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ConsiderationAdminOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Requests",
+        "tags": [
+          "consideration"
+        ]
+      }
+    },
+    "/api/v1/admin/consideration-requests/{request_id}/approve": {
+      "post": {
+        "description": "Approve a waiting request. The live class honours it at once.",
+        "operationId": "approve_request_api_v1_admin_consideration_requests__request_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsiderationDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsiderationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Request",
+        "tags": [
+          "consideration"
+        ]
+      }
+    },
+    "/api/v1/admin/consideration-requests/{request_id}/reject": {
+      "post": {
+        "description": "Refuse a waiting request. Nothing about the student changes.",
+        "operationId": "reject_request_api_v1_admin_consideration_requests__request_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsiderationDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsiderationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Request",
+        "tags": [
+          "consideration"
+        ]
+      }
+    },
     "/api/v1/admin/roster": {
       "post": {
         "description": "CSV or XLSX only, same reasoning as /timetable: no OCR path.",
@@ -2491,7 +3682,7 @@
     },
     "/api/v1/auth/login": {
       "post": {
-        "description": "Authenticate a user and return a bearer token.\n\nDevelopment uses the fixed Cyber 1 development identities.\nProduction resolves users through Nour's persisted User table.",
+        "description": "Authenticate a user, return a bearer token and set the refresh cookie.\n\nAn address with too many recent failures is refused with 429 before the\npassword is checked. Every failure, whatever the reason, counts against\nthe address.",
         "operationId": "login_api_v1_auth_login_post",
         "requestBody": {
           "content": {
@@ -2523,9 +3714,27 @@
               }
             },
             "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many failed sign-ins from this address recently."
           }
         },
         "summary": "Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "description": "Drop the refresh cookie, so the sign-in cannot be renewed.\n\nAn access token already issued still works until its expiry, as before:\ntokens are not revoked.",
+        "operationId": "logout_api_v1_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Logout",
         "tags": [
           "auth"
         ]
@@ -2555,7 +3764,7 @@
     },
     "/api/v1/auth/refresh": {
       "post": {
-        "description": "Swap a still-valid access token for a fresh one.\n\nThe client calls this shortly before its token expires, so a class longer\nthan the token's lifetime is not interrupted by a sign-in. The account is\nchecked again, and the sign-in itself still ends max_sign_in_hours after\nthe password was typed. An expired token cannot be refreshed: the user\nsigns in again.",
+        "description": "A fresh access token for the holder of the refresh cookie.\n\nThe client calls this shortly before its token expires, so a class longer\nthan the token's lifetime is not interrupted by a sign-in, and on load,\nsince it keeps the access token in memory only. The account is checked\nagain, and the sign-in itself still ends max_sign_in_hours after the\npassword was typed. An access token cannot be refreshed: one taken from\nthe page ends at its own expiry.",
         "operationId": "refresh_api_v1_auth_refresh_post",
         "responses": {
           "200": {
@@ -2572,6 +3781,567 @@
         "summary": "Refresh",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/governance/audit-log": {
+      "get": {
+        "description": "The audit log, newest first. Entries are never deleted, by retention or\nby a deletion request.",
+        "operationId": "list_audit_log_api_v1_governance_audit_log_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "action_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 50,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AuditEntryOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Audit Log",
+        "tags": [
+          "governance"
+        ]
+      }
+    },
+    "/api/v1/governance/deletion-requests": {
+      "get": {
+        "operationId": "list_deletion_requests_api_v1_governance_deletion_requests_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "requested",
+                    "approved",
+                    "rejected",
+                    "executed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_DeletionRequestOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Deletion Requests",
+        "tags": [
+          "governance"
+        ]
+      },
+      "post": {
+        "description": "Ask for a session's or a student's data to be erased. Nothing is deleted\nuntil a different admin approves the request and it is executed.",
+        "operationId": "create_deletion_request_api_v1_governance_deletion_requests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeletionRequestCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletionRequestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Deletion Request",
+        "tags": [
+          "governance"
+        ]
+      }
+    },
+    "/api/v1/governance/deletion-requests/{request_id}": {
+      "get": {
+        "operationId": "get_deletion_request_api_v1_governance_deletion_requests__request_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletionRequestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Deletion Request",
+        "tags": [
+          "governance"
+        ]
+      }
+    },
+    "/api/v1/governance/deletion-requests/{request_id}/approve": {
+      "post": {
+        "description": "Approve a request. The admin who made it cannot approve it.",
+        "operationId": "approve_deletion_request_api_v1_governance_deletion_requests__request_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletionRequestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Deletion Request",
+        "tags": [
+          "governance"
+        ]
+      }
+    },
+    "/api/v1/governance/deletion-requests/{request_id}/execute": {
+      "post": {
+        "description": "Carry out an approved request. Deleting a session removes everything it\nholds and cannot be undone. Erasing a student deletes their own data and\nanonymises their account.",
+        "operationId": "execute_deletion_request_api_v1_governance_deletion_requests__request_id__execute_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletionRequestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Execute Deletion Request",
+        "tags": [
+          "governance"
+        ]
+      }
+    },
+    "/api/v1/governance/deletion-requests/{request_id}/reject": {
+      "post": {
+        "operationId": "reject_deletion_request_api_v1_governance_deletion_requests__request_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletionRequestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject Deletion Request",
+        "tags": [
+          "governance"
+        ]
+      }
+    },
+    "/api/v1/governance/history/{student_id}": {
+      "get": {
+        "description": "The summaries kept for a student after their session data was deleted.\nCounts and averages only. Every read is audited.",
+        "operationId": "read_history_api_v1_governance_history__student_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "student_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Student Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read History",
+        "tags": [
+          "governance"
+        ]
+      }
+    },
+    "/api/v1/governance/retention/preview": {
+      "get": {
+        "description": "What the retention purge would delete right now. Deletes nothing.",
+        "operationId": "preview_retention_api_v1_governance_retention_preview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetentionReportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Preview Retention",
+        "tags": [
+          "governance"
+        ]
+      }
+    },
+    "/api/v1/governance/retention/run": {
+      "post": {
+        "description": "Purge every session past the retention period, and the Teams roster\nsyncs past it, through the same guarded, batched runner as the daily purge.\nNothing is deleted while a class is running (409), and the run stops between\nbatches if one starts. A task that fails is reported (503), not hidden.\nCannot be undone, so the body must say `\"confirm\": true`. The run is audited\nwith who asked; each batch also audits its counts, as the system. `answers`\nis the count taken just before the run.",
+        "operationId": "run_retention_api_v1_governance_retention_run_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetentionRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetentionReportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Retention",
+        "tags": [
+          "governance"
         ]
       }
     },
@@ -2618,6 +4388,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -2693,6 +4464,41 @@
       }
     },
     "/api/v1/materials/{material_id}": {
+      "delete": {
+        "description": "Delete a material with its questions and what was read from it.\nRefused (409) while it is still processing, or once any of its questions\nhas been delivered in a class, whose history it is.",
+        "operationId": "remove_material_api_v1_materials__material_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "material_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Material Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Material",
+        "tags": [
+          "content"
+        ]
+      },
       "get": {
         "operationId": "get_material_api_v1_materials__material_id__get",
         "parameters": [
@@ -2733,6 +4539,58 @@
         "tags": [
           "content"
         ]
+      },
+      "patch": {
+        "description": "Rename a material, or file it under a course: its questions are then\noffered only to that course's sessions. Send course_code as null to file\nit under none.",
+        "operationId": "edit_material_api_v1_materials__material_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "material_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Material Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaterialUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaterialOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Edit Material",
+        "tags": [
+          "content"
+        ]
       }
     },
     "/api/v1/materials/{material_id}/questions": {
@@ -2768,6 +4626,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -2971,6 +4830,174 @@
         "summary": "Bulk Review Questions",
         "tags": [
           "content"
+        ]
+      }
+    },
+    "/api/v1/me/consideration": {
+      "get": {
+        "description": "The student's most recent request and where it stands.",
+        "operationId": "my_request_api_v1_me_consideration_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyConsiderationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "My Request",
+        "tags": [
+          "consideration"
+        ]
+      },
+      "post": {
+        "description": "Ask for special consideration. One request may wait at a time (409).",
+        "operationId": "submit_request_api_v1_me_consideration_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsiderationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsiderationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Request",
+        "tags": [
+          "consideration"
+        ]
+      }
+    },
+    "/api/v1/me/consideration/withdraw": {
+      "post": {
+        "description": "Take back a request that is still waiting.",
+        "operationId": "withdraw_request_api_v1_me_consideration_withdraw_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsiderationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Withdraw Request",
+        "tags": [
+          "consideration"
+        ]
+      }
+    },
+    "/api/v1/me/data": {
+      "get": {
+        "description": "Everything the platform keeps about you, as JSON.",
+        "operationId": "export_my_data_api_v1_me_data_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentDataExport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Export My Data",
+        "tags": [
+          "my-data"
+        ]
+      }
+    },
+    "/api/v1/me/deletion-request": {
+      "get": {
+        "description": "Where your latest deletion request stands.",
+        "operationId": "my_deletion_request_api_v1_me_deletion_request_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyDeletionRequestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "My Deletion Request",
+        "tags": [
+          "my-data"
+        ]
+      },
+      "post": {
+        "description": "Ask for your own data to be erased. Nothing is deleted until an admin\napproves the request and carries it out; erasing cannot be undone.",
+        "operationId": "request_my_deletion_api_v1_me_deletion_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MyDeletionRequestCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyDeletionRequestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request My Deletion",
+        "tags": [
+          "my-data"
         ]
       }
     },
@@ -3245,6 +5272,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -3714,6 +5742,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -3927,6 +5956,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -4173,6 +6203,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
@@ -4239,6 +6270,7 @@
             "required": false,
             "schema": {
               "default": 0,
+              "maximum": 100000,
               "minimum": 0,
               "title": "Offset",
               "type": "integer"

@@ -162,6 +162,7 @@ def get_material_pipeline() -> MaterialPipeline:
         generator=QuestionGenerator(
             gateway.chat_client("question_generation", **background),
             settings.ollama_model,
+            count=settings.questions_per_material,
             free_text=settings.free_text_questions_enabled,
             verify=settings.question_verification_enabled,
         ),

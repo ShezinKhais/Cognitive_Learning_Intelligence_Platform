@@ -1,14 +1,17 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router'
 
-import { ApiError, getAccessToken, getCurrentUser, type CurrentUser, type Role } from '../api'
+import { ApiError, getCurrentUser, restoreSession, type CurrentUser, type Role } from '../api'
 import { accessFor } from '../authRouting'
+import PageLoader from './brand/PageLoader'
+import { problemArt } from './ui/problem'
+import { ProblemState } from './ui/ProblemState'
 
 type State =
   | { status: 'loading' }
   | { status: 'ready'; user: CurrentUser }
   | { status: 'unauthenticated' }
-  | { status: 'error'; message: string }
+  | { status: 'error'; message: string; cause: unknown }
 
 type Props = {
   allow: readonly Role[]
@@ -29,15 +32,18 @@ export default function RoleGate({ allow, children }: Props) {
   const [state, setState] = useState<State>({ status: 'loading' })
 
   useEffect(() => {
-    if (!getAccessToken()) {
-      setState({ status: 'unauthenticated' })
-      return
-    }
-
     let cancelled = false
-    getCurrentUser()
-      .then((user) => {
-        if (!cancelled) setState({ status: 'ready', user })
+    // A reload or a new tab has no token in memory yet; the refresh cookie
+    // gets one, or says nobody is signed in.
+    restoreSession()
+      .then((token) => {
+        if (!token) {
+          if (!cancelled) setState({ status: 'unauthenticated' })
+          return
+        }
+        return getCurrentUser().then((user) => {
+          if (!cancelled) setState({ status: 'ready', user })
+        })
       })
       .catch((caught: unknown) => {
         if (cancelled) return
@@ -47,6 +53,7 @@ export default function RoleGate({ allow, children }: Props) {
           setState({
             status: 'error',
             message: caught instanceof Error ? caught.message : 'Could not verify access.',
+            cause: caught,
           })
         }
       })
@@ -57,13 +64,17 @@ export default function RoleGate({ allow, children }: Props) {
   }, [])
 
   if (state.status === 'loading') {
-    return <main className="min-h-screen grid place-items-center">Checking access...</main>
+    return <PageLoader />
   }
   if (state.status === 'unauthenticated') {
     return <Navigate to="/login" replace state={{ from: requestedPath }} />
   }
   if (state.status === 'error') {
-    return <main className="p-8 text-critical" role="alert">{state.message}</main>
+    return (
+      <ProblemState fullScreen art={problemArt(state.cause)} title="C.L.I.P could not check your account">
+        {state.message}
+      </ProblemState>
+    )
   }
   const access = accessFor(state.user, allow)
   if (access === 'wrong-role') {

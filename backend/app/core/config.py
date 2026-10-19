@@ -87,8 +87,24 @@ class Settings(BaseSettings):
     # token does after sign-out: tokens are not revoked.
     max_sign_in_hours: int = Field(default=12, ge=1)
 
+    # Failed sign-ins from one address before that address is refused for a
+    # while. The per-account lockout stops guessing one password; this stops
+    # one address trying a password across many accounts, or locking out a
+    # whole class on purpose. A campus puts a class behind one address, so
+    # it counts failures only and is set well above a room's typos.
+    login_failures_per_address: int = Field(default=30, ge=1)
+    login_failure_window_minutes: int = Field(default=10, ge=1)
+
     # Database
     database_url: str = f"postgresql+asyncpg://clip:{DEV_DATABASE_PASSWORD}@localhost:5432/clip"
+    # Connections kept open, and how many more a busy moment may borrow. Every
+    # request holds one for its length, so size + overflow is the most
+    # requests the API serves at once; the rest wait up to the timeout.
+    # Recycled before Postgres or a proxy between drops an idle connection.
+    db_pool_size: int = Field(default=10, ge=1)
+    db_max_overflow: int = Field(default=10, ge=0)
+    db_pool_timeout_seconds: float = Field(default=30.0, gt=0)
+    db_pool_recycle_seconds: int = Field(default=1800, ge=-1)
 
     # LLM
     ollama_base_url: str = "http://localhost:11434/v1"
@@ -144,6 +160,9 @@ class Settings(BaseSettings):
     # three. Off until the question table stores reference answers and key
     # points: one saved without them has nothing to be marked against.
     free_text_questions_enabled: bool = False
+    # Draft questions asked for per upload. The grounding checks reject any
+    # whose answer is not in the lecturer's text, so fewer are kept than this.
+    questions_per_material: int = Field(default=15, ge=1, le=30)
     # A second model call per multiple choice question that passes the
     # grounding checks, rejecting one whose cited slide makes another option
     # right too or contradicts the answer (generation.verify_draft).
@@ -247,11 +266,15 @@ class Settings(BaseSettings):
     max_material_chunks: int = 5000
 
     # Retention (UAE PDPL)
-    data_retention_days: int = Field(default=90, ge=1)
+    # A semester, so the live database only holds the current one.
+    data_retention_days: int = Field(default=120, ge=1)
     # How often the purge of data past that period runs, and how long one run
     # may take. A run cut short carries on at the next.
     retention_purge_interval_hours: float = Field(default=24.0, gt=0)
     retention_purge_timeout_minutes: float = Field(default=30.0, gt=0)
+    # A second database for derived per-student summaries kept after the
+    # purge (app/history). Empty means history is off.
+    history_database_url: str = ""
 
     @field_validator("clip_env")
     @classmethod
@@ -351,6 +374,15 @@ class Settings(BaseSettings):
         database = database_password_problem(self.database_url)
         if database:
             problems.append(database)
+
+        history_url = self.history_database_url
+        if history_url:
+            if (urlparse(history_url).hostname or "") in {"localhost", "127.0.0.1", "0.0.0.0"}:
+                problems.append("HISTORY_DATABASE_URL points to localhost in production")
+
+            history = database_password_problem(history_url)
+            if history:
+                problems.append(history.replace("DATABASE_URL", "HISTORY_DATABASE_URL"))
 
         if problems:
             raise ValueError("Refusing to start in production: " + "; ".join(problems))

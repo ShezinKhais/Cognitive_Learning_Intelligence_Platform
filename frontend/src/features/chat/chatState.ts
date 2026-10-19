@@ -5,6 +5,36 @@ import type {
   ChatStreamEvent,
 } from './chatTypes'
 
+/** The most earlier exchanges sent with a question; the server keeps the same. */
+export const MAX_HISTORY = 3
+const MAX_HISTORY_ANSWER = 1500
+
+/**
+ * What the tutor is told came before, so a follow-up has something to refer
+ * to. Only answers that completed: a refused or stopped one is not something
+ * the tutor said.
+ */
+export function historyFor(exchanges: readonly ChatExchange[]): { question: string; answer: string }[] {
+  return exchanges
+    .filter((exchange) => exchange.phase === 'completed' && exchange.answer.trim())
+    .slice(-MAX_HISTORY)
+    .map((exchange) => ({ question: exchange.question, answer: exchange.answer.slice(0, MAX_HISTORY_ANSWER) }))
+}
+
+/** An answer split into its text and the [n] citations in it. */
+export function splitCitations(text: string): (string | number)[] {
+  const parts: (string | number)[] = []
+  let last = 0
+  for (const match of text.matchAll(/\[(\d{1,2})\]/g)) {
+    const at = match.index ?? 0
+    if (at > last) parts.push(text.slice(last, at))
+    parts.push(Number(match[1]))
+    last = at + match[0].length
+  }
+  if (last < text.length) parts.push(text.slice(last))
+  return parts
+}
+
 export const initialChatState: ChatState = {
   phase: 'idle',
   draft: '',

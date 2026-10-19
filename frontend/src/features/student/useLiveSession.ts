@@ -7,7 +7,6 @@ import {
 } from 'react'
 
 import {
-  clearAccessToken,
   getAccessToken,
 } from '../../api'
 import {
@@ -33,6 +32,7 @@ import {
 } from '../materials/closeCodes'
 import type { SessionStatus } from './types'
 import type { AttentionSummary } from '../attention/signals'
+import { renewAfterRefusal, signOutToLogin } from '../realtime/tokenRefusal'
 
 interface AnswerSubmission {
   selected_option?: number
@@ -110,6 +110,8 @@ export function useLiveSession(
     let connectedOnce = false
     let retryCount = 0
     let cursor = readCursor(sessionId)
+    // One refresh per refusal; any message after it proves the new token.
+    let tokenRenewed = false
 
     function scheduleReconnect(): void {
       if (stopped || reconnectTimer !== undefined) return
@@ -147,12 +149,16 @@ export function useLiveSession(
       readyRef.current = false
 
       const currentSocket = new WebSocket(liveSocketUrl())
+      currentSocket.addEventListener('message', () => {
+        tokenRenewed = false
+      })
       socket = currentSocket
       socketRef.current = currentSocket
 
       currentSocket.addEventListener('open', () => {
         const data = buildAuthPayload(
-          authToken,
+          // The latest, so a reconnect after a refresh sends the new token.
+          getAccessToken() ?? authToken,
           sessionId,
           cursor,
         )
@@ -360,10 +366,24 @@ export function useLiveSession(
 
         const closeAction = actionForClose(closeEvent.code)
 
+        if (closeAction === 'sign-in' && !tokenRenewed) {
+          // The token may have run out while the tab slept: refresh it once
+          // and reconnect before sending the student to sign in.
+          tokenRenewed = true
+          renewAfterRefusal({
+            stopped: () => stopped,
+            reconnect: connect,
+            retryLater: () => {
+              tokenRenewed = false
+              scheduleReconnect()
+            },
+          })
+          return
+        }
+
         if (closeAction === 'sign-in') {
           stopped = true
-          clearAccessToken()
-          window.location.assign('/login')
+          signOutToLogin()
           return
         }
 
@@ -670,8 +690,20 @@ export function useLiveSession(
     [send, state.attentionPrompt],
   )
 
+  // The student's own answer to "which room are you in"; the lecturer sees
+  // the room's activity, never what is said in it.
+  const confirmRoom = useCallback(
+    (label: string): boolean => {
+      const room_label = label.trim()
+      if (!room_label) return false
+      return send('room.confirm', { room_label })
+    },
+    [send],
+  )
+
   return {
     state,
+    confirmRoom,
     attentionConsentRejected: state.attentionConsentRejected,
     sendAttention: (value: AttentionSummary) => {
       const socket = socketRef.current

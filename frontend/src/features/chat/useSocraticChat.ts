@@ -11,6 +11,7 @@ import {
 } from './chatApi'
 import {
   chatReducer,
+  historyFor,
   initialChatState,
 } from './chatState'
 
@@ -34,6 +35,7 @@ export function useSocraticChat(sessionId: string) {
         sessionId,
         requestId,
         question,
+        history: historyFor(state.exchanges),
         signal: nextController.signal,
         onEvent: (event) => dispatch({ type: 'stream-event', event }),
       })
@@ -51,7 +53,7 @@ export function useSocraticChat(sessionId: string) {
     } finally {
       if (controller.current === nextController) controller.current = null
     }
-  }, [sessionId, state.draft])
+  }, [sessionId, state.draft, state.exchanges])
 
   const cancel = useCallback(() => {
     if (!controller.current) return

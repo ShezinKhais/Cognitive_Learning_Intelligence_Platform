@@ -63,7 +63,6 @@ class PersistentLoginSecurityStore:
     async def record_failed_login(
         self,
         user_id: UUID,
-        ip_address: str,
     ) -> bool:
         """Persist a failure and return whether the account is now locked."""
 
@@ -91,7 +90,6 @@ class PersistentLoginSecurityStore:
             AuditLog(
                 user_id=user_id,
                 action_type=LOGIN_FAILED_ACTION,
-                ip_address=ip_address,
             )
         )
 
@@ -114,7 +112,6 @@ class PersistentLoginSecurityStore:
                 AuditLog(
                     user_id=user_id,
                     action_type=ACCOUNT_LOCKED_ACTION,
-                    ip_address=ip_address,
                 )
             )
 
@@ -129,7 +126,6 @@ class PersistentLoginSecurityStore:
     async def record_successful_login(
         self,
         user_id: UUID,
-        ip_address: str,
     ) -> None:
         """Record success so earlier failed attempts no longer count."""
 
@@ -139,7 +135,6 @@ class PersistentLoginSecurityStore:
             AuditLog(
                 user_id=user_id,
                 action_type=LOGIN_SUCCEEDED_ACTION,
-                ip_address=ip_address,
             )
         )
 

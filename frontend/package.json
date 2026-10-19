@@ -18,6 +18,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",
     "@mediapipe/tasks-vision": "1.1.0",
     "@microsoft/teams-js": "^2.40.0",
     "@ricky0123/vad-web": "0.0.31",

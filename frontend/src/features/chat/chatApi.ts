@@ -1,4 +1,4 @@
-import { authenticatedFetch } from '../../api'
+import { authenticatedFetch, statusMessage } from '../../api'
 import { parseNdjsonLine } from './chatProtocol'
 import type { ChatStreamEvent } from './chatTypes'
 
@@ -8,6 +8,8 @@ export interface ChatRequest {
   sessionId: string
   requestId: string
   question: string
+  /** Earlier exchanges, oldest first, for a follow-up. */
+  history?: { question: string; answer: string }[]
   signal: AbortSignal
   onEvent: (event: ChatStreamEvent) => void
 }
@@ -24,13 +26,14 @@ export async function streamChat(request: ChatRequest): Promise<void> {
       body: JSON.stringify({
         request_id: request.requestId,
         question: request.question,
+        ...(request.history?.length ? { history: request.history } : {}),
       }),
       signal: request.signal,
     },
   )
 
   if (!response.ok) {
-    let detail = `The tutor could not respond (HTTP ${response.status}).`
+    let detail = `The tutor could not respond. ${statusMessage(response.status)}`
     try {
       const body = await response.json()
       detail = body?.error?.message ?? detail

@@ -12,6 +12,7 @@ import {
 } from 'react'
 
 import { MAX_CHAT_QUESTION_LENGTH } from './chatApi'
+import { splitCitations } from './chatState'
 import type { ChatExchange } from './chatTypes'
 import { useSocraticChat } from './useSocraticChat'
 
@@ -98,7 +99,7 @@ export function SocraticChatPanel({
             <button
               type="button"
               onClick={clearError}
-              className="mt-2 font-medium text-info hover:underline"
+              className="mt-2 font-medium text-info link-sweep"
             >
               Dismiss
             </button>
@@ -197,7 +198,7 @@ function Exchange({
       </div>
       <div className="max-w-[94%] rounded-2xl rounded-bl-sm bg-muted px-4 py-3 text-sm">
         {exchange.answer ? (
-          <p className="whitespace-pre-wrap leading-6">{exchange.answer}</p>
+          <AnswerText exchange={exchange} />
         ) : exchange.phase === 'streaming' ? (
           <p className="text-muted-foreground">Thinking through the lecture material…</p>
         ) : null}
@@ -217,7 +218,7 @@ function Exchange({
 
         {exchange.citations.length > 0 && (
           <div className="mt-4 border-t border-border pt-3">
-            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <p className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
               <BookOpen aria-hidden="true" size={15} /> Sources
             </p>
             <ul className="mt-2 space-y-2">
@@ -228,8 +229,15 @@ function Exchange({
                     ? `Page ${citation.source_page}`
                     : 'Lecture material'
                 return (
-                  <li key={citation.id} className="rounded-lg border border-border bg-card p-3">
-                    <p className="text-xs font-semibold">{citation.material_title} · {location}</p>
+                  <li
+                    key={citation.id}
+                    id={citation.number ? sourceId(exchange.id, citation.number) : undefined}
+                    className="scroll-mt-4 rounded-lg border border-border bg-card p-3 target:ring-2 target:ring-ring"
+                  >
+                    <p className="text-xs font-semibold">
+                      {citation.number && <span className="mr-1.5 text-muted-foreground">[{citation.number}]</span>}
+                      {citation.material_title} · {location}
+                    </p>
                     {citation.excerpt && (
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">{citation.excerpt}</p>
                     )}
@@ -266,5 +274,36 @@ function StateNote({ title, detail }: { title: string; detail: string | null }) 
       <p className="font-semibold">{title}</p>
       {detail && <p className="mt-1 text-muted-foreground">{detail}</p>}
     </div>
+  )
+}
+
+function sourceId(exchangeId: string, number: number): string {
+  return `source-${exchangeId}-${number}`
+}
+
+/** The answer, with each [n] it cites as a small link to that source below
+ * it. A number with no source to point at stays as written. */
+function AnswerText({ exchange }: { exchange: ChatExchange }) {
+  const numbered = new Map(
+    exchange.citations.flatMap((citation) => (citation.number ? [[citation.number, citation] as const] : [])),
+  )
+  return (
+    <p className="whitespace-pre-wrap leading-6">
+      {splitCitations(exchange.answer).map((part, index) => {
+        if (typeof part === 'string') return part
+        const source = numbered.get(part)
+        if (!source) return `[${part}]`
+        return (
+          <a
+            key={index}
+            href={`#${sourceId(exchange.id, part)}`}
+            className="mx-0.5 inline-flex h-4 min-w-4 -translate-y-1 items-center justify-center rounded bg-card px-1 align-baseline text-[0.68rem] font-semibold text-primary ring-1 ring-border hover:bg-primary hover:text-primary-foreground"
+            aria-label={`Source ${part}: ${source.material_title}`}
+          >
+            {part}
+          </a>
+        )
+      })}
+    </p>
   )
 }

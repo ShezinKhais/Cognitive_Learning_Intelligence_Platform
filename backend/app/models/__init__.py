@@ -9,7 +9,9 @@ from app.models.breakout_room import BreakoutRoom
 from app.models.classifier_eval import ClassifierEvalPrediction, ClassifierEvalRun
 from app.models.comprehension_result import ComprehensionResult
 from app.models.consent import Consent
+from app.models.consideration_request import ConsiderationRequest
 from app.models.course import Course
+from app.models.deletion_request import DeletionRequest
 from app.models.delivered_question import DeliveredQuestion
 from app.models.dynamic_prompt import DynamicPrompt
 from app.models.engagement_record import EngagementRecord
@@ -37,7 +39,9 @@ __all__ = [
     "BreakoutRoom",
     "ComprehensionResult",
     "Consent",
+    "ConsiderationRequest",
     "Course",
+    "DeletionRequest",
     "DynamicPrompt",
     "EngagementRecord",
     "Material",

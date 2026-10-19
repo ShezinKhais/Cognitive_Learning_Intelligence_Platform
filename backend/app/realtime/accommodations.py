@@ -13,6 +13,7 @@ other way: the safe mistake is to flag someone less, not more.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,21 +23,45 @@ from app.repositories.student_repository import StudentRepository
 log = logging.getLogger("clip.accommodations")
 
 
-class Accommodations:
-    def __init__(self) -> None:
-        self._accommodated: set[UUID] = set()
+def today() -> date:
+    """The day an accommodation's last day is compared with, everywhere."""
+    return _today()
 
-    def set(self, user_id: UUID, accommodated: bool) -> None:
+
+def _today() -> date:
+    return datetime.now(UTC).date()
+
+
+class Accommodations:
+    """Each accommodated student with the last day it applies, None for no end.
+    A day that has passed counts as no accommodation, so a class running past
+    the end of a granted consideration stops honouring it without a rejoin."""
+
+    def __init__(self) -> None:
+        self._accommodated: dict[UUID, date | None] = {}
+
+    def set(self, user_id: UUID, accommodated: bool, *, until: date | None = None) -> None:
         if accommodated:
-            self._accommodated.add(user_id)
+            self._accommodated[user_id] = until
         else:
-            self._accommodated.discard(user_id)
+            self._accommodated.pop(user_id, None)
+
+    def grant(self, user_id: UUID, until: date | None) -> None:
+        """Add an accommodation without shortening one already held."""
+        if user_id in self:
+            held = self._accommodated[user_id]
+            if held is None or (until is not None and held >= until):
+                return
+        self._accommodated[user_id] = until
 
     def members(self) -> frozenset[UUID]:
-        return frozenset(self._accommodated)
+        return frozenset(user for user in self._accommodated if user in self)
 
     def __contains__(self, user_id: object) -> bool:
-        return user_id in self._accommodated
+        if user_id not in self._accommodated:
+            return False
+        until = self._accommodated[user_id]  # type: ignore[index]
+        return until is None or until >= _today()
 
 
 async def has_accommodation(db: AsyncSession, user_id: UUID) -> bool:
