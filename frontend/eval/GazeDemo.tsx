@@ -170,7 +170,6 @@ const CONTOUR_POINTS = pointsOf(
   FaceLandmarker.FACE_LANDMARKS_FACE_OVAL,
   FaceLandmarker.FACE_LANDMARKS_LEFT_EYEBROW,
   FaceLandmarker.FACE_LANDMARKS_RIGHT_EYEBROW,
-  FaceLandmarker.FACE_LANDMARKS_LIPS,
 )
 const EYE_POINTS = pointsOf(FaceLandmarker.FACE_LANDMARKS_LEFT_EYE, FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE)
 // The points the judgement reads: eye corners and lids, and the nose tip.
