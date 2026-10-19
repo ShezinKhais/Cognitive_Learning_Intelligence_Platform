@@ -1,5 +1,5 @@
 // The camera attention demo page, mounted by gaze-demo.tsx.
-import { DrawingUtils, FaceLandmarker, FilesetResolver, type NormalizedLandmark } from '@mediapipe/tasks-vision'
+import { FaceLandmarker, FilesetResolver, type NormalizedLandmark } from '@mediapipe/tasks-vision'
 import { Camera, CameraOff, Crosshair, RotateCcw, ShieldCheck } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
@@ -21,8 +21,8 @@ const NO_CALIBRATION: Calibration = { yaw: 0, pitch: 0, roll: 0, irisX: 0.5, iri
 
 type Layer = 'outline' | 'mesh' | 'eyes' | 'head' | 'gaze'
 const LAYERS: { id: Layer; label: string }[] = [
-  { id: 'outline', label: 'Face outline' },
-  { id: 'mesh', label: 'Full mesh' },
+  { id: 'outline', label: 'Tracker dots' },
+  { id: 'mesh', label: 'All points' },
   { id: 'eyes', label: 'Eyes and irises' },
   { id: 'head', label: 'Head direction' },
   { id: 'gaze', label: 'Gaze box' },
@@ -153,15 +153,28 @@ function cameraError(error: unknown): string {
 
 // Overlay colours sit on live video, so they are fixed rather than themed.
 const INK = {
-  mesh: 'rgba(255, 255, 255, 0.07)',
-  feature: 'rgba(255, 255, 255, 0.32)',
-  point: 'rgba(255, 255, 255, 0.9)',
+  mesh: 'rgba(255, 255, 255, 0.35)',
+  feature: 'rgba(255, 255, 255, 0.6)',
+  point: '#ffffff',
   oval: 'rgba(255, 255, 255, 0.55)',
   eye: '#a9acff',
   iris: '#ffe066',
   good: '#4ade80',
   away: '#fbbf24',
 }
+
+/** Each landmark a set of connections touches, once. */
+const pointsOf = (...sets: { start: number; end: number }[][]) =>
+  [...new Set(sets.flat().flatMap(c => [c.start, c.end]))]
+const CONTOUR_POINTS = pointsOf(
+  FaceLandmarker.FACE_LANDMARKS_FACE_OVAL,
+  FaceLandmarker.FACE_LANDMARKS_LEFT_EYEBROW,
+  FaceLandmarker.FACE_LANDMARKS_RIGHT_EYEBROW,
+  FaceLandmarker.FACE_LANDMARKS_LIPS,
+)
+const EYE_POINTS = pointsOf(FaceLandmarker.FACE_LANDMARKS_LEFT_EYE, FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE)
+// The points the judgement reads: eye corners and lids, and the nose tip.
+const KEY_POINTS = [1, 33, 133, 159, 145, 362, 263, 386, 374]
 
 const EYES = [
   { corners: [33, 133], top: 159, bottom: 145, iris: 468, features: 'leftEye' },
@@ -179,33 +192,38 @@ function drawOverlay(
 ) {
   const { width: w, height: h } = ctx.canvas
   const px = (i: number) => ({ x: lm[i].x * w, y: lm[i].y * h })
-  const draw = new DrawingUtils(ctx)
   const scale = w / 640
-
-  if (layers.mesh) {
-    draw.drawConnectors(lm, FaceLandmarker.FACE_LANDMARKS_TESSELATION, { color: INK.mesh, lineWidth: 0.5 * scale })
-  }
-  if (layers.outline) {
-    draw.drawConnectors(lm, FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, { color: INK.oval, lineWidth: 1.5 * scale })
-    for (const set of [FaceLandmarker.FACE_LANDMARKS_LEFT_EYEBROW, FaceLandmarker.FACE_LANDMARKS_RIGHT_EYEBROW, FaceLandmarker.FACE_LANDMARKS_LIPS]) {
-      draw.drawConnectors(lm, set, { color: INK.feature, lineWidth: 1.2 * scale })
-    }
-    // The points the judgement reads: eye corners and lids, and the nose tip.
-    ctx.fillStyle = INK.point
-    for (const i of [1, 33, 133, 159, 145, 362, 263, 386, 374]) {
+  const dots = (indices: Iterable<number>, colour: string, radius: number) => {
+    ctx.fillStyle = colour
+    ctx.beginPath()
+    for (const i of indices) {
+      if (!lm[i]) continue
       const p = px(i)
-      ctx.beginPath()
-      ctx.arc(p.x, p.y, 1.8 * scale, 0, Math.PI * 2)
-      ctx.fill()
+      ctx.moveTo(p.x + radius * scale, p.y)
+      ctx.arc(p.x, p.y, radius * scale, 0, Math.PI * 2)
     }
+    ctx.fill()
+  }
+
+  if (layers.mesh) dots(lm.keys(), INK.mesh, 0.9)
+  if (layers.outline) {
+    dots(CONTOUR_POINTS, INK.feature, 1.3)
+    dots(KEY_POINTS, INK.point, 2.2)
   }
   if (layers.eyes) {
-    for (const set of [FaceLandmarker.FACE_LANDMARKS_LEFT_EYE, FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE]) {
-      draw.drawConnectors(lm, set, { color: INK.eye, lineWidth: 1.3 * scale })
+    dots(EYE_POINTS, INK.eye, 1.3)
+    // Each iris as a ring round its centre, the point the gaze box checks.
+    for (const centre of [468, 473]) {
+      if (!lm[centre + 1]) continue
+      const c = px(centre)
+      const edge = px(centre + 1)
+      ctx.strokeStyle = INK.iris
+      ctx.lineWidth = 1.3 * scale
+      ctx.beginPath()
+      ctx.arc(c.x, c.y, Math.hypot(edge.x - c.x, edge.y - c.y), 0, Math.PI * 2)
+      ctx.stroke()
     }
-    for (const set of [FaceLandmarker.FACE_LANDMARKS_LEFT_IRIS, FaceLandmarker.FACE_LANDMARKS_RIGHT_IRIS]) {
-      draw.drawConnectors(lm, set, { color: INK.iris, lineWidth: 1.3 * scale })
-    }
+    dots([468, 473], INK.iris, 1.8)
   }
   if (layers.head) {
     // From the middle of the face through the nose tip, so the arrow points
