@@ -1,7 +1,8 @@
 import { Camera, Crosshair, Info, Mic, Power, ShieldCheck } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { getCurrentUser, recordConsent } from '../../api'
 import { calibrateCamera, startCamera, startMicrophone, type CalibrationResult } from './localSensors'
+import { awayDurationSeconds, nextAwayStart } from './awayDuration'
 import { useAttentionReporter } from './useAttentionReporter'
 import { useLocalSensor } from './useLocalSensor'
 import type { AttentionSummary, FaceObservation } from './signals'
@@ -18,6 +19,10 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
   const [savedConsent, setSavedConsent] = useState({ monitoring: false, camera: false, microphone: false })
   const [savingConsent, setSavingConsent] = useState(false)
   const [message, setMessage] = useState('')
+  const awayStart = useRef<number | null>(null)
+  const lastFaceObservationAt = useRef<number | null>(null)
+  const lastForward = useRef<boolean | null>(null)
+  const [awaySeconds, setAwaySeconds] = useState<number | null>(null)
   const [calibration, setCalibration] = useState<'none' | 'running' | CalibrationResult>('none')
   const {
     status: cameraStatus, latest: face, start: enableCamera, stop: stopCamera,
@@ -29,6 +34,50 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
     drain: drainMicrophone, isActive: microphoneActive, isStartingOrActive: microphoneStartingOrActive,
     startedAt: microphoneStartedAt,
   } = useLocalSensor<boolean | null>('Microphone', startMicrophone, null, 200, setMessage)
+  // Local-only timer. Missing or stale observations never count as away.
+  useEffect(() => {
+    if (!enabled || cameraStatus !== 'on') {
+      awayStart.current = null
+      lastFaceObservationAt.current = null
+      lastForward.current = null
+      setAwaySeconds(null)
+      return
+    }
+
+    if (face.forward === null) {
+      lastFaceObservationAt.current = null
+      lastForward.current = null
+      awayStart.current = null
+      setAwaySeconds(null)
+      return
+    }
+
+    const now = performance.now()
+    lastFaceObservationAt.current = now
+    lastForward.current = face.forward
+    awayStart.current = nextAwayStart(awayStart.current, face.forward, now)
+    setAwaySeconds(face.forward === true ? 0 : awayDurationSeconds(awayStart.current, now))
+  }, [enabled, cameraStatus, face])
+
+  useEffect(() => {
+    if (!enabled || cameraStatus !== 'on') return
+
+    const timer = window.setInterval(() => {
+      const now = performance.now()
+      if (
+        lastFaceObservationAt.current === null ||
+        now - lastFaceObservationAt.current >= 2000
+      ) {
+        awayStart.current = null
+        setAwaySeconds(null)
+        return
+      }
+
+      setAwaySeconds(lastForward.current === true ? 0 : awayDurationSeconds(awayStart.current, now))
+    }, 250)
+
+    return () => window.clearInterval(timer)
+  }, [enabled, cameraStatus])
   const stopAll = useCallback(() => { stopCamera(); stopMicrophone() }, [stopCamera, stopMicrophone])
   const refuseSignal = useCallback(() => {
     stopAll()
@@ -240,6 +289,12 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
         </div>
       )}
 
+      {cameraStatus === 'on' && (
+        <p className="mt-3 text-sm" aria-live="off">
+          Continuous camera-away estimate:{' '}
+          {awaySeconds === null ? 'unavailable' : `${awaySeconds} seconds`}
+        </p>
+      )}
       <details className="mt-4 text-sm">
         <summary className="cursor-pointer font-medium text-foreground underline underline-offset-2">What is shared, and what is not</summary>
         <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
