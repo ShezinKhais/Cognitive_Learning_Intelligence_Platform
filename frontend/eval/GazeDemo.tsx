@@ -19,9 +19,10 @@ const WIRE_WINDOW_MS = 5000
 const DETECT_EVERY_MS = 50
 const NO_CALIBRATION: Calibration = { yaw: 0, pitch: 0, roll: 0, irisX: 0.5, irisY: 0.5 }
 
-type Layer = 'mesh' | 'eyes' | 'head' | 'gaze'
+type Layer = 'outline' | 'mesh' | 'eyes' | 'head' | 'gaze'
 const LAYERS: { id: Layer; label: string }[] = [
-  { id: 'mesh', label: 'Face mesh' },
+  { id: 'outline', label: 'Face outline' },
+  { id: 'mesh', label: 'Full mesh' },
   { id: 'eyes', label: 'Eyes and irises' },
   { id: 'head', label: 'Head direction' },
   { id: 'gaze', label: 'Gaze box' },
@@ -152,7 +153,9 @@ function cameraError(error: unknown): string {
 
 // Overlay colours sit on live video, so they are fixed rather than themed.
 const INK = {
-  mesh: 'rgba(255, 255, 255, 0.16)',
+  mesh: 'rgba(255, 255, 255, 0.07)',
+  feature: 'rgba(255, 255, 255, 0.32)',
+  point: 'rgba(255, 255, 255, 0.9)',
   oval: 'rgba(255, 255, 255, 0.55)',
   eye: '#a9acff',
   iris: '#ffe066',
@@ -180,15 +183,28 @@ function drawOverlay(
   const scale = w / 640
 
   if (layers.mesh) {
-    draw.drawConnectors(lm, FaceLandmarker.FACE_LANDMARKS_TESSELATION, { color: INK.mesh, lineWidth: 0.6 * scale })
-    draw.drawConnectors(lm, FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, { color: INK.oval, lineWidth: 1.4 * scale })
+    draw.drawConnectors(lm, FaceLandmarker.FACE_LANDMARKS_TESSELATION, { color: INK.mesh, lineWidth: 0.5 * scale })
+  }
+  if (layers.outline) {
+    draw.drawConnectors(lm, FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, { color: INK.oval, lineWidth: 1.5 * scale })
+    for (const set of [FaceLandmarker.FACE_LANDMARKS_LEFT_EYEBROW, FaceLandmarker.FACE_LANDMARKS_RIGHT_EYEBROW, FaceLandmarker.FACE_LANDMARKS_LIPS]) {
+      draw.drawConnectors(lm, set, { color: INK.feature, lineWidth: 1.2 * scale })
+    }
+    // The points the judgement reads: eye corners and lids, and the nose tip.
+    ctx.fillStyle = INK.point
+    for (const i of [1, 33, 133, 159, 145, 362, 263, 386, 374]) {
+      const p = px(i)
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, 1.8 * scale, 0, Math.PI * 2)
+      ctx.fill()
+    }
   }
   if (layers.eyes) {
     for (const set of [FaceLandmarker.FACE_LANDMARKS_LEFT_EYE, FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE]) {
-      draw.drawConnectors(lm, set, { color: INK.eye, lineWidth: 1.6 * scale })
+      draw.drawConnectors(lm, set, { color: INK.eye, lineWidth: 1.3 * scale })
     }
     for (const set of [FaceLandmarker.FACE_LANDMARKS_LEFT_IRIS, FaceLandmarker.FACE_LANDMARKS_RIGHT_IRIS]) {
-      draw.drawConnectors(lm, set, { color: INK.iris, lineWidth: 1.6 * scale })
+      draw.drawConnectors(lm, set, { color: INK.iris, lineWidth: 1.3 * scale })
     }
   }
   if (layers.head) {
@@ -360,7 +376,7 @@ export function GazeDemo() {
   const landmarker = useRef<FaceLandmarker | null>(null)
   const stream = useRef<MediaStream | null>(null)
   const generation = useRef(0)
-  const layersRef = useRef<Record<Layer, boolean>>({ mesh: true, eyes: true, head: true, gaze: true })
+  const layersRef = useRef<Record<Layer, boolean>>({ outline: true, mesh: false, eyes: true, head: true, gaze: true })
   const trackersRef = useRef(true)
   const calibrationRef = useRef<Calibration | null>(null)
   const calibrating = useRef<{ startedAt: number; until: number | null; frames: FaceFeatures[] } | null>(null)
