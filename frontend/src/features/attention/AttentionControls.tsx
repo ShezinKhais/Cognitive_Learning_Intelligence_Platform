@@ -21,6 +21,7 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
   const [message, setMessage] = useState('')
   const awayStart = useRef<number | null>(null)
   const lastFaceObservationAt = useRef<number | null>(null)
+  const lastForward = useRef<boolean | null>(null)
   const [awaySeconds, setAwaySeconds] = useState<number | null>(null)
   const [calibration, setCalibration] = useState<'none' | 'running' | CalibrationResult>('none')
   const {
@@ -38,12 +39,14 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
     if (!enabled || cameraStatus !== 'on') {
       awayStart.current = null
       lastFaceObservationAt.current = null
+      lastForward.current = null
       setAwaySeconds(null)
       return
     }
 
     if (face.forward === null) {
       lastFaceObservationAt.current = null
+      lastForward.current = null
       awayStart.current = null
       setAwaySeconds(null)
       return
@@ -51,8 +54,9 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
 
     const now = performance.now()
     lastFaceObservationAt.current = now
+    lastForward.current = face.forward
     awayStart.current = nextAwayStart(awayStart.current, face.forward, now)
-    setAwaySeconds(awayDurationSeconds(awayStart.current, now))
+    setAwaySeconds(face.forward === true ? 0 : awayDurationSeconds(awayStart.current, now))
   }, [enabled, cameraStatus, face])
 
   useEffect(() => {
@@ -69,7 +73,7 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
         return
       }
 
-      setAwaySeconds(awayDurationSeconds(awayStart.current, now))
+      setAwaySeconds(lastForward.current === true ? 0 : awayDurationSeconds(awayStart.current, now))
     }, 250)
 
     return () => window.clearInterval(timer)
@@ -173,8 +177,8 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
   const selectedConsented = savedConsent.monitoring &&
     (!choice.camera || savedConsent.camera) &&
     (!choice.microphone || savedConsent.microphone)
-  const sensing = running ? 'Local sensing active Ã¢â‚¬â€ raw media is not uploaded'
-    : pending ? 'Starting Ã¢â‚¬â€ your device may be active while models load' : 'Local sensing off'
+  const sensing = running ? 'Local sensing active — raw media is not uploaded'
+    : pending ? 'Starting — your device may be active while models load' : 'Local sensing off'
   const statusOf = (sensor: Sensor) => sensor === 'camera' ? cameraStatus : microphoneStatus
   return (
     <section aria-label="Optional local indicators"
@@ -229,7 +233,7 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
         <button type="button" disabled={!enabled || savingConsent || pending || running || (!choice.camera && !choice.microphone)}
           onClick={() => { void saveOptIn() }}
           className="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted disabled:opacity-50">
-          {savingConsent ? 'SavingÃ¢â‚¬Â¦' : 'Save my choice'}
+          {savingConsent ? 'Saving…' : 'Save my choice'}
         </button>
         <button type="button" disabled={!enabled || savingConsent || !selectedConsented || pending || (!choice.camera && !choice.microphone)}
           onClick={() => { if (choice.camera) void enable('camera'); if (choice.microphone) void enable('microphone') }}
@@ -265,7 +269,7 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
                 <button type="button" disabled={calibration === 'running'} onClick={startCalibration}
                   className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-semibold hover:bg-muted disabled:opacity-60">
                   <Crosshair aria-hidden="true" size={15} />
-                  {calibration === 'running' ? 'Look at the screenÃ¢â‚¬Â¦' : calibration === 'done' ? 'Calibrate again' : 'Calibrate: look at the screen for 3 seconds'}
+                  {calibration === 'running' ? 'Look at the screen…' : calibration === 'done' ? 'Calibrate again' : 'Calibrate: look at the screen for 3 seconds'}
                 </button>
                 <span className="text-sm text-foreground">
                   {calibration === 'done' && 'Calibrated to where you look. Only the offsets are kept, on this device.'}

@@ -13,8 +13,12 @@ test('looking away starts and continues a local timer', () => {
 })
 
 test('camera-facing observations reset the timer', () => {
-  assert.equal(nextAwayStart(1000, true, 3000), 0)
-  assert.equal(awayDurationSeconds(0, 4000), 0)
+  const reset = nextAwayStart(1000, true, 3000)
+  assert.equal(reset, null)
+  assert.equal(awayDurationSeconds(reset, 4000), null)
+  const resumed = nextAwayStart(reset, false, 4500)
+  assert.equal(resumed, 4500)
+  assert.equal(awayDurationSeconds(resumed, 6500), 2)
 })
 
 test('unavailable observations never count as looking away', () => {
