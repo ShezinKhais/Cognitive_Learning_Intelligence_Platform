@@ -107,6 +107,46 @@ async def socket_check(base: str, token: str, idle_seconds: float) -> None:
         report(name, False, f"{type(exc).__name__}: {exc}")
 
 
+def cookie_session_check(base: str) -> None:
+    """Check the browser's actual cookie path and CSRF contract through nginx."""
+    with httpx.Client(base_url=base, timeout=15.0) as browser:
+        token = login(browser, *STUDENT)
+        if not report("cookie session: login", token is not None):
+            return
+        cookies = [c for c in browser.cookies.jar if c.name == "clip_refresh"]
+        report(
+            "cookie session: httpOnly scoped refresh cookie",
+            len(cookies) == 1
+            and cookies[0].path == "/api/v1/auth"
+            and cookies[0].has_nonstandard_attr("HttpOnly"),
+        )
+        # A form/cross-site request must not rotate or erase this cookie.
+        report(
+            "cookie session: refresh requires CSRF header",
+            browser.post("/api/v1/auth/refresh").status_code == 401,
+        )
+        renewed = browser.post("/api/v1/auth/refresh", headers={"X-CLIP-Refresh": "1"})
+        if report("cookie session: reload renews without bearer", renewed.status_code == 200):
+            me = browser.get(
+                "/api/v1/auth/me",
+                headers={
+                    "Authorization": f"Bearer {renewed.json()['access_token']}",
+                },
+            )
+            report("cookie session: renewed token reaches identity", me.status_code == 200)
+        signed_out = browser.post("/api/v1/auth/logout", headers={"X-CLIP-Refresh": "1"})
+        report(
+            "cookie session: sign-out clears cookie",
+            signed_out.status_code == 204
+            and not any(c.name == "clip_refresh" for c in browser.cookies.jar),
+        )
+        report(
+            "cookie session: reload stays signed out",
+            browser.post("/api/v1/auth/refresh", headers={"X-CLIP-Refresh": "1"}).status_code
+            == 401,
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--base", default="http://localhost:8088", help="the proxy's address")
@@ -177,6 +217,8 @@ def main(argv: list[str] | None = None) -> int:
         asyncio.run(socket_check(base, tokens["student"], args.idle))
     else:
         report("websocket via proxy", False, "no student token")
+
+    cookie_session_check(base)
 
     print(f"\n{failures} failed" if failures else "\nall checks passed")
     return 1 if failures else 0

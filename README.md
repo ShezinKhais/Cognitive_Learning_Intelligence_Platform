@@ -467,7 +467,7 @@ After changing any schema, regenerate the contract with
 ### Troubleshooting
 
 For shared ports, frontend/backend connection configuration and outstanding
-cross-phase PR dependencies, see [the integration checkpoint](docs/phase-integration.md).
+cross-phase gaps and current verification, see [the latest integration audit](docs/integration-audit-2026-10-19.md).
 
 | Problem | Cause | Fix |
 |---|---|---|

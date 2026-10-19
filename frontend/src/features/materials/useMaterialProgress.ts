@@ -100,7 +100,6 @@ export function useMaterialProgress(
       setStatus('disconnected')
       return
     }
-    const accessToken: string = token
 
     let socket: WebSocket | null = null
     let retryTimer: number | undefined
@@ -123,13 +122,22 @@ export function useMaterialProgress(
       socket = currentSocket
 
       currentSocket.addEventListener('open', () => {
+        const currentToken = getAccessToken()
+        if (stopped || !currentToken) {
+          currentSocket.close()
+          if (!stopped) {
+            stopped = true
+            void signOutToLogin()
+          }
+          return
+        }
         const data: {
           token: string
           last_seq: number
           stream_id?: string
         } = {
           // The latest, so a reconnect after a refresh sends the new token.
-          token: getAccessToken() ?? accessToken,
+          token: currentToken,
           // Zero matters when the socket connects after a very fast upload:
           // it asks the server to replay progress emitted before READY.
           last_seq: lastSeq,

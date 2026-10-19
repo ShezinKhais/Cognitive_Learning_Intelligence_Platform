@@ -79,3 +79,20 @@ async def test_discover_join_answer_and_read_the_same_persisted_session(db, app)
         assert client.post(f"/api/v1/sessions/{session_id}/end").status_code == 200
     sign_in_as(app, STUDENT_ID, Role.STUDENT)
     assert client.get(f"/api/v1/sessions/{session_id}").json()["status"] == "ended"
+    # Phase 7 must read the same answer saved through the live socket, not just
+    # independently seeded review fixtures. Both review contracts agree on counts.
+    reviews = client.get("/api/v1/student-reviews")
+    assert reviews.status_code == 200
+    assert session_id in {row["id"] for row in reviews.json()["items"]}
+    review = client.get(f"/api/v1/student-reviews/{session_id}")
+    assert review.status_code == 200
+    assert review.headers["cache-control"] == "no-store"
+    assert review.json()["questions_attempted"] == 1
+    assert review.json()["questions_missed"] == 0
+    assert review.json()["answers"][0]["is_correct"] is True
+    student_id = responses.json()["items"][0]["student_id"]
+    summary = client.get(f"/api/v1/sessions/{session_id}/summary/{student_id}")
+    assert summary.status_code == 200
+    assert summary.json()["questions_attempted"] == review.json()["questions_attempted"]
+    assert summary.json()["questions_missed"] == review.json()["questions_missed"]
+    assert summary.json()["engagement"]["score"] is None

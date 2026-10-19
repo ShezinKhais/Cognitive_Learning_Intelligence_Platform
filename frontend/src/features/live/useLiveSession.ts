@@ -480,7 +480,6 @@ setAlerts((current) => {
       return
     }
 
-    const accessToken: string = token
 
     let socket: WebSocket | null = null
     let retryTimer: number | undefined
@@ -514,6 +513,15 @@ setAlerts((current) => {
       currentSocket.addEventListener(
         'open',
         () => {
+          const currentToken = getAccessToken()
+          if (stopped || !currentToken) {
+            currentSocket.close()
+            if (!stopped) {
+              stopped = true
+              void signOutToLogin()
+            }
+            return
+          }
           const data: {
             token: string
             session_id: string
@@ -521,7 +529,7 @@ setAlerts((current) => {
             stream_id?: string
           } = {
             // The latest, so a reconnect after a refresh sends the new token.
-            token: getAccessToken() ?? accessToken,
+            token: currentToken,
             session_id:
               activeSessionId,
           }

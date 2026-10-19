@@ -2,7 +2,16 @@ import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { AttentionControls } from '../../src/features/attention/AttentionControls'
 import { SocraticChatPanel } from '../../src/features/chat/SocraticChatPanel'
+import { useLiveSession as useStudentSession } from '../../src/features/student/useLiveSession'
+import { useLiveSession as useLecturerSession } from '../../src/features/live/useLiveSession'
+import { useMaterialProgress } from '../../src/features/materials/useMaterialProgress'
+import { BreakoutRoomSelection } from '../../src/features/student/BreakoutRoomSelection'
 import '../../src/index.css'
+import { saveAccessToken, getAccessToken, clearAccessToken } from '../../src/api'
+
+// Test entry only: exercise the same memory-only credentials as production.
+Object.assign(window, { testAuth: { saveAccessToken, getAccessToken, clearAccessToken } })
+saveAccessToken('test-only')
 
 export function Harness() {
   const [enabled, setEnabled] = useState(true)
@@ -19,4 +28,24 @@ export function Harness() {
     <SocraticChatPanel sessionId="phase8" />
   </main>
 }
-createRoot(document.getElementById('root')!).render(<Harness />)
+function StudentSocket() {
+  const { state, confirmRoom } = useStudentSession('refresh-session', 'active')
+  return <main>Student socket: {state.connection}
+    <BreakoutRoomSelection onSelect={confirmRoom} serverError={state.error}
+      enabled={state.connection === 'connected' && state.sessionStatus === 'active' && !state.paused} />
+  </main>
+}
+function LecturerSocket() {
+  const { connectionStatus } = useLecturerSession('refresh-session')
+  return <main>Lecturer socket: {connectionStatus}</main>
+}
+function ProgressSocket() {
+  const status = useMaterialProgress(() => {})
+  return <main>Progress socket: {status}</main>
+}
+const socket = new URLSearchParams(window.location.search).get('socket')
+createRoot(document.getElementById('root')!).render(
+  socket === 'student' ? <StudentSocket /> :
+  socket === 'lecturer' ? <LecturerSocket /> :
+  socket === 'progress' ? <ProgressSocket /> : <Harness />,
+)

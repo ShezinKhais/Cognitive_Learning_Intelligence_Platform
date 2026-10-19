@@ -33,6 +33,7 @@ import {
 import type { SessionStatus } from './types'
 import type { AttentionSummary } from '../attention/signals'
 import { renewAfterRefusal, signOutToLogin } from '../realtime/tokenRefusal'
+import { roomSelection } from './breakoutRoom'
 
 interface AnswerSubmission {
   selected_option?: number
@@ -102,7 +103,6 @@ export function useLiveSession(
       dispatch({ type: 'connection', status: 'disconnected' })
       return
     }
-    const authToken = token
 
     let socket: WebSocket | null = null
     let reconnectTimer: number | undefined
@@ -156,9 +156,18 @@ export function useLiveSession(
       socketRef.current = currentSocket
 
       currentSocket.addEventListener('open', () => {
+        const currentToken = getAccessToken()
+        if (stopped || !currentToken) {
+          currentSocket.close()
+          if (!stopped) {
+            stopped = true
+            void signOutToLogin()
+          }
+          return
+        }
         const data = buildAuthPayload(
           // The latest, so a reconnect after a refresh sends the new token.
-          getAccessToken() ?? authToken,
+          currentToken,
           sessionId,
           cursor,
         )
@@ -694,11 +703,12 @@ export function useLiveSession(
   // the room's activity, never what is said in it.
   const confirmRoom = useCallback(
     (label: string): boolean => {
-      const room_label = label.trim()
-      if (!room_label) return false
-      return send('room.confirm', { room_label })
+      const selection = roomSelection(label)
+      if (!selection || state.sessionStatus !== 'active' || state.paused) return false
+      dispatch({ type: 'clear-error' })
+      return send('room.confirm', selection)
     },
-    [send],
+    [send, state.sessionStatus, state.paused],
   )
 
   return {

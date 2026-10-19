@@ -1,5 +1,9 @@
 # Cross-phase integration checkpoint
 
+For the newer merged-main status and remaining gaps, see the
+[2026-10-17 integration audit](integration-audit-2026-10-17.md).
+The text below is a historical checkpoint.
+
 For the combined branch and its remaining release gates, see
 [the combined integration candidate](integration-candidate.md).
 The main-only inventory below records the earlier baseline, not this branch.

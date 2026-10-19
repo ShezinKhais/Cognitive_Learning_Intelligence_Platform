@@ -144,7 +144,10 @@ export function LiveSessionPanel({
               <ParticipationGauge answered={state.answeredIds.length} delivered={state.questionsDelivered} />
             </span>
           </div>
-          {state.sessionStatus === 'active' && !compact && <RoomConfirm onConfirm={confirmRoom} />}
+          {state.sessionStatus === 'active' && !compact && (
+            <RoomConfirm onConfirm={confirmRoom} serverError={state.error}
+              enabled={state.connection === 'connected' && !state.paused} />
+          )}
         </header>
 
         {!finished && <ConnectionNotice status={state.connection} />}
@@ -675,7 +678,7 @@ function WaitingCard({
 
       <h2 className="mt-4 text-xl font-semibold">
         {ended
-          ? 'This session has ended'
+          ? sessionStatus === 'cancelled' ? 'This session was cancelled' : 'This session has ended'
           : paused
             ? 'Session paused'
             : 'Waiting for the next checkpoint'}
@@ -683,13 +686,13 @@ function WaitingCard({
 
       <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted-foreground">
         {ended
-          ? 'Your answers are saved. See how you did, and what to revisit before the next class.'
+          ? sessionStatus === 'cancelled' ? 'There is no post-session review for a cancelled session.' : 'Your answers are saved. See how you did, and what to revisit before the next class.'
           : paused
             ? 'The lecturer has paused the session. Checkpoints will resume automatically when the session continues.'
             : 'Stay on this page. The lecturer’s next question will appear automatically.'}
       </p>
 
-      {ended && !compact && (
+      {sessionStatus === 'ended' && !compact && (
         <Link
           to={`/student/session/${sessionId}/summary`}
           className={`${buttonStyles()} mt-5`}

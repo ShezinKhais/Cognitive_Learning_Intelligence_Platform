@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type WebSocketRoute } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
 async function optIn(page: Page, sensor: 'camera' | 'microphone') {
@@ -32,6 +32,188 @@ test.beforeEach(async ({ page }) => {
   } }))
   await page.goto('/e2e/harness/index.html')
 })
+
+test('student room selection uses only the existing event and respects live session state', async ({ page }) => {
+  let connection: WebSocketRoute | undefined
+  let connected = 0
+  const selections: unknown[] = []
+  await page.routeWebSocket('**/ws/session', ws => {
+    connection = ws
+    connected++
+    ws.onMessage(message => {
+      const event = JSON.parse(String(message))
+      if (event.type === 'auth') ws.send(JSON.stringify({
+        type: 'ready', seq: 0, ts: new Date().toISOString(), data: {
+          user_id: 'student', session_id: 'refresh-session',
+          resumed_from_seq: null, stream_id: 'room-test',
+        },
+      }))
+      if (event.type === 'room.confirm') selections.push(event.data)
+    })
+  })
+  await page.goto('/e2e/harness/index.html?socket=student')
+  const send = page.getByRole('button', { name: 'Send room selection' })
+  await expect(send).toBeEnabled()
+  await page.getByLabel('Assigned room name').fill('  Room   2  ')
+  await send.click()
+  await expect.poll(() => selections).toEqual([{ room_label: 'Room 2' }])
+  await expect(page.getByRole('status')).toContainText('Room selection sent: Room 2')
+  connection!.send(JSON.stringify({ type: 'error', seq: 0, ts: new Date().toISOString(),
+    data: { code: 'RATE_LIMITED', detail: 'attention.summary is being sent too often' } }))
+  await expect(page.getByRole('status')).toContainText('Room selection sent: Room 2')
+  expect(await page.evaluate(() => (window as any).probe.requests)).toBe(0)
+  expect((await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([])
+  connection!.close({ code: 1012, reason: 'service restart' })
+  await expect.poll(() => connected).toBe(2)
+  await expect(send).toBeEnabled()
+  await expect(page.getByLabel('Assigned room name')).toHaveValue('  Room   2  ')
+  expect(selections).toEqual([{ room_label: 'Room 2' }]) // Never silently replay a selection.
+  connection!.send(JSON.stringify({ type: 'error', seq: 0, ts: new Date().toISOString(),
+    data: { code: 'ROOM_LIMIT', detail: 'No more rooms can be added.' } }))
+  await expect(page.getByRole('status')).toContainText('may not have been accepted')
+  for (const [seq, status, paused] of [[1, 'active', true], [2, 'ended', false]] as const) {
+    connection!.send(JSON.stringify({ type: 'session.state', seq, ts: new Date().toISOString(), data: {
+      session_id: 'refresh-session', status, paused, participant_count: 1,
+      active_question_id: null, questions_delivered: 0,
+    } }))
+    await expect(send).toBeDisabled()
+  }
+  expect(selections).toEqual([{ room_label: 'Room 2' }])
+})
+
+test('room selection is unavailable without a ready live connection', async ({ page }) => {
+  await page.routeWebSocket('**/ws/session', () => {})
+  await page.goto('/e2e/harness/index.html?socket=student')
+  await expect(page.getByRole('button', { name: 'Send room selection' })).toBeDisabled()
+  await expect(page.getByLabel('Assigned room name')).toBeDisabled()
+})
+
+for (const socket of ['student', 'lecturer', 'progress']) {
+  for (const failure of ['offline', '503'] as const) {
+    test(`${socket} socket keeps credentials when refresh is ${failure} and recovers`, async ({ page }) => {
+      let refreshes = 0
+      const tokens: string[] = []
+      await page.route('**/api/v1/auth/refresh', route => {
+        refreshes++
+        if (refreshes === 1) return failure === 'offline'
+          ? route.abort('failed') : route.fulfill({ status: 503, json: {} })
+        return route.fulfill({ json: {
+          access_token: 'recovered-token', expires_in: 3600, token_type: 'bearer', role: 'student',
+        } })
+      })
+      await page.routeWebSocket('**/ws/session', ws => ws.onMessage(message => {
+        const event = JSON.parse(String(message))
+        if (event.type !== 'auth') return
+        tokens.push(event.data.token)
+        if (event.data.token === 'test-only') ws.close({ code: 4001, reason: 'expired' })
+      }))
+      await page.goto(`/e2e/harness/index.html?socket=${socket}`)
+      await expect.poll(() => refreshes).toBeGreaterThanOrEqual(1)
+      await expect(page).not.toHaveURL(/\/login$/)
+      await expect.poll(() => tokens).toEqual(['test-only', 'test-only', 'recovered-token'])
+      expect(refreshes).toBe(2)
+      expect(await page.evaluate(() => (window as any).testAuth.getAccessToken())).toBe('recovered-token')
+      expect(await page.evaluate(() => localStorage.getItem('clip_access_token'))).toBeNull()
+      await expect(page).not.toHaveURL(/\/login$/)
+    })
+  }
+
+  for (const refused of [false, true]) {
+    test(`${socket} socket ${refused ? 'signs in after a refused refresh' : 'refreshes once after authentication expires'}`, async ({ page }) => {
+      let refreshes = 0
+      const tokens: string[] = []
+      await page.route('**/api/v1/auth/refresh', route => {
+        refreshes++
+        return route.fulfill({ status: refused ? 401 : 200, json: refused ? {} : {
+          access_token: 'socket-renewed', expires_in: 3600, token_type: 'bearer', role: 'student',
+        } })
+      })
+      await page.route('**/login', route => route.fulfill({ contentType: 'text/html',
+        body: '<!doctype html><h1>Sign in</h1>' }))
+      await page.routeWebSocket('**/ws/session', ws => {
+        ws.onMessage(message => {
+          const event = JSON.parse(String(message))
+          if (event.type !== 'auth') return
+          tokens.push(event.data.token)
+          if (event.data.token === 'test-only') ws.close({ code: 4001, reason: 'expired' })
+        })
+      })
+      await page.goto(`/e2e/harness/index.html?socket=${socket}`)
+      if (refused) {
+        await expect(page).toHaveURL(/\/login$/)
+        expect(tokens).toEqual(['test-only'])
+      } else {
+        await expect.poll(() => tokens).toEqual(['test-only', 'socket-renewed'])
+        await expect(page).not.toHaveURL(/\/login$/)
+      }
+      expect(refreshes).toBe(1)
+    })
+  }
+
+  test(`${socket} socket does not loop when the renewed credential is rejected`, async ({ page }) => {
+    let refreshes = 0
+    const tokens: string[] = []
+    await page.route('**/api/v1/auth/refresh', route => {
+      refreshes++
+      return route.fulfill({ json: { access_token: 'still-refused', expires_in: 3600 } })
+    })
+    await page.route('**/login', route => route.fulfill({ contentType: 'text/html', body: '<h1>Sign in</h1>' }))
+    await page.routeWebSocket('**/ws/session', ws => ws.onMessage(message => {
+      const event = JSON.parse(String(message))
+      if (event.type === 'auth') {
+        tokens.push(event.data.token)
+        ws.close({ code: 4001, reason: 'refused' })
+      }
+    }))
+    await page.goto(`/e2e/harness/index.html?socket=${socket}`)
+    await expect(page).toHaveURL(/\/login$/)
+    expect(tokens).toEqual(['test-only', 'still-refused'])
+    expect(refreshes).toBe(1)
+  })
+
+  test(`${socket} socket reconnect authenticates with the refreshed token`, async ({ page }) => {
+    const tokens: string[] = []
+    const connections: WebSocketRoute[] = []
+    await page.routeWebSocket('**/ws/session', ws => {
+      connections.push(ws)
+      ws.onMessage(message => {
+        const event = JSON.parse(String(message))
+        if (event.type === 'auth') tokens.push(event.data.token)
+      })
+    })
+    await page.goto(`/e2e/harness/index.html?socket=${socket}`)
+    await expect.poll(() => tokens).toEqual(['test-only'])
+    // A completed refresh swaps the memory credential without remounting.
+    await page.evaluate(() => (window as any).testAuth.saveAccessToken('refreshed-token'))
+    connections[0].close({ code: 1012, reason: 'service restart' })
+    await expect.poll(() => tokens).toEqual(['test-only', 'refreshed-token'])
+  })
+
+  test(`${socket} socket never reuses a token removed before reconnect`, async ({ page }) => {
+    const tokens: string[] = []
+    const connections: WebSocketRoute[] = []
+    // This isolated build contains only the harness, not the production login
+    // entry. Serve the redirect target so branded browsers do not show their
+    // own error document for the harness server's 404.
+    await page.route('**/login', route => route.fulfill({
+      contentType: 'text/html', body: '<!doctype html><title>Sign in</title><h1>Sign in</h1>',
+    }))
+    await page.routeWebSocket('**/ws/session', ws => {
+      connections.push(ws)
+      ws.onMessage(message => {
+        const event = JSON.parse(String(message))
+        if (event.type === 'auth') tokens.push(event.data.token)
+      })
+    })
+    await page.goto(`/e2e/harness/index.html?socket=${socket}`)
+    await expect.poll(() => tokens).toEqual(['test-only'])
+    await page.evaluate(() => (window as any).testAuth.clearAccessToken())
+    connections[0].close({ code: 1012, reason: 'service restart' })
+    await expect(page).toHaveURL(/\/login$/)
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
+    expect(tokens).toEqual(['test-only'])
+  })
+}
 
 test('devices remain off until saved opt-in and explicit enable; denial is recoverable', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Turn on' })).toBeDisabled()
