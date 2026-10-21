@@ -194,6 +194,17 @@ export default function ConsentPage() {
             <span className="block text-sm text-muted-foreground">Required</span>
           </span>
         </label>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Read the{' '}
+          <a href="/terms" target="_blank" rel="noopener" className="font-semibold text-primary underline underline-offset-2">
+            terms of use
+          </a>{' '}
+          and the{' '}
+          <a href="/privacy" target="_blank" rel="noopener" className="font-semibold text-primary underline underline-offset-2">
+            privacy notice
+          </a>{' '}
+          (open in a new tab).
+        </p>
 
         {isStudent && (
           <fieldset className="mt-6">

@@ -36,9 +36,9 @@ also create the session for a meeting that starts unlinked, when the event
 names the course. Teams may deliver an event twice, and either path returns
 the session unchanged the second time.
 
-Which meeting holds which session is BBIS's to store. Until their
-`MeetingDirectory` is registered it is kept in memory, links are lost on
-restart, and production refuses to start.
+Which meeting holds which session is stored in the database
+(`teams_meeting_link`, through BBIS's `DatabaseMeetingDirectory`), so links
+survive a restart.
 
 ## Running it without Teams
 

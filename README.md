@@ -262,19 +262,21 @@ See [docs/governance.md](docs/governance.md).
 - Private feedback on each answer, and the correct answer when the question closes
 - Private attention prompts, answered with "I'm here" or dismissed
 - Attention signals, worked out on the device and sent as numbers, each kind only with
-  its own consent (accepted by the backend; the student app does not send them yet)
+  its own consent
 - A private prompt when those signals stay low, and a way to say which breakout room
-  they are in (backend only)
+  they are in
 - Classes resume where they left off after a dropped connection
 - Free-text answers marked against the question's key points, in the background
 - Socratic chatbot that gives hints rather than answers, with the slides it used
-- Optional attention indicators worked out on the student's own device, and only the
-  derived figures sent (Phase 6)
-- Personal performance summary after the session (Phase 7, in review)
+- Optional camera indicators with a three-second personal calibration, worked out on the
+  student's own device, and only the derived figures sent
+- A summary after each session with what to revisit, past session reviews and progress
+  over time
+- Request special consideration, and see its decision
 
 ### Lecturer
 
-- Upload lecture material and follow its processing live
+- Upload lecture material and follow its processing live; rename, re-file or delete it
 - Review generated questions: approve, edit, regenerate or reject, singly or in bulk
 - Create, start, pause, resume and end sessions, from the dashboard or from Teams
 - Send a question manually at any point
@@ -282,15 +284,17 @@ See [docs/governance.md](docs/governance.md).
 - Class comprehension alerts with the reason for each
 - Link a session to a Teams meeting so the meeting starts and ends it
 - A session report with a PDF, built from what the session stored
-- Breakout room status and silence alerts (Phase 6, in review)
+- Breakout room status and silence alerts, from the rooms students say they are in
 
 ### Administrator
 
 - Import the timetable and student rosters from CSV or XLSX: clashes are found and
   names matched against existing accounts. Storing what was imported is not built yet
 - System status: database and model availability
-- An audit record of every change made on a user's behalf
-- Data retention governance (Phase 7, in progress)
+- An audit record of every change made on a user's behalf, filterable in governance
+- Data retention: preview what is due for deletion and run the purge
+- Deletion requests: review, approve, reject and carry out
+- Review students' special consideration requests
 
 ## API Endpoints
 
@@ -507,6 +511,10 @@ cross-phase gaps and current verification, see [the latest integration audit](do
 
 These are enforced in code, not only promised in documentation.
 
+The [privacy notice](frontend/src/pages/PrivacyPage.tsx) and [terms of use](frontend/src/pages/TermsPage.tsx)
+are served by the app at `/privacy` and `/terms`, open to anyone, and linked from sign-in,
+the consent screen and the Teams manifest. Their wording awaits team and university approval.
+
 - No raw video, audio, screenshots or transcripts are ever stored.
 - Camera and microphone processing happens on the student's own device. Only numeric
   indicators leave it, and no event type can carry anything else.
@@ -531,8 +539,8 @@ rather than a component, so every phase ends with something that runs end to end
 | 3 | Live session core: WebSocket hub, question cycle, session lifecycle | Done |
 | 4 | Microsoft Teams integration | Done |
 | 5 | AI intelligence layer: free-text classification, Socratic chatbot | Done |
-| 6 | Attention signals and breakout groups | In progress |
-| 7 | Reporting, retention and governance | In progress |
+| 6 | Attention signals and breakout groups | Done |
+| 7 | Reporting, retention and governance | Done |
 | 8 | Hardening, load testing and delivery | In progress |
 
 ![Project timeline](docs/images/gantt.png)
@@ -564,7 +572,10 @@ Written alongside the code, in `docs/`:
 | [Attention signals and breakout rooms](docs/signals-and-rooms.md) | `signal.attention`, `room.confirm`, `room.status`, private refocus prompts and room alerts |
 | [Reports and scheduled jobs](docs/reports.md) | The session report and its PDF, the scheduler and the retention purge |
 | [Deployment](docs/deployment.md) | Running the stack outside development |
-| [Load and recovery](docs/load-and-recovery.md) | The load-test harness and how the system behaves under failure |
+| [Breakout rooms in Teams](docs/breakout-rooms-teams.md) | What Teams lets an app do with breakout rooms, and why students confirm their own room |
+| [Governance](docs/governance.md) | The audit log, retention and deletion requests |
+| [Backup and restore](docs/backup-restore.md) | Taking and restoring a database backup |
+| [Load and recovery](docs/load-and-recovery.md) | The load-test harness and how the system behaves under failure: 67 of 67 checks with 40 students, 21 October |
 | [Teams frontend security](docs/teams-frontend-security.md) | Deployment security requirements for the Teams tab |
 
 ## Team

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { animate, motion, useAnimationControls, useReducedMotion } from 'motion/react'
 import { AlertCircle, ArrowRight, Eye, EyeOff, LoaderCircle } from 'lucide-react'
-import { useLocation, useNavigate } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 
 import { ApiError, getCurrentUser, login, saveAccessToken } from '../api'
 import { hasRequiredConsent, intendedPathForRole } from '../authRouting'
@@ -292,6 +292,12 @@ export default function LoginPage() {
               )}
             </button>
           </motion.form>
+
+          <p className="mt-6 text-center text-sm text-muted-foreground">
+            <Link to="/privacy" className="underline underline-offset-2 hover:text-foreground">Privacy notice</Link>
+            <span aria-hidden className="mx-2">·</span>
+            <Link to="/terms" className="underline underline-offset-2 hover:text-foreground">Terms of use</Link>
+          </p>
 
         </motion.div>
       </section>

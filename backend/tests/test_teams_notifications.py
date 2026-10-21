@@ -14,6 +14,7 @@ from app.core.config import Settings
 from app.schemas.meetings import TeamsActivity
 from app.services import teams_notifications as module
 from app.services.teams_notifications import (
+    AlertNotice,
     CheckpointNotice,
     TeamsNotifications,
     checkpoint_card,
@@ -159,6 +160,102 @@ async def test_send_targets_only_mapped_students_and_batches_fifty(monkeypatch, 
     assert set(sum(batches, [])) == {f"29:student-{i}" for i in range(51)}
     assert "%2F" in str(posts[0].url)
     assert "partially delivered" in caplog.text
+
+
+async def test_an_alert_pops_up_for_the_lecturer_alone(monkeypatch) -> None:
+    session_id = uuid4()
+    link = SimpleNamespace(meeting_id="meeting-1")
+    reference = SimpleNamespace(
+        service_url="https://smba.trafficmanager.net/emea/",
+        conversation_id="chat-1",
+        tenant_id="tenant",
+    )
+    mapping = SimpleNamespace(teams_user_id="aad-lecturer")
+
+    class Db:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def execute(self, statement):
+            return SimpleNamespace(first=lambda: (link, reference, mapping))
+
+    monkeypatch.setattr(module, "get_session_factory", lambda: Db)
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        if request.url.host == "login.microsoftonline.com":
+            return httpx.Response(200, json={"access_token": "bot-token", "expires_in": 3600})
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "members": [
+                        {"id": "29:lecturer", "aadObjectId": "aad-lecturer"},
+                        {"id": "29:student", "aadObjectId": "aad-student"},
+                    ]
+                },
+            )
+        return httpx.Response(202, json={})
+
+    client_type = httpx.AsyncClient
+    monkeypatch.setattr(
+        module.httpx,
+        "AsyncClient",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handler), **kwargs),
+    )
+    await TeamsNotifications().send_alert(AlertNotice(session_id, time.time() + 30), configured())
+    posts = [
+        r for r in requests if r.method == "POST" and r.url.host != "login.microsoftonline.com"
+    ]
+    # No message in the meeting chat, which every participant reads.
+    assert [r.url.path.rsplit("/", 1)[-1] for r in posts] == ["notification"]
+    body = json.loads(posts[0].content)
+    assert body["value"]["recipients"] == ["29:lecturer"]
+    popup = body["value"]["surfaces"][0]["content"]["value"]
+    assert popup["url"] == f"https://clip.example/teams/meeting?sessionId={session_id}"
+
+
+async def test_an_unlinked_lecturer_gets_no_alert_pop_up(monkeypatch) -> None:
+    class Db:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def execute(self, statement):
+            return SimpleNamespace(first=lambda: None)
+
+    monkeypatch.setattr(module, "get_session_factory", lambda: Db)
+    monkeypatch.setattr(
+        module.httpx, "AsyncClient", lambda **kwargs: pytest.fail("nothing should be sent")
+    )
+    await TeamsNotifications().send_alert(AlertNotice(uuid4(), time.time() + 30), configured())
+
+
+async def test_a_burst_of_alerts_is_one_pop_up_a_minute(monkeypatch) -> None:
+    monkeypatch.setattr(module, "get_settings", configured)
+    sender = TeamsNotifications()
+    sent = []
+
+    async def record(notice):
+        sent.append(notice)
+
+    monkeypatch.setattr(sender, "_run", record)
+    one, other = uuid4(), uuid4()
+    for _ in range(3):
+        sender.enqueue_alert(one)
+    sender.enqueue_alert(other)
+    await asyncio.gather(*sender.tasks)
+    assert sorted(str(n.session_id) for n in sent) == sorted([str(one), str(other)])
+    sender.alerted_at[one] -= module.ALERT_COOLDOWN_SECONDS
+    sender.enqueue_alert(one)
+    await asyncio.gather(*sender.tasks)
+    assert len(sent) == 3
 
 
 async def test_queue_is_bounded_and_expired_notices_do_not_send(monkeypatch) -> None:
@@ -324,6 +421,24 @@ async def test_notifier_failure_does_not_break_question_or_close_timer() -> None
     room.checkpoint_notifier = broken
     await deliver_next(room, row)
     assert room._live[row.session_id].open.closer is not None
+    await room.shutdown()
+
+
+async def test_a_raised_alert_reaches_the_teams_notifier_and_survives_its_failure() -> None:
+    from .classroom_support import make_room
+
+    room, _ = make_room()
+    session_id = uuid4()
+    told = []
+    room.alert_notifier = told.append
+    await room._raise_alert(session_id, {"alert_id": "a"})
+    assert told == [session_id]
+
+    def broken(*args):
+        raise RuntimeError("unavailable")
+
+    room.alert_notifier = broken
+    await room._raise_alert(session_id, {"alert_id": "b"})
     await room.shutdown()
 
 
