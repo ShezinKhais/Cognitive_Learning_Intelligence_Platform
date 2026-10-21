@@ -39,6 +39,8 @@ const StudentReviewPage = lazy(() => import('./pages/StudentReviewPage'))
 const StudentProgressPage = lazy(() => import('./pages/StudentProgressPage'))
 const StudentConsiderationPage = lazy(() => import('./pages/StudentConsiderationPage'))
 const AdminConsiderationPage = lazy(() => import('./pages/AdminConsiderationPage'))
+const PrivacyPage = lazy(() => import('./pages/PrivacyPage'))
+const TermsPage = lazy(() => import('./pages/TermsPage'))
 const StudentReviewHistoryPage = lazy(() =>
   import('./pages/StudentReviewPage').then((page) => ({ default: page.StudentReviewHistoryPage })),
 )
@@ -265,6 +267,18 @@ export default function App() {
           <Route
             path="/status"
             element={<SystemStatusPage />}
+          />
+
+          {/* Public: the Teams manifest links to both, and the consent page
+              links to them before anyone accepts. */}
+          <Route
+            path="/privacy"
+            element={<PrivacyPage />}
+          />
+
+          <Route
+            path="/terms"
+            element={<TermsPage />}
           />
 
           <Route

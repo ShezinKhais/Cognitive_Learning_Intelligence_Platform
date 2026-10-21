@@ -511,6 +511,10 @@ cross-phase gaps and current verification, see [the latest integration audit](do
 
 These are enforced in code, not only promised in documentation.
 
+The [privacy notice](frontend/src/pages/PrivacyPage.tsx) and [terms of use](frontend/src/pages/TermsPage.tsx)
+are served by the app at `/privacy` and `/terms`, open to anyone, and linked from sign-in,
+the consent screen and the Teams manifest. Their wording awaits team and university approval.
+
 - No raw video, audio, screenshots or transcripts are ever stored.
 - Camera and microphone processing happens on the student's own device. Only numeric
   indicators leave it, and no event type can carry anything else.
