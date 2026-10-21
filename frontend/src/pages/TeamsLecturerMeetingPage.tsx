@@ -1,17 +1,16 @@
 import { useEffect, useState } from 'react'
-import { Navigate } from 'react-router'
 
 import { apiAuthenticatedGet } from '../api'
+import LecturerMeetingPanel from '../features/live/LecturerMeetingPanel'
 import {
-  lecturerLiveSessionPath,
   meetingSessionPath,
   type MeetingSession,
 } from '../teams/lecturerMeeting'
 import { useTeams } from '../teams/TeamsProvider'
 
 /**
- * Resolves the lecturer's Microsoft Teams meeting surface to the existing
- * C.L.I.P lecturer workspace.
+ * Resolves the lecturer's Microsoft Teams meeting surface to its session and
+ * shows the compact lecturer panel, which links to the full workspace.
  *
  * Microsoft Teams supplies meeting context only. It does not authorize
  * access to the lecturer workspace. C.L.I.P authentication, consent and
@@ -148,10 +147,5 @@ export default function TeamsLecturerMeetingPage() {
     )
   }
 
-  return (
-    <Navigate
-      to={lecturerLiveSessionPath(sessionId)}
-      replace
-    />
-  )
+  return <LecturerMeetingPanel sessionId={sessionId} />
 }

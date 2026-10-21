@@ -1,5 +1,7 @@
-"""Best-effort checkpoint announcements through the public-cloud Teams connector.
+"""Best-effort checkpoint and alert pop-ups through the public-cloud Teams connector.
 
+Students are told when a checkpoint opens; the session's lecturer is told when
+a class alert is raised, so it reaches them even with the side panel closed.
 Only authenticated Teams meeting events may establish an outbound reference.
 The bounded background tasks never hold the classroom's question lock.
 """
@@ -163,6 +165,21 @@ class CheckpointNotice:
     question_id: UUID
 
 
+@dataclass(frozen=True)
+class AlertNotice:
+    """A class alert for the session's lecturer. It carries no alert content:
+    the pop-up opens the lecturer's panel, which shows the alert itself."""
+
+    session_id: UUID
+    closes_at: float
+
+
+# How long an alert pop-up may take to go out, and the least time between two
+# for one session, so a burst of alerts is one interruption, not several.
+ALERT_SEND_SECONDS = 30
+ALERT_COOLDOWN_SECONDS = 60
+
+
 class TeamsNotifications:
     def __init__(self) -> None:
         self.tasks: set[asyncio.Task] = set()
@@ -171,17 +188,35 @@ class TeamsNotifications:
         self.token = ""
         self.token_until = 0.0
         self.token_identity: tuple[str, str, str] | None = None
+        self.alerted_at: dict[UUID, float] = {}
 
     def enqueue(self, session_id: UUID, question_id: UUID, closes_at: float) -> None:
+        self._start(CheckpointNotice(session_id, closes_at, question_id))
+
+    def enqueue_alert(self, session_id: UUID) -> None:
+        """Tell the session's lecturer a class alert was raised, at most once a
+        minute per session."""
+        now = time.monotonic()
+        last = self.alerted_at.get(session_id)
+        if last is not None and now - last < ALERT_COOLDOWN_SECONDS:
+            return
+        if self._start(AlertNotice(session_id, time.time() + ALERT_SEND_SECONDS)):
+            self.alerted_at = {
+                sid: at for sid, at in self.alerted_at.items() if now - at < ALERT_COOLDOWN_SECONDS
+            }
+            self.alerted_at[session_id] = now
+
+    def _start(self, notice: CheckpointNotice | AlertNotice) -> bool:
         settings = get_settings()
         if not settings.teams_notifications_enabled:
-            return
+            return False
         if len(self.tasks) >= 100:
             log.warning("Teams notification skipped: queue full")
-            return
-        task = asyncio.create_task(self._run(CheckpointNotice(session_id, closes_at, question_id)))
+            return False
+        task = asyncio.create_task(self._run(notice))
         self.tasks.add(task)
         task.add_done_callback(self.tasks.discard)
+        return True
 
     async def shutdown(self) -> None:
         tasks = list(self.tasks)
@@ -189,23 +224,25 @@ class TeamsNotifications:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
-    async def _run(self, notice: CheckpointNotice) -> None:
+    async def _run(self, notice: CheckpointNotice | AlertNotice) -> None:
+        what = "alert" if isinstance(notice, AlertNotice) else "checkpoint"
         try:
             async with self.slots:
                 remaining = notice.closes_at - time.time()
                 if remaining <= 0:
                     return
                 async with asyncio.timeout(min(remaining, 12)):
-                    await self.send(notice, get_settings())
+                    if isinstance(notice, AlertNotice):
+                        await self.send_alert(notice, get_settings())
+                    else:
+                        await self.send(notice, get_settings())
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 401:
                 self.token_until = 0
-            log.warning("Teams checkpoint notification refused: HTTP %s", exc.response.status_code)
+            log.warning("Teams %s notification refused: HTTP %s", what, exc.response.status_code)
         except Exception:
             # Neither credentials nor connector response bodies belong in logs.
-            log.warning(
-                "Teams checkpoint notification failed; WebSocket delivery remains available"
-            )
+            log.warning("Teams %s notification failed; WebSocket delivery remains available", what)
 
     async def access_token(self, client: httpx.AsyncClient, settings: Settings) -> str:
         async with self.token_lock:
@@ -283,31 +320,7 @@ class TeamsNotifications:
         async with httpx.AsyncClient(timeout=4, follow_redirects=False) as client:
             token = await self.access_token(client, settings)
             headers = {"Authorization": f"Bearer {token}"}
-            # Resolve Entra IDs to Teams 29: IDs using the authenticated meeting's roster.
-            recipients: set[str] = set()
-            continuation = None
-            for _ in range(10):
-                response = await client.get(
-                    base + f"v3/conversations/{quote(conversation_id, safe='')}/pagedmembers",
-                    headers=headers,
-                    params={
-                        "pageSize": 100,
-                        **({"continuationToken": continuation} if continuation else {}),
-                    },
-                )
-                response.raise_for_status()
-                body = response.json()
-                for member in body.get("members", []):
-                    user_id = member.get("id", "")
-                    if (
-                        member.get("aadObjectId") in students
-                        and isinstance(user_id, str)
-                        and user_id.startswith("29:")
-                    ):
-                        recipients.add(user_id)
-                continuation = body.get("continuationToken")
-                if not continuation:
-                    break
+            recipients = await _meeting_members(client, base, headers, conversation_id, students)
             if not recipients or time.time() >= notice.closes_at:
                 return
             response = await client.post(
@@ -329,37 +342,147 @@ class TeamsNotifications:
                 },
             )
             response.raise_for_status()
-            ordered = sorted(recipients)
-            for offset in range(0, len(ordered), 50):
-                if time.time() >= notice.closes_at:
-                    return
-                response = await client.post(
-                    base + f"v1/meetings/{quote(meeting_id, safe='')}/notification",
-                    headers=headers,
-                    json={
-                        "type": "targetedMeetingNotification",
-                        "value": {
-                            "recipients": ordered[offset : offset + 50],
-                            "surfaces": [
-                                {
-                                    "surface": "meetingStage",
-                                    "contentType": "task",
-                                    "content": {
-                                        "value": {
-                                            "height": "300",
-                                            "width": "400",
-                                            "title": "New C.L.I.P checkpoint",
-                                            "url": target,
-                                        }
-                                    },
-                                }
-                            ],
-                        },
-                    },
+            await _targeted_popup(
+                client,
+                base,
+                headers,
+                meeting_id,
+                recipients,
+                title="New C.L.I.P checkpoint",
+                url=target,
+                closes_at=notice.closes_at,
+            )
+
+    async def send_alert(self, notice: AlertNotice, settings: Settings) -> None:
+        """Pop the lecturer's panel up in the meeting. Only the session's own
+        lecturer is told, and only once their Teams account is linked."""
+        if not settings.teams_configured:
+            return
+        target = panel_url(settings.teams_app_base_url, notice.session_id)
+        async with get_session_factory()() as db:
+            row = (
+                await db.execute(
+                    select(TeamsMeetingLink, TeamsMeetingReference, TeamsUserMapping)
+                    .join(Session, Session.session_id == TeamsMeetingLink.session_id)
+                    .join(
+                        TeamsMeetingReference,
+                        TeamsMeetingReference.meeting_id == TeamsMeetingLink.meeting_id,
+                    )
+                    .join(User, User.user_id == Session.instructor_id)
+                    .join(TeamsUserMapping, TeamsUserMapping.user_id == User.user_id)
+                    .where(
+                        Session.session_id == notice.session_id,
+                        Session.status == "active",
+                        User.active.is_(True),
+                        TeamsUserMapping.tenant_id == settings.tenant_id,
+                    )
                 )
-                response.raise_for_status()
-                if response.status_code == 207:
-                    log.warning("Teams checkpoint notification partially delivered")
+            ).first()
+            if row is None:
+                return
+            link, reference, mapping = row
+            if reference.tenant_id != settings.tenant_id:
+                return
+            base = connector_url(reference.service_url)
+            meeting_id, conversation_id = link.meeting_id, reference.conversation_id
+            lecturer = {mapping.teams_user_id}
+        async with httpx.AsyncClient(timeout=4, follow_redirects=False) as client:
+            token = await self.access_token(client, settings)
+            headers = {"Authorization": f"Bearer {token}"}
+            # Only while they are in this meeting's roster.
+            recipients = await _meeting_members(client, base, headers, conversation_id, lecturer)
+            if not recipients:
+                return
+            await _targeted_popup(
+                client,
+                base,
+                headers,
+                meeting_id,
+                recipients,
+                title="C.L.I.P alert: open the panel",
+                url=target,
+                closes_at=notice.closes_at,
+            )
+
+
+async def _meeting_members(
+    client: httpx.AsyncClient,
+    base: str,
+    headers: dict[str, str],
+    conversation_id: str,
+    aad_ids: set[str],
+) -> set[str]:
+    """Resolve Entra IDs to Teams 29: IDs using the authenticated meeting's roster."""
+    recipients: set[str] = set()
+    continuation = None
+    for _ in range(10):
+        response = await client.get(
+            base + f"v3/conversations/{quote(conversation_id, safe='')}/pagedmembers",
+            headers=headers,
+            params={
+                "pageSize": 100,
+                **({"continuationToken": continuation} if continuation else {}),
+            },
+        )
+        response.raise_for_status()
+        body = response.json()
+        for member in body.get("members", []):
+            user_id = member.get("id", "")
+            if (
+                member.get("aadObjectId") in aad_ids
+                and isinstance(user_id, str)
+                and user_id.startswith("29:")
+            ):
+                recipients.add(user_id)
+        continuation = body.get("continuationToken")
+        if not continuation:
+            break
+    return recipients
+
+
+async def _targeted_popup(
+    client: httpx.AsyncClient,
+    base: str,
+    headers: dict[str, str],
+    meeting_id: str,
+    recipients: set[str],
+    *,
+    title: str,
+    url: str,
+    closes_at: float,
+) -> None:
+    """Open url in a pop-up for these meeting members only, fifty at a time."""
+    ordered = sorted(recipients)
+    for offset in range(0, len(ordered), 50):
+        if time.time() >= closes_at:
+            return
+        response = await client.post(
+            base + f"v1/meetings/{quote(meeting_id, safe='')}/notification",
+            headers=headers,
+            json={
+                "type": "targetedMeetingNotification",
+                "value": {
+                    "recipients": ordered[offset : offset + 50],
+                    "surfaces": [
+                        {
+                            "surface": "meetingStage",
+                            "contentType": "task",
+                            "content": {
+                                "value": {
+                                    "height": "300",
+                                    "width": "400",
+                                    "title": title,
+                                    "url": url,
+                                }
+                            },
+                        }
+                    ],
+                },
+            },
+        )
+        response.raise_for_status()
+        if response.status_code == 207:
+            log.warning("Teams notification partially delivered")
 
 
 notifications = TeamsNotifications()

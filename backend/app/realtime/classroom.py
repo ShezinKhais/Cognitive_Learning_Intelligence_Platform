@@ -248,6 +248,8 @@ class Classroom:
         self.alert_recorder: AlertRecorder | None = None
         self.attention_recorder: AttentionRecorder | None = None
         self.checkpoint_notifier: Callable[[UUID, UUID, float], None] | None = None
+        # Tells the session's lecturer in Teams that an alert was raised.
+        self.alert_notifier: Callable[[UUID], None] | None = None
 
     def _next_wait(self) -> timedelta | None:
         """A fresh random wait before the next scheduled question, or None
@@ -533,6 +535,16 @@ class Classroom:
         """Send one event to every member of staff connected to the session."""
         for staff_id in self._hub.staff_ids(session_id):
             await self._hub.send_to_user(session_id, staff_id, event, data)
+
+    async def _raise_alert(self, session_id: UUID, data: dict) -> None:
+        """Tell connected staff about an alert, and the lecturer in Teams,
+        whose side panel may be closed."""
+        await self._tell_staff(session_id, ServerEventType.ALERT_RAISED, data)
+        if self.alert_notifier is not None:
+            try:
+                self.alert_notifier(session_id)
+            except Exception:
+                log.warning("Could not enqueue Teams alert notification")
 
     def welcome(
         self, session_id: UUID, recorded: SessionStatus, user_id: UUID, role: Role | None
@@ -1100,10 +1112,8 @@ class Classroom:
             await best_effort(
                 self.alert_recorder.record_room_alert(alert), "store a room alert", alert.session_id
             )
-        await self._tell_staff(
-            alert.session_id,
-            ServerEventType.ALERT_RAISED,
-            _json(_raised(AlertKind.BREAKOUT_INACTIVE, alert)),
+        await self._raise_alert(
+            alert.session_id, _json(_raised(AlertKind.BREAKOUT_INACTIVE, alert))
         )
 
     def _monitored_in(self, question: _OpenQuestion) -> tuple[set[UUID], set[UUID]]:
@@ -1184,11 +1194,7 @@ class Classroom:
         live = self._live.get(session_id)
         if live is not None:
             live.alerts.append(stored)
-        await self._tell_staff(
-            session_id,
-            ServerEventType.ALERT_RAISED,
-            _json(_raised(AlertKind.TOPIC_DIFFICULTY, stored)),
-        )
+        await self._raise_alert(session_id, _json(_raised(AlertKind.TOPIC_DIFFICULTY, stored)))
 
     async def _check_comprehension(self, live: LiveSession, closed: ClosedQuestion) -> None:
         """Raise a class comprehension alert to the lecturer once enough of
@@ -1239,10 +1245,8 @@ class Classroom:
             await best_effort(
                 self.alert_recorder.record_alert(stored), "store an alert", closed.session_id
             )
-        await self._tell_staff(
-            closed.session_id,
-            ServerEventType.ALERT_RAISED,
-            _json(_raised(AlertKind.TOPIC_DIFFICULTY, stored)),
+        await self._raise_alert(
+            closed.session_id, _json(_raised(AlertKind.TOPIC_DIFFICULTY, stored))
         )
 
     def engagement(self, session_id: UUID) -> list[ScoredStudent]:
