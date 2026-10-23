@@ -210,6 +210,16 @@ export function LiveSessionPanel({
           aria-live="polite"
           hidden={SOCRATIC_CHAT_ENABLED && !finished && activeView !== 'class' && !state.checkpoint}
         >
+          {/* Terminal session state must remain visible even when feedback is
+              retained. Otherwise the last checkpoint hides the review link. */}
+          {finished && (
+            <WaitingCard
+              sessionId={session.id}
+              sessionStatus={state.sessionStatus}
+              paused={state.paused}
+              compact={compact}
+            />
+          )}
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={state.checkpoint ? `ask-${state.checkpoint.question.question_id}` : state.completedCheckpoint ? 'done' : 'wait'}
@@ -217,6 +227,7 @@ export function LiveSessionPanel({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, transition: { duration: 0.15 } }}
               transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+              className={finished ? 'mt-5' : undefined}
             >
               {state.checkpoint ? (
                 <CheckpointCard
@@ -230,15 +241,16 @@ export function LiveSessionPanel({
               ) : state.completedCheckpoint ? (
                 <CompletedCheckpointCard
                   checkpoint={state.completedCheckpoint}
+                  awaitingNext={!finished}
                 />
-              ) : (
+              ) : !finished ? (
                 <WaitingCard
                   sessionId={session.id}
                   sessionStatus={state.sessionStatus}
                   paused={state.paused}
                   compact={compact}
                 />
-              )}
+              ) : null}
             </motion.div>
           </AnimatePresence>
         </section>
@@ -309,17 +321,21 @@ export function LiveSessionPanel({
 
 function CompletedCheckpointCard({
   checkpoint,
+  awaitingNext,
 }: {
   checkpoint: CheckpointState
+  awaitingNext: boolean
 }) {
   return (
     <article className="rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)] sm:p-7">
       <CheckpointOutcome checkpoint={checkpoint} />
 
-      <p className="mt-4 text-sm text-muted-foreground">
-        Stay on this page. The lecturer’s next question will appear
-        automatically.
-      </p>
+      {awaitingNext && (
+        <p className="mt-4 text-sm text-muted-foreground">
+          Stay on this page. The lecturer’s next question will appear
+          automatically.
+        </p>
+      )}
     </article>
   )
 }
