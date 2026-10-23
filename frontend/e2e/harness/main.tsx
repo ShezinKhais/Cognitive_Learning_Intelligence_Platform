@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { MemoryRouter } from 'react-router'
+import { LiveSessionPanel } from '../../src/pages/StudentLiveSessionPage'
 import { createRoot } from 'react-dom/client'
 import { AttentionControls } from '../../src/features/attention/AttentionControls'
 import { SocraticChatPanel } from '../../src/features/chat/SocraticChatPanel'
@@ -45,6 +47,10 @@ function ProgressSocket() {
 }
 const socket = new URLSearchParams(window.location.search).get('socket')
 createRoot(document.getElementById('root')!).render(
+  socket === 'student-panel' ? <MemoryRouter><LiveSessionPanel session={{
+    id: 'completion-session', course_code: 'SYNTHETIC', title: 'Student completion regression',
+    lecturer_id: 'lecturer', status: 'active',
+  }} /></MemoryRouter> :
   socket === 'student' ? <StudentSocket /> :
   socket === 'lecturer' ? <LecturerSocket /> :
   socket === 'progress' ? <ProgressSocket /> : <Harness />,
