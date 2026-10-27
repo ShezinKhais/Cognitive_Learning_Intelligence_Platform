@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASCII Bouquet</title>
+<style>
+  :root {
+    --bg: #fbf7f2;
+    --fg: #3a3340;
+    --muted: #8a8190;
+    --stem: #3f8f4a;
+    --leaf: #2f7a3a;
+    --paper: #c9a3c0;
+    --paper-edge: #a0628f;
+    --ribbon: #c0392b;
+    --knot: #e2a62a;
+    --spark: #c99a00;
+    --red: #d1343f;
+    --pink: #d9558f;
+    --yellow: #c9930a;
+    --violet: #7b4fc9;
+    --orange: #e0662a;
+    --white: #6b7a99;
+    --center: #9a5b12;
+    --btn-bg: #efe6dc;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #120f17;
+      --fg: #e9e2ee;
+      --muted: #8d8496;
+      --stem: #5fbf6a;
+      --leaf: #84d98c;
+      --paper: #6e4d69;
+      --paper-edge: #c98bb8;
+      --ribbon: #ff5d5d;
+      --knot: #ffd166;
+      --spark: #fff3b0;
+      --red: #ff4d5e;
+      --pink: #ff8fc7;
+      --yellow: #ffd23f;
+      --violet: #b892ff;
+      --orange: #ff9a52;
+      --white: #f2f4ff;
+      --center: #ffb347;
+      --btn-bg: #241e2c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #120f17;
+    --fg: #e9e2ee;
+    --muted: #8d8496;
+    --stem: #5fbf6a;
+    --leaf: #84d98c;
+    --paper: #6e4d69;
+    --paper-edge: #c98bb8;
+    --ribbon: #ff5d5d;
+    --knot: #ffd166;
+    --spark: #fff3b0;
+    --red: #ff4d5e;
+    --pink: #ff8fc7;
+    --yellow: #ffd23f;
+    --violet: #b892ff;
+    --orange: #ff9a52;
+    --white: #f2f4ff;
+    --center: #ffb347;
+    --btn-bg: #241e2c;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+    overflow-x: hidden;
+  }
+  pre#garden {
+    margin: 0;
+    line-height: 1.05;
+    font-size: min(16px, calc((100vw - 32px) / 39));
+    font-weight: 600;
+    user-select: none;
+  }
+  .caption {
+    margin-top: 12px;
+    font-size: 15px;
+    letter-spacing: 0.25em;
+    color: var(--muted);
+    opacity: 0;
+    transition: opacity 1.2s ease;
+  }
+  .caption.show { opacity: 1; }
+  button {
+    margin-top: 16px;
+    font: inherit;
+    font-size: 13px;
+    color: var(--fg);
+    background: var(--btn-bg);
+    border: 1px solid var(--muted);
+    border-radius: 6px;
+    padding: 6px 14px;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--fg); }
+  .stem { color: var(--stem); }
+  .leaf { color: var(--leaf); }
+  .paper { color: var(--paper); }
+  .paperEdge { color: var(--paper-edge); }
+  .ribbon { color: var(--ribbon); }
+  .knot { color: var(--knot); }
+  .spark { color: var(--spark); }
+  .center { color: var(--center); }
+  .red { color: var(--red); }
+  .pink { color: var(--pink); }
+  .yellow { color: var(--yellow); }
+  .violet { color: var(--violet); }
+  .orange { color: var(--orange); }
+  .white { color: var(--white); }
+</style>
+</head>
+<body>
+<pre id="garden" aria-label="An ASCII art bouquet of flowers blooming"></pre>
+<div class="caption" id="caption">~ a bouquet for you ~</div>
+<button id="replay" type="button">bloom again</button>
+
+<script>
+(() => {
+  const W = 64, H = 36, TX = 32, TY = 28;
+  const PAPER_ROWS = 8;
+
+  // Each pattern is 5x3; mask marks petal (p) and center (c) cells.
+  const PATTERNS = {
+    daisy: { rows: [" \\|/ ", "-(o)-", " /|\\ "], mask: [" ppp ", "pcccp", " ppp "] },
+    rose:  { rows: [" _@_ ", "(@@@)", " \\@/ "], mask: [" ppp ", "ppcpp", " ppp "] },
+    sun:   { rows: [" *** ", "*(#)*", " *** "], mask: [" ppp ", "pcccp", " ppp "] },
+    tulip: { rows: [" ,^, ", "(\\|/)", " \\_/ "], mask: [" ppp ", "ppppp", " ppp "] },
+    lily:  { rows: ["\\ | /", "- @ -", "/ | \\"], mask: ["p p p", "p c p", "p p p"] },
+    bell:  { rows: [" .-. ", "(oOo)", " '-' "], mask: [" ppp ", "pcccp", " ppp "] },
+  };
+
+  // Flower heads (center cell), drawn in list order (back to front).
+  const FLOWERS = [
+    { x: 32, y: 4,  p: "rose",  c: "red",    order: 0 },
+    { x: 23, y: 8,  p: "daisy", c: "white",  order: 4 },
+    { x: 41, y: 8,  p: "sun",   c: "yellow", order: 5 },
+    { x: 18, y: 13, p: "tulip", c: "pink",   order: 8 },
+    { x: 46, y: 13, p: "lily",  c: "violet", order: 9 },
+    { x: 27, y: 13, p: "bell",  c: "orange", order: 2 },
+    { x: 37, y: 13, p: "rose",  c: "pink",   order: 3 },
+    { x: 24, y: 18, p: "sun",   c: "violet", order: 6 },
+    { x: 40, y: 18, p: "daisy", c: "yellow", order: 7 },
+    { x: 32, y: 16, p: "lily",  c: "red",    order: 1 },
+  ];
+
+  // Precompute stem paths, leaves and timing.
+  let endTime = 0;
+  FLOWERS.forEach((f, i) => {
+    const steps = TY - f.y - 1;
+    const dx = f.x - TX;
+    f.path = [];
+    let prev = TX;
+    for (let r = 1; r <= steps; r++) {
+      const x = Math.round(TX + dx * r / steps);
+      const ch = x > prev ? "/" : x < prev ? "\\" : "|";
+      f.path.push({ x, y: TY - r, ch });
+      prev = x;
+    }
+    const leafR = Math.min(steps - 3, 10 + (i % 3));
+    if (leafR >= PAPER_ROWS + 1) {
+      const cell = f.path[leafR - 1];
+      const side = dx < 0 ? -1 : dx > 0 ? 1 : (i % 2 ? 1 : -1);
+      f.leaf = { x: cell.x + side, y: cell.y, ch: side < 0 ? "<" : ">" };
+    }
+    f.start = 0.9 + f.order * 0.3;
+    f.stemDur = steps * 0.035;
+    f.bloom = f.start + f.stemDur;
+    f.full = f.bloom + 0.45;
+    endTime = Math.max(endTime, f.full + 0.6);
+  });
+
+  const pre = document.getElementById("garden");
+  const caption = document.getElementById("caption");
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  let grid, t0, last, sparkles, petals, nextSpark, nextPetal;
+
+  const clear = () => { grid = Array.from({ length: H }, () => new Array(W).fill(null)); };
+  const inside = (x, y) => x >= 0 && x < W && y >= 0 && y < H;
+  const put = (x, y, ch, c) => { if (inside(x, y)) grid[y][x] = { ch, c }; };
+  const putIfEmpty = (x, y, ch, c) => { if (inside(x, y) && !grid[y][x]) grid[y][x] = { ch, c }; };
+
+  function drawPaper(t) {
+    const rows = Math.min(PAPER_ROWS, Math.floor((t / 0.8) * PAPER_ROWS));
+    for (let k = 1; k <= rows; k++) {
+      const y = TY - k;
+      const hw = Math.round(1 + k * 1.4);
+      for (let x = TX - hw; x <= TX + hw; x++) {
+        if (x === TX - hw) put(x, y, "\\", "paperEdge");
+        else if (x === TX + hw) put(x, y, "/", "paperEdge");
+        else if (k === PAPER_ROWS) put(x, y, x % 2 ? "~" : "-", "paperEdge");
+        else put(x, y, (x + k) % 4 === 0 ? ":" : (x + k) % 4 === 2 ? "." : " ", "paper");
+      }
+    }
+  }
+
+  function drawBow(t) {
+    if (t < 0.4) return;
+    const bow = "~=<(@)>=~";
+    for (let i = 0; i < bow.length; i++) {
+      put(TX - 4 + i, TY, bow[i], bow[i] === "@" ? "knot" : "ribbon");
+    }
+    for (let r = 1; r <= 4; r++) {
+      for (let dx = -1; dx <= 1; dx++) put(TX + dx, TY + r, r === 4 ? "'" : "|", "stem");
+    }
+    put(TX - 3, TY + 1, "/", "ribbon"); put(TX + 3, TY + 1, "\\", "ribbon");
+    put(TX - 4, TY + 2, "/", "ribbon"); put(TX + 4, TY + 2, "\\", "ribbon");
+    put(TX - 5, TY + 3, "'", "ribbon"); put(TX + 5, TY + 3, "'", "ribbon");
+  }
+
+  function drawStems(t) {
+    for (const f of FLOWERS) {
+      if (t < f.start) continue;
+      const n = Math.min(f.path.length, Math.ceil(((t - f.start) / f.stemDur) * f.path.length));
+      for (let i = 0; i < n; i++) put(f.path[i].x, f.path[i].y, f.path[i].ch, "stem");
+      if (f.leaf && t >= f.full) put(f.leaf.x, f.leaf.y, f.leaf.ch, "leaf");
+    }
+  }
+
+  function drawHeads(t) {
+    for (const f of FLOWERS) {
+      if (t < f.bloom) continue;
+      const stage = Math.min(3, Math.floor((t - f.bloom) / 0.15));
+      const pat = PATTERNS[f.p];
+      if (stage === 0) { put(f.x, f.y, ".", "stem"); continue; }
+      if (stage === 1) { put(f.x, f.y, "o", f.c); continue; }
+      const x0 = stage === 2 ? 1 : 0, x1 = stage === 2 ? 3 : 4;
+      for (let r = 0; r < 3; r++) {
+        for (let cx = x0; cx <= x1; cx++) {
+          const ch = pat.rows[r][cx];
+          if (ch === " ") continue;
+          put(f.x - 2 + cx, f.y - 1 + r, ch, pat.mask[r][cx] === "c" ? "center" : f.c);
+        }
+      }
+    }
+  }
+
+  function drawBursts(t) {
+    for (const f of FLOWERS) {
+      const age = t - f.full;
+      if (age < 0 || age > 0.6) continue;
+      const R = 2 + age * 6;
+      const ch = age < 0.2 ? "*" : age < 0.4 ? "+" : ".";
+      for (let a = 0; a < 12; a++) {
+        const ang = (a / 12) * Math.PI * 2;
+        putIfEmpty(f.x + Math.round(Math.cos(ang) * R * 2), f.y + Math.round(Math.sin(ang) * R), ch, f.c);
+      }
+    }
+  }
+
+  function updateIdle(t, dt) {
+    if (t < endTime || reduceMotion) return;
+    if (t >= nextSpark) {
+      const f = FLOWERS[Math.floor(Math.random() * FLOWERS.length)];
+      sparkles.push({
+        x: f.x + Math.round((Math.random() - 0.5) * 10),
+        y: f.y + Math.round((Math.random() - 0.5) * 5),
+        born: t,
+      });
+      nextSpark = t + 0.15 + Math.random() * 0.35;
+    }
+    if (t >= nextPetal) {
+      const f = FLOWERS[Math.floor(Math.random() * FLOWERS.length)];
+      petals.push({ x0: f.x, y: f.y + 2, c: f.c, phase: Math.random() * 6, ch: Math.random() < 0.5 ? "," : "`" });
+      nextPetal = t + 1.2 + Math.random() * 2;
+    }
+    for (const p of petals) p.y += dt * 2.5;
+    petals = petals.filter(p => p.y < H);
+    sparkles = sparkles.filter(s => t - s.born < 0.9);
+  }
+
+  function drawIdle(t) {
+    const frames = [".", "+", "*", "+", "."];
+    for (const s of sparkles) putIfEmpty(s.x, s.y, frames[Math.floor(((t - s.born) / 0.9) * 5)], "spark");
+    for (const p of petals) {
+      putIfEmpty(Math.round(p.x0 + Math.sin(t * 2 + p.phase) * 2), Math.floor(p.y), p.ch, p.c);
+    }
+  }
+
+  const esc = ch => ch === "<" ? "&lt;" : ch === ">" ? "&gt;" : ch === "&" ? "&amp;" : ch;
+
+  function render() {
+    const lines = [];
+    for (let y = 0; y < H; y++) {
+      let line = "", cur = "";
+      for (let x = 0; x < W; x++) {
+        const cell = grid[y][x];
+        const c = cell ? cell.c : "";
+        if (c !== cur) {
+          if (cur) line += "</span>";
+          if (c) line += `<span class="${c}">`;
+          cur = c;
+        }
+        line += cell ? esc(cell.ch) : " ";
+      }
+      if (cur) line += "</span>";
+      lines.push(line);
+    }
+    pre.innerHTML = lines.join("\n");
+  }
+
+  function frame(now) {
+    const t = reduceMotion ? endTime : (now - t0) / 1000;
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    clear();
+    drawStems(t);
+    drawPaper(t);
+    drawHeads(t);
+    drawBow(t);
+    drawBursts(t);
+    updateIdle(t, dt);
+    drawIdle(t);
+    render();
+    caption.classList.toggle("show", t >= endTime);
+    if (!reduceMotion) requestAnimationFrame(frame);
+  }
+
+  function start() {
+    t0 = last = performance.now();
+    sparkles = []; petals = [];
+    nextSpark = endTime; nextPetal = endTime + 0.5;
+    caption.classList.remove("show");
+    if (reduceMotion) frame(t0);
+  }
+
+  document.getElementById("replay").addEventListener("click", start);
+  start();
+  if (!reduceMotion) requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
