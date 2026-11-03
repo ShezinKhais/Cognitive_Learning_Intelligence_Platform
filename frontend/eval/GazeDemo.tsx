@@ -527,6 +527,18 @@ export function GazeDemo() {
 
   useEffect(() => () => { stream.current?.getTracks().forEach(track => track.stop()) }, [])
 
+  // As in the class panel: a hidden tab or a page being left turns the camera off.
+  // stopCamera only touches refs and state setters, so the first render's copy is enough.
+  useEffect(() => {
+    const hide = () => { if (document.hidden) stopCamera() }
+    document.addEventListener('visibilitychange', hide)
+    window.addEventListener('pagehide', stopCamera)
+    return () => {
+      document.removeEventListener('visibilitychange', hide)
+      window.removeEventListener('pagehide', stopCamera)
+    }
+  }, [])
+
   function startCalibration() {
     calibrating.current = { startedAt: performance.now(), until: null, frames: [] }
     calibrationRef.current = null

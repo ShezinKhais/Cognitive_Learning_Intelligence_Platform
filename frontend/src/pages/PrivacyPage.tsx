@@ -15,8 +15,8 @@ export default function PrivacyPage() {
           <li>Class activity: the sessions you joined, your answers to checkpoint questions, and any special consideration request you submit.</li>
           <li>Lecture material uploaded by lecturers, and the questions generated from it.</li>
           <li>
-            If you turn on engagement monitoring: a short summary for each minute of a class, made of numbers only
-            (described below).
+            If you turn on engagement monitoring: the camera and microphone readings described below, kept as one
+            summary of numbers for each minute of a class.
           </li>
           <li>An audit record of actions taken while you are signed in: who did what, and when. It holds no content.</li>
         </ul>
@@ -28,9 +28,11 @@ export default function PrivacyPage() {
           browser works them out on your own device. No video, picture, sound or speech leaves your device.
         </p>
         <p>
-          Every few seconds, your device sends C.L.I.P four values: the share of time you were facing the screen,
-          whether a face was in view, whether you were speaking (yes or no), and how long that period was. Nothing
-          else can be sent. You can turn either indicator off at any time from the class panel, and it stops at once.
+          About every five seconds, your device sends C.L.I.P four values: the share of time you were facing the
+          screen, whether a face was in view, whether you were speaking (yes or no), and how long that period was.
+          The camera and microphone indicators send nothing else. C.L.I.P combines these values into one summary for
+          each minute and keeps only that summary. You can turn either indicator off at any time from the class
+          panel, and it stops at once.
         </p>
       </PolicySection>
 
@@ -78,8 +80,14 @@ export default function PrivacyPage() {
           <li>Administrators manage accounts, data requests and the audit record.</li>
         </ul>
         <p>
-          Every request is checked against your role on the C.L.I.P server. C.L.I.P does not send your information to
-          anyone outside the system.
+          Every request is checked against your role on the C.L.I.P server. Other than through Microsoft Teams,
+          described below, C.L.I.P does not send your information to anyone outside the system.
+        </p>
+        <p>
+          When you use C.L.I.P inside a Teams meeting, Teams is run by Microsoft. Teams tells C.L.I.P when the meeting
+          starts and ends, C.L.I.P asks Teams who is in the meeting, and Teams delivers C.L.I.P's messages: a card in
+          the meeting chat naming the course and session when a checkpoint opens, and pop-ups. These messages only say
+          that something is waiting in C.L.I.P; your answers and results are never in them.
         </p>
       </PolicySection>
 
