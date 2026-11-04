@@ -1,11 +1,53 @@
+import { useEffect, useState } from 'react'
+
 import { useStudentApp } from '../features/student/StudentAppContext'
 import { useTeams } from '../teams/TeamsProvider'
 import { LiveSessionPanel } from './StudentLiveSessionPage'
 
+// How often an open panel asks again whether the lecturer has linked the
+// meeting to a session. Also checked when the panel regains focus.
+const LINK_RECHECK_MS = 10_000
+
 export default function TeamsMeetingPage() {
   const teams = useTeams()
-  const { sessions } = useStudentApp()
+  const { sessions, refreshSessions } = useStudentApp()
   const requestedSessionId = new URLSearchParams(window.location.search).get('sessionId')
+  const meetingId = teams.context?.meetingId ?? null
+  const [recheckFailed, setRecheckFailed] = useState(false)
+
+  const session = sessions.find(
+    (candidate) =>
+      (
+        requestedSessionId &&
+        candidate.id === requestedSessionId
+      ) || (
+        meetingId &&
+        candidate.teams_meeting_id === meetingId
+      ),
+  )
+
+  // The lecturer may link the session after this panel opened. Until a
+  // session appears, keep asking, so nobody has to close and reopen it.
+  const waiting = teams.status === 'ready' && Boolean(meetingId) && !session
+  useEffect(() => {
+    if (!waiting) {
+      return
+    }
+    let stopped = false
+    const recheck = () => {
+      refreshSessions().then(
+        () => !stopped && setRecheckFailed(false),
+        () => !stopped && setRecheckFailed(true),
+      )
+    }
+    const timer = window.setInterval(recheck, LINK_RECHECK_MS)
+    window.addEventListener('focus', recheck)
+    return () => {
+      stopped = true
+      window.clearInterval(timer)
+      window.removeEventListener('focus', recheck)
+    }
+  }, [waiting, refreshSessions])
 
   if (teams.status === 'initializing') {
     return <PanelStatus title="Connecting to Microsoft Teams" />
@@ -39,16 +81,18 @@ export default function TeamsMeetingPage() {
     )
   }
 
-  const session = sessions.find(
-    (candidate) =>
-      (
-        requestedSessionId &&
-        candidate.id === requestedSessionId
-      ) || (
-        teams.context?.meetingId &&
-        candidate.teams_meeting_id === teams.context.meetingId
-      ),
-  )
+  if (!session && waiting) {
+    return (
+      <PanelStatus
+        title="Waiting for your lecturer"
+        message={
+          recheckFailed
+            ? 'C.L.I.P could not be reached. It will keep trying.'
+            : 'Your lecturer has not started C.L.I.P for this meeting yet. This panel opens the class as soon as they do.'
+        }
+      />
+    )
+  }
 
   if (!session) {
     return (
