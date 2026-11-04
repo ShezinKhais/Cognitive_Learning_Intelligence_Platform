@@ -36,6 +36,7 @@ METHODS = ("get", "post", "put", "patch", "delete")
 PUBLIC = {
     ("POST", "/api/v1/auth/login"): "how a user signs in",
     ("POST", "/api/v1/auth/refresh"): "the httpOnly refresh cookie is the credential",
+    ("POST", "/api/v1/auth/teams"): "Teams sign-in, authenticated by the Entra token it carries",
     ("POST", "/api/v1/auth/logout"): "clears the refresh cookie, and does nothing without one",
     ("GET", "/api/v1/health"): "liveness for a load balancer",
     ("GET", "/api/v1/ready"): "readiness for a load balancer",

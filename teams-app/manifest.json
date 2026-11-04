@@ -1,7 +1,7 @@
 {
   "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
   "manifestVersion": "1.17",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "id": "${{TEAMS_APP_ID}}",
   "developer": {
     "name": "CSIT321 Team 4, University of Wollongong in Dubai",
@@ -23,23 +23,28 @@
   },
   "accentColor": "#6264A7",
 
+  "showLoadingIndicator": true,
+
   "staticTabs": [
     {
       "entityId": "clip.student",
       "name": "My Learning",
       "contentUrl": "${{BASE_URL}}/student",
+      "websiteUrl": "${{BASE_URL}}/student",
       "scopes": ["personal"]
     },
     {
       "entityId": "clip.lecturer",
-      "name": "Dashboard",
-      "contentUrl": "${{BASE_URL}}/lecturer",
+      "name": "Lecturer",
+      "contentUrl": "${{BASE_URL}}/open/lecturer",
+      "websiteUrl": "${{BASE_URL}}/lecturer/sessions",
       "scopes": ["personal"]
     },
     {
       "entityId": "clip.admin",
       "name": "Administration",
-      "contentUrl": "${{BASE_URL}}/admin",
+      "contentUrl": "${{BASE_URL}}/open/admin",
+      "websiteUrl": "${{BASE_URL}}/admin",
       "scopes": ["personal"]
     }
   ],
@@ -68,7 +73,7 @@
 
   "webApplicationInfo": {
     "id": "${{BOT_ID}}",
-    "resource": "https://RscBasedStoreApp"
+    "resource": "api://${{BASE_DOMAIN}}/${{BOT_ID}}"
   },
 
   "authorization": {

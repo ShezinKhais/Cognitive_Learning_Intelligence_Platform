@@ -57,6 +57,11 @@ works against a backend sharing the same `.env`, and never in production.
 
 ## Running it in Teams
 
+For the team's tenant (CLIP736), follow `docs/teams-tenant-setup.md`: it runs
+the demo stack in production mode behind a tunnel, with Teams single sign-on,
+and covers the accounts, the Azure registration and the upload. The steps
+below are the short version for a development server.
+
 This needs the "Upload custom apps" permission on the tenant.
 
 1. **Tunnel.** Teams loads the tabs and posts to the bot over HTTPS, so
@@ -94,8 +99,8 @@ This needs the "Upload custom apps" permission on the tenant.
 ## Not done yet
 
 - **Participant join and leave events.** They are acknowledged but not acted
-  on. They need BBIS's Teams user mappings to know which C.L.I.P user a
-  Teams participant is.
+  on. The Teams user mappings they need are now recorded the first time
+  someone signs in with Teams single sign-on (`POST /api/v1/auth/teams`).
 - **Checking the meeting organizer when a meeting is linked.** Nothing yet
   checks that the lecturer organises the meeting. It needs the bot's
   outbound calls to Teams, which need the tenant.

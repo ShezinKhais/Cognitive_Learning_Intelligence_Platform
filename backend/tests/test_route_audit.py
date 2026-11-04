@@ -28,6 +28,9 @@ NOT_AUDITED = {
     # Nobody is signed in yet. Failed attempts and lockouts are logged and
     # counted by the login itself.
     ("POST", "/api/v1/auth/login"),
+    # Teams single sign-on, the same as a login. Nobody is signed in yet, each
+    # attempt is in the security log, and linking the Teams identity is logged.
+    ("POST", "/api/v1/auth/teams"),
     # A student asking for their own data to be erased. The deletion request
     # service writes the audit entry itself (DELETION_REQUESTED).
     ("POST", "/api/v1/me/deletion-request"),

@@ -48,6 +48,7 @@ const StudentSummaryPage = lazy(() => import('./pages/StudentSummaryPage'))
 const SystemStatusPage = lazy(() => import('./pages/SystemStatusPage'))
 const TeamsConfigPage = lazy(() => import('./pages/TeamsConfigPage'))
 const TeamsLecturerMeetingPage = lazy(() => import('./pages/TeamsLecturerMeetingPage'))
+const TeamsLauncherPage = lazy(() => import('./pages/TeamsLauncherPage'))
 const TeamsMeetingEntryPage = lazy(() => import('./pages/TeamsMeetingEntryPage'))
 const TeamsMeetingPage = lazy(() => import('./pages/TeamsMeetingPage'))
 
@@ -93,6 +94,16 @@ export default function App() {
           <Route
             path="/config"
             element={<TeamsConfigPage />}
+          />
+
+          {/* The lecturer and admin tabs in Teams: each opens its website. */}
+          <Route
+            path="/open/lecturer"
+            element={<TeamsLauncherPage target="lecturer" />}
+          />
+          <Route
+            path="/open/admin"
+            element={<TeamsLauncherPage target="admin" />}
           />
 
           <Route

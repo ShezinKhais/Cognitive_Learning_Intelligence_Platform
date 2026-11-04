@@ -3130,6 +3130,21 @@
         "title": "TeamsActivity",
         "type": "object"
       },
+      "TeamsSignInRequest": {
+        "properties": {
+          "token": {
+            "maxLength": 16384,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "TeamsSignInRequest",
+        "type": "object"
+      },
       "TimetableImportResult": {
         "description": "Result of an administrator uploading a timetable CSV or XLSX.\n\nCSV and XLSX are parsed as structured data. There is no OCR path, because a\nmisread digit would silently assign a student to the wrong session.",
         "properties": {
@@ -3779,6 +3794,57 @@
           }
         },
         "summary": "Refresh",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/teams": {
+      "post": {
+        "description": "Sign in with the Microsoft account Teams is signed in with.\n\nThe tab sends the Entra token Teams gave it. The account must already\nexist in C.L.I.P; see app/services/teams_sso.py.",
+        "operationId": "teams_sign_in_api_v1_auth_teams_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamsSignInRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "The Microsoft account has no C.L.I.P account."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many failed sign-ins from this address recently."
+          },
+          "503": {
+            "description": "Teams sign-in is not configured, or Microsoft is unreachable."
+          }
+        },
+        "summary": "Teams Sign In",
         "tags": [
           "auth"
         ]

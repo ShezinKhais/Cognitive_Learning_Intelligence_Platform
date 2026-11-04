@@ -11,6 +11,8 @@ import { SIGN_OUT_INCOMPLETE } from '../features/realtime/tokenRefusal'
 import ThemeSwitch from '../components/shell/ThemeSwitch'
 import { buttonStyles } from '../components/ui/button'
 import { cn } from '../components/ui/cn'
+import { createTeamsHost } from '../teams/teamsClient'
+import { teamsSignIn, teamsSignInRefusal } from '../teams/teamsSignIn'
 
 // Lectures the preview can show: how the class did on each question so far,
 // what each was on, and the question open now. A different one each time the
@@ -143,22 +145,44 @@ export default function LoginPage() {
   const form = useAnimationControls()
   const reduced = useReducedMotion()
 
+  // In Teams the sign-in normally happens without this page. It shows when
+  // the Microsoft account has no C.L.I.P account, or Teams sign-in failed.
+  const inTeams = createTeamsHost().kind === 'teams'
+  const [teamsProblem, setTeamsProblem] = useState(() => (inTeams ? teamsSignInRefusal() : null))
+
+  async function signedIn(result: { access_token: string; expires_in: number }): Promise<void> {
+    saveAccessToken(result.access_token, result.expires_in)
+    requestIntro()
+    const currentUser = await getCurrentUser()
+    const requestedPath = (location.state as { from?: string } | null)?.from
+    const destination = intendedPathForRole(currentUser.role, requestedPath)
+    if (!hasRequiredConsent(currentUser)) {
+      navigate('/consent', { replace: true, state: { from: destination } })
+      return
+    }
+    navigate(destination, { replace: true })
+  }
+
+  async function retryTeams(): Promise<void> {
+    setSubmitting(true)
+    setTeamsProblem(null)
+    try {
+      const result = await teamsSignIn()
+      if (result) await signedIn(result)
+      else setTeamsProblem(teamsSignInRefusal() ?? 'Microsoft sign-in did not work. Try again.')
+    } catch {
+      setTeamsProblem('Teams could not give C.L.I.P your Microsoft sign-in. Try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
     setSubmitting(true)
     setError(null)
     try {
-      const result = await login(email.trim(), password)
-      saveAccessToken(result.access_token, result.expires_in)
-      requestIntro()
-      const currentUser = await getCurrentUser()
-      const requestedPath = (location.state as { from?: string } | null)?.from
-      const destination = intendedPathForRole(currentUser.role, requestedPath)
-      if (!hasRequiredConsent(currentUser)) {
-        navigate('/consent', { replace: true, state: { from: destination } })
-        return
-      }
-      navigate(destination, { replace: true })
+      await signedIn(await login(email.trim(), password))
     } catch (caught: unknown) {
       setError(signInProblem(caught))
       // A small shake says "no" without a modal; then straight back to the
@@ -197,6 +221,20 @@ export default function LoginPage() {
           </div>
           <h2 className="text-2xl font-bold">Sign in</h2>
           <p className="mt-1 text-muted-foreground">With your C.L.I.P account.</p>
+
+          {inTeams && (
+            <div className="mt-6 space-y-3 rounded-md border border-border bg-muted/40 p-3 text-sm">
+              <p>{teamsProblem ?? 'In Teams, C.L.I.P signs you in with your Microsoft account.'}</p>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => void retryTeams()}
+                className={buttonStyles({ intent: 'secondary', className: 'w-full' })}
+              >
+                Sign in with Microsoft
+              </button>
+            </div>
+          )}
 
           <motion.form onSubmit={submit} animate={form} className="mt-8 space-y-4">
             <label className="block text-sm font-semibold">

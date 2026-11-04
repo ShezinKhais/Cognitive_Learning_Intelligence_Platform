@@ -7,11 +7,16 @@ import App from './App.tsx'
 import '@fontsource-variable/atkinson-hyperlegible-next'
 import './index.css'
 import { TeamsProvider } from './teams'
+import { createTeamsHost } from './teams/teamsClient'
+import { enableTeamsSignIn } from './teams/teamsSignIn'
 import { followStoredTheme } from './components/shell/theme'
 import { ToastProvider } from './components/ui/toast'
 
 // Paint the saved theme before the first frame; Teams replaces it in a meeting.
 followStoredTheme()
+
+// In Teams, the Microsoft account Teams is signed in with signs in to C.L.I.P.
+if (createTeamsHost().kind === 'teams') enableTeamsSignIn()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

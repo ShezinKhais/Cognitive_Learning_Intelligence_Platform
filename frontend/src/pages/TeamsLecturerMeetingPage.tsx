@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 
-import { apiAuthenticatedGet } from '../api'
+import { ApiError, apiAuthenticatedGet } from '../api'
 import LecturerMeetingPanel from '../features/live/LecturerMeetingPanel'
+import MeetingSessionPicker from '../features/live/MeetingSessionPicker'
 import {
   meetingSessionPath,
   type MeetingSession,
@@ -29,6 +30,8 @@ export default function TeamsLecturerMeetingPage() {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // The meeting has no session of the lecturer's yet: offer to link one.
+  const [unlinked, setUnlinked] = useState(false)
 
   const meetingId = teams.context?.meetingId ?? null
 
@@ -48,6 +51,7 @@ export default function TeamsLecturerMeetingPage() {
       async function resolveMeetingSession(): Promise<void> {
         setIsLoading(true)
         setError(null)
+        setUnlinked(false)
 
         try {
           const session = await apiAuthenticatedGet<MeetingSession>(
@@ -71,6 +75,10 @@ export default function TeamsLecturerMeetingPage() {
           }
 
           setSessionId(null)
+          if (caught instanceof ApiError && caught.status === 404) {
+            setUnlinked(true)
+            return
+          }
           setError(
             caught instanceof Error
               ? caught.message
@@ -124,6 +132,18 @@ export default function TeamsLecturerMeetingPage() {
           </p>
         </section>
       </main>
+    )
+  }
+
+  if (unlinked && meetingId && !sessionId) {
+    return (
+      <MeetingSessionPicker
+        meetingId={meetingId}
+        onLinked={(linked) => {
+          setUnlinked(false)
+          setSessionId(linked)
+        }}
+      />
     )
   }
 
