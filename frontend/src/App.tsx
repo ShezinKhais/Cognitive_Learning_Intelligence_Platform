@@ -63,6 +63,18 @@ const home = (
   </RoleGate>
 )
 
+// The one C.L.I.P tab in Teams. Teams shows every tab of an app to everyone,
+// so a tab per role would show students the lecturer and admin tabs. This one
+// signs in with Teams and shows each person their own page: students stay in
+// Teams, lecturers and admins get the button that opens their website.
+const teamsHome = (
+  <RoleGate allow={['student', 'lecturer', 'admin']}>
+    {(user) =>
+      user.role === 'student' ? <Navigate to="/student" replace /> : <TeamsLauncherPage target={user.role} />
+    }
+  </RoleGate>
+)
+
 export default function App() {
   return (
     // Pages inside the shell wait inside it (ShellOutlet); this covers the
@@ -98,7 +110,12 @@ export default function App() {
             element={<TeamsConfigPage />}
           />
 
-          {/* The lecturer and admin tabs in Teams: each opens its website. */}
+          <Route
+            path="/open"
+            element={teamsHome}
+          />
+
+          {/* Earlier packages had a tab per role. Kept so they still work. */}
           <Route
             path="/open/lecturer"
             element={<TeamsLauncherPage target="lecturer" />}

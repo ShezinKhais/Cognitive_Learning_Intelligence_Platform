@@ -49,11 +49,12 @@ def test_frontend_does_not_hardcode_paths_elsewhere() -> None:
     not APP_TSX.exists() or not TEAMS_MANIFEST.exists(),
     reason="frontend or Teams manifest not present",
 )
-def test_teams_lecturer_tab_has_a_matching_frontend_route() -> None:
-    """The Teams lecturer tab must not fall through to the student page."""
+def test_teams_tab_has_a_matching_frontend_route() -> None:
+    """The one Teams tab must land on a real route, which sends each role to
+    its own page, not fall through to the student page."""
     manifest = json.loads(TEAMS_MANIFEST.read_text(encoding="utf-8"))
-    lecturer_tab = next(tab for tab in manifest["staticTabs"] if tab["entityId"] == "clip.lecturer")
-    route = lecturer_tab["contentUrl"].replace("${{BASE_URL}}", "")
+    assert [tab["entityId"] for tab in manifest["staticTabs"]] == ["clip.home"]
+    route = manifest["staticTabs"][0]["contentUrl"].replace("${{BASE_URL}}", "")
 
     assert f'path="{route}"' in APP_TSX.read_text(encoding="utf-8")
 
