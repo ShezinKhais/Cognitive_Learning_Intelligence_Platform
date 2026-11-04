@@ -14,7 +14,6 @@ import ShellOutlet from './components/shell/ShellOutlet'
 import StaffTeamsBoundary from './components/StaffTeamsBoundary'
 import { StudentAppProvider } from './features/student/StudentAppContext'
 import LoginPage from './pages/LoginPage'
-import { PLANNED } from './pages/plannedFeatures'
 import ProtectedStudentPage from './pages/ProtectedStudentPage'
 
 // Each page is its own chunk, fetched the first time someone opens it, so a
@@ -28,13 +27,13 @@ const ConsentPage = lazy(() => import('./pages/ConsentPage'))
 const LecturerLiveSessionPage = lazy(() => import('./pages/LecturerLiveSessionPage'))
 const LecturerMaterialsPage = lazy(() => import('./pages/LecturerMaterialsPage'))
 const LecturerSessionsPage = lazy(() => import('./pages/LecturerSessionsPage'))
-const PlannedFeaturePage = lazy(() => import('./pages/PlannedFeaturePage'))
 const QuestionReview = lazy(() => import('./pages/QuestionReview'))
 const SessionReportPage = lazy(() => import('./pages/SessionReportPage'))
 const LecturerSessionReportPage = lazy(() => import('./pages/LecturerSessionReportPage'))
 const AdminGovernancePage = lazy(() => import('./pages/AdminGovernancePage'))
 const AdminAccountsPage = lazy(() => import('./pages/AdminAccountsPage'))
 const LecturerEngagementHistoryPage = lazy(() => import('./pages/LecturerEngagementHistoryPage'))
+const LecturerBreakoutPage = lazy(() => import('./pages/LecturerBreakoutPage'))
 const StudentHomePage = lazy(() => import('./pages/StudentHomePage'))
 const StudentLiveSessionPage = lazy(() => import('./pages/StudentLiveSessionPage'))
 const StudentReviewPage = lazy(() => import('./pages/StudentReviewPage'))
@@ -271,7 +270,7 @@ export default function App() {
 
               <Route
                 path="/lecturer/groups"
-                element={<PlannedFeaturePage feature={PLANNED.groups} />}
+                element={<LecturerBreakoutPage />}
               />
 
               <Route

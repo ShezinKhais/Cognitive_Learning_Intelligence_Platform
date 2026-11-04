@@ -35,6 +35,7 @@ EXPECTED_PATHS = {
     "/api/v1/admin/accounts/{user_id}/password",
     "/api/v1/admin/courses",
     "/api/v1/engagement-history",
+    "/api/v1/sessions/{session_id}/rooms",
     # Phase 8 General CS: special consideration, asked by a student, decided by an admin.
     "/api/v1/me/consideration",
     "/api/v1/me/consideration/withdraw",

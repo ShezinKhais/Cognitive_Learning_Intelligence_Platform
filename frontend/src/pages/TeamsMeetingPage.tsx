@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { useStudentApp } from '../features/student/StudentAppContext'
+import type { StudentSession } from '../features/student/types'
 import { useTeams } from '../teams/TeamsProvider'
 import { LiveSessionPanel } from './StudentLiveSessionPage'
 
@@ -24,7 +25,7 @@ export default function TeamsMeetingPage() {
         meetingId &&
         candidate.teams_meeting_id === meetingId
       ),
-  )
+  ) ?? breakoutFallback(sessions, meetingId)
 
   // The lecturer may link the session after this panel opened. Until a
   // session appears, keep asking, so nobody has to close and reopen it.
@@ -105,6 +106,17 @@ export default function TeamsMeetingPage() {
   }
 
   return <LiveSessionPanel session={session} compact />
+}
+
+/**
+ * A Teams breakout room is a meeting of its own, with its own meeting id, so
+ * no session is linked to it. A student whose course has exactly one class
+ * running is in that class, so the panel keeps showing it there.
+ */
+function breakoutFallback(sessions: StudentSession[], meetingId: string | null): StudentSession | undefined {
+  if (!meetingId) return undefined
+  const running = sessions.filter((candidate) => candidate.status === 'active')
+  return running.length === 1 ? running[0] : undefined
 }
 
 function PanelStatus({

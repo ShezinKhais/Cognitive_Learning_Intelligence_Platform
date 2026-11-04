@@ -2110,6 +2110,27 @@
         "title": "Page[SessionOut]",
         "type": "object"
       },
+      "PlannedRoom": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "students": {
+            "items": {
+              "$ref": "#/components/schemas/RoomMember"
+            },
+            "title": "Students",
+            "type": "array"
+          }
+        },
+        "required": [
+          "label",
+          "students"
+        ],
+        "title": "PlannedRoom",
+        "type": "object"
+      },
       "QuestionBulkReviewRequest": {
         "properties": {
           "question_ids": {
@@ -2942,6 +2963,101 @@
         ],
         "title": "Role",
         "type": "string"
+      },
+      "RoomMember": {
+        "properties": {
+          "connected": {
+            "description": "Has the class open now.",
+            "title": "Connected",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "name",
+          "connected"
+        ],
+        "title": "RoomMember",
+        "type": "object"
+      },
+      "RoomPlanIn": {
+        "properties": {
+          "rooms": {
+            "items": {
+              "$ref": "#/components/schemas/RoomPlanRoomIn"
+            },
+            "maxItems": 50,
+            "title": "Rooms",
+            "type": "array"
+          }
+        },
+        "title": "RoomPlanIn",
+        "type": "object"
+      },
+      "RoomPlanOut": {
+        "properties": {
+          "rooms": {
+            "items": {
+              "$ref": "#/components/schemas/PlannedRoom"
+            },
+            "title": "Rooms",
+            "type": "array"
+          },
+          "running": {
+            "description": "The class is running, so rooms can be assigned.",
+            "title": "Running",
+            "type": "boolean"
+          },
+          "unassigned": {
+            "description": "Students on the course in no room.",
+            "items": {
+              "$ref": "#/components/schemas/RoomMember"
+            },
+            "title": "Unassigned",
+            "type": "array"
+          }
+        },
+        "required": [
+          "running",
+          "rooms",
+          "unassigned"
+        ],
+        "title": "RoomPlanOut",
+        "type": "object"
+      },
+      "RoomPlanRoomIn": {
+        "properties": {
+          "label": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "user_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "User Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "label",
+          "user_ids"
+        ],
+        "title": "RoomPlanRoomIn",
+        "type": "object"
       },
       "SessionCreateRequest": {
         "properties": {
@@ -6860,6 +6976,144 @@
           }
         },
         "summary": "Resume Session",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/rooms": {
+      "delete": {
+        "description": "Bring everyone back: empty every room and tell the class to return to\nthe main meeting. Close the rooms in Teams as well.",
+        "operationId": "close_rooms_api_v1_sessions__session_id__rooms_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomPlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Close Rooms",
+        "tags": [
+          "sessions"
+        ]
+      },
+      "get": {
+        "description": "Who is in which breakout room, and who is in none. The lecturer who\nruns the session, or an admin.",
+        "operationId": "room_plan_api_v1_sessions__session_id__rooms_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomPlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Room Plan",
+        "tags": [
+          "sessions"
+        ]
+      },
+      "put": {
+        "description": "Split the running class into rooms. Each student's panel then says\nwhich room to join; open rooms with the same names in Teams. Replaces\nany earlier plan, and a student left out is told they have no room.",
+        "operationId": "assign_rooms_api_v1_sessions__session_id__rooms_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoomPlanIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomPlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assign Rooms",
         "tags": [
           "sessions"
         ]

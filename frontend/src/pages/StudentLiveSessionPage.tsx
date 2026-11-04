@@ -31,6 +31,7 @@ import type {
 } from '../features/student/liveSessionTypes'
 import type { StudentSession } from '../features/student/types'
 import ParticipationGauge from '../features/student/ParticipationGauge'
+import AssignedRoom from '../features/student/AssignedRoom'
 import RoomConfirm from '../features/student/RoomConfirm'
 import { useLiveSession } from '../features/student/useLiveSession'
 import { AttentionControls } from '../features/attention/AttentionControls'
@@ -144,7 +145,9 @@ export function LiveSessionPanel({
               <ParticipationGauge answered={state.answeredIds.length} delivered={state.questionsDelivered} />
             </span>
           </div>
-          {state.sessionStatus === 'active' && !compact && (
+          {state.sessionStatus === 'active' && state.assignedRoom ? (
+            <AssignedRoom label={state.assignedRoom.label} />
+          ) : state.sessionStatus === 'active' && !compact && (
             <RoomConfirm onConfirm={confirmRoom} serverError={state.error}
               enabled={state.connection === 'connected' && !state.paused} />
           )}

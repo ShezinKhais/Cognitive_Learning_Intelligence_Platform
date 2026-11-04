@@ -157,6 +157,24 @@ participants, send in-meeting notifications.
    student, and the answered count rising in the lecturer's panel.
 6. End the meeting. The session ends.
 
+### Breakout rooms
+
+Teams lets no app create breakout rooms or put people in them, so C.L.I.P
+keeps its own plan and the lecturer mirrors it in Teams:
+
+1. With the class running, open **Breakout rooms** on the lecturer website,
+   choose how many rooms, select **Split evenly** (or pick each student's
+   room), and **Send rooms to students**. Each student's panel shows their
+   room.
+2. In the meeting, open Teams **Breakout rooms**, create rooms with the same
+   names, assign the same people, and open them.
+3. The lecturer's live page shows which rooms are talking and which have gone
+   quiet, from when students speak and answer, never what they say.
+4. Close the rooms in Teams and select **Bring everyone back** in C.L.I.P.
+
+A Teams breakout room has its own meeting id. If C.L.I.P is open in a room, a
+student's panel shows the one class of theirs that is running.
+
 Then work through the "Teams tenant" cases in the test plan (section 3.10)
 and the real-tenant checks in `docs/teams-checkpoint-notifications.md`.
 
