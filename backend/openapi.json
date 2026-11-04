@@ -1193,6 +1193,37 @@
         "title": "Difficulty",
         "type": "string"
       },
+      "EngagementHistory": {
+        "properties": {
+          "quiet": {
+            "description": "Students who missed most of the recent classes or answered few checkpoints in them. Students with an approved special consideration are never listed.",
+            "items": {
+              "$ref": "#/components/schemas/QuietStudent"
+            },
+            "title": "Quiet",
+            "type": "array"
+          },
+          "recent_window": {
+            "description": "How many recent classes the quiet list looks at.",
+            "title": "Recent Window",
+            "type": "integer"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/SessionEngagement"
+            },
+            "title": "Sessions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sessions",
+          "quiet",
+          "recent_window"
+        ],
+        "title": "EngagementHistory",
+        "type": "object"
+      },
       "EngagementOut": {
         "description": "Engagement and comprehension are reported separately and must not be\ncombined into a single figure anywhere in the API.",
         "properties": {
@@ -2309,6 +2340,55 @@
         "title": "QuestionType",
         "type": "string"
       },
+      "QuietStudent": {
+        "properties": {
+          "answer_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Their answers over the checkpoints of the classes they joined.",
+            "title": "Answer Rate"
+          },
+          "course_code": {
+            "title": "Course Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sessions_considered": {
+            "description": "Recent classes of their course looked at.",
+            "title": "Sessions Considered",
+            "type": "integer"
+          },
+          "sessions_missed": {
+            "description": "Of those, how many they did not join.",
+            "title": "Sessions Missed",
+            "type": "integer"
+          },
+          "student_id": {
+            "format": "uuid",
+            "title": "Student Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "student_id",
+          "name",
+          "course_code",
+          "sessions_considered",
+          "sessions_missed",
+          "answer_rate"
+        ],
+        "title": "QuietStudent",
+        "type": "object"
+      },
       "ReadinessIssue": {
         "description": "One reason a session cannot start yet, or one thing worth a warning.",
         "properties": {
@@ -2893,6 +2973,86 @@
           "title"
         ],
         "title": "SessionCreateRequest",
+        "type": "object"
+      },
+      "SessionEngagement": {
+        "properties": {
+          "answer_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Answers over the answers that were possible, 0 to 1. None with no checkpoints.",
+            "title": "Answer Rate"
+          },
+          "checkpoints": {
+            "title": "Checkpoints",
+            "type": "integer"
+          },
+          "correct_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Of the answers that could be marked, the share that were right.",
+            "title": "Correct Rate"
+          },
+          "course_code": {
+            "title": "Course Code",
+            "type": "string"
+          },
+          "held_at": {
+            "format": "date-time",
+            "title": "Held At",
+            "type": "string"
+          },
+          "on_screen": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Average share of time looking at the screen, from students who turned the indicator on. None unless at least three did, so no one student can be read off it.",
+            "title": "On Screen"
+          },
+          "present": {
+            "description": "Students who joined.",
+            "title": "Present",
+            "type": "integer"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "title",
+          "course_code",
+          "held_at",
+          "present",
+          "checkpoints",
+          "answer_rate",
+          "correct_rate",
+          "on_screen"
+        ],
+        "title": "SessionEngagement",
         "type": "object"
       },
       "SessionOut": {
@@ -4400,6 +4560,57 @@
         "summary": "Teams Sign In",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/engagement-history": {
+      "get": {
+        "description": "Each finished class with its attendance and answers, newest first, and\nthe students who have gone quiet over the recent ones.",
+        "operationId": "get_engagement_history_api_v1_engagement_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "course_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Course Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngagementHistory"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Engagement History",
+        "tags": [
+          "sessions"
         ]
       }
     },

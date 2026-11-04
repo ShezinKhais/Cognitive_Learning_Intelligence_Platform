@@ -34,6 +34,7 @@ const SessionReportPage = lazy(() => import('./pages/SessionReportPage'))
 const LecturerSessionReportPage = lazy(() => import('./pages/LecturerSessionReportPage'))
 const AdminGovernancePage = lazy(() => import('./pages/AdminGovernancePage'))
 const AdminAccountsPage = lazy(() => import('./pages/AdminAccountsPage'))
+const LecturerEngagementHistoryPage = lazy(() => import('./pages/LecturerEngagementHistoryPage'))
 const StudentHomePage = lazy(() => import('./pages/StudentHomePage'))
 const StudentLiveSessionPage = lazy(() => import('./pages/StudentLiveSessionPage'))
 const StudentReviewPage = lazy(() => import('./pages/StudentReviewPage'))
@@ -275,7 +276,7 @@ export default function App() {
 
               <Route
                 path="/lecturer/engagement"
-                element={<PlannedFeaturePage feature={PLANNED.engagement} />}
+                element={<LecturerEngagementHistoryPage />}
               />
 
               <Route

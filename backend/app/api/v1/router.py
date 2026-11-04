@@ -11,6 +11,7 @@ from app.api.v1 import (
     chat,
     consideration,
     content,
+    engagement_history,
     governance,
     health,
     identity,
@@ -38,6 +39,7 @@ api_router.include_router(meetings.router)
 api_router.include_router(teams.router)
 api_router.include_router(governance.router)
 api_router.include_router(accounts.router)
+api_router.include_router(engagement_history.router)
 
 # Not versioned in the path: the socket carries its own protocol version in the
 # auth handshake, so upgrading it does not require a new URL.

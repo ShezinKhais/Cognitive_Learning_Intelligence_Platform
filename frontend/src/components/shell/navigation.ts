@@ -36,7 +36,7 @@ export const NAVIGATION: Record<Role, readonly NavItem[]> = {
     { to: '/lecturer/sessions', label: 'Sessions', icon: CalendarClock, matches: ['/lecturer/sessions'] },
     { to: '/lecturer/materials', label: 'Materials', icon: FileText, matches: ['/lecturer/materials', '/materials/'] },
     { to: '/lecturer/groups', label: 'Breakout groups', icon: Users, planned: true },
-    { to: '/lecturer/engagement', label: 'Engagement history', icon: LineChart, planned: true },
+    { to: '/lecturer/engagement', label: 'Engagement history', icon: LineChart },
   ],
   student: [
     { to: '/student', label: 'My sessions', icon: BookOpen, matches: ['/student/session/'] },

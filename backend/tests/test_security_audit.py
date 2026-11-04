@@ -74,6 +74,7 @@ AUDIENCE = {
     ("POST", "/api/v1/admin/timetable"): ADMIN_ONLY,
     ("POST", "/api/v1/materials"): STAFF,
     ("GET", "/api/v1/materials"): STAFF,
+    ("GET", "/api/v1/engagement-history"): STAFF,
     ("GET", "/api/v1/materials/{material_id}"): STAFF,
     ("PATCH", "/api/v1/materials/{material_id}"): STAFF,
     ("DELETE", "/api/v1/materials/{material_id}"): STAFF,
