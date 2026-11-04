@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { BellRing, ExternalLink, Pause, Play, Square, X } from 'lucide-react'
 
@@ -11,6 +11,7 @@ import { lecturerLiveSessionPath } from '../../teams/lecturerMeeting'
 import { statusLabel, statusTone } from '../sessions/format'
 import { getSession, listAllResponses, type SessionSummary } from '../sessions/sessionsApi'
 import ManualQuestionTrigger from './ManualQuestionTrigger'
+import { initialLifecycle, lifecycleReducer } from './panelLifecycle'
 import {
   getSessionReadiness,
   runSessionAction,
@@ -28,6 +29,10 @@ const ALERT_KIND: Record<LiveAlertKind, string> = {
 // The side panel is narrow, so it keeps the newest few. The rest are on the
 // full dashboard.
 const ALERTS_SHOWN = 3
+
+// Material can finish processing, or questions be approved, on the full
+// dashboard while this panel is open, so readiness is checked again.
+const READINESS_RECHECK_MS = 10_000
 
 function secondsUntilClose(question: LiveQuestion | null): number {
   const closesAt = question ? Date.parse(question.closes_at) : Number.NaN
@@ -49,6 +54,8 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
 
   const [details, setDetails] = useState<SessionSummary | null>(null)
   const [readiness, setReadiness] = useState<SessionReadiness | null>(null)
+  const [readinessFailed, setReadinessFailed] = useState(false)
+  const [lifecycle, report] = useReducer(lifecycleReducer, initialLifecycle)
   const [working, setWorking] = useState<SessionLifecycleAction | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [confirmingEnd, setConfirmingEnd] = useState(false)
@@ -60,26 +67,50 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
 
   useEffect(() => {
     let cancelled = false
-    getSession(sessionId).then((found) => !cancelled && setDetails(found), () => undefined)
+    getSession(sessionId).then((found) => {
+      if (cancelled) return
+      setDetails(found)
+      report({ type: 'loaded', session: found })
+    }, () => undefined)
     return () => {
       cancelled = true
     }
   }, [sessionId])
 
-  const status = sessionState?.status ?? details?.status
-  const paused = sessionState?.paused ?? details?.paused ?? false
+  useEffect(() => {
+    if (sessionState) report({ type: 'socket', session: sessionState })
+  }, [sessionState])
+
+  const status = lifecycle.status ?? undefined
+  const paused = lifecycle.paused
+
+  const checkReadiness = useCallback(
+    () =>
+      getSessionReadiness(sessionId).then(
+        (found) => {
+          setReadiness(found)
+          setReadinessFailed(false)
+        },
+        () => setReadinessFailed(true),
+      ),
+    [sessionId],
+  )
 
   useEffect(() => {
     if (status !== 'prepared') {
       setReadiness(null)
+      setReadinessFailed(false)
       return
     }
-    let cancelled = false
-    getSessionReadiness(sessionId).then((found) => !cancelled && setReadiness(found), () => undefined)
+    void checkReadiness()
+    const timer = window.setInterval(() => void checkReadiness(), READINESS_RECHECK_MS)
+    const onFocus = () => void checkReadiness()
+    window.addEventListener('focus', onFocus)
     return () => {
-      cancelled = true
+      window.clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
     }
-  }, [sessionId, status])
+  }, [status, checkReadiness])
 
   useEffect(() => {
     setSecondsRemaining(secondsUntilClose(activeQuestion))
@@ -112,12 +143,12 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
     setActionError(null)
     setWorking(action)
     try {
-      await runSessionAction(sessionId, action)
+      // The reply is the server's own record, so it applies even while the
+      // socket is reconnecting and cannot confirm the change.
+      report({ type: 'action', session: await runSessionAction(sessionId, action) })
     } catch (error) {
       setActionError(error instanceof ApiError ? error.message : 'That could not be done. Try again.')
-      if (action === 'start') {
-        getSessionReadiness(sessionId).then(setReadiness, () => undefined)
-      }
+      if (action === 'start') void checkReadiness()
     } finally {
       setWorking(null)
     }
@@ -230,7 +261,15 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
             </p>
           )}
 
-          {status === 'prepared' && readiness && !readiness.ready && (
+          {status === 'prepared' && readinessFailed && (
+            <p role="alert" className="mt-3 text-sm text-critical">
+              Could not check whether the class is ready.{' '}
+              <button type="button" className="font-semibold underline" onClick={() => void checkReadiness()}>
+                Check again
+              </button>
+            </p>
+          )}
+          {status === 'prepared' && !readinessFailed && readiness && !readiness.ready && (
             <p className="mt-3 text-sm text-warning">
               {readiness.blockers[0]?.message ?? 'The class is not ready to start yet.'}
             </p>

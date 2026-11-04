@@ -93,9 +93,26 @@ export default function PrivacyPage() {
 
       <PolicySection title="How long it is kept">
         <p>
-          Information is held on the C.L.I.P server and travels over encrypted connections. Class data is deleted{' '}
-          {RETENTION_DAYS} days after the session.
+          Information is held on the C.L.I.P server and travels over encrypted connections. By default, a
+          session's records are deleted {RETENTION_DAYS} days after it ends: your answers, engagement and camera and
+          microphone summaries, prompts and alerts. Your university can set a different period.
         </p>
+        <p>
+          Two things are kept after that:
+        </p>
+        <ul>
+          <li>
+            If your university turns on course history, a summary for each course and semester is kept before the
+            session is deleted: how many sessions you attended, how many questions you tried and got right, and your
+            average engagement and attention. It holds counts and averages only, never your answers, and only
+            administrators can view it. It is kept until it is erased with your other information.
+          </li>
+          <li>
+            The audit record, which says who did what and when but holds no content, is kept so actions on your
+            information can be checked later. If your information is erased, your name and email are removed from
+            your account, so the audit record no longer identifies you.
+          </li>
+        </ul>
         <p>
           Backups are kept for recovery. By default the last {BACKUPS_KEPT} daily backups are kept, so information
           that has been deleted leaves the backups within about a month.
