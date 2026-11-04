@@ -50,7 +50,7 @@ createRoot(document.getElementById('root')!).render(
   socket === 'student-panel' ? <MemoryRouter><LiveSessionPanel session={{
     id: 'completion-session', course_code: 'SYNTHETIC', title: 'Student completion regression',
     lecturer_id: 'lecturer', status: 'active',
-  }} /></MemoryRouter> :
+  }} compact={new URLSearchParams(window.location.search).get('compact') === '1'} /></MemoryRouter> :
   socket === 'student' ? <StudentSocket /> :
   socket === 'lecturer' ? <LecturerSocket /> :
   socket === 'progress' ? <ProgressSocket /> : <Harness />,

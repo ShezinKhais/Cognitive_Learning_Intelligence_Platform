@@ -94,6 +94,26 @@ function questionStillOpen(
   )
 }
 
+function isFinished(state: LiveSessionState): boolean {
+  return state.sessionStatus === 'ended' || state.sessionStatus === 'cancelled'
+}
+
+/** End the interaction, but keep uncertain submissions available for late receipts. */
+function finishCheckpoint(state: LiveSessionState): CheckpointState | null {
+  const checkpoint = state.checkpoint
+  if (!checkpoint) return state.completedCheckpoint
+  return {
+    ...checkpoint,
+    phase: checkpoint.phase === 'answering' ? 'missed'
+      : checkpoint.phase === 'submitting' ? 'unconfirmed' : checkpoint.phase,
+  }
+}
+
+function includeAnswer(state: LiveSessionState, questionId: string): readonly string[] {
+  return state.answeredIds.includes(questionId)
+    ? state.answeredIds : [...state.answeredIds, questionId]
+}
+
 export function liveSessionReducer(
   state: LiveSessionState,
   action: LiveSessionAction,
@@ -138,22 +158,15 @@ export function liveSessionReducer(
     }
 
     case 'session-ended': {
-      const checkpoint = state.checkpoint
-
       return {
         ...state,
         connection: 'ended',
-        sessionStatus: 'ended',
+        sessionStatus: state.sessionStatus === 'cancelled' ? 'cancelled' : 'ended',
         paused: false,
         participantCount: 0,
-        checkpoint:
-          checkpoint?.phase === 'answering'
-            ? null
-            : checkpoint,
-        completedCheckpoint:
-          checkpoint?.phase === 'answering'
-            ? { ...checkpoint, phase: 'missed' }
-            : state.completedCheckpoint,
+        checkpoint: null,
+        completedCheckpoint: finishCheckpoint(state),
+        attentionPrompt: null,
       }
     }
 
@@ -162,27 +175,21 @@ export function liveSessionReducer(
         action.payload.status === 'ended' ||
         action.payload.status === 'cancelled'
 
-      const checkpoint = state.checkpoint
-
       return {
         ...state,
         sessionStatus: action.payload.status,
-        paused: action.payload.paused,
+        paused: sessionEnded ? false : action.payload.paused,
         participantCount:
           sessionEnded ? 0 : action.payload.participant_count,
         questionsDelivered: action.payload.questions_delivered,
-        checkpoint:
-          sessionEnded && checkpoint?.phase === 'answering'
-            ? null
-            : checkpoint,
-        completedCheckpoint:
-          sessionEnded && checkpoint?.phase === 'answering'
-            ? { ...checkpoint, phase: 'missed' }
-            : state.completedCheckpoint,
+        checkpoint: sessionEnded ? null : state.checkpoint,
+        completedCheckpoint: sessionEnded ? finishCheckpoint(state) : state.completedCheckpoint,
+        attentionPrompt: sessionEnded ? null : state.attentionPrompt,
       }
     }
 
     case 'question-delivered': {
+      if (isFinished(state)) return state
       if (
         state.completedCheckpoint?.question.question_id ===
         action.payload.question_id
@@ -295,7 +302,8 @@ export function liveSessionReducer(
     }
 
     case 'answer-receipt': {
-      const checkpoint = state.checkpoint
+      const finished = isFinished(state)
+      const checkpoint = state.checkpoint ?? (finished ? state.completedCheckpoint : null)
 
       if (
         !checkpoint ||
@@ -304,6 +312,9 @@ export function liveSessionReducer(
       ) {
         return state
       }
+
+      // An older refused retry cannot undo feedback/confirmation already received.
+      if (!state.checkpoint && checkpoint.phase === 'submitted') return state
 
       // A second submission may be rejected because the
       // server already saved the first submission.
@@ -325,9 +336,12 @@ export function liveSessionReducer(
             ...state,
             checkpoint: null,
             completedCheckpoint: updated,
-            answeredIds: state.answeredIds.includes(checkpoint.question.question_id)
-              ? state.answeredIds
-              : [...state.answeredIds, checkpoint.question.question_id],
+            answeredIds: includeAnswer(state, checkpoint.question.question_id),
+          }
+        : finished ? {
+            ...state,
+            checkpoint: null,
+            completedCheckpoint: updated,
           }
         : {
             ...state,
@@ -350,6 +364,7 @@ export function liveSessionReducer(
             phase: 'submitted',
             feedback: action.payload,
           },
+          answeredIds: includeAnswer(state, action.payload.question_id),
         }
       }
 
@@ -361,8 +376,10 @@ export function liveSessionReducer(
             ...state,
             completedCheckpoint: {
               ...completed,
+              phase: 'submitted',
               feedback: action.payload,
             },
+            answeredIds: includeAnswer(state, action.payload.question_id),
           }
         : state
     }
@@ -427,6 +444,7 @@ export function liveSessionReducer(
     }
 
     case 'attention-prompt':
+      if (isFinished(state)) return state
       return {
         ...state,
         attentionPrompt: action.payload,

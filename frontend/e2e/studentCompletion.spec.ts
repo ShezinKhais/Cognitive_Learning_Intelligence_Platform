@@ -3,8 +3,9 @@ import { expect, test, type WebSocketRoute } from '@playwright/test'
 // The actual exported student panel, with synthetic auth/socket transport.
 // Exercise terminal state independently of retained checkpoint feedback.
 for (const status of ['ended', 'cancelled'] as const) {
-  for (const checkpoint of ['none', 'submitted', 'missed'] as const) {
+  for (const checkpoint of ['none', 'answering', 'submitted', 'missed', 'submitting', 'unconfirmed', 'rejected'] as const) {
     test(`${status} student session with ${checkpoint} checkpoint shows honest completion`, async ({ page }) => {
+      if (checkpoint === 'unconfirmed') await page.clock.install()
       let connection: WebSocketRoute | undefined
       let sequence = 0
       function emit(type: string, data: object) {
@@ -28,28 +29,45 @@ for (const status of ['ended', 'cancelled'] as const) {
                 resumed_from_seq: null, stream_id: 'completion-regression' } }))
             sessionState('active')
           }
-          if (event.type === 'answer.submit') {
+          if (event.type === 'answer.submit' && checkpoint === 'submitted') {
             emit('answer.receipt', { question_id: 'completion-question', accepted: true,
               received_at: new Date().toISOString(), reason: null })
             emit('feedback.result', { question_id: 'completion-question', correct: false,
               explanation: 'Synthetic feedback is preserved.', source_slide: 3 })
+          } else if (event.type === 'answer.submit' && checkpoint === 'rejected') {
+            emit('answer.receipt', { question_id: 'completion-question', accepted: false,
+              received_at: new Date().toISOString(), reason: 'Synthetic rejection.' })
           }
         })
       })
-      await page.goto('/e2e/harness/index.html?socket=student-panel')
+      // Exercise the same completion shortcut in the compact Teams panel too.
+      await page.goto(`/e2e/harness/index.html?socket=student-panel${checkpoint === 'none' ? '&compact=1' : ''}`)
       await expect(page.getByText('Waiting for the next checkpoint', { exact: true })).toBeVisible()
       if (checkpoint !== 'none') {
         emit('question.delivered', { question_id: 'completion-question', prompt: 'Synthetic checkpoint?',
           options: ['First', 'Second'], closes_at: new Date(Date.now() + 60_000).toISOString(),
           window_seconds: 60, source_slide: 3 })
         await expect(page.getByRole('heading', { name: 'Synthetic checkpoint?' })).toBeVisible()
-        if (checkpoint === 'submitted') {
+        if (['submitted', 'submitting', 'unconfirmed', 'rejected'].includes(checkpoint)) {
           const option = page.getByRole('radio', { name: /First/ })
           await option.focus()
           await option.press('Space')
           await page.getByRole('button', { name: 'Submit answer' }).click()
-          await expect(page.getByText('Synthetic feedback is preserved.')).toBeVisible()
-        } else {
+          if (checkpoint === 'submitted') {
+            await expect(page.getByText('Synthetic feedback is preserved.')).toBeVisible()
+          } else if (checkpoint === 'rejected') {
+            await expect(page.getByText('Synthetic rejection.')).toBeVisible()
+          } else {
+            await expect(page.getByText('Saving your answer…')).toBeVisible()
+            if (checkpoint === 'unconfirmed') {
+              emit('question.closed', { question_id: 'completion-question', reason: 'window_elapsed',
+                respondents: 0, eligible: 1 })
+              await page.clock.runFor(100)
+              await page.clock.fastForward(11_000)
+              await expect(page.getByText('Answer confirmation unavailable')).toBeVisible()
+            }
+          }
+        } else if (checkpoint === 'missed') {
           emit('question.closed', { question_id: 'completion-question', reason: 'window_elapsed',
             respondents: 0, eligible: 1 })
           await expect(page.getByText('Response window closed', { exact: true })).toBeVisible()
@@ -61,6 +79,9 @@ for (const status of ['ended', 'cancelled'] as const) {
       })).toBeVisible()
       await expect(page.getByText(/The lecturer’s next question will appear/)).toHaveCount(0)
       await expect(page.getByRole('button', { name: 'Submit answer' })).toHaveCount(0)
+      await expect(page.getByRole('radio')).toHaveCount(0)
+      await expect(page.getByText('Saving your answer…')).toHaveCount(0)
+      await expect(page.getByText('You can continue participating in the session.', { exact: false })).toHaveCount(0)
       const review = page.getByRole('link', { name: 'See how you did' })
       if (status === 'ended') {
         await expect(review).toHaveAttribute('href', '/student/session/completion-session/summary')
@@ -73,6 +94,16 @@ for (const status of ['ended', 'cancelled'] as const) {
       }
       if (checkpoint === 'missed') {
         await expect(page.getByText('Response window closed', { exact: true })).toBeVisible()
+      }
+      if (checkpoint === 'submitting' || checkpoint === 'unconfirmed') {
+        await expect(page.getByText('Answer confirmation unavailable')).toBeVisible()
+        // A delayed receipt/feedback must update the outcome without reviving the form.
+        emit('answer.receipt', { question_id: 'completion-question', accepted: true,
+          received_at: new Date().toISOString(), reason: null })
+        emit('feedback.result', { question_id: 'completion-question', correct: false,
+          explanation: 'Late feedback is preserved.', source_slide: 3 })
+        await expect(page.getByText('Late feedback is preserved.')).toBeVisible()
+        await expect(page.getByRole('radio')).toHaveCount(0)
       }
     })
   }
