@@ -199,6 +199,10 @@ class Settings(BaseSettings):
     teams_notifications_enabled: bool = False
     teams_app_base_url: str = ""
     teams_app_id: str = ""
+    # Where the bot gets its token to post into Teams. A single-tenant bot
+    # (an Azure Bot) uses its own tenant, the default. A bot registered in
+    # the Teams Developer Portal is multi-tenant and must use botframework.com.
+    teams_bot_token_tenant: str = ""
 
     # Session behaviour. Once a question closes, the next is due after a fresh
     # random wait between these two, so the class cannot predict it. Both 0

@@ -94,6 +94,20 @@ async def test_token_is_cached_and_secrets_do_not_enter_connector_payloads() -> 
     assert b"scope=https%3A%2F%2Fapi.botframework.com%2F.default" in calls[0].content
 
 
+async def test_a_developer_portal_bot_takes_its_token_from_botframework_com() -> None:
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200, json={"access_token": "bot-token", "expires_in": 3600})
+
+    settings = configured().model_copy(update={"teams_bot_token_tenant": "botframework.com"})
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await TeamsNotifications().access_token(client, settings)
+    assert calls[0].url.path == "/botframework.com/oauth2/v2.0/token"
+    assert calls[0].url.path != "/tenant/oauth2/v2.0/token"
+
+
 async def test_send_targets_only_mapped_students_and_batches_fifty(monkeypatch, caplog) -> None:
     session_id = uuid4()
     link = SimpleNamespace(meeting_id="meeting/id")

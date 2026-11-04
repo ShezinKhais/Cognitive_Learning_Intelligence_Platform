@@ -246,10 +246,11 @@ class TeamsNotifications:
 
     async def access_token(self, client: httpx.AsyncClient, settings: Settings) -> str:
         async with self.token_lock:
-            identity = (settings.client_id, settings.tenant_id, settings.client_secret)
+            authority = settings.teams_bot_token_tenant or settings.tenant_id
+            identity = (settings.client_id, authority, settings.client_secret)
             if identity == self.token_identity and time.monotonic() < self.token_until:
                 return self.token
-            tenant = quote(settings.tenant_id, safe="")
+            tenant = quote(authority, safe="")
             response = await client.post(
                 f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
                 data={

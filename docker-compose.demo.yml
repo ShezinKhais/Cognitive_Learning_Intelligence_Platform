@@ -56,6 +56,7 @@ services:
       TEAMS_NOTIFICATIONS_ENABLED: ${TEAMS_NOTIFICATIONS_ENABLED:-false}
       TEAMS_APP_BASE_URL: ${TEAMS_APP_BASE_URL:-}
       TEAMS_APP_ID: ${TEAMS_APP_ID:-}
+      TEAMS_BOT_TOKEN_TENANT: ${TEAMS_BOT_TOKEN_TENANT:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

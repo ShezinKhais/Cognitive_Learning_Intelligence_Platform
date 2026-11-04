@@ -59,19 +59,21 @@ example `https://abcd1234-8088.uks1.devtunnels.ms`. It is `BASE_URL` below.
 Port 8088 is the demo stack's web server, which serves the pages, the API,
 the socket and the bot on one origin.
 
-## 3. Azure Bot and app registration (Azure portal, global admin)
+## 3. Bot and app registration (no Azure subscription needed)
 
-One Entra app registration is both the bot and the single sign-on app.
+One Entra app registration is both the bot and the single sign-on app. It is
+made in the Teams Developer Portal, which needs no Azure subscription and
+costs nothing. An Azure Bot (Single Tenant, F0) works too, but needs a paid or
+trial Azure subscription; with one, leave `TEAMS_BOT_TOKEN_TENANT` empty.
 
-1. Create an **Azure Bot**: type **Single Tenant**, pricing **F0**, and
-   create a new Microsoft App ID.
-2. Bot, **Configuration**: messaging endpoint `<BASE_URL>/api/v1/teams/messages`.
-3. Bot, **Channels**: add **Microsoft Teams**.
-4. Open the app registration (Configuration, **Manage Password**), and note:
-   - **Application (client) ID**: `CLIENT_ID` and `BOT_ID`
-   - **Directory (tenant) ID**: `TENANT_ID`
-5. **Certificates and secrets:** add a client secret. Copy its value at once.
-   It is `CLIENT_SECRET`.
+1. Open https://dev.teams.microsoft.com as the global admin. **Tools, Bot
+   management, New bot.** Name it C.L.I.P.
+2. **Configure:** endpoint address `<BASE_URL>/api/v1/teams/messages`.
+3. **Client secrets:** add one. Copy it at once. It is `CLIENT_SECRET`.
+4. Note the bot id. It is `CLIENT_ID` and `BOT_ID`.
+5. Open https://entra.microsoft.com, **App registrations, All applications**,
+   and find the app with that id. Note the **Directory (tenant) ID**: it is
+   `TENANT_ID`. The rest of this section is done there.
 6. **Expose an API:**
    - Set the Application ID URI to `api://<tunnel host>/<CLIENT_ID>`, for
      example `api://abcd1234-8088.uks1.devtunnels.ms/5b0e...`. The host
@@ -93,11 +95,12 @@ database password, `CLIP_ENV=production`, the camera indicators on, and a
 generated `TEAMS_APP_ID`. Fill in:
 
 ```
-CLIENT_ID=<application (client) ID>
+CLIENT_ID=<bot id>
 CLIENT_SECRET=<client secret value>
 TENANT_ID=<directory (tenant) ID>
 TEAMS_APP_BASE_URL=<BASE_URL>
 TEAMS_NOTIFICATIONS_ENABLED=true
+TEAMS_BOT_TOKEN_TENANT=botframework.com
 ```
 
 `teams-app/.env` (git-ignored) has the same `TEAMS_APP_ID`. Fill in
@@ -185,7 +188,8 @@ and the real-tenant checks in `docs/teams-checkpoint-notifications.md`.
 | Tabs are blank or say the page cannot be shown | Tunnel not running, or `BASE_URL` in the package is not the tunnel address. |
 | "Sign in with Microsoft" shows an error in Teams | The Application ID URI, scope or authorised Teams clients (step 3.6) are wrong, or admin consent is missing. |
 | "This Microsoft account has no C.L.I.P account yet" | Run step 6, or the account is not in the script's list. |
-| The bot never starts the session | Messaging endpoint wrong, the Teams channel is missing, or C.L.I.P was not added to that meeting. |
+| The bot never starts the session | Endpoint address wrong in Bot management, or C.L.I.P was not added to that meeting. |
+| The bot reads but never replies, no pop-ups | `TEAMS_BOT_TOKEN_TENANT` does not match how the bot was made: `botframework.com` for the Developer Portal, empty for an Azure Bot. |
 | No pop-ups | `TEAMS_NOTIFICATIONS_ENABLED` is not true, the permissions in step 7 are not granted, or the student has not opened C.L.I.P in Teams once, so their account is not linked yet. |
 | "Only the meeting's organiser can link a session" | Sign in to Teams as the account that scheduled the meeting, or link it as an admin. |
 | "C.L.I.P is not in this meeting yet" | Add C.L.I.P from **Apps** in the meeting, so the bot is in its chat, then pick the session again. |
