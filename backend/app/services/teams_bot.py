@@ -23,9 +23,10 @@ The bot acts on a meeting starting or ending, which Teams sends to a bot
 installed in the meeting's chat with the OnlineMeeting.ReadBasic.Chat
 permission the manifest asks for. It starts or ends the linked session as
 the session's lecturer, through the same service the mock adapter's routes
-use, and only while that lecturer could still do so themselves. Messages,
-installs and participant events are acknowledged and not acted on:
-participants need BBIS's Teams user mappings first.
+use, and only while that lecturer could still do so themselves. Messages
+and the bot being added to a chat get a short reply (teams_replies).
+Participant events are acknowledged and not acted on: who is in the class
+comes from C.L.I.P sign-in, not from the meeting roster.
 """
 
 from __future__ import annotations

@@ -18,7 +18,7 @@ from app.core.audit import audit_action
 from app.schemas.identity import ConsentType, Role
 from app.schemas.meetings import MAX_MEETING_ID_LENGTH, MeetingEventIn, MeetingLinkRequest
 from app.schemas.session import SessionOut
-from app.services import session_lifecycle
+from app.services import meeting_organiser, session_lifecycle
 
 router = APIRouter(
     prefix="/meetings",
@@ -51,7 +51,10 @@ async def link_meeting(
     settings: AppSettings,
     db: DbSession,
 ) -> SessionOut:
-    """Hold a session in this meeting. Either side's old link is replaced."""
+    """Hold a session in this meeting. Either side's old link is replaced.
+    With Teams live, a lecturer must be the meeting's organiser; admins may
+    link any meeting."""
+    await meeting_organiser.require_organiser(db, principal, meeting_id, settings)
     return await session_lifecycle.link_meeting(db, principal, meeting_id, payload.session_id)
 
 

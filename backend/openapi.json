@@ -5154,7 +5154,7 @@
         ]
       },
       "put": {
-        "description": "Hold a session in this meeting. Either side's old link is replaced.",
+        "description": "Hold a session in this meeting. Either side's old link is replaced.\nWith Teams live, a lecturer must be the meeting's organiser; admins may\nlink any meeting.",
         "operationId": "link_meeting_api_v1_meetings__meeting_id__put",
         "parameters": [
           {
@@ -6426,7 +6426,7 @@
     },
     "/api/v1/teams/messages": {
       "post": {
-        "description": "Receive an activity from Teams. Meeting starts and ends are applied to\nthe linked session; everything else is acknowledged. An activity from any\nother Bot Framework channel, or from another organisation, is refused.",
+        "description": "Receive an activity from Teams. Meeting starts and ends are applied to\nthe linked session; a message gets a short reply; everything else is\nacknowledged. An activity from any other Bot Framework channel, or from\nanother organisation, is refused.",
         "operationId": "bot_messages_api_v1_teams_messages_post",
         "requestBody": {
           "content": {

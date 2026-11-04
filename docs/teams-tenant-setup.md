@@ -146,8 +146,10 @@ participants, send in-meeting notifications.
    prepare a session.
 2. Schedule a Teams meeting with `student1@` to `student4@`. In the meeting,
    add C.L.I.P from **Apps**. This installs the bot in the meeting chat.
-3. Link the session to the meeting (`PUT /api/v1/meetings/{meeting_id}`), as
-   in `teams-app/README.md`.
+3. As the meeting's organiser, open the C.L.I.P side panel and pick the
+   session. Only the organiser (or an admin) can link a meeting: C.L.I.P asks
+   Teams who organised it. Write `status` to the bot in the meeting chat to
+   check the link.
 4. Start the meeting. The session starts with it. Each student opens the side
    panel, is signed in by Teams, accepts the terms once, and waits for the
    first checkpoint.
@@ -167,4 +169,6 @@ and the real-tenant checks in `docs/teams-checkpoint-notifications.md`.
 | "This Microsoft account has no C.L.I.P account yet" | Run step 6, or the account is not in the script's list. |
 | The bot never starts the session | Messaging endpoint wrong, the Teams channel is missing, or C.L.I.P was not added to that meeting. |
 | No pop-ups | `TEAMS_NOTIFICATIONS_ENABLED` is not true, the permissions in step 7 are not granted, or the student has not opened C.L.I.P in Teams once, so their account is not linked yet. |
+| "Only the meeting's organiser can link a session" | Sign in to Teams as the account that scheduled the meeting, or link it as an admin. |
+| "C.L.I.P is not in this meeting yet" | Add C.L.I.P from **Apps** in the meeting, so the bot is in its chat, then pick the session again. |
 | The camera indicator cannot start in Teams | Teams asks for camera permission the first time. Allow it in the device prompt. |
