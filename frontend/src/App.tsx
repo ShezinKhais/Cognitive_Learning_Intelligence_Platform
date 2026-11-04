@@ -33,6 +33,7 @@ const QuestionReview = lazy(() => import('./pages/QuestionReview'))
 const SessionReportPage = lazy(() => import('./pages/SessionReportPage'))
 const LecturerSessionReportPage = lazy(() => import('./pages/LecturerSessionReportPage'))
 const AdminGovernancePage = lazy(() => import('./pages/AdminGovernancePage'))
+const AdminAccountsPage = lazy(() => import('./pages/AdminAccountsPage'))
 const StudentHomePage = lazy(() => import('./pages/StudentHomePage'))
 const StudentLiveSessionPage = lazy(() => import('./pages/StudentLiveSessionPage'))
 const StudentReviewPage = lazy(() => import('./pages/StudentReviewPage'))
@@ -198,6 +199,10 @@ export default function App() {
               <Route
                 path="/admin/governance"
                 element={<AdminGovernancePage />}
+              />
+              <Route
+                path="/admin/accounts"
+                element={<AdminAccountsPage />}
               />
             </Route>
           </Route>

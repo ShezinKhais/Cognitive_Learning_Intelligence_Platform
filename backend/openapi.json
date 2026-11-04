@@ -1,6 +1,187 @@
 {
   "components": {
     "schemas": {
+      "AccountCreate": {
+        "properties": {
+          "course_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Required for a student.",
+            "title": "Course Id"
+          },
+          "email": {
+            "maxLength": 255,
+            "minLength": 3,
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+            "title": "Email",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "website_password": {
+            "default": false,
+            "description": "Issue a password for the website. Students in Teams do not need one; staff do, to reach the dashboards.",
+            "title": "Website Password",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "email",
+          "role"
+        ],
+        "title": "AccountCreate",
+        "type": "object"
+      },
+      "AccountIssued": {
+        "description": "An account and, when one was issued, its password. The password is\nshown this once and kept only as a hash.",
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/AccountOut"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          }
+        },
+        "required": [
+          "account"
+        ],
+        "title": "AccountIssued",
+        "type": "object"
+      },
+      "AccountOut": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "course": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CourseOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The student's course. Staff have none."
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "has_password": {
+            "description": "Can sign in on the website, not only through Teams.",
+            "title": "Has Password",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "teams_linked": {
+            "description": "Has signed in through Teams at least once.",
+            "title": "Teams Linked",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email",
+          "role",
+          "active",
+          "course",
+          "has_password",
+          "teams_linked"
+        ],
+        "title": "AccountOut",
+        "type": "object"
+      },
+      "AccountUpdate": {
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active"
+          },
+          "course_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Move a student to this course.",
+            "title": "Course Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Role"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Lecturer and admin can swap. A student stays a student."
+          }
+        },
+        "title": "AccountUpdate",
+        "type": "object"
+      },
       "ActionItem": {
         "description": "One thing a student could do next, worked out from their marked answers.\n\nOnly comprehension and missed questions give rise to one. Engagement never\ndoes: how someone's camera or click rate read says nothing about what they\nshould study.",
         "properties": {
@@ -706,6 +887,53 @@
           "decision_note"
         ],
         "title": "ConsiderationOut",
+        "type": "object"
+      },
+      "CourseCreate": {
+        "properties": {
+          "code": {
+            "maxLength": 20,
+            "minLength": 2,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "CourseCreate",
+        "type": "object"
+      },
+      "CourseOut": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name"
+        ],
+        "title": "CourseOut",
         "type": "object"
       },
       "DeletionRequestCreate": {
@@ -1539,6 +1767,37 @@
           "executed_at"
         ],
         "title": "MyDeletionRequestOut",
+        "type": "object"
+      },
+      "Page_AccountOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AccountOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[AccountOut]",
         "type": "object"
       },
       "Page_AuditEntryOut_": {
@@ -3389,6 +3648,234 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/admin/accounts": {
+      "get": {
+        "description": "Everyone with an account, staff first, filtered by role or by a part\nof their name or email.",
+        "operationId": "list_accounts_api_v1_admin_accounts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Role"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AccountOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Accounts",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Add a person. A student needs a course. A website password, when\nasked for, is returned this once.",
+        "operationId": "create_account_api_v1_admin_accounts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountIssued"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Account",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/accounts/{user_id}": {
+      "patch": {
+        "description": "Rename, switch on or off, swap lecturer and admin, or move a student\nto another course. A switched-off account cannot sign in.",
+        "operationId": "update_account_api_v1_admin_accounts__user_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Account",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/accounts/{user_id}/password": {
+      "post": {
+        "description": "Issue a new website password, returned this once. The old one stops\nworking at once.",
+        "operationId": "reset_password_api_v1_admin_accounts__user_id__password_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountIssued"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Password",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/consideration-requests": {
       "get": {
         "description": "Requests to decide, oldest first; `show=all` adds the decided ones after them.",
@@ -3566,6 +4053,72 @@
         "summary": "Reject Request",
         "tags": [
           "consideration"
+        ]
+      }
+    },
+    "/api/v1/admin/courses": {
+      "get": {
+        "description": "Courses a student can be enrolled on.",
+        "operationId": "list_courses_api_v1_admin_courses_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CourseOut"
+                  },
+                  "title": "Response List Courses Api V1 Admin Courses Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Courses",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Add a course by its code and name.",
+        "operationId": "create_course_api_v1_admin_courses_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CourseCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Course",
+        "tags": [
+          "admin"
         ]
       }
     },

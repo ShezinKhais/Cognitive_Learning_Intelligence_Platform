@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   TrendingUp,
   Upload,
+  UserCog,
   Users,
   type LucideIcon,
 } from 'lucide-react'
@@ -45,6 +46,7 @@ export const NAVIGATION: Record<Role, readonly NavItem[]> = {
     { to: '/student/my-data', label: 'My data', icon: Database },
   ],
   admin: [
+    { to: '/admin/accounts', label: 'Accounts', icon: UserCog },
     { to: '/admin', label: 'Imports', icon: Upload },
     { to: '/admin/status', label: 'System status', icon: Activity },
     { to: '/admin/consideration', label: 'Special consideration', icon: HeartHandshake },

@@ -7,6 +7,7 @@ app.schemas means a v2 router alongside this one, not an edit in place.
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    accounts,
     chat,
     consideration,
     content,
@@ -36,6 +37,7 @@ api_router.include_router(consideration.router)
 api_router.include_router(meetings.router)
 api_router.include_router(teams.router)
 api_router.include_router(governance.router)
+api_router.include_router(accounts.router)
 
 # Not versioned in the path: the socket carries its own protocol version in the
 # auth handshake, so upgrading it does not require a new URL.
