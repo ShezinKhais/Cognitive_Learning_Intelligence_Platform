@@ -7,15 +7,15 @@ demo stack, in production mode, and Teams reaches it through a dev tunnel.
 
 | Where | Who | What opens |
 |---|---|---|
-| Teams, **My Learning** tab | Students | The student dashboard, inside Teams |
+| Teams, **C.L.I.P** tab | Students | The student dashboard (My Learning), inside Teams |
 | Teams, meeting side panel | Students | Their class panel: checkpoints, tutor, indicators |
 | Teams, meeting side panel | Lecturer | The compact class controls, counts and alerts |
 | Teams, pop-ups in a meeting | Students, lecturer | A new checkpoint (students), an alert (lecturer) |
-| Teams, **Lecturer** tab | Lecturer | A launcher that opens the lecturer dashboard website |
-| Teams, **Admin** tab | Admin | A launcher that opens the admin website |
+| Teams, **C.L.I.P** tab | Lecturer, admin | A launcher that opens their own website |
 | Browser | Lecturer, admin | The full websites, signed in with email and password |
 
-Inside Teams nobody types a password: single sign-on uses the Microsoft
+Teams shows every tab of an app to everyone, so there is one tab, and it
+shows each person the page for their role. Inside Teams nobody types a password: single sign-on uses the Microsoft
 account Teams is signed in with. The server checks the Entra token, then
 finds the C.L.I.P account by that account's sign-in name. On first use it
 links the two by the token's tenant and object IDs; that link is also how
@@ -123,7 +123,7 @@ class runs from questions already approved.
 ## 6. Create the accounts
 
 ```bash
-docker compose -p clip-demo -f docker-compose.demo.yml exec -T backend python - < backend/scripts/provision_teams_accounts.py
+docker compose -p clip-demo -f docker-compose.demo.yml --env-file deploy/demo.env exec -T backend python - < backend/scripts/provision_teams_accounts.py
 ```
 
 The script prints the lecturer's and admin's website passwords once. Hand
@@ -138,14 +138,17 @@ python scripts/package_teams_app.py
 ```
 
 This writes `teams-app/build/clip.zip`, or says what is missing. In the
-Teams admin center: **Teams apps, Manage apps, Upload new app**. Then, on the
+Teams admin center: **Teams apps, Manage apps, Upload new app**. To update it
+later, raise `version` in `teams-app/manifest.json`, rebuild, and use
+**Upload file** on the CLIP app page; uploading it as a new app is refused
+because the app ID is already in use. Then, on the
 app's page, grant the meeting permissions: read meeting details, read
 participants, send in-meeting notifications.
 
 ## 8. First run
 
-1. As `lecturer@`: open C.L.I.P from Teams Apps, then the **Lecturer** tab,
-   and open the dashboard. Sign in, upload material, approve questions and
+1. As `lecturer@`: open the C.L.I.P tab in Teams and open the
+   dashboard from it. Sign in, upload material, approve questions and
    prepare a session.
 2. Schedule a Teams meeting with `student1@` to `student4@`. In the meeting,
    add C.L.I.P from **Apps**. This installs the bot in the meeting chat.
