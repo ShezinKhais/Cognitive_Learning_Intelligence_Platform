@@ -38,6 +38,7 @@ const StudentLiveSessionPage = lazy(() => import('./pages/StudentLiveSessionPage
 const StudentReviewPage = lazy(() => import('./pages/StudentReviewPage'))
 const StudentProgressPage = lazy(() => import('./pages/StudentProgressPage'))
 const StudentConsiderationPage = lazy(() => import('./pages/StudentConsiderationPage'))
+const StudentMyDataPage = lazy(() => import('./pages/StudentMyDataPage'))
 const AdminConsiderationPage = lazy(() => import('./pages/AdminConsiderationPage'))
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage'))
 const TermsPage = lazy(() => import('./pages/TermsPage'))
@@ -141,6 +142,10 @@ export default function App() {
             <Route
               path="consideration"
               element={<StudentConsiderationPage />}
+            />
+            <Route
+              path="my-data"
+              element={<StudentMyDataPage />}
             />
           </Route>
 

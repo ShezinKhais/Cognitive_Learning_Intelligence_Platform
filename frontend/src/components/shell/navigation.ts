@@ -1,5 +1,6 @@
 import {
   Activity,
+  Database,
   BookOpen,
   CalendarClock,
   FileText,
@@ -41,6 +42,7 @@ export const NAVIGATION: Record<Role, readonly NavItem[]> = {
     { to: '/student/reviews', label: 'Past sessions', icon: History },
     { to: '/student/progress', label: 'Progress over time', icon: TrendingUp },
     { to: '/student/consideration', label: 'Special consideration', icon: HeartHandshake },
+    { to: '/student/my-data', label: 'My data', icon: Database },
   ],
   admin: [
     { to: '/admin', label: 'Imports', icon: Upload },

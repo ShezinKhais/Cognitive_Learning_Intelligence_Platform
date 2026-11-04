@@ -122,10 +122,13 @@ export default function PrivacyPage() {
       <PolicySection title="Your choices and requests">
         <ul>
           <li>You can turn the optional indicators on or off at any time. Declining one never blocks another.</li>
-          <li>You can ask for a copy of the information C.L.I.P holds about you.</li>
           <li>
-            You can ask for your information to be erased. An administrator reviews the request before anything is
-            deleted, and erasing cannot be undone.
+            You can download a copy of the information C.L.I.P holds about you from <strong>My data</strong> in the
+            student menu.
+          </li>
+          <li>
+            You can ask for your information to be erased, also from <strong>My data</strong>. An administrator reviews
+            the request before anything is deleted, and erasing cannot be undone.
           </li>
         </ul>
       </PolicySection>
