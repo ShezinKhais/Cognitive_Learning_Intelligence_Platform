@@ -9,6 +9,7 @@ import './index.css'
 import { TeamsProvider } from './teams'
 import { createTeamsHost } from './teams/teamsClient'
 import { enableTeamsSignIn } from './teams/teamsSignIn'
+import { watchForCrashes } from './features/monitoring/reportCrash'
 import { followStoredTheme } from './components/shell/theme'
 import { ToastProvider } from './components/ui/toast'
 
@@ -17,6 +18,7 @@ followStoredTheme()
 
 // In Teams, the Microsoft account Teams is signed in with signs in to C.L.I.P.
 if (createTeamsHost().kind === 'teams') enableTeamsSignIn()
+watchForCrashes()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -48,6 +48,7 @@ NO_CONSENT_NEEDED = {
     ("GET", "/api/v1/me/data"): "a student can always take a copy of their own data",
     ("POST", "/api/v1/me/deletion-request"): "a student can always ask to be erased",
     ("GET", "/api/v1/me/deletion-request"): "a student can always see where that request stands",
+    ("POST", "/api/v1/client-errors"): "a page can crash before the terms are accepted",
 }
 
 # Who each route is for. Anything not named here fails the audit, so a new
@@ -64,6 +65,8 @@ AUDIENCE = {
     ("GET", "/api/v1/student-reviews/{session_id}/responses/{response_id}/sources"): STUDENT_ONLY,
     ("POST", "/api/v1/auth/consent"): ANY_USER,
     ("GET", "/api/v1/auth/me"): ANY_USER,
+    ("POST", "/api/v1/client-errors"): ANY_USER,
+    ("GET", "/api/v1/admin/errors"): ADMIN_ONLY,
     ("POST", "/api/v1/admin/roster"): ADMIN_ONLY,
     ("GET", "/api/v1/admin/accounts"): ADMIN_ONLY,
     ("POST", "/api/v1/admin/accounts"): ADMIN_ONLY,

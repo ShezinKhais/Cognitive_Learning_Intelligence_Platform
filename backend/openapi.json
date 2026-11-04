@@ -564,6 +564,39 @@
         "title": "ChatTurn",
         "type": "object"
       },
+      "ClientErrorIn": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "render",
+              "script",
+              "promise"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "page": {
+            "description": "The path, without its query.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Page",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "message",
+          "page"
+        ],
+        "title": "ClientErrorIn",
+        "type": "object"
+      },
       "ComprehensionLabel": {
         "description": "Design document labels. The SRS's Clear/Partial/Misunderstood is stale.",
         "enum": [
@@ -1293,6 +1326,68 @@
         ],
         "title": "EngagementStatus",
         "type": "string"
+      },
+      "ErrorGroupOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "first_at": {
+            "format": "date-time",
+            "title": "First At",
+            "type": "string"
+          },
+          "last_at": {
+            "format": "date-time",
+            "title": "Last At",
+            "type": "string"
+          },
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "source": {
+            "enum": [
+              "server",
+              "client"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "where": {
+            "description": "The logger, or the page and kind for a browser crash.",
+            "title": "Where",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "level",
+          "where",
+          "message",
+          "count",
+          "first_at",
+          "last_at",
+          "request_id"
+        ],
+        "title": "ErrorGroupOut",
+        "type": "object"
       },
       "HTTPValidationError": {
         "properties": {
@@ -2479,6 +2574,34 @@
           "dependencies"
         ],
         "title": "ReadinessResponse",
+        "type": "object"
+      },
+      "RecentErrorsOut": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorGroupOut"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "since": {
+            "description": "When this server started counting.",
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "since",
+          "total",
+          "groups"
+        ],
+        "title": "RecentErrorsOut",
         "type": "object"
       },
       "ReportJobOut": {
@@ -4398,6 +4521,28 @@
         ]
       }
     },
+    "/api/v1/admin/errors": {
+      "get": {
+        "description": "Server errors and browser crashes since this server started, grouped,\nnewest first.",
+        "operationId": "recent_errors_api_v1_admin_errors_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecentErrorsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Recent Errors",
+        "tags": [
+          "monitoring"
+        ]
+      }
+    },
     "/api/v1/admin/roster": {
       "post": {
         "description": "CSV or XLSX only, same reasoning as /timetable: no OCR path.",
@@ -4676,6 +4821,41 @@
         "summary": "Teams Sign In",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/client-errors": {
+      "post": {
+        "description": "A page crashed in someone's browser. Shown to admins on the status page.",
+        "operationId": "report_client_error_api_v1_client_errors_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientErrorIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Client Error",
+        "tags": [
+          "monitoring"
         ]
       }
     },
