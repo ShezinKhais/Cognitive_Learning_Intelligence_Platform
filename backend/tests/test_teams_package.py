@@ -84,9 +84,7 @@ def test_the_package_carries_the_filled_manifest_and_both_icons(
     assert manifest["id"] == GOOD["TEAMS_APP_ID"]
     assert manifest["bots"][0]["botId"] == GOOD["BOT_ID"]
     assert manifest["validDomains"] == ["abc123-5173.euw.devtunnels.ms"]
-    assert (
-        manifest["staticTabs"][0]["contentUrl"] == "https://abc123-5173.euw.devtunnels.ms/open"
-    )
+    assert manifest["staticTabs"][0]["contentUrl"] == "https://abc123-5173.euw.devtunnels.ms/open"
 
 
 def test_an_icon_of_the_wrong_size_is_refused(
