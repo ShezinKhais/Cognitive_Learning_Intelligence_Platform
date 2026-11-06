@@ -89,26 +89,37 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
   )
 
   // A student who agreed on the consent page, or here in an earlier class,
-  // is not asked again: their choices are ticked and saved, so Turn on works
-  // at once. Nothing starts until they press it.
+  // is not asked again: their choices are ticked and saved, and the devices
+  // they agreed to start by themselves once the class is live. The browser
+  // still asks for permission the first time. Stopping one keeps it stopped
+  // for the rest of this visit.
+  const [given, setGiven] = useState<{ camera: boolean; microphone: boolean } | null>(null)
+  const autoStarted = useRef(false)
   useEffect(() => {
     let cancelled = false
     getCurrentUser().then(
       (user) => {
         if (cancelled) return
-        const given = {
+        const consents = {
           monitoring: user.consents.includes('engagement_monitoring'),
           camera: user.consents.includes('camera'),
           microphone: user.consents.includes('microphone'),
         }
-        if (!given.monitoring) return
-        setSavedConsent(given)
-        setChoice({ camera: given.camera, microphone: given.microphone })
+        if (!consents.monitoring) return
+        setSavedConsent(consents)
+        setChoice({ camera: consents.camera, microphone: consents.microphone })
+        setGiven({ camera: consents.camera, microphone: consents.microphone })
       },
       () => {},
     )
     return () => { cancelled = true }
   }, [])
+  useEffect(() => {
+    if (!enabled || !given || autoStarted.current || document.hidden) return
+    autoStarted.current = true
+    if (given.camera) void enableCamera()
+    if (given.microphone) void enableMicrophone()
+  }, [enabled, given, enableCamera, enableMicrophone])
 
   useEffect(() => {
     if (!consentRejected) return

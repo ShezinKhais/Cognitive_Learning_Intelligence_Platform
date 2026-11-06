@@ -239,9 +239,9 @@ export default function ConsentPage() {
               />
             </div>
             <p className="mt-3 text-sm text-muted-foreground">
-              Saving these choices does not turn on your camera or microphone. You switch each one on yourself during a
-              class, and your browser asks for permission. You can decline or turn them off at any time and still take
-              part in everything.
+              The indicators you turn on here start by themselves when you join a live class. Your browser asks for
+              permission the first time. You can turn either off during a class, or change your choice here, at any
+              time and still take part in everything.
             </p>
             <p className="mt-2 text-sm text-muted-foreground">
               These indicators are separate from your camera and microphone in Microsoft Teams, which Teams handles under

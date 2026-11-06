@@ -29,8 +29,9 @@ export default function PrivacyPage() {
           video, pictures, sound or speech to its server.
         </p>
         <p>
-          Giving consent does not turn a device on. You switch each indicator on yourself during a class, and your
-          browser asks for permission first. You can decline, or turn either off, and still take part in everything.
+          Once you have agreed to an indicator, it starts by itself when you join a live class, and stops when you
+          leave, hide the page or the class ends. Your browser asks for permission the first time. You can turn
+          either off from the class panel at any time, withdraw your consent, and still take part in everything.
         </p>
         <p>
           These indicators are separate from Microsoft Teams. If you turn on your camera or microphone in a Teams

@@ -501,11 +501,12 @@ for (const theme of ['dark', 'contrast']) {
   })
 }
 
-test('a choice already given is remembered and nothing starts on its own', async ({ page }) => {
+test('a choice already given is remembered and the devices start by themselves', async ({ page }) => {
   for (const consent of ['engagement_monitoring', 'camera', 'microphone']) granted.add(consent)
   await page.reload()
   await expect(page.getByLabel('I opt in to camera indicators')).toBeChecked()
   await expect(page.getByLabel('I opt in to microphone indicators')).toBeChecked()
-  await expect(page.getByRole('button', { name: 'Turn on' })).toBeEnabled()
-  expect(await page.evaluate(() => (window as any).probe.requests)).toBe(0)
+  await expect.poll(() => page.evaluate(() => (window as any).probe.requests)).toBeGreaterThan(0)
+  await page.getByRole('button', { name: 'Turn everything off' }).click()
+  await expect(page.getByText('Camera: off. Microphone: off.')).toBeVisible()
 })
