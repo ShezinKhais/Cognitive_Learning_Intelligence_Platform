@@ -7,6 +7,8 @@ async function optIn(page: Page, sensor: 'camera' | 'microphone') {
   await expect(page.getByRole('button', { name: 'Turn on' })).toBeEnabled()
 }
 
+const granted = new Set<string>()
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     const state = { requests: 0, tracks: [] as MediaStreamTrack[], scroll: [] as unknown[], summaries: [] as unknown[] }
@@ -21,10 +23,22 @@ test.beforeEach(async ({ page }) => {
     Element.prototype.scrollIntoView = function(options) { state.scroll.push(options) }
     window.addEventListener('test-summary', event => state.summaries.push((event as CustomEvent).detail))
   })
-  await page.route('**/api/v1/auth/**', route => route.fulfill({ json: {
-    id: 'student', email: 'student@example.test', full_name: 'Test student', role: 'student',
-    consents: ['engagement_monitoring', 'camera', 'microphone'],
-  } }))
+  // Consents start empty and change as the page records them, as on the
+  // server, so the panel's remembered choices can be tested.
+  granted.clear()
+  await page.route('**/api/v1/auth/**', route => {
+    const request = route.request()
+    if (request.method() === 'POST' && request.url().endsWith('/auth/consent')) {
+      const body = request.postDataJSON() as { consent_type: string; granted: boolean }
+      if (body.granted) granted.add(body.consent_type)
+      else granted.delete(body.consent_type)
+      return route.fulfill({ json: { consent_type: body.consent_type, granted: body.granted } })
+    }
+    return route.fulfill({ json: {
+      id: 'student', email: 'student@example.test', full_name: 'Test student', role: 'student',
+      consents: [...granted],
+    } })
+  })
   // The token is kept in memory and fetched with the refresh cookie on load.
   // Registered last, so it wins over the route above for this one path.
   await page.route('**/api/v1/auth/refresh', route => route.fulfill({ json: {
@@ -486,3 +500,12 @@ for (const theme of ['dark', 'contrast']) {
     expect(result.violations).toEqual([])
   })
 }
+
+test('a choice already given is remembered and nothing starts on its own', async ({ page }) => {
+  for (const consent of ['engagement_monitoring', 'camera', 'microphone']) granted.add(consent)
+  await page.reload()
+  await expect(page.getByLabel('I opt in to camera indicators')).toBeChecked()
+  await expect(page.getByLabel('I opt in to microphone indicators')).toBeChecked()
+  await expect(page.getByRole('button', { name: 'Turn on' })).toBeEnabled()
+  expect(await page.evaluate(() => (window as any).probe.requests)).toBe(0)
+})

@@ -88,6 +88,28 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
     microphoneActive, microphoneStartedAt, drainMicrophone, onSignal, refuseSignal,
   )
 
+  // A student who agreed on the consent page, or here in an earlier class,
+  // is not asked again: their choices are ticked and saved, so Turn on works
+  // at once. Nothing starts until they press it.
+  useEffect(() => {
+    let cancelled = false
+    getCurrentUser().then(
+      (user) => {
+        if (cancelled) return
+        const given = {
+          monitoring: user.consents.includes('engagement_monitoring'),
+          camera: user.consents.includes('camera'),
+          microphone: user.consents.includes('microphone'),
+        }
+        if (!given.monitoring) return
+        setSavedConsent(given)
+        setChoice({ camera: given.camera, microphone: given.microphone })
+      },
+      () => {},
+    )
+    return () => { cancelled = true }
+  }, [])
+
   useEffect(() => {
     if (!consentRejected) return
     stopAll()
