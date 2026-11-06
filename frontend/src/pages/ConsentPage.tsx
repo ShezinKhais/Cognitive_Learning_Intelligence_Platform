@@ -17,6 +17,7 @@ import { buttonStyles } from '../components/ui/button'
 import { cn } from '../components/ui/cn'
 import { ProblemState } from '../components/ui/ProblemState'
 import { problemArt } from '../components/ui/problem'
+import { choicesToSave } from '../features/student/monitoringChoices'
 
 export default function ConsentPage() {
   const navigate = useNavigate()
@@ -114,12 +115,10 @@ export default function ConsentPage() {
       await recordConsent('terms', true)
 
       if (user.role === 'student') {
-        await recordConsent(
-          'engagement_monitoring',
-          monitoring,
-        )
-        await recordConsent('camera', camera)
-        await recordConsent('microphone', microphone)
+        const saved = choicesToSave({ monitoring, camera, microphone })
+        await recordConsent('engagement_monitoring', saved.monitoring)
+        await recordConsent('camera', saved.camera)
+        await recordConsent('microphone', saved.microphone)
       }
 
       const requestedPath = (
@@ -216,7 +215,7 @@ export default function ConsentPage() {
               <Permission
                 icon={Activity}
                 label="Engagement monitoring"
-                detail="Estimates from how you take part, such as answering checkpoints."
+                detail="Estimates from how you take part, such as answering checkpoints. Turn this on to choose the camera and microphone indicators."
                 checked={monitoring}
                 onChange={setMonitoring}
               />
@@ -224,17 +223,30 @@ export default function ConsentPage() {
                 icon={Camera}
                 label="Camera indicators"
                 detail="Whether a face is in view, worked out in your browser. The video is not sent."
-                checked={camera}
+                checked={monitoring && camera}
                 onChange={setCamera}
+                disabled={!monitoring}
+                nested
               />
               <Permission
                 icon={Mic}
                 label="Microphone indicators"
                 detail="Whether you are speaking, worked out in your browser. The sound is not sent."
-                checked={microphone}
+                checked={monitoring && microphone}
                 onChange={setMicrophone}
+                disabled={!monitoring}
+                nested
               />
             </div>
+            <p className="mt-3 text-sm text-muted-foreground">
+              Saving these choices does not turn on your camera or microphone. You switch each one on yourself during a
+              class, and your browser asks for permission. You can decline or turn them off at any time and still take
+              part in everything.
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              These indicators are separate from your camera and microphone in Microsoft Teams, which Teams handles under
+              its own privacy terms.
+            </p>
           </fieldset>
         )}
 
@@ -276,15 +288,25 @@ function Permission({
   detail,
   checked,
   onChange,
+  disabled = false,
+  nested = false,
 }: {
   icon: LucideIcon
   label: string
   detail: string
   checked: boolean
   onChange: (checked: boolean) => void
+  disabled?: boolean
+  nested?: boolean
 }) {
   return (
-    <label className="flex cursor-pointer items-start gap-3 px-4 py-3.5">
+    <label
+      className={cn(
+        'flex items-start gap-3 py-3.5 pr-4',
+        nested ? 'pl-10' : 'pl-4',
+        disabled ? 'cursor-not-allowed opacity-55' : 'cursor-pointer',
+      )}
+    >
       <Icon size={18} aria-hidden className="mt-0.5 shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1">
         <span className="block font-semibold">{label}</span>
@@ -294,6 +316,7 @@ function Permission({
         type="checkbox"
         role="switch"
         checked={checked}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
         className="peer sr-only"
       />

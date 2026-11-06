@@ -24,8 +24,17 @@ export default function PrivacyPage() {
 
       <PolicySection title="Camera and microphone">
         <p>
-          The camera and microphone indicators are optional, and each needs its own consent. When they are on, your
-          browser works them out on your own device. No video, picture, sound or speech leaves your device.
+          The camera and microphone indicators are optional. Each needs its own consent, and both need engagement
+          monitoring to be on. When they are on, your browser works them out on your own device. C.L.I.P never sends
+          video, pictures, sound or speech to its server.
+        </p>
+        <p>
+          Giving consent does not turn a device on. You switch each indicator on yourself during a class, and your
+          browser asks for permission first. You can decline, or turn either off, and still take part in everything.
+        </p>
+        <p>
+          These indicators are separate from Microsoft Teams. If you turn on your camera or microphone in a Teams
+          meeting, Teams handles that audio and video under Microsoft&apos;s own privacy terms, not C.L.I.P&apos;s.
         </p>
         <p>
           About every five seconds, your device sends C.L.I.P four values: the share of time you were facing the
