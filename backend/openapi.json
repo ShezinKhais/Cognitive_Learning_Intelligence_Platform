@@ -1772,6 +1772,76 @@
         "title": "MaterialUpdateRequest",
         "type": "object"
       },
+      "MeetingClassStart": {
+        "properties": {
+          "course_code": {
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Course Code",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "course_code",
+          "title"
+        ],
+        "title": "MeetingClassStart",
+        "type": "object"
+      },
+      "MeetingClassSuggestion": {
+        "description": "What the side panel offers for a meeting with no session: the course\nand title guessed from the meeting's title, and the lecturer's courses\nto choose from instead.",
+        "properties": {
+          "course_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The course guessed for this class.",
+            "title": "Course Code"
+          },
+          "courses": {
+            "items": {
+              "$ref": "#/components/schemas/CourseOut"
+            },
+            "title": "Courses",
+            "type": "array"
+          },
+          "meeting_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The title Teams gives the meeting, if known.",
+            "title": "Meeting Title"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meeting_title",
+          "course_code",
+          "title",
+          "courses"
+        ],
+        "title": "MeetingClassSuggestion",
+        "type": "object"
+      },
       "MeetingEventIn": {
         "description": "A meeting started or ended. Teams can deliver an event more than once,\nso one that finds the session already in that state changes nothing.",
         "properties": {
@@ -6580,6 +6650,106 @@
           }
         },
         "summary": "Link Meeting",
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/meetings/{meeting_id}/class": {
+      "post": {
+        "description": "Yes, this is a class: create its session, link it to this meeting and\nstart it. Only the meeting's organiser, or an admin.",
+        "operationId": "start_class_api_v1_meetings__meeting_id__class_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeetingClassStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Class",
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/meetings/{meeting_id}/class-suggestion": {
+      "get": {
+        "description": "For a meeting with no session: the course and title to offer when\nthe side panel asks whether this is a class, guessed from the meeting's\ntitle.",
+        "operationId": "class_suggestion_api_v1_meetings__meeting_id__class_suggestion_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingClassSuggestion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Class Suggestion",
         "tags": [
           "meetings"
         ]

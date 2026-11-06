@@ -76,6 +76,8 @@ EXPECTED_PATHS = {
     "/api/v1/sessions/{session_id}/summary/{student_id}",
     # Added in Phase 4 for Teams meetings, the bot and the mock adapter. Additive.
     "/api/v1/meetings/{meeting_id}",
+    "/api/v1/meetings/{meeting_id}/class-suggestion",
+    "/api/v1/meetings/{meeting_id}/class",
     "/api/v1/meetings/events",
     "/api/v1/teams/messages",
     # Added in Phase 5 for the tutor (General CS). Additive. The reply is a

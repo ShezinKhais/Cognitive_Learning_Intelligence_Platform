@@ -96,6 +96,8 @@ AUDIENCE = {
     ("POST", "/api/v1/meetings/events"): STAFF,
     ("GET", "/api/v1/meetings/{meeting_id}"): STAFF,
     ("PUT", "/api/v1/meetings/{meeting_id}"): STAFF,
+    ("GET", "/api/v1/meetings/{meeting_id}/class-suggestion"): STAFF,
+    ("POST", "/api/v1/meetings/{meeting_id}/class"): STAFF,
     ("POST", "/api/v1/sessions"): STAFF,
     ("GET", "/api/v1/sessions"): ANY_USER,
     ("GET", "/api/v1/sessions/{session_id}"): MEMBER,

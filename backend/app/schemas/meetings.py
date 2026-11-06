@@ -8,6 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.accounts import CourseOut
 from app.schemas.session import MAX_COURSE_CODE_LENGTH, MAX_TITLE_LENGTH
 
 # Teams meeting IDs are opaque strings; this bounds them without assuming a shape.
@@ -57,3 +58,19 @@ class TeamsActivity(BaseModel):
         description="The Bot Framework channel. Only 'msteams' is acted on.",
     )
     channel_data: dict[str, Any] | None = Field(default=None, alias="channelData")
+
+
+class MeetingClassSuggestion(BaseModel):
+    """What the side panel offers for a meeting with no session: the course
+    and title guessed from the meeting's title, and the lecturer's courses
+    to choose from instead."""
+
+    meeting_title: str | None = Field(description="The title Teams gives the meeting, if known.")
+    course_code: str | None = Field(description="The course guessed for this class.")
+    title: str
+    courses: list[CourseOut]
+
+
+class MeetingClassStart(BaseModel):
+    course_code: str = Field(min_length=1, max_length=MAX_COURSE_CODE_LENGTH)
+    title: str = Field(min_length=1, max_length=MAX_TITLE_LENGTH)
