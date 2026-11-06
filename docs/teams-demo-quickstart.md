@@ -9,7 +9,7 @@ already done for `CLIP736`.
 
 - Docker Desktop, running.
 - The Dev Tunnels CLI: `winget install Microsoft.devtunnel`, then
-  `devtunnel user login` with an account allowed to host the `clip736`
+  `devtunnel user login` with an account allowed to host the `clip736-teams`
   tunnel. Ask Shezin, who owns it.
 - Ollama, optional. Without it a class still runs from questions already
   approved; the tutor and question generation need it.
@@ -20,7 +20,7 @@ already done for `CLIP736`.
     the app package.
 
 Only one laptop runs the demo at a time, because Teams points at one tunnel
-address: `https://swwrmrn9-8088.inc1.devtunnels.ms`.
+address: `https://8xn85cws-8088.inc1.devtunnels.ms`.
 
 ## Start
 
@@ -41,7 +41,7 @@ Then open the tunnel in its own terminal and leave it running while Teams is
 in use:
 
 ```bash
-devtunnel host clip736
+devtunnel host clip736-teams
 ```
 
 For the AI features, also run `ollama serve`.

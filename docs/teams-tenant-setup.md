@@ -50,11 +50,11 @@ Create the tunnel once:
 
 ```bash
 devtunnel user login
-devtunnel create clip736 --allow-anonymous
-devtunnel port create clip736 -p 8088
+devtunnel create clip736-teams --allow-anonymous
+devtunnel port create clip736-teams -p 8088
 ```
 
-Then run `devtunnel host clip736` each time. Note the HTTPS address, for
+Then run `devtunnel host clip736-teams` each time. Note the HTTPS address, for
 example `https://abcd1234-8088.uks1.devtunnels.ms`. It is `BASE_URL` below.
 Port 8088 is the demo stack's web server, which serves the pages, the API,
 the socket and the bot on one origin.
