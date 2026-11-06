@@ -12,12 +12,15 @@ with a count, not a page of them.
 Kept in memory and bounded. It is a view of the last hours, not an archive:
 the container's log keeps the full record, and each entry carries the request
 id to find it there. Messages are cut short, and nothing from a request body
-is ever added here.
+is ever added here. Everything stored passes through redact() first, so a
+password, token, email, link or query value quoted in an exception message
+does not reach the admin page.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -25,6 +28,44 @@ from datetime import UTC, datetime
 
 MAX_GROUPS = 200
 MAX_MESSAGE = 300
+
+# Applied to everything stored here, server and browser alike, because an
+# exception message can quote anything: a connection string, a header, the
+# values of a failed query. Order matters: whole SQL blocks and URLs go first
+# so the narrower patterns do not leave half of one behind.
+_REDACTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
+    # SQLAlchemy appends the statement and its bound values to the message.
+    (re.compile(r"\[SQL:.*?(?:\]|$)", re.DOTALL), "[sql]"),
+    (re.compile(r"\[parameters:.*?(?:\]|$)", re.DOTALL), "[parameters]"),
+    (re.compile(r"\b[a-z][a-z0-9+.-]*://\S+", re.IGNORECASE), "[url]"),
+    (re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"), "[email]"),
+    (re.compile(r"\beyJ[\w-]+\.[\w-]+\.[\w-]+"), "[token]"),
+    (re.compile(r"\b(Bearer|Basic)\s+\S+", re.IGNORECASE), r"\1 [token]"),
+    (
+        re.compile(
+            r"\b([\w-]*(?:password|passwd|secret|token|api[_-]?key|authorization|cookie)[\w-]*)"
+            r"(\s*[=:]\s*)(\"[^\"]*\"|'[^']*'|\S+)",
+            re.IGNORECASE,
+        ),
+        r"\1\2[redacted]",
+    ),
+    # Long hex or base64 runs are keys and digests, never something to read.
+    (re.compile(r"\b[A-Fa-f0-9]{32,}\b"), "[secret]"),
+    # No "/" so a page path is never taken for one, and a digit and a letter
+    # are required so a long Python name is not either.
+    (
+        re.compile(r"\b(?=[A-Za-z0-9+_-]*\d)(?=[A-Za-z0-9+_-]*[A-Za-z])[A-Za-z0-9+_-]{40,}={0,2}"),
+        "[secret]",
+    ),
+)
+
+
+def redact(text: str) -> str:
+    """Remove credentials, tokens, emails, links and query values from text
+    an administrator will read."""
+    for pattern, replacement in _REDACTIONS:
+        text = pattern.sub(replacement, text)
+    return text
 
 
 @dataclass
@@ -50,8 +91,8 @@ class ErrorLog:
     def add(
         self, *, source: str, level: str, where: str, message: str, request_id: str | None = None
     ) -> None:
-        message = " ".join(message.split())[:MAX_MESSAGE] or "(no message)"
-        where = where[:200]
+        message = " ".join(redact(message).split())[:MAX_MESSAGE] or "(no message)"
+        where = redact(where)[:200]
         key = (source, where, message[:120])
         now = datetime.now(UTC)
         with self._lock:
