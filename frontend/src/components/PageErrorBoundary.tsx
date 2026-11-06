@@ -36,9 +36,10 @@ export default class PageErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: unknown): void {
     if (!isChunkError(error)) {
-      reportCrash('render', error)
+      reportCrash('render')
       return
     }
+    reportCrash('load')
     try {
       const last = Number(window.sessionStorage.getItem(RELOADED_KEY))
       if (Date.now() - last < RELOAD_AGAIN_AFTER_MS) return

@@ -1,22 +1,23 @@
 import { apiAuthenticatedRequest, getAccessToken } from '../../api'
-import { CrashBudget, crashMessage, type CrashKind } from './crashReport'
+import { crashArea, type CrashKind } from './crashReport'
 
-const budget = new CrashBudget()
+const reported = new Set<CrashKind>()
 
 /** Tell the admins a page crashed. Only for a signed-in user; never throws. */
-export function reportCrash(kind: CrashKind, error: unknown): void {
+export function reportCrash(kind: CrashKind): void {
   if (!getAccessToken()) return
-  const message = crashMessage(error)
-  if (!budget.allow(kind, message)) return
+  if (reported.has(kind)) return
+  reported.add(kind)
   apiAuthenticatedRequest('/client-errors', {
     method: 'POST',
+    keepalive: true,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ kind, message, page: window.location.pathname.slice(0, 200) || '/' }),
+    body: JSON.stringify({ kind, page: crashArea(window.location.pathname) }),
   }).catch(() => undefined)
 }
 
 /** Report crashes that no error boundary sees. */
 export function watchForCrashes(): void {
-  window.addEventListener('error', (event) => reportCrash('script', event.error ?? event.message))
-  window.addEventListener('unhandledrejection', (event) => reportCrash('promise', event.reason))
+  window.addEventListener('error', () => reportCrash('script'))
+  window.addEventListener('unhandledrejection', () => reportCrash('promise'))
 }

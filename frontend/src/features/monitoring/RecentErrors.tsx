@@ -18,6 +18,7 @@ interface ErrorGroup {
 interface RecentErrors {
   since: string
   total: number
+  server_error_spike: boolean
   groups: ErrorGroup[]
 }
 
@@ -28,16 +29,26 @@ export default function RecentErrorsPanel({ refresh }: { refresh: number }) {
 
   useEffect(() => {
     let cancelled = false
-    apiAuthenticatedGet<RecentErrors>('/admin/errors').then(
-      (found) => {
-        if (cancelled) return
-        setRecent(found)
-        setFailed(false)
-      },
-      () => !cancelled && setFailed(true),
-    )
+    let pending = false
+    const check = () => {
+      if (pending) return
+      pending = true
+      void apiAuthenticatedGet<RecentErrors>('/admin/errors')
+        .then(
+          (found) => {
+            if (cancelled) return
+            setRecent(found)
+            setFailed(false)
+          },
+          () => !cancelled && setFailed(true),
+        )
+        .finally(() => { pending = false })
+    }
+    check()
+    const timer = window.setInterval(check, 30_000)
     return () => {
       cancelled = true
+      window.clearInterval(timer)
     }
   }, [refresh])
 
@@ -48,12 +59,17 @@ export default function RecentErrorsPanel({ refresh }: { refresh: number }) {
       actions={recent && <Tag tone={recent.groups.length ? 'mixed' : 'good'}>{recent.total} logged</Tag>}
       className="md:col-span-2"
     >
+      {!failed && recent?.server_error_spike && (
+        <p role="alert" className="mb-3 text-sm text-critical">
+          Server errors stayed elevated for two minutes. Check Services and the server error groups below.
+        </p>
+      )}
       {failed ? (
         <p className="text-sm text-critical">The error log could not be read.</p>
       ) : !recent ? (
         <p className="text-muted-foreground">Checking…</p>
       ) : recent.groups.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nothing has gone wrong since the server started.</p>
+        <p className="text-sm text-muted-foreground">No error groups in the last 24 hours.</p>
       ) : (
         <ul className="divide-y divide-border">
           {recent.groups.slice(0, 50).map((group) => (
