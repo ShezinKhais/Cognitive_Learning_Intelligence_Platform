@@ -32,6 +32,7 @@ from app.models.teams_meeting_reference import TeamsMeetingReference
 from app.models.teams_user_mapping import TeamsUserMapping
 from app.models.user import User
 from app.schemas.meetings import TeamsActivity
+from app.services.course_membership import students_on
 
 log = logging.getLogger("clip.teams.notifications")
 
@@ -309,7 +310,7 @@ class TeamsNotifications:
                         .join(Student, Student.user_id == User.user_id)
                         .where(
                             TeamsUserMapping.tenant_id == settings.tenant_id,
-                            Student.course_id == session.course_id,
+                            Student.student_id.in_(students_on(session.course_id)),
                             User.role == "student",
                             User.active.is_(True),
                         )

@@ -30,12 +30,13 @@ from app.models.student_response import StudentResponse
 from app.schemas.common import Page
 from app.schemas.identity import Role
 from app.schemas.session import ResponseOut, SessionOut
+from app.services.course_membership import courses_of_user
 from app.services.session_lifecycle import session_out, sessions_out
 
 
 def _enrolled_in(principal: Principal):  # noqa: ANN202 - a select
-    """The courses a student is enrolled in."""
-    return select(Student.course_id).where(Student.user_id == principal.user_id)
+    """The courses a student is on: their home course and any others."""
+    return courses_of_user(principal.user_id)
 
 
 def _visible(principal: Principal):  # noqa: ANN202 - a where clause, or None for all

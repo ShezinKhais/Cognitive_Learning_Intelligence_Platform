@@ -11,6 +11,7 @@ from app.models.comprehension_result import ComprehensionResult
 from app.models.consent import Consent
 from app.models.consideration_request import ConsiderationRequest
 from app.models.course import Course
+from app.models.course_enrollment import CourseEnrollment, CourseLecturer
 from app.models.deletion_request import DeletionRequest
 from app.models.delivered_question import DeliveredQuestion
 from app.models.dynamic_prompt import DynamicPrompt
@@ -41,6 +42,8 @@ __all__ = [
     "Consent",
     "ConsiderationRequest",
     "Course",
+    "CourseEnrollment",
+    "CourseLecturer",
     "DeletionRequest",
     "DynamicPrompt",
     "EngagementRecord",

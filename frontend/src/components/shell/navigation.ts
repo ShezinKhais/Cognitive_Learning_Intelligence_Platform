@@ -4,6 +4,7 @@ import {
   BookOpen,
   CalendarClock,
   FileText,
+  GraduationCap,
   History,
   HeartHandshake,
   LineChart,
@@ -37,6 +38,7 @@ export const NAVIGATION: Record<Role, readonly NavItem[]> = {
     { to: '/lecturer/materials', label: 'Materials', icon: FileText, matches: ['/lecturer/materials', '/materials/'] },
     { to: '/lecturer/groups', label: 'Breakout rooms', icon: Users },
     { to: '/lecturer/engagement', label: 'Engagement history', icon: LineChart },
+    { to: '/courses', label: 'My courses', icon: GraduationCap },
   ],
   student: [
     { to: '/student', label: 'My sessions', icon: BookOpen, matches: ['/student/session/'] },
@@ -47,6 +49,7 @@ export const NAVIGATION: Record<Role, readonly NavItem[]> = {
   ],
   admin: [
     { to: '/admin/accounts', label: 'Accounts', icon: UserCog },
+    { to: '/courses', label: 'Courses', icon: GraduationCap },
     { to: '/admin', label: 'Imports', icon: Upload },
     { to: '/admin/status', label: 'System status', icon: Activity },
     { to: '/admin/consideration', label: 'Special consideration', icon: HeartHandshake },

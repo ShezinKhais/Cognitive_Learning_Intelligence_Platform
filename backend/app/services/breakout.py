@@ -25,6 +25,7 @@ from app.realtime.classroom import classroom
 from app.realtime.hub import hub
 from app.realtime.rooms import room_key, shown_label
 from app.schemas.breakout import PlannedRoom, RoomMember, RoomPlanIn, RoomPlanOut
+from app.services.course_membership import students_on
 
 
 async def roster(db: AsyncSession, row: Session) -> dict[UUID, str]:
@@ -32,7 +33,11 @@ async def roster(db: AsyncSession, row: Session) -> dict[UUID, str]:
     rows = await db.execute(
         select(User.user_id, User.name)
         .join(Student, Student.user_id == User.user_id)
-        .where(Student.course_id == row.course_id, User.role == "student", User.active.is_(True))
+        .where(
+            Student.student_id.in_(students_on(row.course_id)),
+            User.role == "student",
+            User.active.is_(True),
+        )
         .order_by(User.name)
     )
     return {user_id: name for user_id, name in rows.all()}

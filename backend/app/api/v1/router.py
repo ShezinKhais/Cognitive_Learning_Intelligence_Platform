@@ -11,6 +11,7 @@ from app.api.v1 import (
     chat,
     consideration,
     content,
+    courses,
     engagement_history,
     governance,
     health,
@@ -40,6 +41,7 @@ api_router.include_router(meetings.router)
 api_router.include_router(teams.router)
 api_router.include_router(governance.router)
 api_router.include_router(accounts.router)
+api_router.include_router(courses.router)
 api_router.include_router(engagement_history.router)
 api_router.include_router(monitoring.router)
 

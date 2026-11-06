@@ -945,6 +945,21 @@
         "title": "CourseCreate",
         "type": "object"
       },
+      "CourseLecturersSet": {
+        "properties": {
+          "lecturer_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Lecturer Ids",
+            "type": "array"
+          }
+        },
+        "title": "CourseLecturersSet",
+        "type": "object"
+      },
       "CourseOut": {
         "properties": {
           "code": {
@@ -967,6 +982,35 @@
           "name"
         ],
         "title": "CourseOut",
+        "type": "object"
+      },
+      "CourseRoster": {
+        "description": "Who teaches a course and which students are on it. Only those\nstudents see the course's classes.",
+        "properties": {
+          "course": {
+            "$ref": "#/components/schemas/CourseOut"
+          },
+          "lecturers": {
+            "items": {
+              "$ref": "#/components/schemas/RosterPerson"
+            },
+            "title": "Lecturers",
+            "type": "array"
+          },
+          "students": {
+            "items": {
+              "$ref": "#/components/schemas/RosterPerson"
+            },
+            "title": "Students",
+            "type": "array"
+          }
+        },
+        "required": [
+          "course",
+          "lecturers",
+          "students"
+        ],
+        "title": "CourseRoster",
         "type": "object"
       },
       "DeletionRequestCreate": {
@@ -3182,6 +3226,52 @@
         "title": "RoomPlanRoomIn",
         "type": "object"
       },
+      "RosterPerson": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "home_course": {
+            "default": false,
+            "description": "For a student: this is their home course. Removing it moves home to another.",
+            "title": "Home Course",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email"
+        ],
+        "title": "RosterPerson",
+        "type": "object"
+      },
+      "RosterStudentAdd": {
+        "properties": {
+          "email": {
+            "maxLength": 255,
+            "minLength": 3,
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "RosterStudentAdd",
+        "type": "object"
+      },
       "SessionCreateRequest": {
         "properties": {
           "course_code": {
@@ -4856,6 +4946,234 @@
         "summary": "Report Client Error",
         "tags": [
           "monitoring"
+        ]
+      }
+    },
+    "/api/v1/courses/mine": {
+      "get": {
+        "description": "The courses the caller manages: those they teach, or every course for\nan admin.",
+        "operationId": "my_courses_api_v1_courses_mine_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CourseOut"
+                  },
+                  "title": "Response My Courses Api V1 Courses Mine Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "My Courses",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/v1/courses/{code}/lecturers": {
+      "put": {
+        "description": "Admin only: who teaches this course.",
+        "operationId": "set_lecturers_api_v1_courses__code__lecturers_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CourseLecturersSet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseRoster"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Lecturers",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/v1/courses/{code}/roster": {
+      "get": {
+        "description": "The course's lecturers and the students on it.",
+        "operationId": "get_roster_api_v1_courses__code__roster_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseRoster"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Roster",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/v1/courses/{code}/students": {
+      "post": {
+        "description": "Put an existing student account on this course, by email.",
+        "operationId": "add_student_api_v1_courses__code__students_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RosterStudentAdd"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseRoster"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Student",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/v1/courses/{code}/students/{user_id}": {
+      "delete": {
+        "description": "Take a student off this course. They stop seeing its classes.",
+        "operationId": "remove_student_api_v1_courses__code__students__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseRoster"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Student",
+        "tags": [
+          "courses"
         ]
       }
     },

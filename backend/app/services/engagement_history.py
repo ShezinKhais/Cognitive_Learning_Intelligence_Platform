@@ -34,6 +34,7 @@ from app.models.student import Student
 from app.models.student_response import StudentResponse
 from app.models.user import User
 from app.schemas.engagement_history import EngagementHistory, QuietStudent, SessionEngagement
+from app.services.course_membership import memberships
 
 RECENT_WINDOW = 4
 QUIET_ANSWER_RATE = 0.4
@@ -201,12 +202,14 @@ async def _quiet_students(db: AsyncSession, finished, checkpoints) -> list[Quiet
         )
         .scalar_subquery()
     )
+    on = memberships()
     roster = (
         await db.execute(
-            select(Student.student_id, Student.course_id, User.name)
+            select(Student.student_id, on.c.course_id, User.name)
+            .join(on, on.c.student_id == Student.student_id)
             .join(User, User.user_id == Student.user_id)
             .where(
-                Student.course_id.in_(list(recent)),
+                on.c.course_id.in_(list(recent)),
                 User.active.is_(True),
                 Student.student_id.not_in(accommodated),
             )

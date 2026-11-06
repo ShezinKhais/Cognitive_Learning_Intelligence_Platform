@@ -87,3 +87,30 @@ class AccountIssued(BaseModel):
 
     account: AccountOut
     password: str | None = None
+
+
+class RosterPerson(BaseModel):
+    id: UUID
+    name: str
+    email: str
+    home_course: bool = Field(
+        default=False,
+        description="For a student: this is their home course. Removing it moves home to another.",
+    )
+
+
+class CourseRoster(BaseModel):
+    """Who teaches a course and which students are on it. Only those
+    students see the course's classes."""
+
+    course: CourseOut
+    lecturers: list[RosterPerson]
+    students: list[RosterPerson]
+
+
+class RosterStudentAdd(BaseModel):
+    email: str = Field(min_length=3, max_length=255, pattern=EMAIL_PATTERN)
+
+
+class CourseLecturersSet(BaseModel):
+    lecturer_ids: list[UUID] = Field(default_factory=list, max_length=50)

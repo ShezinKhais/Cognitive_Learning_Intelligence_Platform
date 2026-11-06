@@ -28,6 +28,7 @@ from sqlalchemy import select
 from app.core.database import get_session_factory
 from app.core.security import hash_password
 from app.models.course import Course
+from app.models.course_enrollment import CourseLecturer
 from app.models.student import Student
 from app.models.user import User
 
@@ -74,6 +75,12 @@ async def provision(reset_passwords: bool) -> list[tuple[str, str]]:
                 password = secrets.token_urlsafe(12)
                 user.password_hash = hash_password(password)
                 issued.append((email, password))
+
+            if role == "lecturer":
+                # The lecturer teaches the course, so they manage its students.
+                teaching = await db.get(CourseLecturer, (course.id, user.user_id))
+                if teaching is None:
+                    db.add(CourseLecturer(course_id=course.id, user_id=user.user_id))
 
             if role == "student":
                 enrolled = await db.scalar(select(Student).where(Student.user_id == user.user_id))
