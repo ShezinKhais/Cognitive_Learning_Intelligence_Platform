@@ -6,7 +6,7 @@ import {
   Routes,
 } from 'react-router'
 
-import { defaultPathForRole } from './authRouting'
+import { defaultPathForRole, STUDENT_DATA_PATH } from './authRouting'
 import PageLoader from './components/brand/PageLoader'
 import PageErrorBoundary from './components/PageErrorBoundary'
 import RoleGate from './components/RoleGate'
@@ -160,10 +160,19 @@ export default function App() {
               path="consideration"
               element={<StudentConsiderationPage />}
             />
-            <Route
-              path="my-data"
-              element={<StudentMyDataPage />}
-            />
+          </Route>
+
+          {/* Students retain access to their own data after withdrawing terms. */}
+          <Route
+            element={
+              <RoleGate allow={['student']} requireTerms={false}>
+                {(user) => <Outlet context={user} />}
+              </RoleGate>
+            }
+          >
+            <Route element={<ShellOutlet />}>
+              <Route path={STUDENT_DATA_PATH} element={<StudentMyDataPage />} />
+            </Route>
           </Route>
 
           {/* Shared Teams meeting entry point. RoleGate first verifies the

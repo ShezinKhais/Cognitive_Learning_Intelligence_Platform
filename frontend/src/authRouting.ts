@@ -1,5 +1,7 @@
 import type { CurrentUser, Role } from './api'
 
+export const STUDENT_DATA_PATH = '/student/my-data'
+
 // Where each role lands after sign-in and consent, and which requested pages
 // it may be returned to. The review page lives at /materials/:id/review, so a
 // lecturer following a review link from before sign-in arrives back on it.

@@ -15,18 +15,18 @@ type State =
 
 type Props = {
   allow: readonly Role[]
+  requireTerms?: boolean
   children: (user: CurrentUser) => ReactNode
 }
 
 /**
- * Renders its children only for a signed-in user in one of the allowed roles
- * who has accepted the terms, and sends everyone else where they need to go:
- * sign-in (remembering the page), access denied, or the consent page.
+ * Requires a signed-in user in one of the allowed roles. Terms are required
+ * by default. Redirects to sign-in, access denied, or the consent page.
  *
  * Used as a layout route, so the check runs before a guarded page mounts and
  * none of its markup renders for someone who typed the URL.
  */
-export default function RoleGate({ allow, children }: Props) {
+export default function RoleGate({ allow, requireTerms = true, children }: Props) {
   const location = useLocation()
   const requestedPath = `${location.pathname}${location.search}`
   const [state, setState] = useState<State>({ status: 'loading' })
@@ -80,7 +80,7 @@ export default function RoleGate({ allow, children }: Props) {
   if (access === 'wrong-role') {
     return <Navigate to="/access-denied" replace />
   }
-  if (access === 'needs-consent') {
+  if (requireTerms && access === 'needs-consent') {
     return <Navigate to="/consent" replace state={{ from: requestedPath }} />
   }
   return <>{children(state.user)}</>
