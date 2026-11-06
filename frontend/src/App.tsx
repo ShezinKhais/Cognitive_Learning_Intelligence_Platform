@@ -65,13 +65,11 @@ const home = (
 
 // The one C.L.I.P tab in Teams. Teams shows every tab of an app to everyone,
 // so a tab per role would show students the lecturer and admin tabs. This one
-// signs in with Teams and shows each person their own page: students stay in
-// Teams, lecturers and admins get the button that opens their website.
+// signs in with Teams and opens each person's own workspace inside Teams:
+// My Learning for students, the dashboard for lecturers and admins.
 const teamsHome = (
   <RoleGate allow={['student', 'lecturer', 'admin']}>
-    {(user) =>
-      user.role === 'student' ? <Navigate to="/student" replace /> : <TeamsLauncherPage target={user.role} />
-    }
+    {(user) => <Navigate to={defaultPathForRole(user.role)} replace />}
   </RoleGate>
 )
 
