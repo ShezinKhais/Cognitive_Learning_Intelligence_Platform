@@ -14,9 +14,17 @@ export function teamsSignInRefusal(): string | null {
 }
 
 export async function teamsSignIn(): Promise<LoginResponse | null> {
-  // Teams resolves a repeated initialize with the first one.
-  await app.initialize()
-  const token = await authentication.getAuthToken()
+  let token: string
+  try {
+    // Teams resolves a repeated initialize with the first one.
+    await app.initialize()
+    token = await authentication.getAuthToken()
+  } catch (caught) {
+    // Kept so the sign-in page can say why, rather than only showing the form.
+    const reason = caught instanceof Error ? caught.message : typeof caught === 'string' ? caught : ''
+    refusal = `Teams could not give C.L.I.P your Microsoft sign-in${reason ? ` (${reason})` : ''}. Try again.`
+    return null
+  }
   const response = await fetch(apiUrl('/auth/teams'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

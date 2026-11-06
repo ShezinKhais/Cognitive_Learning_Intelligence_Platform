@@ -9,6 +9,8 @@ export interface TeamsContext {
   locale: string
   theme: TeamsTheme
   frameContext: string
+  /** Teams on a phone or tablet, which gives apps no live camera or microphone. */
+  mobile: boolean
 }
 
 export type TeamsHostKind = 'teams' | 'simulated' | 'standalone'
