@@ -238,7 +238,6 @@ export default function QuestionReview() {
   const [filter, setFilter] = useState<ReviewFilter | null>(null)
   const shownFilter = filter ?? startingFilter(questions)
   const shown = questions.filter((question) => inFilter(question, shownFilter))
-  const approvedIds = questions.filter((question) => question.status === 'approved').map((question) => question.id)
 
   const [material, setMaterial] = useState<Material | null>(null)
   // An empty question list cannot tell a material with none from one that
@@ -252,21 +251,6 @@ export default function QuestionReview() {
     })
   }, [materialId])
   const source = material ? sourceName(material) : 'Page'
-
-  async function stageAllApproved() {
-    if (!materialId || approvedIds.length === 0) return
-    setBulkBusy(true)
-    setBulkError(null)
-    try {
-      const result = await bulkReviewQuestions(materialId, approvedIds, 'staged')
-      result.updated.forEach(updateQuestion)
-      notify(`${result.updated.length} ready to send`)
-    } catch (err) {
-      setBulkError(err instanceof ApiError ? err.message : 'Could not make the approved questions ready.')
-    } finally {
-      setBulkBusy(false)
-    }
-  }
 
   if (!materialId) {
     return <PageBody><p className="text-critical">No material selected.</p></PageBody>
@@ -290,7 +274,6 @@ export default function QuestionReview() {
           <div className="mt-4 max-w-md">
             <div className="flex h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
               <span className="bg-success transition-[width] duration-500" style={{ width: `${(counts.staged / counts.all) * 100}%` }} />
-              <span className="bg-success/50 transition-[width] duration-500" style={{ width: `${(counts.approved / counts.all) * 100}%` }} />
               <span className="bg-critical/50 transition-[width] duration-500" style={{ width: `${(counts.rejected / counts.all) * 100}%` }} />
             </div>
             <p className="mt-1.5 text-sm text-muted-foreground">
@@ -338,11 +321,6 @@ export default function QuestionReview() {
                       {bulkBusy ? 'Approving…' : selected.size ? `Approve ${selected.size} selected` : 'Approve selected'}
                     </button>
                   </>
-                )}
-                {shownFilter === 'approved' && approvedIds.length > 0 && (
-                  <button type="button" onClick={stageAllApproved} disabled={bulkBusy} className={buttonStyles()}>
-                    {bulkBusy ? 'Working…' : `Make all ${approvedIds.length} ready to send`}
-                  </button>
                 )}
               </div>
             </div>
