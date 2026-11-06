@@ -20,14 +20,17 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.database import get_session_factory
 from app.models.ai_model_run import AIModelRun
+from app.models.course import Course
 from app.models.extraction_element import ExtractionElement
 from app.models.question import Question
 from app.models.rag_chunk import RagChunk
 from app.repositories.material_repository import MaterialRepository
+from app.services.course_detection import detect_course, normalise
 from app.services.extraction import CONTENT_TYPES, element_metadata, stored_content
 from app.services.jobs import JobStatus
 from app.services.material_seams import CompletedMaterial, DraftQuestion
@@ -118,6 +121,15 @@ class DatabaseMaterialStore:
             row.page_count = result.page_count
             row.chunk_count = len(result.chunks)
             row.warnings = list(material.warnings)
+            if row.course_id is None:
+                courses = (await session.execute(select(Course.id, Course.code))).all()
+                row.course_id = detect_course(
+                    row.filename,
+                    (chunk.chunk_text for chunk in result.chunks),
+                    {normalise(code): course_id for course_id, code in courses},
+                )
+                if row.course_id is not None:
+                    log.info("material %s filed under course %s", material_id, row.course_id)
 
             session.add_all(
                 ExtractionElement(
