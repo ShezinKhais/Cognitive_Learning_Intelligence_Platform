@@ -13,6 +13,8 @@ from fastapi.testclient import TestClient
 BACKEND = Path(__file__).resolve().parent.parent
 
 EXPECTED_PATHS = {
+    "/api/v1/sessions/{session_id}/discussion",
+    "/api/v1/sessions/{session_id}/discussion/{note_id}",
     # Phase 7 AI2: additive own-student review adapter; summary contract unchanged.
     "/api/v1/governance/history/{student_id}",
     "/api/v1/me/data",

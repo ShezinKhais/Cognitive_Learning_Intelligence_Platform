@@ -1,3 +1,4 @@
+import DiscussionPanel from '../../src/features/discussion/DiscussionPanel'
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { AttentionControls } from '../../src/features/attention/AttentionControls'
@@ -45,6 +46,7 @@ function ProgressSocket() {
 }
 const socket = new URLSearchParams(window.location.search).get('socket')
 createRoot(document.getElementById('root')!).render(
+  socket === 'discussion' ? <DiscussionPanel sessionId="discussion-session" chatEnabled publisher={new URLSearchParams(window.location.search).has('publisher')} /> :
   socket === 'student' ? <StudentSocket /> :
   socket === 'lecturer' ? <LecturerSocket /> :
   socket === 'progress' ? <ProgressSocket /> : <Harness />,

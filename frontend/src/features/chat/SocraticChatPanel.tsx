@@ -8,6 +8,7 @@ import {
 import {
   type FormEvent,
   useEffect,
+  useId,
   useRef,
 } from 'react'
 
@@ -25,9 +26,15 @@ const STARTERS = [
 export function SocraticChatPanel({
   sessionId,
   compact = false,
+  discussion = false,
+  discussionSince,
+  discussionUntil,
 }: {
   sessionId: string
   compact?: boolean
+  discussion?: boolean
+  discussionSince?: string
+  discussionUntil?: string
 }) {
   const {
     state,
@@ -36,7 +43,8 @@ export function SocraticChatPanel({
     cancel,
     askFollowUp,
     clearError,
-  } = useSocraticChat(sessionId)
+  } = useSocraticChat(sessionId, discussionSince, discussionUntil, discussion)
+  const headingId = useId()
   const end = useRef<HTMLDivElement>(null)
   const active = Boolean(state.activeId)
 
@@ -52,7 +60,7 @@ export function SocraticChatPanel({
 
   return (
     <section
-      aria-labelledby="socratic-chat-heading"
+      aria-labelledby={headingId}
       className={`mx-auto flex w-full flex-col ${compact ? 'min-h-[36rem]' : 'min-h-[42rem]'} rounded-xl border border-border bg-card shadow-[var(--shadow-card)]`}
     >
       <header className="border-b border-border p-4 sm:p-5">
@@ -61,11 +69,11 @@ export function SocraticChatPanel({
             <Sparkles aria-hidden="true" size={20} />
           </span>
           <div>
-            <h2 id="socratic-chat-heading" className="font-semibold">
-              Socratic learning assistant
+            <h2 id={headingId} className="font-semibold">
+              {discussion ? 'Ask about the discussion' : 'Socratic learning assistant'}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Guided hints grounded in your lecturer’s material
+              {discussion ? 'Catch up from published, timestamped meeting notes' : 'Guided hints grounded in your lecturer’s material'}
             </p>
           </div>
         </div>
@@ -80,7 +88,7 @@ export function SocraticChatPanel({
         aria-busy={active}
       >
         {state.exchanges.length === 0 ? (
-          <ChatWelcome onSelect={(prompt) => void submit(prompt)} />
+          <ChatWelcome discussion={discussion} onSelect={(prompt) => void submit(prompt)} />
         ) : (
           state.exchanges.map((exchange) => (
             <Exchange
@@ -109,11 +117,11 @@ export function SocraticChatPanel({
       </div>
 
       <form onSubmit={onSubmit} className="border-t border-border p-4">
-        <label htmlFor="chat-question" className="sr-only">
+        <label htmlFor={`${headingId}-question`} className="sr-only">
           Ask about this session
         </label>
         <textarea
-          id="chat-question"
+          id={`${headingId}-question`}
           value={state.draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
@@ -158,16 +166,16 @@ export function SocraticChatPanel({
   )
 }
 
-function ChatWelcome({ onSelect }: { onSelect: (prompt: string) => void }) {
+function ChatWelcome({ onSelect, discussion }: { onSelect: (prompt: string) => void; discussion: boolean }) {
   return (
     <div className="py-6 text-center">
       <MessageCircleQuestion aria-hidden="true" className="mx-auto text-info" size={34} />
       <h3 className="mt-3 font-semibold">What would you like to explore?</h3>
       <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-        Ask about this class and the assistant will use the linked lecture material to guide you.
+        {discussion ? 'Ask what you missed. Answers use the published minutes and link back to their sources.' : 'Ask about this class and the assistant will use the linked lecture material to guide you.'}
       </p>
       <div className="mx-auto mt-5 grid max-w-lg gap-2 text-left">
-        {STARTERS.map((prompt) => (
+        {(discussion ? ['Summarize what was discussed in this time range.', 'What main ideas did I miss?'] : STARTERS).map((prompt) => (
           <button
             key={prompt}
             type="button"
@@ -227,7 +235,7 @@ function Exchange({
                   ? `Slide ${citation.source_slide}`
                   : citation.source_page !== null
                     ? `Page ${citation.source_page}`
-                    : 'Lecture material'
+                    : citation.source_note_id ? 'Meeting minutes' : 'Lecture material'
                 return (
                   <li
                     key={citation.id}
@@ -238,6 +246,7 @@ function Exchange({
                       {citation.number && <span className="mr-1.5 text-muted-foreground">[{citation.number}]</span>}
                       {citation.material_title} · {location}
                     </p>
+                    {citation.source_note_id && <a className="text-xs underline" href={`#discussion-${citation.source_note_id}`}>Read full discussion note</a>}
                     {citation.excerpt && (
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">{citation.excerpt}</p>
                     )}

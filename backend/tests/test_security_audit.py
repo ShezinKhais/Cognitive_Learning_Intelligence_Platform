@@ -60,6 +60,9 @@ ADMIN_ONLY = "admins"
 MEMBER = "a member of the session, decided in the handler"
 
 AUDIENCE = {
+    ("GET", "/api/v1/sessions/{session_id}/discussion"): MEMBER,
+    ("PUT", "/api/v1/sessions/{session_id}/discussion/{note_id}"): STAFF,
+    ("DELETE", "/api/v1/sessions/{session_id}/discussion/{note_id}"): STAFF,
     ("GET", "/api/v1/student-reviews"): STUDENT_ONLY,
     ("GET", "/api/v1/student-reviews/{session_id}"): STUDENT_ONLY,
     ("GET", "/api/v1/student-reviews/{session_id}/responses/{response_id}/sources"): STUDENT_ONLY,

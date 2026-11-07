@@ -1,3 +1,4 @@
+import DiscussionPanel from '../features/discussion/DiscussionPanel'
 
 import {
   CheckCircle2,
@@ -253,6 +254,8 @@ export function LiveSessionPanel({
             </motion.div>
           </AnimatePresence>
         </section>
+
+        <DiscussionPanel key={session.id} sessionId={session.id} />
 
         {SOCRATIC_CHAT_ENABLED && !finished && (
           <div className="mt-5" hidden={activeView !== 'chat'}>

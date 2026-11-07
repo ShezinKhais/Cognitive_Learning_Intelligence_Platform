@@ -13,7 +13,7 @@ export default function PrivacyPage() {
           <li>Your account: your name, university email address, role and the course you are enrolled on.</li>
           <li>Your consent choices, and when you made them.</li>
           <li>Class activity: the sessions you joined, your answers to checkpoint questions, and any special consideration request you submit.</li>
-          <li>Lecture material uploaded by lecturers, and the questions generated from it.</li>
+          <li>Lecture material uploaded by lecturers, the questions generated from it, and lecturer-published discussion minutes.</li>
           <li>
             If you turn on engagement monitoring: the camera and microphone readings described below, kept as one
             summary of numbers for each minute of a class.
@@ -85,7 +85,7 @@ export default function PrivacyPage() {
 
       <PolicySection title="Who can see your information">
         <ul>
-          <li>You can see your own answers, summaries and progress.</li>
+          <li>You can see your own answers, summaries and progress. Published discussion minutes are shared with students enrolled on the session's course.</li>
           <li>Your lecturer can see the classes they teach.</li>
           <li>Administrators manage accounts, data requests and the audit record.</li>
         </ul>
@@ -104,7 +104,7 @@ export default function PrivacyPage() {
       <PolicySection title="How long it is kept">
         <p>
           Information is held on the C.L.I.P server and travels over encrypted connections. By default, a
-          session's records are deleted {RETENTION_DAYS} days after it ends: your answers, engagement and camera and
+          session's records, including discussion minutes, are deleted {RETENTION_DAYS} days after it ends: your answers, engagement and camera and
           microphone summaries, prompts and alerts. Your university can set a different period.
         </p>
         <p>

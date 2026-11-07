@@ -511,6 +511,30 @@
       },
       "ChatRequest": {
         "properties": {
+          "discussion_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discussion Since"
+          },
+          "discussion_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discussion Until"
+          },
           "history": {
             "description": "The exchanges before this one, oldest first, so a follow-up can refer to them. Screened again on the server; never cited.",
             "items": {
@@ -531,6 +555,15 @@
             "minLength": 1,
             "pattern": "^[A-Za-z0-9._-]+$",
             "title": "Request Id",
+            "type": "string"
+          },
+          "source": {
+            "default": "materials",
+            "enum": [
+              "materials",
+              "discussion"
+            ],
+            "title": "Source",
             "type": "string"
           }
         },
@@ -1269,6 +1302,97 @@
         ],
         "title": "Difficulty",
         "type": "string"
+      },
+      "DiscussionNoteOut": {
+        "properties": {
+          "note_id": {
+            "format": "uuid",
+            "title": "Note Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "note_id",
+          "occurred_at",
+          "text",
+          "updated_at"
+        ],
+        "title": "DiscussionNoteOut",
+        "type": "object"
+      },
+      "DiscussionOut": {
+        "properties": {
+          "latest_recorded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Recorded At"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/DiscussionNoteOut"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "session_status": {
+            "title": "Session Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "notes",
+          "latest_recorded_at",
+          "session_status"
+        ],
+        "title": "DiscussionOut",
+        "type": "object"
+      },
+      "DiscussionWrite": {
+        "properties": {
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "shareable_confirmed": {
+            "title": "Shareable Confirmed",
+            "type": "boolean"
+          },
+          "text": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "occurred_at",
+          "text",
+          "shareable_confirmed"
+        ],
+        "title": "DiscussionWrite",
+        "type": "object"
       },
       "EngagementHistory": {
         "properties": {
@@ -7130,7 +7254,7 @@
     },
     "/api/v1/sessions/{session_id}/chat": {
       "post": {
-        "description": "Ask the tutor a question about the session's material.\n\nThe reply streams as it is written. To stop it, close the connection.",
+        "description": "Ask about session materials or lecturer-published discussion minutes.\n\nThe reply streams as it is written. To stop it, close the connection.",
         "operationId": "session_chat_api_v1_sessions__session_id__chat_post",
         "parameters": [
           {
@@ -7159,7 +7283,7 @@
             "content": {
               "application/x-ndjson": {}
             },
-            "description": "One JSON object per line, each with `type` and `request_id`. `accepted` comes first. Then either `delta` events carrying `text`, `citation` events carrying a `citation` (`id`, `material_title`, `source_page`, `source_slide`, `excerpt`), `follow_up` events carrying a `prompt`, and `completed`; or one of `unsupported` (with a `reason`), `empty_retrieval` and `error` (with a `detail`)."
+            "description": "One JSON object per line, each with `type` and `request_id`. `accepted` comes first. Then either `delta` events carrying `text`, `citation` events carrying a `citation` (`id`, `material_title`, `source_page`, `source_slide`, `excerpt`, optional `number` and `source_note_id` for discussion notes), `follow_up` events carrying a `prompt`, and `completed`; or one of `unsupported` (with a `reason`), `empty_retrieval` and `error` (with a `detail`)."
           },
           "404": {
             "description": "No such session, or the student does not belong to it."
@@ -7184,6 +7308,167 @@
         "summary": "Session Chat",
         "tags": [
           "chat"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/discussion": {
+      "get": {
+        "operationId": "read_notes_api_v1_sessions__session_id__discussion_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscussionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Notes",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/discussion/{note_id}": {
+      "delete": {
+        "operationId": "remove_note_api_v1_sessions__session_id__discussion__note_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "note_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Note Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Remove Note Api V1 Sessions  Session Id  Discussion  Note Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Note",
+        "tags": [
+          "discussion"
+        ]
+      },
+      "put": {
+        "operationId": "publish_note_api_v1_sessions__session_id__discussion__note_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "note_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Note Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscussionWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscussionNoteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Note",
+        "tags": [
+          "discussion"
         ]
       }
     },
