@@ -64,7 +64,9 @@ the socket and the bot on one origin.
 One Entra app registration is both the bot and the single sign-on app. It is
 made in the Teams Developer Portal, which needs no Azure subscription and
 costs nothing. An Azure Bot (Single Tenant, F0) works too, but needs a paid or
-trial Azure subscription; with one, leave `TEAMS_BOT_TOKEN_TENANT` empty.
+trial Azure subscription. Either way, leave `TEAMS_BOT_TOKEN_TENANT` empty:
+bots made now are single tenant, and Teams refuses a botframework.com token
+for them with 401.
 
 1. Open https://dev.teams.microsoft.com as the global admin. **Tools, Bot
    management, New bot.** Name it C.L.I.P.
@@ -100,7 +102,7 @@ CLIENT_SECRET=<client secret value>
 TENANT_ID=<directory (tenant) ID>
 TEAMS_APP_BASE_URL=<BASE_URL>
 TEAMS_NOTIFICATIONS_ENABLED=true
-TEAMS_BOT_TOKEN_TENANT=botframework.com
+TEAMS_BOT_TOKEN_TENANT=
 ```
 
 `teams-app/.env` (git-ignored) has the same `TEAMS_APP_ID`. Fill in
@@ -192,7 +194,8 @@ and the real-tenant checks in `docs/teams-checkpoint-notifications.md`.
 | "Sign in with Microsoft" shows an error in Teams | The Application ID URI, scope or authorised Teams clients (step 3.6) are wrong, or admin consent is missing. |
 | "This Microsoft account has no C.L.I.P account yet" | Run step 6, or the account is not in the script's list. |
 | The bot never starts the session | Endpoint address wrong in Bot management, or C.L.I.P was not added to that meeting. |
-| The bot reads but never replies, no pop-ups | `TEAMS_BOT_TOKEN_TENANT` does not match how the bot was made: `botframework.com` for the Developer Portal, empty for an Azure Bot. |
+| "C.L.I.P is not in this meeting yet" | Teams has not reached the bot from that meeting. Check the endpoint address in Bot management, then remove and re-add C.L.I.P in the meeting, or send `@C.L.I.P status` in its chat. |
+| "Teams could not confirm who organised this meeting", the bot reads but never replies, no pop-ups | `TEAMS_BOT_TOKEN_TENANT` is set to `botframework.com`. Leave it empty so the bot signs in through your tenant. |
 | No pop-ups | `TEAMS_NOTIFICATIONS_ENABLED` is not true, the permissions in step 7 are not granted, or the student has not opened C.L.I.P in Teams once, so their account is not linked yet. |
 | "Only the meeting's organiser can link a session" | Sign in to Teams as the account that scheduled the meeting, or link it as an admin. |
 | "C.L.I.P is not in this meeting yet" | Add C.L.I.P from **Apps** in the meeting, so the bot is in its chat, then pick the session again. |
