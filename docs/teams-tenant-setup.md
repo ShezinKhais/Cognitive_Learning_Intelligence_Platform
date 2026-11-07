@@ -197,3 +197,45 @@ and the real-tenant checks in `docs/teams-checkpoint-notifications.md`.
 | "Only the meeting's organiser can link a session" | Sign in to Teams as the account that scheduled the meeting, or link it as an admin. |
 | "C.L.I.P is not in this meeting yet" | Add C.L.I.P from **Apps** in the meeting, so the bot is in its chat, then pick the session again. |
 | The camera indicator cannot start in Teams | Teams asks for camera permission the first time. Allow it in the device prompt. |
+
+## Meeting installation troubleshooting (app package 0.3.2)
+
+Opening the personal C.L.I.P tab signs a user in; it does not establish that
+C.L.I.P's bot is installed in a particular meeting. Use a **scheduled private
+meeting** for this integration. Channel meetings are not advertised by the
+current `groupChat`-only manifest and need separate scope/permission work.
+
+If the Store's meeting selector does not list the meeting, open that meeting
+from the organiser's calendar or meeting chat and add C.L.I.P there. Package
+0.3.2 advertises `meetingDetailsTab` and `meetingChatTab` as well as the live
+side panel. The lecturer can link from the meeting tab; students open the
+side panel during the meeting for the live class.
+
+Before repeating the test, the host should:
+
+1. Deploy frontend and backend from the same tested commit. `/api/v1/health`
+   currently reports a fixed application version, not the Git revision;
+   record the actual checkout SHA and deployed image IDs separately.
+2. Rebuild `clip.zip` with the current HTTPS tunnel origin and the existing app
+   and bot IDs. Upload it as an **update** to the existing Teams app. Check the
+   tenant's installed version is 0.3.2 and grant the requested meeting RSC
+   permissions. An old downloaded ZIP is not evidence of the installed version.
+3. Confirm the bot registration's messaging endpoint is that same origin plus
+   `/api/v1/teams/messages`, and that the backend tenant/client IDs match the
+   registration. Do not change secrets or bypass organiser verification.
+4. Add/update the app in the test meeting and check host logs for bot POSTs.
+   A successful, authenticated meeting activity needs a conversation ID,
+   the configured tenant, and a meeting ID. Start/end events can supply the ID
+   in `value.Id`; other activities use `channelData.meeting.id`.
+5. Retry **Use in this meeting** as the organiser. If the same error remains,
+   inspect the received activity shape and the matching
+   `teams_meeting_reference` row on the host. Do not log access tokens or the
+   full activity body. Check response codes and the existing
+   `BOT_TOKEN_REJECTED` / `BOT_ACTIVITY_REJECTED` security log messages first.
+
+The payload fix has automated regression coverage. Actual tenant installation,
+permission grants, bot delivery, checkpoint pop-ups and meeting linking still
+require a real Teams acceptance run after deployment.
+
+References: [meeting event payloads](https://learn.microsoft.com/en-us/microsoftteams/platform/apps-in-teams-meetings/meeting-apps-apis#example-of-meeting-start-event-payload)
+and [meeting installation surfaces and selector limitation](https://learn.microsoft.com/en-us/microsoftteams/platform/apps-in-teams-meetings/build-tabs-for-meeting).

@@ -31,7 +31,7 @@ from app.models.teams_meeting_link import MAX_TEAMS_MEETING_ID_LENGTH, TeamsMeet
 from app.models.teams_meeting_reference import TeamsMeetingReference
 from app.models.teams_user_mapping import TeamsUserMapping
 from app.models.user import User
-from app.schemas.meetings import TeamsActivity
+from app.schemas.meetings import TeamsActivity, activity_meeting_id
 from app.services.course_membership import students_on
 
 log = logging.getLogger("clip.teams.notifications")
@@ -121,10 +121,9 @@ async def remember_reference(db, activity: TeamsActivity, settings: Settings) ->
     if not settings.teams_notifications_enabled:
         return
     data = activity.channel_data or {}
-    meeting = data.get("meeting") or {}
     tenant = data.get("tenant") or {}
     conversation = (activity.model_extra or {}).get("conversation") or {}
-    meeting_id = meeting.get("id") if isinstance(meeting, dict) else None
+    meeting_id = activity_meeting_id(activity)
     conversation_id = conversation.get("id") if isinstance(conversation, dict) else None
     tenant_id = tenant.get("id") if isinstance(tenant, dict) else None
     if (
