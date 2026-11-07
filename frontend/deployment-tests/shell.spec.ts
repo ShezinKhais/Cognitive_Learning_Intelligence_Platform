@@ -46,6 +46,15 @@ for (const account of [
       await page.goto('/admin/status')
       await expect(page).toHaveURL(/\/access-denied$/)
     }
+    // Unknown routes should show a helpful page for every role.
+    await page.goto('/this-page-does-not-exist')
+    await expect(page.getByRole('heading', {
+      name: 'Page not found',
+      level: 1,
+    })).toBeFocused()
+    await expect(page).toHaveTitle('Page not found ? C.L.I.P')
+    await page.getByRole('link', { name: 'My home page' }).click()
+    await expect(page).toHaveURL(new RegExp(account.home + '$'))
     // The real shell waits for logout's cookie clearing before navigating.
     await page.goto(account.home)
     await page.getByRole('button', { name: 'Sign out', exact: true }).click()
@@ -57,3 +66,21 @@ for (const account of [
     expect(serverErrors).toEqual([])
   })
 }
+
+test('unknown route works when signed out and API 404 stays JSON', async ({ page }) => {
+  await page.goto('/no-such-clip-page')
+
+  await expect(page.getByRole('heading', {
+    name: 'Page not found',
+    level: 1,
+  })).toBeFocused()
+
+  await expect(page).toHaveTitle('Page not found ? C.L.I.P')
+
+  await page.getByRole('link', { name: 'Sign in' }).click()
+  await expect(page).toHaveURL(/\/login$/)
+
+  const response = await page.request.get('/api/v1/no-such-clip-api')
+  expect(response.status()).toBe(404)
+  expect(response.headers()['content-type']).toContain('application/json')
+})
