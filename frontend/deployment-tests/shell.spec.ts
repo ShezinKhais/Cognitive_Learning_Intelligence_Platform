@@ -52,7 +52,7 @@ for (const account of [
       name: 'Page not found',
       level: 1,
     })).toBeFocused()
-    await expect(page).toHaveTitle('Page not found ? C.L.I.P')
+    await expect(page).toHaveTitle('Page not found \u00B7 C.L.I.P')
     await page.getByRole('link', { name: 'My home page' }).click()
     await expect(page).toHaveURL(new RegExp(account.home + '$'))
     // The real shell waits for logout's cookie clearing before navigating.
@@ -75,7 +75,7 @@ test('unknown route works when signed out and API 404 stays JSON', async ({ page
     level: 1,
   })).toBeFocused()
 
-  await expect(page).toHaveTitle('Page not found ? C.L.I.P')
+  await expect(page).toHaveTitle('Page not found \u00B7 C.L.I.P')
 
   await page.getByRole('link', { name: 'Sign in' }).click()
   await expect(page).toHaveURL(/\/login$/)
