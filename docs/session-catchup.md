@@ -7,10 +7,11 @@ publication. Notes can be edited and removed. Retry uses the same note ID to
 avoid duplicates after a lost HTTP response.
 
 Students open **Catch up on this session** in the live panel or past-session
-review. Notes refresh every 15 seconds. The panel shows the latest recorded
+review. The session record refreshes every 5 seconds. The panel shows the latest recorded
 discussion time, the published record and an assistant that searches those
 notes. Choose all notes or the last 10/30 minutes before asking. During class
-the window ends when selected. After class it ends at the latest recorded note.
+the window moves forward each time a question is submitted. After class it ends
+at the latest recorded note.
 Changing the window starts a new conversation.
 
 The existing AI gateway, cancellation, request limits and tutor safety checks
@@ -21,22 +22,26 @@ source limit. A recap covers its cited sources, which may represent only part
 of the discussion. Lecturer notes are refreshed on every question. The model
 needs the configured Ollama service.
 
-The chatbot's source is lecturer-published minutes. Lecturers can write these
+The chatbot's discussion sources are reviewed minutes and, when enabled,
+automatic live transcript segments. Lecturers can write reviewed minutes
 manually during class, or generate drafts from an available Teams transcript
 after class using the workflow below. Lecture-slide chat retains its existing
-source selection. C.L.I.P does not start recording/transcription, capture meeting
-media or stream live Teams speech into the chatbot.
+source selection. C.L.I.P does not start Teams recording/transcription or stream Teams meeting audio.
+The separately enabled [live lecturer microphone feature](live-transcription.md)
+processes microphone chunks and shares automatic transcript text with the chatbot.
 
 The publishing lecturer and admins can manage a session's notes. Students
 must be enrolled on its course, accept terms, and use an active or ended
 session. Notes remain available to those students after the session ends,
 including students who missed the class. Prepared/cancelled sessions are
 unavailable. Session deletion and the configured retention purge cascade to
-the notes. Notes hold no student identifiers. Publishers must remove personal
+the notes. Notes have no structured student identifiers. Automatic speech may nevertheless
+contain personal references; lecturers must stop before private discussion and
+remove such text. For reviewed minutes, publishers must remove personal
 details and assessment solutions before confirming publication. The group
 should approve the updated privacy wording before real-user deployment.
 
-At most 200 notes of 2,000 characters can be published per session. Edit existing
+At most 1,400 entries of 2,000 characters can be held per session, including live speech. Edit existing
 notes when the cap is reached. Publication/removal are audited. Requests and
 responses use the existing private API cache policy. Chat conversations are
 not persisted.

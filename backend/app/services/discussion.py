@@ -14,7 +14,7 @@ from app.schemas.discussion import DiscussionWrite
 from app.schemas.identity import Role
 from app.services.course_membership import courses_of_user
 
-MAX_NOTES = 200
+MAX_NOTES = 1400
 
 
 async def accessible_session(
@@ -69,10 +69,11 @@ async def save(
             .where(DiscussionNote.session_id == session_id)
         )
         if count >= MAX_NOTES:
-            raise ValidationError("This session has 200 notes. Edit an existing note.")
+            raise ValidationError("This session has 1400 entries. Edit an existing note.")
         note = DiscussionNote(note_id=note_id, session_id=session_id)
         db.add(note)
     note.occurred_at, note.text = payload.occurred_at, payload.text
+    note.origin = "lecturer"
     await db.commit()
     await db.refresh(note)
     return note

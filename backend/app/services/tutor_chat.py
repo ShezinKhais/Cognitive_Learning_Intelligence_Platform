@@ -155,6 +155,7 @@ class DiscussionSource:
     note_id: UUID
     occurred_at: datetime
     text: str
+    origin: str = "lecturer"
 
 
 async def with_discussion(
@@ -164,7 +165,7 @@ async def with_discussion(
     return replace(
         context,
         discussion=tuple(
-            DiscussionSource(note.note_id, note.occurred_at, note.text)
+            DiscussionSource(note.note_id, note.occurred_at, note.text, note.origin)
             for note in notes
             if (since is None or note.occurred_at >= since)
             and (until is None or note.occurred_at <= until)
@@ -179,7 +180,9 @@ def discussion_chunks(
     # questions retrieve matching notes and return empty when none match.
     broad = bool(
         re.search(
-            r"\b(miss(?:ed)?|catch.?up|summari[sz]e|recap|discussed|covered)\b", question, re.I
+            r"\b(miss(?:ed)?|catch.?up|summari[sz]e|recap|discuss(?:ed)?|covered|say|said|repeat)\b",
+            question,
+            re.I,
         )
     )
     stop = {
@@ -203,6 +206,28 @@ def discussion_chunks(
         "more",
         "session",
         "class",
+        "miss",
+        "missed",
+        "summarize",
+        "summarise",
+        "recap",
+        "discussed",
+        "covered",
+        "recorded",
+        "notes",
+        "range",
+        "time",
+        "main",
+        "ideas",
+        "said",
+        "saying",
+        "just",
+        "latest",
+        "recent",
+        "lecturer",
+        "teacher",
+        "repeat",
+        "discuss",
     }
     terms = set(re.findall(r"[^\W_]{4,}", question.lower())) - stop
     ranked = sorted(
@@ -210,10 +235,24 @@ def discussion_chunks(
         key=lambda n: (len(terms & set(re.findall(r"[^\W_]{4,}", n.text.lower()))), n.occurred_at),
         reverse=True,
     )
-    if not broad:
-        ranked = [n for n in ranked if terms & set(re.findall(r"[^\W_]{4,}", n.text.lower()))]
+    matching = [n for n in ranked if terms & set(re.findall(r"[^\W_]{4,}", n.text.lower()))]
+    if matching or not broad:
+        ranked = matching
+    elif len(ranked) > limit and not re.search(r"\b(just|latest|recent|now)\b", question, re.I):
+        # A recap samples the requested window instead of taking only its last
+        # few ten-second chunks. It is still an overview of cited sources.
+        ordered = sorted(ranked, key=lambda note: note.occurred_at)
+        ranked = (
+            [ordered[-1]]
+            if limit == 1
+            else [
+                ordered[round(index * (len(ordered) - 1) / (limit - 1))] for index in range(limit)
+            ]
+        )
     return [
-        RetrievedChunk(n.note_id, i, f"{n.occurred_at.isoformat()}: {n.text}", None, 0.0)
+        RetrievedChunk(
+            n.note_id, i, f"{n.origin}, {n.occurred_at.isoformat()}: {n.text}", None, 0.0
+        )
         for i, n in enumerate(ranked[:limit])
     ]
 
@@ -370,7 +409,10 @@ class TutorExchange:
         system = prompt.system
         if self._context.discussion is not None:
             system += (
-                " The excerpts are lecturer-approved meeting notes. Explain or recap only what "
+                " The excerpts include reviewed minutes and unreviewed automatic "
+                "live speech transcripts. "
+                "Automatic speech can contain recognition errors; acknowledge uncertainty. "
+                "Explain or recap only what "
                 "these notes record, with citations. They may be incomplete. Never claim to have "
                 "heard the meeting or to cover unrecorded discussion. "
                 "Keep the assessment restrictions."
@@ -397,7 +439,12 @@ class TutorExchange:
                 "id": str(note.note_id),
                 "source_note_id": str(note.note_id),
                 "number": number,
-                "material_title": f"Discussion note — {note.occurred_at.isoformat()}",
+                "material_title": (
+                    "Automatic live transcript (unreviewed)"
+                    if note.origin == "live_transcript"
+                    else "Discussion note"
+                )
+                + f" — {note.occurred_at.isoformat()}",
                 "source_page": None,
                 "source_slide": None,
                 "excerpt": note.text[:CITATION_EXCERPT_CHARS],

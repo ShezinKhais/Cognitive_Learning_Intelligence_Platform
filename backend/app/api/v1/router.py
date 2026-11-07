@@ -17,6 +17,7 @@ from app.api.v1 import (
     governance,
     health,
     identity,
+    live_transcription,
     meetings,
     monitoring,
     my_data,
@@ -38,6 +39,7 @@ api_router.include_router(my_data.router)
 api_router.include_router(reports.router)
 api_router.include_router(chat.router)
 api_router.include_router(discussion.router)
+api_router.include_router(live_transcription.router)
 api_router.include_router(consideration.router)
 api_router.include_router(meetings.router)
 api_router.include_router(teams.router)

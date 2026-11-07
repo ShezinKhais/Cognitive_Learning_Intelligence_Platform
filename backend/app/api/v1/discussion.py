@@ -18,7 +18,7 @@ from app.schemas.discussion import (
     TranscriptList,
 )
 from app.schemas.identity import ConsentType, Role
-from app.services import discussion, transcript_minutes
+from app.services import discussion, live_transcription, transcript_minutes
 
 router = APIRouter(
     prefix="/sessions/{session_id}/discussion",
@@ -41,6 +41,9 @@ async def read_notes(session_id: UUID, principal: CurrentUser, db: DbSession) ->
         notes=[DiscussionNoteOut.model_validate(note) for note in notes],
         latest_recorded_at=max((note.occurred_at for note in notes), default=None),
         session_status=session.status,
+        live_transcription_active=session.status == "active"
+        and session.paused_at is None
+        and live_transcription.captures.active(session_id) is not None,
     )
 
 

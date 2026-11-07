@@ -29,12 +29,14 @@ export function SocraticChatPanel({
   discussion = false,
   discussionSince,
   discussionUntil,
+  discussionRollingMinutes,
 }: {
   sessionId: string
   compact?: boolean
   discussion?: boolean
   discussionSince?: string
   discussionUntil?: string
+  discussionRollingMinutes?: number
 }) {
   const {
     state,
@@ -43,7 +45,7 @@ export function SocraticChatPanel({
     cancel,
     askFollowUp,
     clearError,
-  } = useSocraticChat(sessionId, discussionSince, discussionUntil, discussion)
+  } = useSocraticChat(sessionId, discussionSince, discussionUntil, discussion, discussionRollingMinutes)
   const headingId = useId()
   const end = useRef<HTMLDivElement>(null)
   const active = Boolean(state.activeId)
@@ -235,7 +237,7 @@ function Exchange({
                   ? `Slide ${citation.source_slide}`
                   : citation.source_page !== null
                     ? `Page ${citation.source_page}`
-                    : citation.source_note_id ? 'Meeting minutes' : 'Lecture material'
+                    : citation.source_note_id ? 'Session record' : 'Lecture material'
                 return (
                   <li
                     key={citation.id}

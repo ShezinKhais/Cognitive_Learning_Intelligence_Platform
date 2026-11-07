@@ -4,17 +4,20 @@ import { ApiError, apiAuthenticatedGet, apiAuthenticatedRequest } from '../../ap
 import { buttonStyles } from '../../components/ui/button'
 import { SocraticChatPanel } from '../chat/SocraticChatPanel'
 import TranscriptDraftPanel from './TranscriptDraftPanel'
+import LiveTranscriptionControls from './LiveTranscriptionControls'
 
 interface Note {
   note_id: string
   occurred_at: string
   text: string
   updated_at: string
+  origin?: string
 }
 interface Discussion {
   notes: Note[]
   latest_recorded_at: string | null
   session_status: string
+  live_transcription_active?: boolean
 }
 
 function localTime() {
@@ -56,7 +59,7 @@ export default function DiscussionPanel({ sessionId, publisher = false, chatEnab
       } finally { pending = false }
     }
     void check()
-    const timer = window.setInterval(() => void check(), 15_000)
+    const timer = window.setInterval(() => void check(), 5_000)
     return () => { stopped = true; window.clearInterval(timer) }
   }, [sessionId, refresh])
 
@@ -100,12 +103,14 @@ export default function DiscussionPanel({ sessionId, publisher = false, chatEnab
 
   return (
     <section className="my-6 space-y-4 rounded-xl border border-border bg-card p-4" aria-label="Session catch-up">
-      <h2 className="text-lg font-semibold">{publisher ? 'Publish discussion minutes' : 'Catch up on this session'}</h2>
+      <h2 className="text-lg font-semibold">{publisher ? 'Discussion minutes and live speech' : 'Catch up on this session'}</h2>
       <p className="text-sm text-muted-foreground">
-        Lecturer-approved notes may cover only part of the discussion. New notes are checked every 15 seconds.
+        Reviewed minutes and automatic transcripts may cover only part of the discussion. Updates are checked every 5 seconds.
         {data?.latest_recorded_at && ` Latest recorded discussion: ${new Date(data.latest_recorded_at).toLocaleString()}.`}
       </p>
       {error && <p role="alert">{error} <button className="underline" onClick={() => setRefresh(n => n + 1)}>Try again</button></p>}
+      {data?.live_transcription_active && <p role="status">Live lecturer microphone transcription is on. Automatic text may contain errors and is available to the chatbot as it arrives.</p>}
+      {publisher && <LiveTranscriptionControls sessionId={sessionId} onUpdate={() => setRefresh(n => n + 1)} />}
       {publisher && (
         <form className="space-y-3" onSubmit={event => { event.preventDefault(); void publish() }}>
           <label className="block">Discussion time
@@ -129,14 +134,15 @@ export default function DiscussionPanel({ sessionId, publisher = false, chatEnab
         editor.current?.focus()
       }} />}
       {!data && !error && <p role="status">Loading discussion notes…</p>}
-      {data?.notes.length === 0 && <p>No discussion notes have been published. Check again after your lecturer adds them.</p>}
+      {data?.notes.length === 0 && <p>No discussion notes have been published. Check again after your lecturer adds them or enables live transcription.</p>}
       {data && data.notes.length > 0 && (
         <details>
-          <summary className="cursor-pointer font-semibold">Read published minutes ({data.notes.length})</summary>
+          <summary className="cursor-pointer font-semibold">Read session record ({data.notes.length})</summary>
           <ol className="max-h-96 space-y-4 overflow-y-auto py-3">
             {data.notes.map(note => (
               <li key={note.note_id} id={`discussion-${note.note_id}`}>
                 <time dateTime={note.occurred_at} className="font-semibold">{new Date(note.occurred_at).toLocaleString()}</time>
+                <p className="text-xs font-semibold">{note.origin === 'live_transcript' ? 'Automatic live transcript — unreviewed' : 'Lecturer-reviewed minutes'}</p>
                 <p className="whitespace-pre-wrap">{note.text}</p>
                 {publisher && <div className="flex gap-3">
                   <button disabled={saving} className="underline" onClick={() => {
@@ -162,7 +168,8 @@ export default function DiscussionPanel({ sessionId, publisher = false, chatEnab
               <option value="10">Last 10 recorded minutes</option><option value="30">Last 30 recorded minutes</option>
             </select>
           </label>
-          <SocraticChatPanel key={`${sessionId}-${since ?? 'all'}`} sessionId={sessionId} compact discussion discussionSince={since} discussionUntil={until} />
+          {data.session_status === 'active' && range !== 'all' && <p className="text-xs">This live time window moves forward each time you ask.</p>}
+          <SocraticChatPanel key={`${sessionId}-${since ?? 'all'}`} sessionId={sessionId} compact discussion discussionSince={since} discussionUntil={until} discussionRollingMinutes={data.session_status === 'active' && range !== 'all' ? Number(range) : undefined} />
         </>
       )}
     </section>

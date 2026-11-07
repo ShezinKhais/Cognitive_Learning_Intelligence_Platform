@@ -24,12 +24,14 @@ class DiscussionNoteOut(BaseModel):
     occurred_at: datetime
     text: str
     updated_at: datetime
+    origin: str = "lecturer"
 
 
 class DiscussionOut(BaseModel):
     notes: list[DiscussionNoteOut]
     latest_recorded_at: datetime | None
     session_status: str
+    live_transcription_active: bool = False
 
 
 class TranscriptItem(BaseModel):
@@ -62,3 +64,20 @@ class TranscriptDraft(BaseModel):
     warning: str = (
         "AI draft: check every teaching point, timestamp and personal detail before publishing."
     )
+
+
+class LiveCaptureStart(BaseModel):
+    automatic_sharing_confirmed: bool
+
+
+class LiveCaptureStatus(BaseModel):
+    configured: bool
+    running: bool
+    session_running: bool
+    capture_id: UUID | None = None
+    language: str = "en"
+
+
+class LiveChunkOut(BaseModel):
+    sequence: int
+    note: DiscussionNoteOut | None = None

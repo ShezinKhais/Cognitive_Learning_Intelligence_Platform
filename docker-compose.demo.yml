@@ -30,6 +30,8 @@ services:
   backend:
     build:
       context: ./backend
+      args:
+        ENABLE_LIVE_TRANSCRIPTION: ${LIVE_TRANSCRIPTION_ENABLED:-false}
     image: clip-demo-backend:latest
     restart: unless-stopped
     depends_on:
@@ -57,6 +59,10 @@ services:
       TEAMS_APP_BASE_URL: ${TEAMS_APP_BASE_URL:-}
       TEAMS_APP_ID: ${TEAMS_APP_ID:-}
       TEAMS_BOT_TOKEN_TENANT: ${TEAMS_BOT_TOKEN_TENANT:-}
+      LIVE_TRANSCRIPTION_ENABLED: ${LIVE_TRANSCRIPTION_ENABLED:-false}
+      LIVE_TRANSCRIPTION_MODEL_PATH: ${LIVE_TRANSCRIPTION_MODEL_PATH:-/data/models/faster-whisper-base.en}
+      LIVE_TRANSCRIPTION_LANGUAGE: ${LIVE_TRANSCRIPTION_LANGUAGE:-en}
+      LIVE_TRANSCRIPTION_CPU_THREADS: ${LIVE_TRANSCRIPTION_CPU_THREADS:-2}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

@@ -1315,6 +1315,11 @@
             "title": "Occurred At",
             "type": "string"
           },
+          "origin": {
+            "default": "lecturer",
+            "title": "Origin",
+            "type": "string"
+          },
           "text": {
             "title": "Text",
             "type": "string"
@@ -1347,6 +1352,11 @@
               }
             ],
             "title": "Latest Recorded At"
+          },
+          "live_transcription_active": {
+            "default": false,
+            "title": "Live Transcription Active",
+            "type": "boolean"
           },
           "notes": {
             "items": {
@@ -1715,6 +1725,82 @@
           "gaze_average"
         ],
         "title": "HistorySummaryOut",
+        "type": "object"
+      },
+      "LiveCaptureStart": {
+        "properties": {
+          "automatic_sharing_confirmed": {
+            "title": "Automatic Sharing Confirmed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "automatic_sharing_confirmed"
+        ],
+        "title": "LiveCaptureStart",
+        "type": "object"
+      },
+      "LiveCaptureStatus": {
+        "properties": {
+          "capture_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capture Id"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "language": {
+            "default": "en",
+            "title": "Language",
+            "type": "string"
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          },
+          "session_running": {
+            "title": "Session Running",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configured",
+          "running",
+          "session_running"
+        ],
+        "title": "LiveCaptureStatus",
+        "type": "object"
+      },
+      "LiveChunkOut": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiscussionNoteOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sequence"
+        ],
+        "title": "LiveChunkOut",
         "type": "object"
       },
       "LoginRequest": {
@@ -7792,6 +7878,242 @@
         "summary": "Session Engagement",
         "tags": [
           "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/live-transcription": {
+      "get": {
+        "operationId": "status_api_v1_sessions__session_id__live_transcription_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveCaptureStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Status",
+        "tags": [
+          "live-transcription"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/live-transcription/start": {
+      "post": {
+        "operationId": "start_api_v1_sessions__session_id__live_transcription_start_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LiveCaptureStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveCaptureStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start",
+        "tags": [
+          "live-transcription"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/live-transcription/{capture_id}/chunks/{sequence}": {
+      "post": {
+        "operationId": "chunk_api_v1_sessions__session_id__live_transcription__capture_id__chunks__sequence__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "capture_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Capture Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sequence",
+            "required": true,
+            "schema": {
+              "title": "Sequence",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "started_at",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "Started At",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "audio/wav": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveChunkOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Chunk",
+        "tags": [
+          "live-transcription"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/live-transcription/{capture_id}/stop": {
+      "post": {
+        "operationId": "stop_api_v1_sessions__session_id__live_transcription__capture_id__stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "capture_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Capture Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Stop Api V1 Sessions  Session Id  Live Transcription  Capture Id  Stop Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop",
+        "tags": [
+          "live-transcription"
         ]
       }
     },

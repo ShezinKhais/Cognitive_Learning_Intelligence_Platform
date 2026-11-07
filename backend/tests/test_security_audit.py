@@ -60,6 +60,13 @@ ADMIN_ONLY = "admins"
 MEMBER = "a member of the session, decided in the handler"
 
 AUDIENCE = {
+    ("GET", "/api/v1/sessions/{session_id}/live-transcription"): STAFF,
+    ("POST", "/api/v1/sessions/{session_id}/live-transcription/start"): STAFF,
+    ("POST", "/api/v1/sessions/{session_id}/live-transcription/{capture_id}/stop"): STAFF,
+    (
+        "POST",
+        "/api/v1/sessions/{session_id}/live-transcription/{capture_id}/chunks/{sequence}",
+    ): STAFF,
     ("GET", "/api/v1/sessions/{session_id}/discussion/transcripts"): STAFF,
     ("POST", "/api/v1/sessions/{session_id}/discussion/transcript-draft"): STAFF,
     ("GET", "/api/v1/sessions/{session_id}/discussion"): MEMBER,

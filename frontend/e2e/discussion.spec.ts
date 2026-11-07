@@ -3,6 +3,10 @@ import AxeBuilder from '@axe-core/playwright'
 
 const noteId = '27f347a5-1595-4448-9244-b6849b51e936'
 const noteTime = '2026-11-01T10:30:00Z'
+test.beforeEach(async ({ page }) => {
+  await page.route('**/live-transcription', route => route.fulfill({ json: { configured: false, running: false, session_running: true, capture_id: null, language: 'en' } }))
+})
+
 const initial = { note_id: noteId, text: 'Normalization reduces duplicate database values.', occurred_at: noteTime, updated_at: noteTime }
 
 test('lecturer confirms, publishes, corrects and removes course minutes', async ({ page }) => {
@@ -28,15 +32,15 @@ test('lecturer confirms, publishes, corrects and removes course minutes', async 
   await expect(page.getByText('No discussion notes have been published.', { exact: false })).toBeVisible()
   await page.getByLabel('Minutes to share with the course').fill(initial.text)
   await expect(page.getByRole('button', { name: 'Publish note' })).toBeDisabled()
-  await page.getByRole('checkbox').check()
+  await page.getByRole('checkbox', { name: 'I reviewed these minutes', exact: false }).check()
   await page.getByRole('button', { name: 'Publish note' }).click()
-  await page.getByText('Read published minutes (1)').click()
+  await page.getByText('Read session record (1)').click()
   await expect(page.getByText(initial.text, { exact: true })).toBeVisible()
   expect(writes[0].shareable_confirmed).toBe(true)
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Save changes' })).toBeDisabled()
   await page.getByLabel('Minutes to share with the course').fill('Corrected teaching point.')
-  await page.getByRole('checkbox').check()
+  await page.getByRole('checkbox', { name: 'I reviewed these minutes', exact: false }).check()
   await page.getByRole('button', { name: 'Save changes' }).click()
   await expect(page.getByText('Corrected teaching point.', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Remove published note' }).click()
@@ -102,12 +106,12 @@ test('retrying a failed publication reuses its identifier', async ({ page }) => 
   })
   await page.goto('/e2e/harness/index.html?socket=discussion&publisher')
   await page.getByLabel('Minutes to share with the course').fill(initial.text)
-  await page.getByRole('checkbox').check()
+  await page.getByRole('checkbox', { name: 'I reviewed these minutes', exact: false }).check()
   await page.getByRole('button', { name: 'Publish note' }).click()
   await expect(page.getByRole('alert')).toBeVisible()
   await expect(page.getByLabel('Minutes to share with the course')).toHaveValue(initial.text)
   await page.getByRole('button', { name: 'Publish note' }).click()
-  await expect(page.getByText('Read published minutes (1)')).toBeVisible()
+  await expect(page.getByText('Read session record (1)')).toBeVisible()
   expect(identifiers).toHaveLength(2)
   expect(identifiers[0]).toBe(identifiers[1])
 })
@@ -152,4 +156,32 @@ test('transcript minutes require notice confirmation and individual publishing r
   expect(publication).toEqual({ text: initial.text, occurred_at: new Date(noteTime).toISOString(), shareable_confirmed: true })
   await page.reload()
   await expect(page.getByRole('button', { name: 'Review in publishing form' })).toHaveCount(0)
+})
+
+test('a live recent-discussion window advances on every new question', async ({ page }) => {
+  const bodies: { discussion_since: string; discussion_until: string }[] = []
+  await page.route('**/api/v1/sessions/discussion-session/discussion', route => route.fulfill({ json: { notes: [initial], latest_recorded_at: noteTime, session_status: 'active' } }))
+  await page.route('**/api/v1/sessions/discussion-session/chat', route => {
+    const body = route.request().postDataJSON()
+    bodies.push(body)
+    return route.fulfill({ contentType: 'application/x-ndjson', body: [
+      { type: 'accepted', request_id: body.request_id },
+      { type: 'delta', request_id: body.request_id, text: 'Check the current source.' },
+      { type: 'completed', request_id: body.request_id },
+    ].map(value => JSON.stringify(value)).join('\n') + '\n' })
+  })
+  await page.clock.setSystemTime(new Date('2026-11-01T10:30:00Z'))
+  await page.goto('/e2e/harness/index.html?socket=discussion')
+  await page.getByLabel('Discussion to ask about').selectOption('10')
+  await page.getByLabel('Ask about this session').fill('What did I miss?')
+  await page.getByRole('button', { name: 'Ask', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Ask', exact: true })).toBeVisible()
+  expect(bodies[0].discussion_since).toMatch(/^2026-11-01T10:20:/)
+  expect(Date.parse(bodies[0].discussion_until) - Date.parse(bodies[0].discussion_since)).toBe(600000)
+  await page.clock.setSystemTime(new Date('2026-11-01T10:35:00Z'))
+  await page.getByLabel('Ask about this session').fill('What was just said?')
+  await page.getByRole('button', { name: 'Ask', exact: true }).click()
+  await expect.poll(() => bodies.length).toBe(2)
+  expect(bodies[1].discussion_since).toMatch(/^2026-11-01T10:25:/)
+  expect(Date.parse(bodies[1].discussion_until) - Date.parse(bodies[1].discussion_since)).toBe(600000)
 })

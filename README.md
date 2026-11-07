@@ -269,6 +269,7 @@ See [docs/governance.md](docs/governance.md).
 - Free-text answers marked against the question's key points, in the background
 - Socratic chatbot that gives hints rather than answers, with the slides it used
 - Live and post-session catch-up from lecturer-published discussion minutes, with time windows and source links
+- Optional live lecturer microphone transcription feeding student catch-up automatically, with explicit opt-in and local server speech processing
 - Optional post-meeting Teams transcript import and AI-drafted minutes, reviewed by the lecturer before publication
 - Optional camera indicators with a three-second personal calibration, worked out on the
   student's own device, and only the derived figures sent
@@ -573,6 +574,7 @@ Written alongside the code, in `docs/`:
 | Document | Covers |
 |---|---|
 | [AI gateway](docs/ai-gateway.md) | The one route every model call takes: queue, deadlines, retries, fallback |
+| [Live lecturer transcription](docs/live-transcription.md) | Microphone capture, local speech model, automatic catch-up, consent and setup |
 | [Session catch-up](docs/session-catchup.md) | Lecturer minutes, live/post-session catch-up, time windows and citations |
 | [Tutor chat](docs/tutor-chat.md) | `POST /sessions/{session_id}/chat` and what the tutor may be told |
 | [Attention signals](docs/attention-signals.md) | How `signal.attention` becomes per-minute summaries for the analytics layer |
