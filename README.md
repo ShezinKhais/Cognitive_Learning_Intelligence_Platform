@@ -269,6 +269,7 @@ See [docs/governance.md](docs/governance.md).
 - Free-text answers marked against the question's key points, in the background
 - Socratic chatbot that gives hints rather than answers, with the slides it used
 - Live and post-session catch-up from lecturer-published discussion minutes, with time windows and source links
+- Optional post-meeting Teams transcript import and AI-drafted minutes, reviewed by the lecturer before publication
 - Optional camera indicators with a three-second personal calibration, worked out on the
   student's own device, and only the derived figures sent
 - A summary after each session with what to revisit, past session reviews and progress
@@ -338,6 +339,8 @@ will implement it.
 | POST | `/sessions/{session_id}/alerts/{alert_id}/acknowledge` | lecturer, admin | Mark an alert as seen |
 | POST | `/sessions/{session_id}/chat` | student | Ask the Socratic tutor or catch up from discussion minutes, streamed |
 | GET | `/sessions/{session_id}/discussion` | course student, owner, admin | Read published session minutes |
+| GET | `/sessions/{session_id}/discussion/transcripts` | owner, admin | List available transcripts for the linked ended class |
+| POST | `/sessions/{session_id}/discussion/transcript-draft` | owner, admin | Generate private draft minutes from the selected Teams transcript |
 | PUT / DELETE | `/sessions/{session_id}/discussion/{note_id}` | owner, admin | Publish, correct or remove a discussion note |
 | POST | `/sessions/{session_id}/reports` | lecturer, admin | Build the session report |
 | GET | `/reports/{report_id}` | lecturer, admin | The report, once built |

@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { ApiError, apiAuthenticatedGet, apiAuthenticatedRequest } from '../../api'
 import { buttonStyles } from '../../components/ui/button'
 import { SocraticChatPanel } from '../chat/SocraticChatPanel'
+import TranscriptDraftPanel from './TranscriptDraftPanel'
 
 interface Note {
   note_id: string
@@ -23,6 +24,7 @@ function localTime() {
 
 /** Published minutes are visible live and retained for post-session catch-up. */
 export default function DiscussionPanel({ sessionId, publisher = false, chatEnabled = import.meta.env.VITE_SOCRATIC_CHAT_ENABLED === 'true' }: { sessionId: string; publisher?: boolean; chatEnabled?: boolean }) {
+  const editor = useRef<HTMLTextAreaElement>(null)
   const [data, setData] = useState<Discussion | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [refresh, setRefresh] = useState(0)
@@ -110,7 +112,7 @@ export default function DiscussionPanel({ sessionId, publisher = false, chatEnab
             <input className="block rounded border p-2" type="datetime-local" required value={time} onChange={e => setTime(e.target.value)} />
           </label>
           <label className="block">Minutes to share with the course
-            <textarea className="block w-full rounded border p-2" rows={4} required maxLength={2000} value={text} onChange={e => setText(e.target.value)} />
+            <textarea ref={editor} className="block w-full rounded border p-2" rows={4} required maxLength={2000} value={text} onChange={e => setText(e.target.value)} />
           </label>
           <p className="text-sm">Record teaching points and anonymized questions. Remove student names, personal details and assessment solutions.</p>
           <label className="flex gap-2"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />
@@ -120,6 +122,12 @@ export default function DiscussionPanel({ sessionId, publisher = false, chatEnab
           {editing && <button type="button" className="ml-3 underline" onClick={() => { setEditing(null); setPendingId(null); setText(''); setConfirmed(false); setTime(localTime()) }}>Cancel edit</button>}
         </form>
       )}
+      {publisher && <TranscriptDraftPanel sessionId={sessionId} publishedIds={data?.notes.map(note => note.note_id) ?? []} onReview={note => {
+        setEditing(null); setPendingId(note.note_id); setText(note.text); setConfirmed(false)
+        const date = new Date(note.occurred_at)
+        setTime(new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16))
+        editor.current?.focus()
+      }} />}
       {!data && !error && <p role="status">Loading discussion notes…</p>}
       {data?.notes.length === 0 && <p>No discussion notes have been published. Check again after your lecturer adds them.</p>}
       {data && data.notes.length > 0 && (

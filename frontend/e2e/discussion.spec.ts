@@ -10,6 +10,7 @@ test('lecturer confirms, publishes, corrects and removes course minutes', async 
   const writes: Record<string, unknown>[] = []
   await page.route('**/api/v1/sessions/discussion-session/discussion**', async route => {
     const request = route.request()
+    if (request.url().endsWith('/transcripts')) return route.fulfill({ json: { enabled: false, items: [], message: 'Import disabled.' } })
     if (request.method() === 'PUT') {
       const body = request.postDataJSON()
       writes.push(body)
@@ -90,6 +91,7 @@ test('retrying a failed publication reuses its identifier', async ({ page }) => 
   const identifiers: string[] = []
   let saved: typeof initial | undefined
   await page.route('**/api/v1/sessions/discussion-session/discussion**', route => {
+    if (route.request().url().endsWith('/transcripts')) return route.fulfill({ json: { enabled: false, items: [], message: 'Import disabled.' } })
     if (route.request().method() === 'PUT') {
       identifiers.push(route.request().url().split('/').at(-1)!)
       if (identifiers.length === 1) return route.fulfill({ status: 503, json: { error: { message: 'Please retry publication.' } } })
@@ -108,4 +110,46 @@ test('retrying a failed publication reuses its identifier', async ({ page }) => 
   await expect(page.getByText('Read published minutes (1)')).toBeVisible()
   expect(identifiers).toHaveLength(2)
   expect(identifiers[0]).toBe(identifiers[1])
+})
+
+test('transcript minutes require notice confirmation and individual publishing review', async ({ page }) => {
+  const notes: typeof initial[] = []
+  let draftRequests = 0
+  let publication: Record<string, unknown> | undefined
+  await page.route('**/api/v1/sessions/discussion-session/discussion**', route => {
+    const request = route.request()
+    if (request.url().endsWith('/transcripts')) return route.fulfill({ json: { enabled: true, items: [{ id: 't1', created_at: noteTime }], message: null } })
+    if (request.url().endsWith('/transcript-draft')) {
+      draftRequests++
+      expect(request.postDataJSON()).toEqual({ transcript_id: 't1', participant_notice_confirmed: true })
+      return route.fulfill({ json: { transcript_id: 't1', warning: 'Review before publishing.', notes: [{ ...initial, source_excerpt: 'An exact source quote for the lecturer to verify.', source_offset_seconds: 65 }] } })
+    }
+    if (request.method() === 'PUT') {
+      publication = request.postDataJSON()
+      notes.push(initial)
+      return route.fulfill({ json: initial })
+    }
+    return route.fulfill({ json: { notes, latest_recorded_at: notes.length ? noteTime : null, session_status: 'ended' } })
+  })
+  await page.goto('/e2e/harness/index.html?socket=discussion&publisher')
+  const generate = page.getByRole('button', { name: 'Generate draft minutes' })
+  await expect(generate).toBeDisabled()
+  expect(draftRequests).toBe(0)
+  await page.getByRole('checkbox', { name: 'I confirm participants were informed', exact: false }).check()
+  await generate.click()
+  await expect(page.getByText('Review before publishing.', { exact: false })).toBeVisible()
+  expect(notes).toHaveLength(0)
+  await page.getByText('Check transcript evidence (offset 1:05)').click()
+  await expect(page.getByText('An exact source quote for the lecturer to verify.')).toBeVisible()
+  await page.getByRole('button', { name: 'Review in publishing form' }).click()
+  await expect(page.getByLabel('Minutes to share with the course')).toHaveValue(initial.text)
+  await expect(page.getByLabel('Minutes to share with the course')).toBeFocused()
+  expect((await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([])
+  await expect(page.getByRole('button', { name: 'Publish note' })).toBeDisabled()
+  await page.getByRole('checkbox', { name: 'I reviewed these minutes', exact: false }).check()
+  await page.getByRole('button', { name: 'Publish note' }).click()
+  await expect(page.getByRole('button', { name: 'Already published', exact: false })).toBeDisabled()
+  expect(publication).toEqual({ text: initial.text, occurred_at: new Date(noteTime).toISOString(), shareable_confirmed: true })
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Review in publishing form' })).toHaveCount(0)
 })

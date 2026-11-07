@@ -30,3 +30,35 @@ class DiscussionOut(BaseModel):
     notes: list[DiscussionNoteOut]
     latest_recorded_at: datetime | None
     session_status: str
+
+
+class TranscriptItem(BaseModel):
+    id: str = Field(min_length=1, max_length=2048)
+    created_at: AwareDatetime
+
+
+class TranscriptList(BaseModel):
+    enabled: bool
+    items: list[TranscriptItem] = Field(default_factory=list)
+    message: str | None = None
+
+
+class TranscriptImport(BaseModel):
+    transcript_id: str = Field(min_length=1, max_length=2048)
+    participant_notice_confirmed: bool
+
+
+class DraftMinute(BaseModel):
+    note_id: UUID
+    occurred_at: datetime
+    text: str
+    source_excerpt: str
+    source_offset_seconds: float
+
+
+class TranscriptDraft(BaseModel):
+    transcript_id: str = Field(min_length=1, max_length=2048)
+    notes: list[DraftMinute]
+    warning: str = (
+        "AI draft: check every teaching point, timestamp and personal detail before publishing."
+    )

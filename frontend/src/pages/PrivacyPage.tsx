@@ -26,7 +26,7 @@ export default function PrivacyPage() {
         <p>
           The camera and microphone indicators are optional. Each needs its own consent, and both need engagement
           monitoring to be on. When they are on, your browser works them out on your own device. C.L.I.P never sends
-          video, pictures, sound or speech to its server.
+          video, pictures or sound from these indicators to its server.
         </p>
         <p>
           Once you have agreed to an indicator, it starts by itself when you join a live class, and stops when you
@@ -46,9 +46,33 @@ export default function PrivacyPage() {
         </p>
       </PolicySection>
 
+      <PolicySection title="Teams transcripts and discussion minutes">
+        <p>
+          If the institution enables transcript import, a lecturer or administrator can retrieve an available
+          transcript from the Teams meeting linked to a finished class. Teams performs transcription under the
+          institution&apos;s Microsoft 365 settings. C.L.I.P does not start recording or transcription.
+          Participants must be informed and the institution&apos;s transcription and consent requirements met.
+          Consent to optional camera or microphone indicators does not authorize meeting transcription.
+        </p>
+        <p>
+          The transcript text is processed in server memory to draft teaching minutes using the configured AI
+          service. WebVTT speaker labels, email addresses and links are removed before drafting, but personal
+          information may remain in speech. The lecturer must check the draft, remove personal information and
+          assessment solutions, and explicitly approve publication. Students and their chatbot can access only
+          the published minutes, not the imported transcript or unpublished draft evidence.
+        </p>
+        <p>
+          C.L.I.P does not save the raw transcript or unpublished drafts in its database, browser storage or logs.
+          Drafts and source excerpts are held temporarily in the lecturer&apos;s page and disappear on leaving it.
+          Published minutes follow session retention and deletion. The original transcript and any Teams recording
+          remain in Microsoft 365 under the institution&apos;s separate access, retention and deletion policies;
+          deleting C.L.I.P minutes does not delete Microsoft&apos;s copy.
+        </p>
+      </PolicySection>
+
       <PolicySection title="What C.L.I.P never collects">
         <ul>
-          <li>Meeting audio, video, recordings or transcripts.</li>
+          <li>Meeting audio, video or recording files.</li>
           <li>Teams meeting chat messages.</li>
           <li>Pictures of your face, or any biometric template.</li>
           <li>Your conversations with the tutor. They are answered and then discarded; only the fact that a question was asked is logged.</li>

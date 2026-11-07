@@ -1394,6 +1394,41 @@
         "title": "DiscussionWrite",
         "type": "object"
       },
+      "DraftMinute": {
+        "properties": {
+          "note_id": {
+            "format": "uuid",
+            "title": "Note Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "source_excerpt": {
+            "title": "Source Excerpt",
+            "type": "string"
+          },
+          "source_offset_seconds": {
+            "title": "Source Offset Seconds",
+            "type": "number"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "note_id",
+          "occurred_at",
+          "text",
+          "source_excerpt",
+          "source_offset_seconds"
+        ],
+        "title": "DraftMinute",
+        "type": "object"
+      },
       "EngagementHistory": {
         "properties": {
           "quiet": {
@@ -4244,6 +4279,106 @@
           "expected"
         ],
         "title": "TopicDifficultyOut",
+        "type": "object"
+      },
+      "TranscriptDraft": {
+        "properties": {
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/DraftMinute"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "transcript_id": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Transcript Id",
+            "type": "string"
+          },
+          "warning": {
+            "default": "AI draft: check every teaching point, timestamp and personal detail before publishing.",
+            "title": "Warning",
+            "type": "string"
+          }
+        },
+        "required": [
+          "transcript_id",
+          "notes"
+        ],
+        "title": "TranscriptDraft",
+        "type": "object"
+      },
+      "TranscriptImport": {
+        "properties": {
+          "participant_notice_confirmed": {
+            "title": "Participant Notice Confirmed",
+            "type": "boolean"
+          },
+          "transcript_id": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Transcript Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "transcript_id",
+          "participant_notice_confirmed"
+        ],
+        "title": "TranscriptImport",
+        "type": "object"
+      },
+      "TranscriptItem": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at"
+        ],
+        "title": "TranscriptItem",
+        "type": "object"
+      },
+      "TranscriptList": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "TranscriptList",
         "type": "object"
       },
       "UserOut": {
@@ -7349,6 +7484,102 @@
           }
         },
         "summary": "Read Notes",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/discussion/transcript-draft": {
+      "post": {
+        "operationId": "import_transcript_api_v1_sessions__session_id__discussion_transcript_draft_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranscriptImport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptDraft"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Transcript",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/discussion/transcripts": {
+      "get": {
+        "operationId": "available_transcripts_api_v1_sessions__session_id__discussion_transcripts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Available Transcripts",
         "tags": [
           "discussion"
         ]

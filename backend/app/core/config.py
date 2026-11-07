@@ -196,6 +196,7 @@ class Settings(BaseSettings):
     client_id: str = ""
     client_secret: str = ""
     tenant_id: str = ""
+    teams_transcripts_enabled: bool = False
     teams_notifications_enabled: bool = False
     teams_app_base_url: str = ""
     teams_app_id: str = ""
@@ -308,6 +309,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _check_teams_notifications(self) -> "Settings":
+        if self.teams_transcripts_enabled:
+            from uuid import UUID
+
+            if not self.teams_configured:
+                raise ValueError(
+                    "Transcript import requires CLIENT_ID, CLIENT_SECRET and TENANT_ID"
+                )
+            UUID(self.tenant_id)
+            UUID(self.client_id)
         if self.teams_notifications_enabled:
             if not self.teams_configured:
                 raise ValueError(

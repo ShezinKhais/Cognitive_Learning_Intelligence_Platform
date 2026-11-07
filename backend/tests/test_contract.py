@@ -13,6 +13,8 @@ from fastapi.testclient import TestClient
 BACKEND = Path(__file__).resolve().parent.parent
 
 EXPECTED_PATHS = {
+    "/api/v1/sessions/{session_id}/discussion/transcripts",
+    "/api/v1/sessions/{session_id}/discussion/transcript-draft",
     "/api/v1/sessions/{session_id}/discussion",
     "/api/v1/sessions/{session_id}/discussion/{note_id}",
     # Phase 7 AI2: additive own-student review adapter; summary contract unchanged.
@@ -206,12 +208,18 @@ def test_engagement_reports_confidence_and_available_signals(
 
 def test_no_event_type_can_carry_raw_media(client: TestClient) -> None:
     """The privacy commitment is architectural: there is deliberately no event
-    shape capable of transporting frames, audio or transcripts."""
+    shape capable of transporting frames, audio or raw transcript bodies.
+    The staff-only Teams draft REST API accepts a bounded source identifier,
+    not uploaded media/transcript text. Keep this exception exact."""
     schemas = client.get("/api/v1/openapi.json").json()["components"]["schemas"]
     banned = ("image", "frame", "audio", "transcript", "recording", "blob")
 
     for name, schema in schemas.items():
         for field in schema.get("properties", {}):
+            if name in {"TranscriptDraft", "TranscriptImport"} and field == "transcript_id":
+                definition = schema["properties"][field]
+                assert definition["type"] == "string" and definition["maxLength"] == 2048
+                continue
             assert not any(word in field.lower() for word in banned), (
                 f"{name}.{field} looks like raw media"
             )
