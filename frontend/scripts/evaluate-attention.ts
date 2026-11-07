@@ -9,11 +9,13 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import {
-  CONDITIONS, LABELS, ORIGINAL_THRESHOLDS, balancedAccuracy, bootstrap, calibrations, confusion, coverage, folds, parseCsv,
-  precision, recall, score, tune,
+  CONDITIONS, GAZE_LABELS, LABELS, ORIGINAL_THRESHOLDS, balancedAccuracy, bootstrap, calibrations, confusion, coverage, folds, observe, parseCsv,
+  precision, recall, score, tune, tuneGaze,
   type Condition, type Counts, type Frame, type Label, type Settings,
 } from '../eval/evaluation.ts'
-import { CALIBRATED_THRESHOLDS, DEFAULT_THRESHOLDS, type Thresholds } from '../src/features/attention/signals.ts'
+import {
+  ADAPTATION, CALIBRATED_THRESHOLDS, DEFAULT_THRESHOLDS, GAZE_MODEL, SUGGESTED_ADAPTATION, type GazeModel, type Thresholds,
+} from '../src/features/attention/signals.ts'
 
 const [folder, ...rest] = process.argv.slice(2)
 if (!folder) throw new Error('usage: evaluate-attention.ts <folder of CSV files> [--out report.md]')
@@ -35,13 +37,20 @@ const { folds: rounds, by } = folds(frames)
 // in the app; each fold uses its own, so nothing held out leaks in.
 const tuned = rounds.map(fold => {
   const plain = tune(fold.tune, false)
-  return { ...fold, plain, calibrated: tune(fold.tune, true, plain.thresholds) }
+  const calibrated = tune(fold.tune, true, plain.thresholds)
+  // #166: k and the gaze limits, fitted on the same people, never the held-out one.
+  return { ...fold, plain, calibrated, gaze: tuneGaze(fold.tune, calibrated.thresholds, plain.thresholds) }
 })
 const testFrames = tuned.flatMap(fold => fold.test)
 const foldOf = (f: Frame) => by === 'participant' ? tuned.find(fold => fold.held === f.participant)! : tuned[0]
 const before = { thresholds: ORIGINAL_THRESHOLDS, calibrated: false }
 const tunedPlain: Settings = f => ({ thresholds: foldOf(f).plain.thresholds, calibrated: false })
 const tunedCalibrated: Settings = f => ({ thresholds: foldOf(f).calibrated.thresholds, calibrated: true, uncalibrated: foldOf(f).plain.thresholds })
+// #166 rows. Adaptation uses the shipped settings if on, else the suggested ones.
+const adaptation = ADAPTATION ?? SUGGESTED_ADAPTATION
+const withGaze: Settings = f => ({ thresholds: foldOf(f).gaze.thresholds, calibrated: true, uncalibrated: foldOf(f).plain.thresholds, gaze: foldOf(f).gaze.gaze })
+const withAdaptation: Settings = f => ({ ...(tunedCalibrated(f)), adaptation })
+const withBoth: Settings = f => ({ ...(withGaze(f)), adaptation })
 
 interface Row { name: string; frames: Frame[]; setting: Settings }
 const rows: Row[] = [
@@ -49,12 +58,17 @@ const rows: Row[] = [
   { name: 'Pose angles, starting limits', frames: testFrames, setting: before },
   { name: 'After: pose angles, tuned limits', frames: testFrames, setting: tunedPlain },
   { name: 'After + calibration', frames: testFrames, setting: tunedCalibrated },
+  { name: '#166: + combined head and eye gaze', frames: testFrames, setting: withGaze },
+  { name: '#166: + adaptive limits', frames: testFrames, setting: withAdaptation },
+  { name: '#166: + both', frames: testFrames, setting: withBoth },
 ]
 
 // What ships: the limits tuned on every recording.
 const finalPlain = tune(frames, false)
 const finalCalibrated = tune(frames, true, finalPlain.thresholds)
+const finalGaze = tuneGaze(frames, finalCalibrated.thresholds, finalPlain.thresholds)
 
+const gazeK = (g: GazeModel) => `${g.kYaw} / ${g.kPitch}`
 const pct = (value: number | null) => value === null ? 'n/a' : `${(value * 100).toFixed(1)}%`
 const ci = (interval: [number, number] | null) => interval ? ` (${pct(interval[0])}–${pct(interval[1])})` : ''
 function metric(fs: Frame[], setting: Settings, pick: (s: ReturnType<typeof score>) => Counts, measure: (c: Counts) => number | null) {
@@ -71,7 +85,7 @@ const people = [...new Set(frames.map(f => f.participant))].sort()
 const clipsOf = (fs: Frame[]) => new Set(fs.map(f => `${f.participant}/${f.clip}`)).size
 say('# Camera attention evaluation')
 say()
-say(`Issue #159. ${files.length} recording file(s), ${people.length} participant(s), ${clipsOf(frames)} clips, ${frames.length} frames.`)
+say(`Issues #159 and #166. ${files.length} recording file(s), ${people.length} participant(s), ${clipsOf(frames)} clips, ${frames.length} frames.`)
 say('Made with `scripts/evaluate-attention.ts`; recordings from `eval/attention-recorder.html` hold derived numbers only, no video.')
 say()
 say('## The recordings')
@@ -108,16 +122,19 @@ if (by === 'participant') {
     before: ba(withoutPose(fold.test), before),
     after: ba(fold.test, { thresholds: fold.plain.thresholds, calibrated: false }),
     calibrated: ba(fold.test, { thresholds: fold.calibrated.thresholds, calibrated: true, uncalibrated: fold.plain.thresholds }),
+    gaze: ba(fold.test, withGaze),
+    adaptive: ba(fold.test, withAdaptation),
+    both: ba(fold.test, withBoth),
     fold,
   }))
   say('## Per participant')
   say()
   say('Balanced accuracy on each person, with the limits tuned on everyone else. Yaw / pitch / roll are those limits, so the spread shows how much they depend on who is in the tuning set.')
   say()
-  say('| Held out | Clips | Before | After | After + calibration | Tuned limits (yaw / pitch / roll) | With calibration |')
-  say('|---|---|---|---|---|---|---|')
+  say('| Held out | Clips | Before | After | After + calibration | + gaze | + adaptive | + both | Tuned limits (yaw / pitch / roll) | With calibration | Gaze k (yaw / pitch) |')
+  say('|---|---|---|---|---|---|---|---|---|---|---|')
   for (const p of perPerson) {
-    say(`| ${p.held} | ${clipsOf(p.fold.test)} | ${pct(p.before)} | ${pct(p.after)} | ${pct(p.calibrated)} | ${limits(p.fold.plain.thresholds)} | ${limits(p.fold.calibrated.thresholds)} |`)
+    say(`| ${p.held} | ${clipsOf(p.fold.test)} | ${pct(p.before)} | ${pct(p.after)} | ${pct(p.calibrated)} | ${pct(p.gaze)} | ${pct(p.adaptive)} | ${pct(p.both)} | ${limits(p.fold.plain.thresholds)} | ${limits(p.fold.calibrated.thresholds)} | ${gazeK(p.fold.gaze.gaze)} |`)
   }
   say()
   const worst = (pick: (p: typeof perPerson[number]) => number | null) => {
@@ -126,7 +143,7 @@ if (by === 'participant') {
     const p = scored.reduce((a, b) => pick(b)! < pick(a)! ? b : a)
     return `${pct(pick(p))} (${p.held})`
   }
-  say(`Worst participant: before ${worst(p => p.before)}, after ${worst(p => p.after)}, after + calibration ${worst(p => p.calibrated)}.`)
+  say(`Worst participant: before ${worst(p => p.before)}, after ${worst(p => p.after)}, after + calibration ${worst(p => p.calibrated)}, + gaze ${worst(p => p.gaze)}, + adaptive ${worst(p => p.adaptive)}, + both ${worst(p => p.both)}.`)
   say()
 }
 
@@ -154,12 +171,56 @@ for (const chosen of [rows[2], rows[3]]) {
   }
   say()
 }
+// #166: the two new labels on their own, so the #159 labels stay comparable.
+const gazeFrames = testFrames.filter(f => GAZE_LABELS.includes(f.label))
+say('## #166 labels on their own (held-out, all rounds pooled)')
+say()
+if (!gazeFrames.length) {
+  say(`No \`${GAZE_LABELS.join('` or `')}\` clips recorded yet, so the combined gaze has nothing to be judged on here; record them with the recorder page first.`)
+} else {
+  say('Share of frames read as "on screen". `screen_head_turned` should be high, `away_eyes_only` low.')
+  say()
+  say('| Label | Clips | ' + rows.slice(3).map(r => r.name).join(' | ') + ' |')
+  say('|---|---|' + rows.slice(3).map(() => '---').join('|') + '|')
+  for (const label of GAZE_LABELS) {
+    const of = gazeFrames.filter(f => f.label === label)
+    if (!of.length) continue
+    const share = (setting: Settings) => {
+      const byKey = calibrations(testFrames)
+      const onScreen = (fs: Frame[]) => {
+        const seen = observe(fs, setting, byKey)
+        return seen.length ? seen.filter(s => s.forward === true).length / seen.length : null
+      }
+      return `${pct(onScreen(of))}${ci(bootstrap(of, onScreen))}`
+    }
+    say(`| ${label} | ${clipsOf(of)} | ${rows.slice(3).map(r => share(r.setting)).join(' | ')} |`)
+  }
+}
+say()
+
+// Adaptation may only be fairer: count frames it turned from "on screen" to "away".
+{
+  const byKey = calibrations(testFrames)
+  const scored = testFrames.filter(f => f.label !== 'calibrate')
+  const fixed = observe(scored, tunedCalibrated, byKey)
+  const adapted = observe(scored, withAdaptation, byKey)
+  const harsher = fixed.filter((s, i) => s.forward === true && adapted[i].forward === false).length
+  const noReading = fixed.filter((s, i) => s.forward === false && adapted[i].forward === null).length
+  say('## Adaptation fairness check')
+  say()
+  say(`Of ${scored.length} held-out frames, adaptation turned ${harsher} from "on screen" to "away" (only a moved centre can do this; the learned limits are never stricter) and ${noReading} from "away" to "no reading" (a normal wider than the camera can measure).`)
+  say()
+  say(`Adaptation settings replayed: \`${JSON.stringify(adaptation)}\`${ADAPTATION ? ' (shipped)' : ' (suggested; `ADAPTATION` is off in `signals.ts`)'}. The recordings' only certain "looking" moments are the calibrate clips, so adaptation learns from those; the classroom also learns while a student types an answer, which these clips do not contain.`)
+  say()
+}
+
 const show = (t: Thresholds) => `maxYawDegrees: ${t.maxYawDegrees}, maxPitchDegrees: ${t.maxPitchDegrees}, maxRollDegrees: ${t.maxRollDegrees}, irisX: [${t.irisX.join(', ')}]`
 say('## Thresholds')
 say()
 say(`- Starting limits (#63): \`${show(ORIGINAL_THRESHOLDS)}\``)
 say(`- Tuned on every recording, without calibration: \`${show(finalPlain.thresholds)}\` (balanced accuracy on those recordings ${pct(finalPlain.balancedAccuracy)})`)
 say(`- Tuned on every recording, with calibration: \`${show(finalCalibrated.thresholds)}\` (${pct(finalCalibrated.balancedAccuracy)})`)
+say(`- #166 gaze model tuned on every recording: \`kYaw: ${finalGaze.gaze.kYaw}, kPitch: ${finalGaze.gaze.kPitch}\`, gaze limits \`${show(finalGaze.thresholds)}\` (${pct(finalGaze.balancedAccuracy)}). Shipped \`GAZE_MODEL\`: ${GAZE_MODEL ? `\`${JSON.stringify(GAZE_MODEL)}\`` : 'off'}.`)
 say()
 say('These are the limits to ship. The held-out results above estimate how they do on a new person, since each round tuned the same way without that person.')
 say()

@@ -6,8 +6,8 @@
 // A recording holds derived numbers per frame and the label the person was
 // told to act out. No video, image or landmark is stored.
 import {
-  calibrate, classifyFace, DEFAULT_THRESHOLDS,
-  type Calibration, type FaceFeatures, type FaceObservation, type Thresholds,
+  calibrate, classifyAdaptive, classifyFace, DEFAULT_THRESHOLDS, learn, startAdaptation,
+  type AdaptationSettings, type Calibration, type FaceFeatures, type FaceObservation, type GazeModel, type Thresholds,
 } from '../src/features/attention/signals.ts'
 
 /** What the person was asked to do during a clip. */
@@ -20,7 +20,12 @@ export const LABELS = {
   eyes_closed: 'Close your eyes, facing the screen',
   no_face: 'Move out of the camera view',
   two_faces: 'Have a second person in view with you',
+  // #166: the two cases a head-only rule gets wrong, missing from #159's recordings.
+  screen_head_turned: 'Keep your eyes on the screen while turning or tilting your head a little left, right, up and down',
+  away_eyes_only: 'Keep your head still and look to the side with your eyes only, left then right',
 } as const
+/** Labels added for #166, reported on their own so the #159 numbers stay comparable. */
+export const GAZE_LABELS: readonly Label[] = ['screen_head_turned', 'away_eyes_only']
 export type Label = keyof typeof LABELS
 
 export const CONDITIONS = {
@@ -125,7 +130,7 @@ function parseRows(text: string): Frame[] {
 /** Is there a face in view? Two faces is still a face. */
 export const faceTruth = (label: Label) => label !== 'no_face'
 /** Is the person looking at the screen? */
-export const lookingTruth = (label: Label) => label === 'screen' || label === 'calibrate'
+export const lookingTruth = (label: Label) => label === 'screen' || label === 'calibrate' || label === 'screen_head_turned'
 
 // -- counting -------------------------------------------------------------------
 
@@ -171,9 +176,21 @@ export function balancedAccuracy(c: Counts): number | null {
  * `uncalibrated` is what the app falls back to when calibration is on but this
  * person has none (missing or refused), as thresholdsFor does in the worker.
  */
-export interface Setting { thresholds: Thresholds; calibrated: boolean; uncalibrated?: Thresholds }
+export interface Setting {
+  thresholds: Thresholds
+  calibrated: boolean
+  uncalibrated?: Thresholds
+  /** #166: judge one gaze direction from head and eyes. */
+  gaze?: GazeModel | null
+  /** #166: learn each person's own limits from their calibrate clips first. */
+  adaptation?: AdaptationSettings | null
+}
 /** One setting for every frame, or one per frame (each held-out person's own fold). */
 export type Settings = Setting | ((frame: Frame) => Setting)
+
+// The calibrate clips behind each calibrations() result, by person and
+// conditions, for adaptation to learn from.
+const calibrationFrames = new WeakMap<Map<string, Calibration>, Map<string, FaceFeatures[]>>()
 
 /** A calibration per participant and set of conditions, from their "calibrate" clips. */
 export function calibrations(frames: Frame[]): Map<string, Calibration> {
@@ -187,16 +204,29 @@ export function calibrations(frames: Frame[]): Map<string, Calibration> {
     const c = calibrate(group)
     if (c) result.set(key, c)
   }
+  calibrationFrames.set(result, groups)
   return result
 }
 const calibrationKey = (f: Frame) => [f.participant, ...Object.values(f.conditions)].join('|')
 
 export function observe(frames: Frame[], settings: Settings, calibrationsByKey = calibrations(frames)): FaceObservation[] {
+  const learned = new Map<string, ReturnType<typeof startAdaptation>>()
   return frames.map(f => {
     const setting = typeof settings === 'function' ? settings(f) : settings
     const calibration = setting.calibrated ? calibrationsByKey.get(calibrationKey(f)) ?? null : null
     const thresholds = setting.calibrated && !calibration ? setting.uncalibrated ?? setting.thresholds : setting.thresholds
-    return classifyFace(f.features, thresholds, calibration)
+    if (!setting.adaptation) return classifyFace(f.features, thresholds, calibration, setting.gaze ?? null)
+    // The recordings' only sure "looking at the screen" moments are the
+    // calibrate clips, so adaptation learns from those (as the browser does
+    // after calibrating), never from the clips it is scored on.
+    const key = `${calibrationKey(f)}|${setting.calibrated}`
+    let state = learned.get(key)
+    if (!state) {
+      state = startAdaptation(calibration)
+      for (const g of calibrationFrames.get(calibrationsByKey)?.get(calibrationKey(f)) ?? []) state = learn(state, g, thresholds, setting.adaptation, setting.gaze ?? null)
+      learned.set(key, state)
+    }
+    return classifyAdaptive(f.features, state, thresholds, setting.adaptation, setting.gaze ?? null)
   })
 }
 
@@ -288,6 +318,42 @@ export function tune(
     }
   }
   return best
+}
+
+/**
+ * #166: the gaze model's k per axis, and the gaze limits, tried with
+ * calibration on (the iris centre is the student's own). k may be negative:
+ * which way it runs depends on MediaPipe's axes, and the data decides.
+ */
+export const GAZE_GRID = {
+  kYaw: [-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150],
+  kPitch: [-60, -30, 0, 30, 60],
+  maxYawDegrees: [10, 15, 20, 25],
+  maxPitchDegrees: [12, 16, 20, 25],
+  maxEyeDisagreement: 0.15,
+}
+
+/** The gaze model and limits with the best balanced accuracy on `frames`; ties keep the earlier one. */
+export function tuneGaze(
+  frames: Frame[], base: Thresholds, uncalibrated: Thresholds,
+): { gaze: GazeModel; thresholds: Thresholds; balancedAccuracy: number | null } {
+  const byKey = calibrations(frames)
+  let best: { gaze: GazeModel; thresholds: Thresholds; balancedAccuracy: number | null } | null = null
+  for (const kYaw of GAZE_GRID.kYaw) {
+    for (const kPitch of GAZE_GRID.kPitch) {
+      const gaze = { kYaw, kPitch, maxEyeDisagreement: GAZE_GRID.maxEyeDisagreement }
+      for (const maxYawDegrees of GAZE_GRID.maxYawDegrees) {
+        for (const maxPitchDegrees of GAZE_GRID.maxPitchDegrees) {
+          const thresholds = { ...base, maxYawDegrees, maxPitchDegrees }
+          const value = balancedAccuracy(score(frames, { thresholds, calibrated: true, uncalibrated, gaze }, byKey).looking)
+          if (value !== null && (best === null || best.balancedAccuracy === null || value > best.balancedAccuracy)) {
+            best = { gaze, thresholds, balancedAccuracy: value }
+          }
+        }
+      }
+    }
+  }
+  return best ?? { gaze: { kYaw: 0, kPitch: 0, maxEyeDisagreement: GAZE_GRID.maxEyeDisagreement }, thresholds: base, balancedAccuracy: null }
 }
 
 // -- confidence intervals ----------------------------------------------------------

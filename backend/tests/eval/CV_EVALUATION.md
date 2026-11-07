@@ -166,3 +166,50 @@ that is where the improvement is. Keep the feature flag off until Cyber 1's
 fairness review and Cyber 2's device tests pass. Next: record "head turned,
 eyes on the screen" and eye-only clips, and combine head and eye direction
 (#166).
+
+## Next: adaptive limits and combined gaze (#166)
+
+**Status: code and evaluation ready, waiting for recordings.** No numbers
+yet: the #159 recordings contain neither case the combined gaze is for, and
+only 10-second clips, too short to learn from. Nothing below changes what the
+classroom does today: `GAZE_MODEL` and `ADAPTATION` in `signals.ts` are both
+`null`, so the browser judges exactly as in #159 until the numbers say
+otherwise.
+
+| Part | File | What it does |
+|---|---|---|
+| Combined gaze | `signals.ts` (`GazeModel`, `gazeAngles`) | gaze yaw = head yaw + k × (iris x − the student's iris x), and the same for pitch. The eyes can rescue a turned head as well as veto a still one. |
+| Eyes that disagree | `signals.ts` (`gazeAngles`, `Calibration.eyeGapX`) | If the two irises disagree by more than 0.15 beyond the student's own calibrated gap, there is no reading, never "away". A squint present while calibrating is the student's normal. |
+| Adaptive limits | `signals.ts` (`learn`, `adaptedThresholds`, `classifyAdaptive`) | Learns the student's centre and spread from good moments; limits = 3 × their spread, never below the standard limits, never above 25° / 30° / 25°. A wider normal than that gives "no reading". |
+| Good moments | `face.worker.ts`, `localSensors.ts` (`markLookingAtScreen`), `StudentLiveSessionPage.tsx` | The calibration, and 1.5 s after each key typed in a checkpoint answer. Frames far from the current normal are skipped, so a glance at the keyboard or a long look away is not learned. |
+| Drift | `learn` | The centre moves at most 0.5° per frame and stays inside the range a calibration may have. |
+| Recorder | `eval/evaluation.ts`, `eval/recorder.ts` | New labels `screen_head_turned`, `away_eyes_only`; clips of 10 s, 1 min or 3 min. |
+| Evaluation | `evaluation.ts` (`tuneGaze`, `observe`), `scripts/evaluate-attention.ts` | Fits k per axis leaving one participant out; replays adaptation learning from the calibrate clips; rows "+ gaze", "+ adaptive", "+ both" per participant, per label and per condition, with intervals; the worst participant; the new labels on their own; a count of frames adaptation made stricter. |
+| Tests | `tests/attention.test.ts` | Learned limits never stricter (random runs), rescue and veto, eyes that disagree, drift, no reading beyond the cap, tuning k. |
+
+**Fairness rules kept:** adaptation never guesses why a student's normal is
+what it is and works the same for everyone; learned limits are never stricter
+than the standard ones; "no reading" instead of "away" when the camera cannot
+measure someone's normal; recorded accommodations still switch camera scoring
+off on the server (`engagement.py`); nothing new leaves the browser and the
+`signal.attention` payload is unchanged. The camera panel now says plainly that
+leaving the camera off never counts against the student (the server marks
+camera signals "unavailable", not negative).
+
+**One way adaptation can still read a frame as "away" that #159 read as
+"on screen":** a moved centre (the limits themselves only widen). The report
+counts these frames, so the cost is visible.
+
+**To decide with Cyber 1:**
+- `engagement_baseline.py` already reads the server-side *score* against the
+  student's own session. If both are on, a fidgety student is helped twice
+  (wider per-frame limits, then a lower personal baseline). Compare the two on
+  the long clips before switching `ADAPTATION` on.
+- `student.attention_threshold` is still unused. Seeding the browser's limits
+  from it would mean sending per-student settings to the browser; the
+  suggestion is to remove it, since adaptation learns the same thing locally.
+
+**To finish #166:** record the labels in `cv/README.md`, run
+`npm run eval:attention`, and copy the before and after tables here. Switch on
+`GAZE_MODEL` (with the fitted k) and `ADAPTATION` only if the worst participant
+improves and the existing labels do not get worse.

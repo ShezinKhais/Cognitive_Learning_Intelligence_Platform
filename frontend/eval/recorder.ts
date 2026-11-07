@@ -1,4 +1,4 @@
-// The recorder page (attention-recorder.html), for #159. Runs the same
+// The recorder page (attention-recorder.html), for #159 and #166. Runs the same
 // face worker as the classroom, asks it for the features behind each
 // observation, and keeps those with the label being acted out. The video is
 // shown on this page only and never stored. Served by `npm run dev` at
@@ -8,7 +8,8 @@ import '../src/index.css'
 import { CONDITIONS, LABELS, framesToCsv, type Condition, type Frame, type Label } from './evaluation.ts'
 import type { FaceFeatures } from '../src/features/attention/signals.ts'
 
-const CLIP_SECONDS = 10
+// 10 seconds for #159's acted clips; longer ones (#166) give adaptation time to learn.
+const CLIP_LENGTHS = [10, 60, 180] as const
 const FRAME_MS = 250
 const assets = new URL(`${import.meta.env.BASE_URL}attention/`, location.origin).href
 
@@ -49,6 +50,15 @@ for (const [name, values] of Object.entries(CONDITIONS) as [Condition, readonly 
   $('conditions').append(label)
   selects[name] = select
 }
+const lengthLabel = document.createElement('label')
+lengthLabel.className = 'text-sm font-medium'
+lengthLabel.textContent = 'Clip length'
+const clipLength = document.createElement('select')
+clipLength.className = 'mt-1 block w-full rounded-lg border border-border bg-input-background px-2 py-1.5 text-sm'
+for (const seconds of CLIP_LENGTHS) clipLength.append(new Option(seconds < 60 ? `${seconds} seconds` : `${seconds / 60} minutes`, String(seconds)))
+lengthLabel.append(clipLength)
+$('conditions').append(lengthLabel)
+
 const labelButtons: HTMLButtonElement[] = []
 for (const [label, instruction] of Object.entries(LABELS) as [Label, string][]) {
   const button = document.createElement('button')
@@ -76,6 +86,7 @@ function record(label: Label) {
   clips += 1
   const conditions = Object.fromEntries(Object.entries(selects).map(([k, s]) => [k, s.value])) as Record<Condition, string>
   // No frame counts until the countdown ends and startedAt is set below.
+  const seconds = Number(clipLength.value)
   const clip = { label, clip: `c${clips}`, startedAt: Infinity, conditions }
   recording = clip
   status.textContent = `Get ready: ${LABELS[label]}`
@@ -89,7 +100,7 @@ function record(label: Label) {
     bar.style.transition = 'none'
     bar.style.width = '0%'
     requestAnimationFrame(() => {
-      bar.style.transition = `width ${CLIP_SECONDS}s linear`
+      bar.style.transition = `width ${seconds}s linear`
       bar.style.width = '100%'
     })
     setTimeout(() => {
@@ -99,7 +110,7 @@ function record(label: Label) {
       bar.style.width = '0%'
       status.textContent = 'Clip saved. Pick the next one.'
       refresh()
-    }, CLIP_SECONDS * 1000)
+    }, seconds * 1000)
   }, 2000)
 }
 

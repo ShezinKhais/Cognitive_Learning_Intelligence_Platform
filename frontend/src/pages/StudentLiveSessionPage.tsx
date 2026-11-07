@@ -34,6 +34,7 @@ import ParticipationGauge from '../features/student/ParticipationGauge'
 import RoomConfirm from '../features/student/RoomConfirm'
 import { useLiveSession } from '../features/student/useLiveSession'
 import { AttentionControls } from '../features/attention/AttentionControls'
+import { markLookingAtScreen } from '../features/attention/localSensors'
 
 const SOCRATIC_CHAT_ENABLED =
   import.meta.env.VITE_SOCRATIC_CHAT_ENABLED === 'true'
@@ -478,9 +479,12 @@ function CheckpointCard({
               maxLength={4000}
               value={checkpoint.freeText}
               disabled={!editable}
-              onChange={(event) =>
+              onChange={(event) => {
                 onSetFreeText(event.target.value)
-              }
+                // Typing an answer is a good moment for the camera to learn
+                // this student's normal (#166); it stays on this device.
+                markLookingAtScreen()
+              }}
               className="mt-2 w-full resize-y rounded-xl border border-border bg-input-background p-3 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-70"
             />
           </div>
