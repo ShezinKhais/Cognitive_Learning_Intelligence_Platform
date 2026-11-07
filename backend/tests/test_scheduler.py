@@ -153,6 +153,9 @@ def test_two_jobs_cannot_share_a_name() -> None:
 
 def test_the_app_schedules_its_housekeeping() -> None:
     assert [job.name for job in housekeeping().jobs] == [
+        "transcript-subscriptions",
+        "transcript-scan",
+        "transcript-drafts",
         "stranded-material-sweep",
         "expire-reports",
         "retention-purge",
