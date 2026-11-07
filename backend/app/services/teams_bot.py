@@ -221,8 +221,13 @@ class BotAuthenticator:
         except (TokenValidationError, jwt.PyJWTError) as exc:
             raise _refusal("token", str(exc)) from exc
         # A token stolen from one channel must not be replayed from another.
-        if claims.get("serviceUrl") != service_url:
-            raise _refusal("token", "serviceUrl mismatch")
+        # Bot Framework names the claim serviceurl, all lower case, as its
+        # SDKs read it; serviceUrl is accepted too.
+        claimed = claims.get("serviceurl") or claims.get("serviceUrl")
+        if not isinstance(claimed, str) or _same_url(claimed) != _same_url(service_url):
+            raise _refusal(
+                "token", f"serviceUrl mismatch: token {claimed!r}, activity {service_url!r}"
+            )
         # A key Bot Framework has not endorsed for this channel cannot vouch
         # for an activity claiming to come from it. An empty set endorses
         # nothing in particular, as Bot Framework's SDKs read it.
@@ -238,6 +243,11 @@ class BotAuthenticator:
         tenant = _tenant_of(activity)
         if tenant is None or tenant.lower() != self._tenant_id:
             raise _refusal("origin", f"tenant {tenant!r} is not this deployment's")
+
+
+def _same_url(url: str) -> str:
+    """A service URL as compared: case and a trailing slash do not matter."""
+    return url.strip().rstrip("/").lower()
 
 
 def _tenant_of(activity: TeamsActivity) -> str | None:
