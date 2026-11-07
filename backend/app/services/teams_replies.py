@@ -42,7 +42,9 @@ HELP = (
     "pop up there while the class runs.\n"
     "- **Lecturer:** open the side panel to link a session and run the class. The "
     "full dashboard opens from the Lecturer tab.\n\n"
-    "Write **status** to see whether this meeting has a C.L.I.P session."
+    "Write **@CLIP status** to see whether this meeting has a C.L.I.P session. "
+    "In a meeting chat, start with **@CLIP** and pick it from the list, or the "
+    "bot does not see the message."
 )
 WELCOME = "C.L.I.P is ready in this meeting.\n\n" + HELP
 
@@ -73,7 +75,7 @@ def _meeting_id(activity: TeamsActivity) -> str | None:
 
 async def status_text(db: AsyncSession, meeting_id: str | None) -> str:
     if meeting_id is None:
-        return "Write **status** in a meeting's chat to see that meeting's C.L.I.P session."
+        return "Write **@CLIP status** in a meeting's chat to see that meeting's C.L.I.P session."
     session_id = await meetings.directory.session_for(meeting_id)
     row = (
         (

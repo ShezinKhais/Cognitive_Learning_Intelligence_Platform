@@ -156,8 +156,10 @@ participants, send in-meeting notifications.
    add C.L.I.P from **Apps**. This installs the bot in the meeting chat.
 3. As the meeting's organiser, open the C.L.I.P side panel and pick the
    session. Only the organiser (or an admin) can link a meeting: C.L.I.P asks
-   Teams who organised it. Write `status` to the bot in the meeting chat to
-   check the link.
+   Teams who organised it. Write `@CLIP status` in the meeting chat to check
+   the link: type `@CLIP` and pick the bot from the list, then the word. The
+   bot only sees chat messages that mention it, so `status` on its own gets
+   no reply. `@CLIP help` says what C.L.I.P is.
 4. Start the meeting. The session starts with it. Each student opens the side
    panel, is signed in by Teams, accepts the terms once, and waits for the
    first checkpoint.
@@ -193,8 +195,9 @@ and the real-tenant checks in `docs/teams-checkpoint-notifications.md`.
 | Tabs are blank or say the page cannot be shown | Tunnel not running, or `BASE_URL` in the package is not the tunnel address. |
 | "Sign in with Microsoft" shows an error in Teams | The Application ID URI, scope or authorised Teams clients (step 3.6) are wrong, or admin consent is missing. |
 | "This Microsoft account has no C.L.I.P account yet" | Run step 6, or the account is not in the script's list. |
+| The bot does not answer `help` or `status` | Mention it: type `@CLIP`, pick the bot from the list, then the word. In a meeting chat the bot only sees messages that mention it. |
 | The bot never starts the session | Endpoint address wrong in Bot management, or C.L.I.P was not added to that meeting. |
-| "C.L.I.P is not in this meeting yet" | Teams has not reached the bot from that meeting. Check the endpoint address in Bot management, then remove and re-add C.L.I.P in the meeting, or send `@C.L.I.P status` in its chat. |
+| "C.L.I.P is not in this meeting yet" | Teams has not reached the bot from that meeting. Check the endpoint address in Bot management, then remove and re-add C.L.I.P in the meeting, or send `@CLIP status` in its chat. |
 | "Teams could not confirm who organised this meeting", the bot reads but never replies, no pop-ups | `TEAMS_BOT_TOKEN_TENANT` is set to `botframework.com`. Leave it empty so the bot signs in through your tenant. |
 | No pop-ups | `TEAMS_NOTIFICATIONS_ENABLED` is not true, the permissions in step 7 are not granted, or the student has not opened C.L.I.P in Teams once, so their account is not linked yet. |
 | "Only the meeting's organiser can link a session" | Sign in to Teams as the account that scheduled the meeting, or link it as an admin. |
