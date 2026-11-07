@@ -24,6 +24,7 @@ test.beforeEach(async ({ page, context }) => {
     if (path.includes('/chunks/')) return route.fulfill({ json: { sequence: 0, note: null } })
     return route.fulfill({ json: { configured: true, running: active, session_running: true, capture_id: active ? captureId : null, language: 'en' } })
   })
+  await page.route('**/discussion/automatic-transcripts', route => route.fulfill({ json: { configured: false, enabled: false, subscribed: false, message: 'Automatic fetching disabled.', drafts: [], pending: 0, failed: 0 } }))
   await page.route('**/discussion/transcripts', route => route.fulfill({ json: { enabled: false, items: [], message: 'Import disabled.' } }))
   await page.route('**/discussion', route => route.fulfill({ json: { notes: [], latest_recorded_at: null, session_status: 'active' } }))
   await page.goto('/e2e/harness/index.html?socket=discussion&publisher')
