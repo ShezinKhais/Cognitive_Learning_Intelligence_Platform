@@ -74,7 +74,12 @@ def housekeeping() -> Scheduler:
     return Scheduler(
         [
             ScheduledJob("transcript-subscriptions", timedelta(minutes=1), maintain_subscriptions),
-            ScheduledJob("transcript-scan", timedelta(seconds=30), scan_transcripts),
+            ScheduledJob(
+                "transcript-scan",
+                timedelta(seconds=30),
+                scan_transcripts,
+                first_after=timedelta(seconds=30),
+            ),
             ScheduledJob("transcript-drafts", timedelta(seconds=30), prepare_drafts),
             # Ends materials whose job stopped without recording how it ended.
             ScheduledJob(

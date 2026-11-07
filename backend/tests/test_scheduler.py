@@ -205,3 +205,9 @@ async def test_the_report_expiry_job_expires_reports(monkeypatch: pytest.MonkeyP
 
     assert await run_once(job)
     assert expired == [1]
+
+
+def test_transcript_cleanup_waits_until_after_startup():
+    [job] = [j for j in housekeeping().jobs if j.name == "transcript-scan"]
+    assert job.first_after == timedelta(seconds=30)
+    assert job.every == timedelta(seconds=30)
