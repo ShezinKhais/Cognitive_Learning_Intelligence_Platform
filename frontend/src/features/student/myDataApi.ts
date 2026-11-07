@@ -1,4 +1,4 @@
-import { ApiError, apiAuthenticatedGet, apiAuthenticatedRequest } from '../../api'
+import { ApiError, apiAuthenticatedRequest } from '../../api'
 
 import type { MyDeletionRequest } from './myDeletion'
 
@@ -6,13 +6,13 @@ export { isOpen, type DeletionStatus, type MyDeletionRequest } from './myDeletio
 
 /** Everything C.L.I.P keeps about the signed-in student, as JSON. */
 export function exportMyData(): Promise<Record<string, unknown>> {
-  return apiAuthenticatedGet('/me/data')
+  return apiAuthenticatedRequest('/me/data', { cache: 'no-store' })
 }
 
 /** The latest erasure request, or null when the student never asked. */
-export async function getMyDeletionRequest(): Promise<MyDeletionRequest | null> {
+export async function getMyDeletionRequest(signal?: AbortSignal): Promise<MyDeletionRequest | null> {
   try {
-    return await apiAuthenticatedGet<MyDeletionRequest>('/me/deletion-request')
+    return await apiAuthenticatedRequest<MyDeletionRequest>('/me/deletion-request', { cache: 'no-store', signal })
   } catch (caught) {
     if (caught instanceof ApiError && caught.status === 404) {
       return null
@@ -34,10 +34,13 @@ export function saveJson(value: unknown, filename: string): void {
   const blob = new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.append(link)
-  link.click()
-  link.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  try {
+    link.href = url
+    link.download = filename
+    document.body.append(link)
+    link.click()
+  } finally {
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
 }

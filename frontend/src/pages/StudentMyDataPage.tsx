@@ -1,5 +1,6 @@
-import { useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { Download } from 'lucide-react'
+import { Link } from 'react-router'
 
 import { ApiError } from '../api'
 import { buttonStyles } from '../components/ui/button'
@@ -24,7 +25,7 @@ const STATUS: Record<DeletionStatus, { word: string; tone: Tone; next: string }>
   approved: {
     word: 'Approved',
     tone: 'mixed',
-    next: 'Your data will be erased shortly. You will then be signed out for good.',
+    next: 'An administrator still needs to carry out the erasure. You will be signed out when it is complete.',
   },
   rejected: {
     word: 'Not approved',
@@ -57,21 +58,27 @@ function ExportPanel() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [signIn, setSignIn] = useState(false)
 
-  function download() {
+  const running = useRef(false)
+  async function download() {
+    if (running.current) return
+    running.current = true
     setBusy(true)
     setError(null)
-    exportMyData().then(
-      (data) => {
-        saveJson(data, 'my-clip-data.json')
-        setSaved(true)
-        setBusy(false)
-      },
-      (caught: unknown) => {
-        setError(caught instanceof ApiError ? caught.message : 'Your data could not be downloaded. Try again.')
-        setBusy(false)
-      },
-    )
+    setSaved(false)
+    setSignIn(false)
+    try {
+      const data = await exportMyData()
+      saveJson(data, 'my-clip-data.json')
+      setSaved(true)
+    } catch (caught) {
+      setSignIn(caught instanceof ApiError && caught.status === 401)
+      setError(caught instanceof ApiError ? caught.message : 'Your data could not be downloaded. Try again.')
+    } finally {
+      running.current = false
+      setBusy(false)
+    }
   }
 
   return (
@@ -85,9 +92,10 @@ function ExportPanel() {
           {error}
         </p>
       )}
+      {signIn && <SignInAgain />}
       {saved && !error && (
         <p role="status" className="mt-3 text-sm text-success">
-          Saved as my-clip-data.json.
+          Download started: my-clip-data.json.
         </p>
       )}
       <button type="button" className={buttonStyles({ className: 'mt-4' })} disabled={busy} onClick={download}>
@@ -98,65 +106,76 @@ function ExportPanel() {
   )
 }
 
+function SignInAgain() {
+  return <Link to="/login" state={{ from: '/student/my-data' }} className="mt-2 inline-block underline">Sign in again to open My data</Link>
+}
+
 function ErasurePanel() {
   const [latest, setLatest] = useState<MyDeletionRequest | null | undefined>(undefined)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [signIn, setSignIn] = useState(false)
   const [asking, setAsking] = useState(false)
+  const [checking, setChecking] = useState(false)
+  const pending = useRef<AbortController | null>(null)
 
-  useEffect(() => {
-    getMyDeletionRequest().then(setLatest, () => setLoadError('Your request could not be loaded. Reload the page.'))
+  const refresh = useCallback(async () => {
+    if (pending.current) return
+    const controller = new AbortController()
+    pending.current = controller
+    setChecking(true)
+    try {
+      const found = await getMyDeletionRequest(controller.signal)
+      if (controller.signal.aborted) return
+      setLatest(found); setLoadError(null); setSignIn(false)
+      if (isOpen(found)) setAsking(false)
+    } catch (caught) {
+      if (controller.signal.aborted) return
+      setSignIn(caught instanceof ApiError && caught.status === 401)
+      setLoadError(caught instanceof ApiError ? caught.message : 'Your request status could not be refreshed. Try again.')
+    } finally {
+      if (pending.current === controller) { pending.current = null; setChecking(false) }
+    }
   }, [])
 
-  if (loadError) {
-    return (
-      <Panel title="Erase my data">
-        <p role="alert" className="text-sm text-critical">
-          {loadError}
-        </p>
-      </Panel>
-    )
-  }
-  if (latest === undefined) {
-    return <SkeletonRows label="Loading your request" rows={1} />
-  }
+  useEffect(() => {
+    void refresh()
+    const onFocus = () => { if (document.visibilityState === 'visible') void refresh() }
+    const timer = window.setInterval(onFocus, 30_000)
+    window.addEventListener('focus', onFocus)
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', onFocus); pending.current?.abort(); pending.current = null }
+  }, [refresh])
 
   const status = latest ? STATUS[latest.status] : null
   return (
-    <Panel
-      title="Erase my data"
+    <Panel title="Erase my data"
       description={latest ? sinceVerb('Asked', latest.requested_at) : undefined}
-      actions={status && <Tag tone={status.tone}>{status.word}</Tag>}
-    >
-      {status && <p className="text-sm">{status.next}</p>}
-      {!isOpen(latest) &&
-        (asking ? (
-          <ErasureForm
-            onSent={(sent) => {
-              setLatest(sent)
-              setAsking(false)
-            }}
-            onCancel={() => setAsking(false)}
-          />
-        ) : (
-          <>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Erasing removes your account, answers, engagement and summaries from C.L.I.P. It cannot be undone. A
-              record that a deletion happened is kept, with your name removed.
-            </p>
-            <button
-              type="button"
-              className={buttonStyles({ intent: 'danger', className: 'mt-4' })}
-              onClick={() => setAsking(true)}
-            >
-              Ask to erase my data
-            </button>
-          </>
-        ))}
+      actions={status && <Tag tone={status.tone}>{status.word}</Tag>}>
+      <p className="text-sm text-muted-foreground">Status refreshes every 30 seconds while this page is visible and when you return to it.</p>
+      {loadError && <p role="alert" className="mt-3 text-sm text-critical">{loadError} Any previously shown status may be out of date.</p>}
+      {signIn && <SignInAgain />}
+      <button type="button" className={buttonStyles({ intent: 'secondary', className: 'mt-3' })} disabled={checking} onClick={() => void refresh()}>
+        {checking ? 'Checking status…' : 'Refresh request status'}
+      </button>
+      {latest === undefined && !loadError && <SkeletonRows label="Loading your request" rows={1} />}
+      {status && <p className="mt-3 text-sm" role="status">{status.next}</p>}
+      {latest !== undefined && !isOpen(latest) && (asking ? (
+        <ErasureForm statusUnavailable={!!loadError} onSent={sent => {
+          // A status GET started before this POST must not restore an older state.
+          pending.current?.abort(); pending.current = null; setChecking(false)
+          setLatest(sent); setAsking(false)
+        }} onCancel={() => setAsking(false)} />
+      ) : <>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Erasing removes your account, answers, engagement and summaries from C.L.I.P. It cannot be undone.
+          A record that a deletion happened is kept, with your name removed. Submitting a request does not erase anything immediately.
+        </p>
+        <button type="button" className={buttonStyles({ intent: 'danger', className: 'mt-4' })} disabled={checking || !!loadError} onClick={() => setAsking(true)}>Ask to erase my data</button>
+      </>)}
     </Panel>
   )
 }
 
-function ErasureForm({ onSent, onCancel }: { onSent: (sent: MyDeletionRequest) => void; onCancel: () => void }) {
+function ErasureForm({ onSent, onCancel, statusUnavailable }: { onSent: (sent: MyDeletionRequest) => void; onCancel: () => void; statusUnavailable: boolean }) {
   const [confirmed, setConfirmed] = useState(false)
   const [reason, setReason] = useState('')
   const [sending, setSending] = useState(false)
@@ -164,13 +183,30 @@ function ErasureForm({ onSent, onCancel }: { onSent: (sent: MyDeletionRequest) =
   const reasonId = useId()
   const confirmId = useId()
 
-  function send() {
-    setSending(true)
-    setError(null)
-    requestMyDeletion(reason.trim() || null).then(onSent, (caught: unknown) => {
+  const running = useRef(false)
+  const [signIn, setSignIn] = useState(false)
+  async function send() {
+    if (!confirmed || statusUnavailable || running.current) return
+    running.current = true
+    setSending(true); setError(null); setSignIn(false)
+    try {
+      onSent(await requestMyDeletion(reason.trim() || null))
+    } catch (caught) {
+      // The POST may have committed before its reply was lost, or another tab
+      // may have filed a request. Re-read status; never auto-repeat the POST.
+      const refusal = caught instanceof ApiError && [401, 403, 422, 429].includes(caught.status)
+      if (!refusal) {
+        try {
+          const existing = await getMyDeletionRequest()
+          if (existing && isOpen(existing)) { onSent(existing); return }
+        } catch { /* Keep the original error and let the student refresh status. */ }
+      }
+      setSignIn(caught instanceof ApiError && caught.status === 401)
+      setError(caught instanceof ApiError ? caught.message : 'The request could not be confirmed. Refresh its status before trying again.')
+    } finally {
+      running.current = false
       setSending(false)
-      setError(caught instanceof ApiError ? caught.message : 'The request could not be sent. Try again.')
-    })
+    }
   }
 
   return (
@@ -181,6 +217,7 @@ function ErasureForm({ onSent, onCancel }: { onSent: (sent: MyDeletionRequest) =
         </label>
         <textarea
           id={reasonId}
+          disabled={sending}
           value={reason}
           maxLength={500}
           rows={3}
@@ -191,28 +228,30 @@ function ErasureForm({ onSent, onCancel }: { onSent: (sent: MyDeletionRequest) =
       <label htmlFor={confirmId} className="flex items-start gap-2 text-sm">
         <input
           id={confirmId}
+          disabled={sending}
           type="checkbox"
           className="mt-1"
           checked={confirmed}
           onChange={(event) => setConfirmed(event.target.checked)}
         />
-        I understand my data will be erased for good once an administrator approves this.
+        I understand my data will be erased for good after administrator approval and execution.
       </label>
       {error && (
         <p role="alert" className="text-sm text-critical">
           {error}
         </p>
       )}
+      {signIn && <SignInAgain />}
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
           className={buttonStyles({ intent: 'danger' })}
-          disabled={!confirmed || sending}
+          disabled={!confirmed || sending || statusUnavailable}
           onClick={send}
         >
           {sending ? 'Sending…' : 'Send the request'}
         </button>
-        <button type="button" className={buttonStyles({ intent: 'secondary' })} onClick={onCancel}>
+        <button type="button" className={buttonStyles({ intent: 'secondary' })} disabled={sending} onClick={onCancel}>
           Cancel
         </button>
       </div>
