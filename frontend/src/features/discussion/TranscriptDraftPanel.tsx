@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiAuthenticatedGet, apiAuthenticatedRequest } from '../../api'
+import AutomaticTranscriptPanel from './AutomaticTranscriptPanel'
 import { buttonStyles } from '../../components/ui/button'
 
 export interface DraftMinute {
@@ -15,7 +16,7 @@ interface TranscriptList {
   message: string | null
 }
 
-/** Raw transcript evidence and unpublished drafts stay in this component's memory. */
+/** Manual drafts stay in memory; automatic drafts use the private server queue. */
 export default function TranscriptDraftPanel({ sessionId, publishedIds, onReview }: {
   sessionId: string
   publishedIds: string[]
@@ -58,9 +59,10 @@ export default function TranscriptDraftPanel({ sessionId, publishedIds, onReview
   }
 
   return <section className="space-y-3 rounded-lg border border-border p-4" aria-label="Minutes from Teams transcript">
+    <AutomaticTranscriptPanel sessionId={sessionId} publishedIds={publishedIds} onReview={onReview} />
     <h3 className="font-semibold">Draft minutes from a Teams transcript</h3>
     <p className="text-sm">After class, start with a transcript made in Teams. C.L.I.P imports text and drafts teaching minutes for your review. This does not start a recording or transcription, and does not import audio or video.</p>
-    <p className="text-sm">Participants must be informed and the institution’s transcription and consent requirements met. Speaker labels, email addresses and links are removed before drafting; check for remaining personal details. Raw transcripts are never saved in C.L.I.P. Only minutes you approve and publish are saved.</p>
+    <p className="text-sm">Participants must be informed and the institution’s transcription and consent requirements met. Speaker labels, email addresses and links are removed before drafting; check for remaining personal details. Raw transcripts are never saved in C.L.I.P. Manual drafts remain in this page; automatic drafts use the private, expiring storage described above.</p>
     {error && <p role="alert">{error}</p>}
     {!list && !error && <p role="status">Checking transcript availability…</p>}
     {list?.message && <p>{list.message}</p>}

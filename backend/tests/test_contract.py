@@ -13,6 +13,9 @@ from fastapi.testclient import TestClient
 BACKEND = Path(__file__).resolve().parent.parent
 
 EXPECTED_PATHS = {
+    "/api/v1/teams/transcript-notifications",
+    "/api/v1/sessions/{session_id}/discussion/automatic-transcripts",
+    "/api/v1/sessions/{session_id}/discussion/automatic-transcripts/drafts/{transcript_id}",
     "/api/v1/sessions/{session_id}/live-transcription",
     "/api/v1/sessions/{session_id}/live-transcription/start",
     "/api/v1/sessions/{session_id}/live-transcription/{capture_id}/stop",
@@ -224,7 +227,10 @@ def test_no_event_type_can_carry_raw_media(client: TestClient) -> None:
             if name == "DiscussionOut" and field == "live_transcription_active":
                 assert schema["properties"][field]["type"] == "boolean"
                 continue
-            if name in {"TranscriptDraft", "TranscriptImport"} and field == "transcript_id":
+            if (
+                name in {"TranscriptDraft", "TranscriptImport", "PrivateTranscriptDraft"}
+                and field == "transcript_id"
+            ):
                 definition = schema["properties"][field]
                 assert definition["type"] == "string" and definition["maxLength"] == 2048
                 continue

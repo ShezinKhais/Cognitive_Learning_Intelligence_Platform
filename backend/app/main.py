@@ -29,6 +29,11 @@ from app.services.reports import get_report_queue
 from app.services.retention_tasks import register_database_purges
 from app.services.scheduler import ScheduledJob, Scheduler
 from app.services.teams_notifications import notifications
+from app.services.transcript_automation import (
+    maintain_subscriptions,
+    prepare_drafts,
+    scan_transcripts,
+)
 from app.services.uploads import get_background_processor
 
 settings = get_settings()
@@ -68,6 +73,9 @@ def housekeeping() -> Scheduler:
 
     return Scheduler(
         [
+            ScheduledJob("transcript-subscriptions", timedelta(minutes=1), maintain_subscriptions),
+            ScheduledJob("transcript-scan", timedelta(seconds=30), scan_transcripts),
+            ScheduledJob("transcript-drafts", timedelta(seconds=30), prepare_drafts),
             # Ends materials whose job stopped without recording how it ended.
             ScheduledJob(
                 "stranded-material-sweep",

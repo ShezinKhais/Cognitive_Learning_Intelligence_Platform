@@ -34,9 +34,12 @@ from app.models.teams_meeting_reference import TeamsMeetingReference
 from app.models.teams_participant_mapping import TeamsParticipantMapping
 from app.models.teams_roster_sync import TeamsRosterSync
 from app.models.teams_user_mapping import TeamsUserMapping
+from app.models.transcript_automation import TranscriptAutomation, TranscriptDraftJob
 from app.models.user import User
 
 __all__ = [
+    "TranscriptAutomation",
+    "TranscriptDraftJob",
     "AuditLog",
     "BreakoutRoom",
     "ComprehensionResult",

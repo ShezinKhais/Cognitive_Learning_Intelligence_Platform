@@ -81,3 +81,22 @@ class LiveCaptureStatus(BaseModel):
 class LiveChunkOut(BaseModel):
     sequence: int
     note: DiscussionNoteOut | None = None
+
+
+class AutomaticTranscriptWrite(BaseModel):
+    enabled: bool
+    participant_notice_confirmed: bool = False
+
+
+class PrivateTranscriptDraft(TranscriptDraft):
+    expires_at: datetime
+
+
+class AutomaticTranscriptOut(BaseModel):
+    configured: bool
+    enabled: bool
+    subscribed: bool
+    message: str
+    drafts: list[PrivateTranscriptDraft] = Field(default_factory=list)
+    pending: int = 0
+    failed: int = 0

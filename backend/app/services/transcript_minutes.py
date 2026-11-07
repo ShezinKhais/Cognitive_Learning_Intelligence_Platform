@@ -1,7 +1,8 @@
 """Fetch the linked meeting's transcript and draft reviewable minutes.
 
-Raw VTT and source excerpts live only in the request/browser memory. A draft
-is never a discussion note: publication goes through the existing reviewed PUT.
+Raw VTT lives only in processing memory. Manual drafts stay in the browser;
+automation stores bounded private drafts with expiry. A draft is never a
+discussion note: publication goes through the existing reviewed PUT.
 """
 
 from __future__ import annotations
@@ -87,7 +88,7 @@ async def bounded(client: httpx.AsyncClient, method: str, url: str, **kwargs) ->
                 "Teams transcript access was refused. Check Graph permissions, "
                 "organizer access policy and tenant transcript settings."
             )
-        if response.status_code == 404:
+        if response.status_code in {404, 410}:
             raise ConflictError(
                 "The Teams transcript is not available yet. Try again after processing."
             )

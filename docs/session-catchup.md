@@ -144,11 +144,11 @@ Manual reviewed minutes remain available when import/model access fails.
   a database connection while Graph/model calls run. Two imports may run at a
   time, at most one per staff account per minute. Generation has a four-minute
   deadline; disconnect/cancel stops further work and releases the import slot.
-- C.L.I.P stores no raw VTT, transcript evidence or unpublished draft in its
-  database, application logs, browser local/session storage or backups. Review
-  evidence/drafts live in request/browser memory and disappear on leaving the
-  page. Only approved note text/timestamps are persisted, with the existing
-  session retention/purge cascade. The configured AI service processes transcript
+- C.L.I.P stores no raw VTT in its database or logs. Manual import drafts and
+  evidence stay in request/browser memory. Automatic fetching stores private
+  summaries and short evidence excerpts for up to seven days, with the shorter
+  session retention taking precedence. See automatic setup below. These drafts
+  are not student/chatbot sources. Approved notes follow session retention. The configured AI service processes transcript
   text; deploy it within the institution's approved processing environment.
 - Microsoft 365 retains its own transcript and any recording under its policies.
   Deleting C.L.I.P notes does not erase those originals. Recording/transcription
@@ -162,3 +162,67 @@ Microsoft reference documentation:
 - [Get transcript content](https://learn.microsoft.com/en-us/graph/api/calltranscript-get?view=graph-rest-1.0)
 - [Transcription settings](https://learn.microsoft.com/en-us/microsoftteams/meeting-transcription-captions)
 - [Recording/transcription consent](https://learn.microsoft.com/en-gb/microsoftteams/recording-transcription-overview)
+
+
+## Automatic post-meeting fetching (optional)
+
+Enable `TEAMS_TRANSCRIPTS_ENABLED=true` and
+`TEAMS_TRANSCRIPTS_AUTOMATIC_ENABLED=true`, and configure
+`TEAMS_TRANSCRIPT_CALLBACK_URL=https://YOUR-HOST/api/v1/teams/transcript-notifications`.
+The callback must be publicly reachable over HTTPS, including Microsoft's POST
+validation challenge. The same endpoint handles basic change and lifecycle
+notifications. Reverse proxies must allow this route through without login.
+No encryption certificate is needed because `includeResourceData=false`; callbacks
+carry only identifiers/hints, not transcript bodies. The existing Graph application
+permission, tenant consent and organizer access policy above are still required.
+Docker Compose passes these settings to the backend. Migrate the database first.
+
+In the lecturer's Discussion minutes panel, confirm institutional participant
+notice/consent and click **Enable automatic transcript fetching** for the linked
+meeting. Enable it before starting transcription in Teams: Microsoft sends transcript
+notifications only for subscriptions established before transcription starts. Wait
+for **Graph subscription is active**. C.L.I.P does not start transcription or
+recording in Teams and never downloads recording files. Channel/ad-hoc calls are
+not supported by this workflow; use a scheduled linked meeting.
+
+A background job creates a meeting-specific Graph subscription, renews it six hours
+before expiry, handles removed/reauthorization/missed lifecycle hints, and recreates
+expired subscriptions. Each callback verifies tenant, stored subscription ID and a
+constant-time client-state secret, then wakes a database-backed scan. Incoming resource
+URLs are ignored. Every five minutes after class ends, a fallback scan also checks
+the verified linked meeting, allowing recovery from missed notifications/restarts or
+late enablement. Automatic fetching ends 48 hours after class. Re-linking stops the old
+meeting's workflow. Manual import remains available for later transcripts.
+
+Transcript IDs deduplicate jobs across repeated callbacks/scans/restarts. One
+background draft runs at a time using the existing AI queue; six attempts with
+bounded backoff handle transient Graph/model errors. A ten-minute processing lease
+recovers interrupted work. A maximum of 24 transcript artifacts per class is queued;
+oversized/unsafe/ungrounded content is refused using the manual import safeguards.
+The raw VTT lives only in server memory during processing. No database connection
+is held while fetching text or calling the model.
+
+Private draft summaries and short evidence excerpts survive navigation/restart for
+lecturer review, are inaccessible to students/other lecturers, and expire within
+seven days of fetching or the shorter session retention. A 30-second cleanup
+removes expired evidence even when automatic fetching is globally disabled.
+Per-session disable discards unpublished drafts; per-draft discard is also available.
+Processing rechecks state before saving so disabling/discarding cannot restore text.
+Session deletion cascades to subscription metadata, queue records and private drafts.
+Expired/discarded metadata is retained only with its session to prevent reimport.
+Database backups can contain private draft text until their existing backup expiry;
+expiry removes it from the live database, not historical backup copies.
+
+Automatic drafts never publish themselves. Review evidence, correct timestamps and
+remove private details/assessment answers in the existing publishing form. Only
+explicitly published minutes become student chatbot sources.
+
+Tenant acceptance still requires a real configured tenant: subscribe before Teams
+transcription starts; finish the C.L.I.P class and Teams meeting; confirm a private
+draft arrives without manual import; test renewal/missed notifications, duplicate
+delivery, denied Graph access, teacher publication and student isolation. Automated
+Graph tests use mocked Microsoft endpoints and cannot certify tenant permissions.
+
+- [Graph transcript notifications, scopes and lifecycle requirements](https://learn.microsoft.com/en-us/graph/teams-changenotifications-callrecording-and-calltranscript)
+- [Webhook validation and delivery](https://learn.microsoft.com/en-us/graph/change-notifications-delivery-webhooks)
+- [Subscription lifecycle handling](https://learn.microsoft.com/en-us/graph/change-notifications-lifecycle-events)

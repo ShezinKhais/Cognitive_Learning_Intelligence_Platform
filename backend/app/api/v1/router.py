@@ -25,6 +25,7 @@ from app.api.v1 import (
     sessions,
     student_review,
     teams,
+    transcript_automation,
     ws,
 )
 
@@ -38,7 +39,9 @@ api_router.include_router(student_review.router)
 api_router.include_router(my_data.router)
 api_router.include_router(reports.router)
 api_router.include_router(chat.router)
+api_router.include_router(transcript_automation.router)
 api_router.include_router(discussion.router)
+api_router.include_router(transcript_automation.webhook_router)
 api_router.include_router(live_transcription.router)
 api_router.include_router(consideration.router)
 api_router.include_router(meetings.router)

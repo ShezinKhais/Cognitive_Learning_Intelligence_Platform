@@ -93,8 +93,13 @@ export default function PrivacyPage() {
           the imported Teams transcript and unpublished draft evidence remain private.
         </p>
         <p>
-          For post-meeting imports, C.L.I.P does not save the raw Teams transcript or unpublished drafts in its database, browser storage or logs.
-          Drafts and source excerpts are held temporarily in the lecturer&apos;s page and disappear on leaving it.
+          C.L.I.P does not save raw Teams transcripts, audio or recording files from these imports. Manual drafts
+          stay temporarily in the lecturer&apos;s page. If an authorized lecturer enables automatic fetching for a
+          linked meeting after confirming participant notice, Graph notifications trigger post-meeting retrieval
+          and private drafting. Private draft summaries and short evidence excerpts are stored for up to 7 days
+          (or the shorter configured session retention), then removed. They are visible only to the responsible
+          lecturer and administrators, and can be discarded sooner. Disabling fetching discards these drafts.
+          Graph access requires institutional permission; C.L.I.P does not start Teams transcription.
           Published minutes follow session retention and deletion. The original transcript and any Teams recording
           remain in Microsoft 365 under the institution&apos;s separate access, retention and deletion policies;
           deleting C.L.I.P minutes does not delete Microsoft&apos;s copy.
