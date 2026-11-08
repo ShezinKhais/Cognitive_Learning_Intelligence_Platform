@@ -71,6 +71,7 @@ EXPECTED_PATHS = {
     "/api/v1/sessions/{session_id}/questions",
     "/api/v1/sessions/{session_id}/start",
     "/api/v1/sessions/{session_id}/end",
+    "/api/v1/sessions/{session_id}/copy",
     # Added in Phase 3 for the pause deliverable. Additive: no existing route
     # or field changed.
     "/api/v1/sessions/{session_id}/pause",

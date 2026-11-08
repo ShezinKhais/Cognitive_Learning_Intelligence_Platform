@@ -377,6 +377,8 @@ async function request<T>(
     throw error
   }
 
+  // A delete answers 204 with no body to parse.
+  if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
 }
 

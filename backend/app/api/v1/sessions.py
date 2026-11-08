@@ -38,11 +38,13 @@ from app.schemas.session import (
     DeliverableQuestionOut,
     EngagementOut,
     ResponseOut,
+    SessionCopyRequest,
     SessionCreateRequest,
     SessionOut,
     SessionReadinessOut,
     SessionStatus,
     StudentSessionSummary,
+    SessionUpdateRequest,
     TopicDifficultyOut,
 )
 from app.services import alert_store, breakout, session_lifecycle, session_reads
@@ -98,6 +100,59 @@ async def get_session(
     db: DbSession,
 ) -> SessionOut:
     return await session_reads.get_session(db, principal, session_id)
+
+
+@router.patch("/{session_id}", response_model=SessionOut, dependencies=_staff)
+@audit_action("SESSION_UPDATED")
+async def update_session(
+    session_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+    payload: SessionUpdateRequest | None = None,
+) -> SessionOut:
+    """Rename a session, or move the start of one that has not started (409
+    once it has)."""
+    return await session_lifecycle.update_session(
+        db, principal, session_id, payload or SessionUpdateRequest()
+    )
+
+
+@router.post(
+    "/{session_id}/copy",
+    response_model=SessionOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=_staff,
+)
+@audit_action("SESSION_CREATED")
+async def copy_session(
+    session_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+    payload: SessionCopyRequest | None = None,
+) -> SessionOut:
+    """Prepare the same class again, for the same course."""
+    return await session_lifecycle.copy_session(
+        db, principal, session_id, payload or SessionCopyRequest()
+    )
+
+
+@router.delete(
+    "/{session_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=_staff
+)
+@audit_action("SESSION_DELETED")
+async def delete_session(
+    session_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> None:
+    """Remove a cancelled session (409 for any other)."""
+    await session_lifecycle.delete_session(db, principal, session_id)
 
 
 @router.get(

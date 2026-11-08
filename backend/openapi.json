@@ -3700,6 +3700,37 @@
         "title": "RosterStudentAdd",
         "type": "object"
       },
+      "SessionCopyRequest": {
+        "description": "Prepare a new session for the same course. The title defaults to the\noriginal's, and the start to now.",
+        "properties": {
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "SessionCopyRequest",
+        "type": "object"
+      },
       "SessionCreateRequest": {
         "properties": {
           "course_code": {
@@ -4056,6 +4087,37 @@
         ],
         "title": "SessionStatus",
         "type": "string"
+      },
+      "SessionUpdateRequest": {
+        "description": "Rename a session, or move one that has not started. Fields left out\nstay as they are.",
+        "properties": {
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "SessionUpdateRequest",
+        "type": "object"
       },
       "StudentDataExport": {
         "properties": {
@@ -7420,6 +7482,41 @@
       }
     },
     "/api/v1/sessions/{session_id}": {
+      "delete": {
+        "description": "Remove a cancelled session (409 for any other).",
+        "operationId": "delete_session_api_v1_sessions__session_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Session",
+        "tags": [
+          "sessions"
+        ]
+      },
       "get": {
         "operationId": "get_session_api_v1_sessions__session_id__get",
         "parameters": [
@@ -7457,6 +7554,65 @@
           }
         },
         "summary": "Get Session",
+        "tags": [
+          "sessions"
+        ]
+      },
+      "patch": {
+        "description": "Rename a session, or move the start of one that has not started (409\nonce it has).",
+        "operationId": "update_session_api_v1_sessions__session_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SessionUpdateRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Session",
         "tags": [
           "sessions"
         ]
@@ -7642,6 +7798,67 @@
         "summary": "Session Chat",
         "tags": [
           "chat"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/copy": {
+      "post": {
+        "description": "Prepare the same class again, for the same course.",
+        "operationId": "copy_session_api_v1_sessions__session_id__copy_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SessionCopyRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Copy Session",
+        "tags": [
+          "sessions"
         ]
       }
     },
