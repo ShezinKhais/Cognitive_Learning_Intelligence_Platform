@@ -940,19 +940,34 @@ async def test_a_lecturer_writes_their_own_question(db_client, app):
         mcq = test_client.post(
             url, json={"prompt": " Which is a prime? ", "options": ["4", "7"], "correct_option": 1}
         )
-        free = test_client.post(url, json={"type": "free_text", "prompt": "Explain recursion."})
-        broken = test_client.post(url, json={"prompt": "Pick one", "options": ["a"], "correct_option": 0})
+        free = test_client.post(
+            url,
+            json={
+                "type": "free_text",
+                "prompt": "Explain recursion.",
+                "reference_answer": "A function that calls itself on a smaller input.",
+                "key_points": ["calls itself", "base case"],
+            },
+        )
+        unmarkable = test_client.post(url, json={"type": "free_text", "prompt": "Explain loops."})
+        broken = test_client.post(
+            url, json={"prompt": "Pick one", "options": ["a"], "correct_option": 0}
+        )
         no_key = test_client.post(url, json={"prompt": "Pick one", "options": ["a", "b"]})
 
         assert mcq.status_code == 201, mcq.text
         assert (mcq.json()["status"], mcq.json()["prompt"]) == ("staged", "Which is a prime?")
         assert free.status_code == 201
         assert free.json()["options"] is None
+        assert unmarkable.status_code == 422
         assert broken.status_code == 422
         assert no_key.status_code == 422
 
         _as(app, uuid4(), Role.LECTURER, "other@uni.test")
-        assert test_client.post(url, json={"type": "free_text", "prompt": "x"}).status_code in (403, 404)
+        assert test_client.post(url, json={"type": "free_text", "prompt": "x"}).status_code in (
+            403,
+            404,
+        )
     finally:
         await _cleanup_material(session_factory, material_id, question_id)
         app.dependency_overrides.pop(get_principal, None)

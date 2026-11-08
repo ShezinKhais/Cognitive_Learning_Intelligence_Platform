@@ -2756,6 +2756,23 @@
             "$ref": "#/components/schemas/Difficulty",
             "default": "medium"
           },
+          "key_points": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 500,
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What a full written answer covers. Needed for it to be marked.",
+            "title": "Key Points"
+          },
           "options": {
             "anyOf": [
               {
@@ -2777,6 +2794,19 @@
             "minLength": 1,
             "title": "Prompt",
             "type": "string"
+          },
+          "reference_answer": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A model answer. Needed for a written-answer question to be marked.",
+            "title": "Reference Answer"
           },
           "topic": {
             "anyOf": [

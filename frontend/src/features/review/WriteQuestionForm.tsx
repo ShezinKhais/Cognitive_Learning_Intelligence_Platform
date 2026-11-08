@@ -22,6 +22,8 @@ export default function WriteQuestionForm({
   const [options, setOptions] = useState(['', ''])
   const [correct, setCorrect] = useState(0)
   const [difficulty, setDifficulty] = useState<Difficulty>('medium')
+  const [model, setModel] = useState('')
+  const [points, setPoints] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -32,13 +34,19 @@ export default function WriteQuestionForm({
     if (type === 'mcq' && (filled.some((option) => !option) || new Set(filled).size !== filled.length)) {
       return setError('Fill in every option, each one different.')
     }
+    const keyPoints = points.split('\n').map((point) => point.trim()).filter(Boolean)
+    if (type === 'free_text' && (!model.trim() || keyPoints.length === 0)) {
+      return setError('Add a model answer and at least one key point, so answers can be marked.')
+    }
     setSaving(true)
     setError(null)
     writeQuestion(materialId, {
       type,
       prompt: prompt.trim(),
       difficulty,
-      ...(type === 'mcq' ? { options: filled, correct_option: correct } : {}),
+      ...(type === 'mcq'
+        ? { options: filled, correct_option: correct }
+        : { reference_answer: model.trim(), key_points: keyPoints }),
     }).then(onSaved, (caught: unknown) => {
       setSaving(false)
       setError(caught instanceof ApiError ? caught.message : 'The question could not be saved.')
@@ -121,6 +129,32 @@ export default function WriteQuestionForm({
             </button>
           )}
         </fieldset>
+      )}
+
+      {type === 'free_text' && (
+        <>
+          <label htmlFor={`${id}-model`} className="mt-3 block text-sm font-semibold">
+            Model answer
+          </label>
+          <textarea
+            id={`${id}-model`}
+            rows={2}
+            maxLength={1000}
+            value={model}
+            onChange={(event) => setModel(event.target.value)}
+            className={FIELD}
+          />
+          <label htmlFor={`${id}-points`} className="mt-3 block text-sm font-semibold">
+            Key points <span className="font-normal text-muted-foreground">(one per line, used to mark answers)</span>
+          </label>
+          <textarea
+            id={`${id}-points`}
+            rows={3}
+            value={points}
+            onChange={(event) => setPoints(event.target.value)}
+            className={FIELD}
+          />
+        </>
       )}
 
       <label htmlFor={`${id}-difficulty`} className="mt-3 block text-sm font-semibold">

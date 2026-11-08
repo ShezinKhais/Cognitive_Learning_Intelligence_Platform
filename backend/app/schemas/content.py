@@ -147,6 +147,16 @@ class QuestionCreateRequest(BaseModel):
     correct_option: int | None = Field(default=None, ge=0, lt=MAX_OPTIONS)
     difficulty: Difficulty = Difficulty.MEDIUM
     topic: str | None = Field(default=None, max_length=255)
+    reference_answer: str | None = Field(
+        default=None,
+        max_length=MAX_PROMPT_CHARS,
+        description="A model answer. Needed for a written-answer question to be marked.",
+    )
+    key_points: list[Annotated[str, Field(max_length=MAX_OPTION_CHARS)]] | None = Field(
+        default=None,
+        max_length=10,
+        description="What a full written answer covers. Needed for it to be marked.",
+    )
 
 
 # Far above any one material's question count. Unbounded, a single request
