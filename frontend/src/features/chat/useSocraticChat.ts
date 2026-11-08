@@ -21,8 +21,10 @@ import type { ChatExchange, ChatState } from './chatTypes'
 // this tab: a shared computer does not show the next person the transcript.
 const KEPT = 20
 
-function storageKey(sessionId: string, discussion: boolean): string {
-  return `clip.tutor.${sessionId}.${discussion ? 'discussion' : 'material'}`
+function storageKey(sessionId: string, discussion: boolean, range: string): string {
+  // Each discussion range is its own conversation: an answer about the last
+  // 15 minutes is not context for a question about the whole class.
+  return `clip.tutor.${sessionId}.${discussion ? `discussion.${range}` : 'material'}`
 }
 
 function restore(key: string): ChatState {
@@ -37,7 +39,7 @@ function restore(key: string): ChatState {
 }
 
 export function useSocraticChat(sessionId: string, discussionSince?: string, discussionUntil?: string, discussion = false, discussionRollingMinutes?: number) {
-  const key = storageKey(sessionId, discussion)
+  const key = storageKey(sessionId, discussion, `${discussionSince ?? 'all'}.${discussionRollingMinutes ?? ''}`)
   const [state, dispatch] = useReducer(chatReducer, key, restore)
   const controller = useRef<AbortController | null>(null)
 

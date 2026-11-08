@@ -122,8 +122,21 @@ const LOGOUT_WAIT_MS = 5000
  * sent with keepalive so navigating does not cancel it, but only its answer
  * proves the cookie is gone.
  */
+/** Tutor transcripts kept for this tab, so the next person on a shared
+ * computer does not see them after a sign-out. */
+function forgetTutorTranscripts(): void {
+  try {
+    for (const key of Object.keys(window.sessionStorage)) {
+      if (key.startsWith('clip.tutor.')) window.sessionStorage.removeItem(key)
+    }
+  } catch {
+    // Storage blocked: nothing was kept.
+  }
+}
+
 export function clearAccessToken(): Promise<boolean> {
   forgetAccessToken()
+  forgetTutorTranscripts()
   authChannel?.postMessage('signed-out')
   const cleared = fetch(apiUrl('/auth/logout'), {
     method: 'POST',
