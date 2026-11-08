@@ -37,8 +37,19 @@ async def write_question(
             )
         options = [option.strip() for option in payload.options]
         correct = payload.correct_option
+        reference, points = None, None
     else:
         options, correct = None, None
+        # Without both, a written answer is never marked: free_text_marking
+        # needs them to compare an answer against.
+        reference = (payload.reference_answer or "").strip()
+        points = [point.strip() for point in payload.key_points or [] if point.strip()]
+        if not reference or not points:
+            raise ValidationError(
+                "A written-answer question needs a model answer and at least one key point, "
+                "so answers to it can be marked.",
+                {"field": "reference_answer"},
+            )
     validate_question_shape(prompt, options, correct)
     row = Question(
         source_material_id=material_id,
@@ -50,6 +61,8 @@ async def write_question(
         options=options,
         correct_option=correct,
         topic=(payload.topic or "").strip() or None,
+        reference_answer=reference,
+        key_points=points,
         reviewed_by=principal.user_id,
         reviewed_at=datetime.now(UTC),
     )

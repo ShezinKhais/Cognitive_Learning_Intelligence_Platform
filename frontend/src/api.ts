@@ -555,6 +555,8 @@ export interface WriteQuestionPayload {
   options?: string[]
   correct_option?: number
   difficulty?: Difficulty
+  reference_answer?: string
+  key_points?: string[]
 }
 
 // A question the lecturer writes, ready to send once saved.

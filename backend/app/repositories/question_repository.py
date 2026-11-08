@@ -282,6 +282,17 @@ class QuestionRepository:
                 {"current_status": current, "requested_status": status},
             )
 
+        if current == "staged" and status == "draft":
+            # A class may claim the question while this request runs. Read
+            # it again under a row lock, so a delivered question is never
+            # written back to draft.
+            await self.session.refresh(question, with_for_update=True)
+            current = question.status
+            if current != "staged":
+                raise ConflictError(
+                    f"Cannot move a question from '{current}' to 'draft'.",
+                    {"current_status": current, "requested_status": status},
+                )
         if current == "staged" and status == "draft" and question.session_id is not None:
             raise ConflictError(
                 "This question was claimed by a class, so it stays ready to send.",
