@@ -122,6 +122,21 @@ async def in_force(db: AsyncSession, user_id: UUID) -> ConsiderationRequest | No
     )
 
 
+async def needs_in_force(db: AsyncSession, user_id: UUID) -> list[str]:
+    """Every need from every approved request that applies today. A student
+    may hold more than one, such as an open-ended one and a shorter one."""
+    rows = await db.scalars(
+        select(ConsiderationRequest.needs)
+        .join(Student, Student.student_id == ConsiderationRequest.student_id)
+        .where(
+            Student.user_id == user_id,
+            ConsiderationRequest.status == "approved",
+            ConsiderationRequest.until.is_(None) | (ConsiderationRequest.until >= _today()),
+        )
+    )
+    return sorted({need for needs in rows for need in needs})
+
+
 async def list_requests(
     db: AsyncSession, *, pending_only: bool, limit: int, offset: int
 ) -> Page[ConsiderationAdminOut]:

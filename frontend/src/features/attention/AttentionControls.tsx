@@ -107,15 +107,15 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
           camera: user.consents.includes('camera'),
           microphone: user.consents.includes('microphone'),
         }
-        if (!consents.monitoring) return
-        // An approved "I cannot use a camera" accommodation wins over an
-        // earlier opt-in: the camera is never started for this student.
+        // An approved "I cannot use a camera" accommodation wins over any
+        // opt-in, now or later in the class: the camera is never offered.
         getMyRequest().then(
           (mine) => (mine.in_force ?? []).includes('camera'),
           () => false,
         ).then((noCamera) => {
           if (cancelled) return
           if (noCamera) setCameraExcused(true)
+          if (!consents.monitoring) return
           const camera = consents.camera && !noCamera
           setSavedConsent(consents)
           setChoice({ camera, microphone: consents.microphone })
