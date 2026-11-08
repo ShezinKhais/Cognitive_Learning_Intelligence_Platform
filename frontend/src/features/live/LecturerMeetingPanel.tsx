@@ -321,7 +321,20 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
           )}
 
           {(status === 'ended' || status === 'cancelled') && (
-            <p className="mt-3 text-sm text-muted-foreground">This session is no longer running.</p>
+            <>
+              <p className="mt-3 text-sm text-muted-foreground">This session is no longer running.</p>
+              {status === 'ended' && (
+                <a
+                  href={`/lecturer/sessions/${encodeURIComponent(sessionId)}/results`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={buttonStyles({ className: 'mt-3 w-full' })}
+                >
+                  See the results
+                  <ExternalLink size={14} aria-hidden />
+                </a>
+              )}
+            </>
           )}
         </section>
 

@@ -26,6 +26,7 @@ export default function ConsentPage() {
   const [user, setUser] = useState<CurrentUser | null>(null)
 
   const [terms, setTerms] = useState(false)
+  const [alreadyAccepted, setAlreadyAccepted] = useState(false)
   const [monitoring, setMonitoring] = useState(false)
   const [camera, setCamera] = useState(false)
   const [microphone, setMicrophone] = useState(false)
@@ -47,6 +48,7 @@ export default function ConsentPage() {
         setUser(currentUser)
 
         setTerms(currentUser.consents.includes('terms'))
+        setAlreadyAccepted(currentUser.consents.includes('terms'))
 
         if (currentUser.role === 'student') {
           setMonitoring(
@@ -257,8 +259,16 @@ export default function ConsentPage() {
         )}
 
         <button type="submit" disabled={saving || !terms} className={cn(buttonStyles(), 'mt-6 w-full py-2.5')}>
-          {saving ? 'Saving…' : 'Continue'}
+          {saving ? 'Saving…' : alreadyAccepted ? 'Save my choices' : 'Continue'}
         </button>
+        {alreadyAccepted && (
+          <Link
+            to={intendedPathForRole(user.role, undefined)}
+            className={cn(buttonStyles({ intent: 'secondary' }), 'mt-3 w-full py-2.5')}
+          >
+            Keep my current choices
+          </Link>
+        )}
       </form>
       {isStudent && (
         <p className="mt-4 text-sm text-muted-foreground">

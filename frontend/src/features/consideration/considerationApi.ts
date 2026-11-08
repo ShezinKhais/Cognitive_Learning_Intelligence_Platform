@@ -49,7 +49,7 @@ const json = (body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 })
 
-export function getMyRequest(): Promise<{ current: ConsiderationRequest | null }> {
+export function getMyRequest(): Promise<{ current: ConsiderationRequest | null; in_force?: ConsiderationNeed[] }> {
   return apiAuthenticatedRequest(MINE)
 }
 

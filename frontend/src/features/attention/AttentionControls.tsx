@@ -1,6 +1,7 @@
 import { Camera, Crosshair, Info, Mic, Power, ShieldCheck } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getCurrentUser, recordConsent } from '../../api'
+import { getMyRequest } from '../consideration/considerationApi'
 import { calibrateCamera, startCamera, startMicrophone, type CalibrationResult } from './localSensors'
 import { awayDurationSeconds, nextAwayStart } from './awayDuration'
 import { useAttentionReporter } from './useAttentionReporter'
@@ -94,6 +95,7 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
   // still asks for permission the first time. Stopping one keeps it stopped
   // for the rest of this visit.
   const [given, setGiven] = useState<{ camera: boolean; microphone: boolean } | null>(null)
+  const [cameraExcused, setCameraExcused] = useState(false)
   const autoStarted = useRef(false)
   useEffect(() => {
     let cancelled = false
@@ -106,9 +108,19 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
           microphone: user.consents.includes('microphone'),
         }
         if (!consents.monitoring) return
-        setSavedConsent(consents)
-        setChoice({ camera: consents.camera, microphone: consents.microphone })
-        setGiven({ camera: consents.camera, microphone: consents.microphone })
+        // An approved "I cannot use a camera" accommodation wins over an
+        // earlier opt-in: the camera is never started for this student.
+        getMyRequest().then(
+          (mine) => (mine.in_force ?? []).includes('camera'),
+          () => false,
+        ).then((noCamera) => {
+          if (cancelled) return
+          if (noCamera) setCameraExcused(true)
+          const camera = consents.camera && !noCamera
+          setSavedConsent(consents)
+          setChoice({ camera, microphone: consents.microphone })
+          setGiven({ camera, microphone: consents.microphone })
+        })
       },
       () => {},
     )
@@ -235,8 +247,13 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
         </p>
       </div>
 
+      {cameraExcused && (
+        <p className="mt-4 text-sm text-muted-foreground">
+          Your camera is never used, as agreed in your special consideration.
+        </p>
+      )}
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        {(['camera', 'microphone'] as const).map(sensor => {
+        {(['camera', 'microphone'] as const).filter(sensor => !(sensor === 'camera' && cameraExcused)).map(sensor => {
           const Icon = sensor === 'camera' ? Camera : Mic
           const deviceStatus = statusOf(sensor)
           return (

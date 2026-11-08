@@ -763,10 +763,28 @@ export default function LecturerLiveSessionPage() {
                 'ended' ||
                 sessionState?.status ===
                   'cancelled') && (
-                <p className="text-sm text-muted-foreground">
-                  This session is no
-                  longer active.
-                </p>
+                <div className="flex flex-col gap-2">
+                  <p className="text-sm text-muted-foreground">
+                    This session is no
+                    longer active.
+                  </p>
+                  {sessionState?.status === 'ended' && sessionId && (
+                    <div className="flex flex-wrap gap-2">
+                      <Link
+                        to={`/lecturer/sessions/${encodeURIComponent(sessionId)}/results`}
+                        className={buttonStyles()}
+                      >
+                        See the results
+                      </Link>
+                      <Link
+                        to={`/lecturer/sessions/${encodeURIComponent(sessionId)}/report`}
+                        className={buttonStyles({ intent: 'secondary' })}
+                      >
+                        Open the report
+                      </Link>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </Panel>

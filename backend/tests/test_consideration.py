@@ -54,7 +54,7 @@ async def test_a_request_is_sent_seen_by_an_admin_and_approved(db, app) -> None:
     client, factory, course = await _enrolled(db, app)
     classroom.accommodations.set(STUDENT_ID, False)
 
-    assert client.get(MINE).json() == {"current": None}
+    assert client.get(MINE).json() == {"current": None, "in_force": []}
     sent = client.post(
         MINE, json={"needs": ["camera", "pace", "camera"], "note": "  Doctor's letter on file  "}
     )
@@ -81,6 +81,8 @@ async def test_a_request_is_sent_seen_by_an_admin_and_approved(db, app) -> None:
 
     sign_in_as(app, STUDENT_ID, Role.STUDENT)
     assert client.get(MINE).json()["current"]["decision_note"] == "Approved for term"
+    # The approved needs now apply, so the live page can honour them.
+    assert client.get(MINE).json()["in_force"] == mine["needs"]
 
 
 async def test_only_one_request_waits_at_a_time_and_it_can_be_withdrawn(db, app) -> None:  # noqa: ANN001

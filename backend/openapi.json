@@ -2225,7 +2225,7 @@
         "type": "object"
       },
       "MyConsiderationOut": {
-        "description": "The student's most recent request, if any.",
+        "description": "The student's most recent request, if any, and the needs of the\napproved request that applies today, which may be an older one.",
         "properties": {
           "current": {
             "anyOf": [
@@ -2236,6 +2236,13 @@
                 "type": "null"
               }
             ]
+          },
+          "in_force": {
+            "items": {
+              "$ref": "#/components/schemas/ConsiderationNeed"
+            },
+            "title": "In Force",
+            "type": "array"
           }
         },
         "required": [

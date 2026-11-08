@@ -54,7 +54,11 @@ admin = APIRouter(
 @mine.get("", response_model=MyConsiderationOut)
 async def my_request(principal: CurrentUser, db: DbSession) -> MyConsiderationOut:
     """The student's most recent request and where it stands."""
-    return MyConsiderationOut(current=await consideration.my_request(db, principal.user_id))
+    granted = await consideration.in_force(db, principal.user_id)
+    return MyConsiderationOut(
+        current=await consideration.my_request(db, principal.user_id),
+        in_force=list(granted.needs) if granted else [],
+    )
 
 
 @mine.post("", response_model=ConsiderationOut, status_code=status.HTTP_201_CREATED)

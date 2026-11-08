@@ -46,8 +46,32 @@ const LOCAL_ATTENTION_ENABLED =
 
 export default function StudentLiveSessionPage() {
   const { sessionId } = useParams<{ sessionId: string }>()
-  const { sessions } = useStudentApp()
+  const { sessions, refreshSessions } = useStudentApp()
   const session = sessions.find((candidate) => candidate.id === sessionId)
+  // The list is loaded at sign-in, so a class that started since then is not
+  // in it yet. Look again once before saying the session is unavailable.
+  const [checked, setChecked] = useState<string | null>(null)
+  const missing = Boolean(sessionId) && !session
+
+  useEffect(() => {
+    if (!missing || !sessionId || checked === sessionId) return
+    let current = true
+    refreshSessions().then(
+      () => current && setChecked(sessionId),
+      () => current && setChecked(sessionId),
+    )
+    return () => {
+      current = false
+    }
+  }, [missing, sessionId, checked, refreshSessions])
+
+  if (missing && checked !== sessionId) {
+    return (
+      <div className="grid place-items-center bg-background p-6" role="status">
+        <p className="text-sm text-muted-foreground">Finding your class...</p>
+      </div>
+    )
+  }
 
   if (!sessionId || !session) {
     return (
@@ -249,7 +273,6 @@ export function LiveSessionPanel({
                   sessionId={session.id}
                   sessionStatus={state.sessionStatus}
                   paused={state.paused}
-                  compact={compact}
                 />
               )}
             </motion.div>
@@ -404,11 +427,14 @@ function CheckpointCard({
               ? 'bg-critical/10 text-critical'
               : 'bg-secondary text-secondary-foreground'
           }`}
-          aria-label={`${secondsRemaining} seconds remaining`}
+          aria-hidden="true"
         >
           <Clock3 aria-hidden="true" size={16} />
           {secondsRemaining}s
         </div>
+        {/* The visible count changes every second; a screen reader hears
+            only the milestones. */}
+        <span className="sr-only">{countdownMilestone(secondsRemaining)}</span>
       </div>
 
       <div
@@ -667,12 +693,10 @@ function WaitingCard({
   sessionId,
   sessionStatus,
   paused,
-  compact,
 }: {
   sessionId: string
   sessionStatus: StudentSession['status']
   paused: boolean
-  compact: boolean
 }) {
   const ended =
     sessionStatus === 'ended' ||
@@ -710,7 +734,7 @@ function WaitingCard({
             : 'Stay on this page. The lecturer’s next question will appear automatically.'}
       </p>
 
-      {sessionStatus === 'ended' && !compact && (
+      {sessionStatus === 'ended' && (
         <Link
           to={`/student/session/${sessionId}/summary`}
           className={`${buttonStyles()} mt-5`}
@@ -720,6 +744,13 @@ function WaitingCard({
       )}
     </div>
   )
+}
+
+function countdownMilestone(seconds: number): string {
+  if (seconds <= 0) return 'Time is up.'
+  if (seconds <= 5) return '5 seconds left.'
+  if (seconds <= 10) return '10 seconds left.'
+  return ''
 }
 
 function ConnectionNotice({

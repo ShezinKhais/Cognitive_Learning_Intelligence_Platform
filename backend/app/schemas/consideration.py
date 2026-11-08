@@ -56,9 +56,11 @@ class ConsiderationOut(BaseModel):
 
 
 class MyConsiderationOut(BaseModel):
-    """The student's most recent request, if any."""
+    """The student's most recent request, if any, and the needs of the
+    approved request that applies today, which may be an older one."""
 
     current: ConsiderationOut | None
+    in_force: list[ConsiderationNeed] = Field(default_factory=list)
 
 
 class ConsiderationAdminOut(ConsiderationOut):
