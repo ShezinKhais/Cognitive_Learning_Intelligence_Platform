@@ -9,6 +9,7 @@
 *.env
 var/
 tests/
-scripts/
+scripts/*
+!scripts/prepare_live_speech.py
 Dockerfile
 .dockerignore

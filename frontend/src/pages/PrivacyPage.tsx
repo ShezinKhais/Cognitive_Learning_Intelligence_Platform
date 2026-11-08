@@ -1,0 +1,214 @@
+import { PolicyLayout, PolicySection } from './policy/PolicyLayout'
+import { BACKUPS_KEPT, RETENTION_DAYS } from './policy/policyFacts'
+
+export default function PrivacyPage() {
+  return (
+    <PolicyLayout
+      title="Privacy notice"
+      summary="What C.L.I.P collects when you use it in a class, what it never collects, who can see it, and how long it is kept."
+      other={{ to: '/terms', label: 'terms of use' }}
+    >
+      <PolicySection title="What C.L.I.P collects">
+        <ul>
+          <li>Your account: your name, university email address, role and the course you are enrolled on.</li>
+          <li>Your consent choices, and when you made them.</li>
+          <li>Class activity: the sessions you joined, your answers to checkpoint questions, and any special consideration request you submit.</li>
+          <li>Lecture material uploaded by lecturers, the questions generated from it, and lecturer-published discussion minutes.</li>
+          <li>
+            If you turn on engagement monitoring: the camera and microphone readings described below, kept as one
+            summary of numbers for each minute of a class.
+          </li>
+          <li>An audit record of actions taken while you are signed in: who did what, and when. It holds no content.</li>
+        </ul>
+      </PolicySection>
+
+      <PolicySection title="Camera and microphone">
+        <p>
+          The camera and microphone indicators are optional. Each needs its own consent, and both need engagement
+          monitoring to be on. When they are on, your browser works them out on your own device. C.L.I.P never sends
+          video, pictures or sound from these indicators to its server.
+        </p>
+        <p>
+          Once you have agreed to an indicator, it starts by itself when you join a live class, and stops when you
+          leave, hide the page or the class ends. Your browser asks for permission the first time. You can turn
+          either off from the class panel at any time, withdraw your consent, and still take part in everything.
+        </p>
+        <p>
+          These indicators are separate from Microsoft Teams. If you turn on your camera or microphone in a Teams
+          meeting, Teams handles that audio and video under Microsoft&apos;s own privacy terms, not C.L.I.P&apos;s.
+        </p>
+        <p>
+          About every five seconds, your device sends C.L.I.P four values: the share of time you were facing the
+          screen, whether a face was in view, whether you were speaking (yes or no), and how long that period was.
+          The camera and microphone indicators send nothing else. C.L.I.P combines these values into one summary for
+          each minute and keeps only that summary. You can turn either indicator off at any time from the class
+          panel, and it stops at once.
+        </p>
+      </PolicySection>
+
+      <PolicySection title="Live lecturer microphone transcription">
+        <p>
+          If the institution enables this feature, the lecturer can explicitly start live microphone transcription
+          for a running class after confirming participant notice and consent requirements. This permission is
+          separate from student camera/microphone attention indicators and does not enable them. C.L.I.P captures
+          the lecturer&apos;s microphone, including nearby voices it picks up, rather than every Teams participant.
+        </p>
+        <p>
+          Short microphone audio chunks are sent over the C.L.I.P connection to the server and processed locally
+          by its speech model. C.L.I.P does not save an audio recording, send audio to a cloud speech provider or
+          store audio in its database, logs or browser storage. Audio may remain briefly in memory while an
+          in-progress recognition finishes after Stop; its result is not intentionally published after capture
+          has been stopped. Setup downloads model files separately from runtime speech processing.
+        </p>
+        <p>
+          Recognized text is stored and automatically shared with students enrolled on the course and their
+          catch-up chatbot while teaching continues. It is labelled an unreviewed automatic transcript and may
+          contain errors, omissions or personal information. Email addresses and links are masked; this does not
+          reliably remove spoken names or other personal details. Lecturers must stop before private discussion
+          and can correct or remove segments. Account deletion cannot automatically identify personal references
+          in unstructured class speech; request their removal from the lecturer or administrator.
+        </p>
+        <p>
+          Stop releases the microphone. Hiding/leaving the capture page stops it and it does not restart by itself.
+          The class state is checked about every three seconds; pausing/ending the class stops capture at that
+          check. Stored transcript text follows the session&apos;s configured retention and deletion, including
+          the same backup policy. Published corrections are marked as lecturer-reviewed minutes.
+        </p>
+      </PolicySection>
+
+      <PolicySection title="Teams transcripts and discussion minutes">
+        <p>
+          If the institution enables transcript import, a lecturer or administrator can retrieve an available
+          transcript from the Teams meeting linked to a finished class. Teams performs transcription under the
+          institution&apos;s Microsoft 365 settings. C.L.I.P does not start recording or transcription in Teams.
+          Participants must be informed and the institution&apos;s transcription and consent requirements met.
+          Consent to optional camera or microphone indicators does not authorize meeting transcription.
+        </p>
+        <p>
+          The transcript text is processed in server memory to draft teaching minutes using the configured AI
+          service. WebVTT speaker labels, email addresses and links are removed before drafting, but personal
+          information may remain in speech. The lecturer must check the draft, remove personal information and
+          assessment solutions, and explicitly approve publication. Students and their chatbot can access these
+          approved minutes, along with any automatic live transcript shared under the separate feature above;
+          the imported Teams transcript and unpublished draft evidence remain private.
+        </p>
+        <p>
+          C.L.I.P does not save raw Teams transcripts, audio or recording files from these imports. Manual drafts
+          stay temporarily in the lecturer&apos;s page. If an authorized lecturer enables automatic fetching for a
+          linked meeting after confirming participant notice, Graph notifications trigger post-meeting retrieval
+          and private drafting. Private draft summaries and short evidence excerpts are stored for up to 7 days
+          (or the shorter configured session retention), then removed. They are visible only to the responsible
+          lecturer and administrators, and can be discarded sooner. Disabling fetching discards these drafts.
+          Graph access requires institutional permission; C.L.I.P does not start Teams transcription.
+          Published minutes follow session retention and deletion. The original transcript and any Teams recording
+          remain in Microsoft 365 under the institution&apos;s separate access, retention and deletion policies;
+          deleting C.L.I.P minutes does not delete Microsoft&apos;s copy.
+        </p>
+      </PolicySection>
+
+      <PolicySection title="What C.L.I.P never collects">
+        <ul>
+          <li>Meeting video or recording files. The optional lecturer live-transcription feature processes short microphone audio chunks temporarily, as explained above.</li>
+          <li>Teams meeting chat messages.</li>
+          <li>Pictures of your face, or any biometric template.</li>
+          <li>Your conversations with the tutor. They are answered and then discarded; only the fact that a question was asked is logged.</li>
+        </ul>
+      </PolicySection>
+
+      <PolicySection title="How it is used">
+        <ul>
+          <li>To run the class: sending checkpoint questions, recording answers and giving you feedback.</li>
+          <li>To show your lecturer how the class is going: who is present, who answered, and the results.</li>
+          <li>
+            If you turned on engagement monitoring, to give your lecturer an estimate of engagement for each student
+            (engaged, at risk, disengaged, or not enough data). Lecturers never see video, pictures or sound.
+          </li>
+          <li>To send you a private prompt if you seem to have drifted away. The camera alone is never enough for one.</li>
+        </ul>
+        <p>
+          Engagement and comprehension estimates help your lecturer teach. They are not assessments and do not affect
+          your marks, and leaving the optional indicators off is never counted against you.
+        </p>
+      </PolicySection>
+
+      <PolicySection title="AI in C.L.I.P">
+        <p>
+          The AI models C.L.I.P uses run on its own server. Your answers, your questions and the lecture material are
+          not sent to any outside AI provider.
+        </p>
+        <ul>
+          <li>Questions are generated from your lecturer's material, and your lecturer reviews each one before it is used.</li>
+          <li>The tutor gives hints and points to the slides it used. It can be wrong, so check what it says against the lecture material.</li>
+          <li>Written answers are labelled automatically as a guide for your lecturer, who decides what they mean.</li>
+        </ul>
+      </PolicySection>
+
+      <PolicySection title="Who can see your information">
+        <ul>
+          <li>You can see your own answers, summaries and progress. Published discussion minutes are shared with students enrolled on the session's course.</li>
+          <li>Your lecturer can see the classes they teach.</li>
+          <li>Administrators manage accounts, data requests and the audit record.</li>
+        </ul>
+        <p>
+          Every request is checked against your role on the C.L.I.P server. Other than through Microsoft Teams,
+          described below, C.L.I.P does not send your information to anyone outside the system.
+        </p>
+        <p>
+          When you use C.L.I.P inside a Teams meeting, Teams is run by Microsoft. Teams tells C.L.I.P when the meeting
+          starts and ends, C.L.I.P asks Teams who is in the meeting, and Teams delivers C.L.I.P's messages: a card in
+          the meeting chat naming the course and session when a checkpoint opens, and pop-ups. These messages only say
+          that something is waiting in C.L.I.P; your answers and results are never in them.
+        </p>
+      </PolicySection>
+
+      <PolicySection title="How long it is kept">
+        <p>
+          Information is held on the C.L.I.P server and travels over encrypted connections. By default, a
+          session's records, including discussion minutes, are deleted {RETENTION_DAYS} days after it ends: your answers, engagement and camera and
+          microphone summaries, prompts and alerts. Your university can set a different period.
+        </p>
+        <p>
+          Two things are kept after that:
+        </p>
+        <ul>
+          <li>
+            If your university turns on course history, a summary for each course and semester is kept before the
+            session is deleted: how many sessions you attended, how many questions you tried and got right, and your
+            average engagement and attention. It holds counts and averages only, never your answers, and only
+            administrators can view it. It is kept until it is erased with your other information.
+          </li>
+          <li>
+            The audit record, which says who did what and when but holds no content, is kept so actions on your
+            information can be checked later. If your information is erased, your name and email are removed from
+            your account, so the audit record no longer identifies you.
+          </li>
+        </ul>
+        <p>
+          Backups are kept for recovery. By default the last {BACKUPS_KEPT} daily backups are kept, so information
+          that has been deleted leaves the backups within about a month.
+        </p>
+      </PolicySection>
+
+      <PolicySection title="Your choices and requests">
+        <ul>
+          <li>You can turn the optional indicators on or off at any time. Declining one never blocks another.</li>
+          <li>
+            You can download a copy of the information C.L.I.P holds about you from <strong>My data</strong> in the
+            student menu.
+          </li>
+          <li>
+            You can ask for your information to be erased, also from <strong>My data</strong>. An administrator reviews
+            the request before anything is deleted, and erasing cannot be undone.
+          </li>
+        </ul>
+      </PolicySection>
+
+      <PolicySection title="Questions">
+        <p>
+          Ask your lecturer, or the C.L.I.P administrator for your course. They can also make a request for a copy of
+          your information or for its erasure on your behalf.
+        </p>
+      </PolicySection>
+    </PolicyLayout>
+  )
+}

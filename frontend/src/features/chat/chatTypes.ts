@@ -10,6 +10,7 @@ export type ChatPhase =
   | 'failed'
 
 export interface ChatCitation {
+  source_note_id?: string
   id: string
   /** The [n] the answer cites it by. Older servers leave it out. */
   number?: number

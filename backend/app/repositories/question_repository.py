@@ -290,7 +290,10 @@ class QuestionRepository:
             effective_prompt = prompt if prompt is not None else question.question_text
             _validate_prompt(effective_prompt)
 
-        question.status = status
+        # Approving is the lecturer's decision that a question may be sent,
+        # so it is stored ready to send. The separate "make ready" step after
+        # approval was one more click for every question and decided nothing.
+        question.status = "staged" if status == "approved" else status
         question.reviewed_by = reviewer_id
         question.reviewed_at = datetime.now(UTC)
         if prompt is not None:

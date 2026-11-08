@@ -30,6 +30,7 @@ from app.realtime.classroom import classroom
 from app.repositories.session_repository import SessionRepository
 from app.repositories.student_repository import StudentRepository
 from app.repositories.topic_difficulty_repository import DatabaseTopicAnswers
+from app.schemas.breakout import RoomPlanIn, RoomPlanOut
 from app.schemas.common import Page
 from app.schemas.identity import ConsentType, Role
 from app.schemas.session import (
@@ -44,7 +45,7 @@ from app.schemas.session import (
     StudentSessionSummary,
     TopicDifficultyOut,
 )
-from app.services import alert_store, session_lifecycle, session_reads
+from app.services import alert_store, breakout, session_lifecycle, session_reads
 from app.services.engagement_view import staff_confidence, staff_score, staff_signals
 from app.services.session_access import may_view_session_analytics
 from app.services.student_report import build_student_summary, record_staff_view
@@ -366,3 +367,52 @@ async def student_summary(
             session_id=session_id,
         )
     return summary
+
+
+# -- breakout rooms the lecturer assigns (Phase 6) ----------------------------
+
+
+async def _room_session(db: DbSession, principal: CurrentUser, session_id: UUID):
+    return await session_lifecycle.owned_session(
+        SessionRepository(db), principal, session_id, for_update=False
+    )
+
+
+@router.get("/{session_id}/rooms", response_model=RoomPlanOut, dependencies=_staff)
+async def room_plan(session_id: UUID, principal: CurrentUser, db: DbSession) -> RoomPlanOut:
+    """Who is in which breakout room, and who is in none. The lecturer who
+    runs the session, or an admin."""
+    row = await _room_session(db, principal, session_id)
+    return breakout.describe(row, await breakout.roster(db, row))
+
+
+@router.put("/{session_id}/rooms", response_model=RoomPlanOut, dependencies=_staff)
+@audit_action("ROOMS_ASSIGNED")
+async def assign_rooms(
+    session_id: UUID,
+    payload: RoomPlanIn,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> RoomPlanOut:
+    """Split the running class into rooms. Each student's panel then says
+    which room to join; open rooms with the same names in Teams. Replaces
+    any earlier plan, and a student left out is told they have no room."""
+    row = await _room_session(db, principal, session_id)
+    return await breakout.assign(db, row, payload, settings)
+
+
+@router.delete("/{session_id}/rooms", response_model=RoomPlanOut, dependencies=_staff)
+@audit_action("ROOMS_CLOSED")
+async def close_rooms(
+    session_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> RoomPlanOut:
+    """Bring everyone back: empty every room and tell the class to return to
+    the main meeting. Close the rooms in Teams as well."""
+    row = await _room_session(db, principal, session_id)
+    return await breakout.close(db, row)

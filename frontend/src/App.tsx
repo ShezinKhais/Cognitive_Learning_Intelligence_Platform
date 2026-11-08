@@ -6,7 +6,7 @@ import {
   Routes,
 } from 'react-router'
 
-import { defaultPathForRole } from './authRouting'
+import { defaultPathForRole, STUDENT_DATA_PATH } from './authRouting'
 import PageLoader from './components/brand/PageLoader'
 import PageErrorBoundary from './components/PageErrorBoundary'
 import RoleGate from './components/RoleGate'
@@ -14,7 +14,6 @@ import ShellOutlet from './components/shell/ShellOutlet'
 import StaffTeamsBoundary from './components/StaffTeamsBoundary'
 import { StudentAppProvider } from './features/student/StudentAppContext'
 import LoginPage from './pages/LoginPage'
-import { PLANNED } from './pages/plannedFeatures'
 import ProtectedStudentPage from './pages/ProtectedStudentPage'
 
 // Each page is its own chunk, fetched the first time someone opens it, so a
@@ -25,21 +24,28 @@ const AccessDeniedPage = lazy(() => import('./pages/AccessDeniedPage'))
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
 const AdminConsole = lazy(() => import('./pages/AdminConsole'))
 const AdminStatusPage = lazy(() => import('./pages/AdminStatusPage'))
+const DiscussionNotesPage = lazy(() => import('./pages/DiscussionNotesPage'))
 const ConsentPage = lazy(() => import('./pages/ConsentPage'))
 const LecturerLiveSessionPage = lazy(() => import('./pages/LecturerLiveSessionPage'))
 const LecturerMaterialsPage = lazy(() => import('./pages/LecturerMaterialsPage'))
 const LecturerSessionsPage = lazy(() => import('./pages/LecturerSessionsPage'))
-const PlannedFeaturePage = lazy(() => import('./pages/PlannedFeaturePage'))
 const QuestionReview = lazy(() => import('./pages/QuestionReview'))
 const SessionReportPage = lazy(() => import('./pages/SessionReportPage'))
 const LecturerSessionReportPage = lazy(() => import('./pages/LecturerSessionReportPage'))
 const AdminGovernancePage = lazy(() => import('./pages/AdminGovernancePage'))
+const AdminAccountsPage = lazy(() => import('./pages/AdminAccountsPage'))
+const LecturerEngagementHistoryPage = lazy(() => import('./pages/LecturerEngagementHistoryPage'))
+const LecturerBreakoutPage = lazy(() => import('./pages/LecturerBreakoutPage'))
+const CourseRostersPage = lazy(() => import('./pages/CourseRostersPage'))
 const StudentHomePage = lazy(() => import('./pages/StudentHomePage'))
 const StudentLiveSessionPage = lazy(() => import('./pages/StudentLiveSessionPage'))
 const StudentReviewPage = lazy(() => import('./pages/StudentReviewPage'))
 const StudentProgressPage = lazy(() => import('./pages/StudentProgressPage'))
 const StudentConsiderationPage = lazy(() => import('./pages/StudentConsiderationPage'))
+const StudentMyDataPage = lazy(() => import('./pages/StudentMyDataPage'))
 const AdminConsiderationPage = lazy(() => import('./pages/AdminConsiderationPage'))
+const PrivacyPage = lazy(() => import('./pages/PrivacyPage'))
+const TermsPage = lazy(() => import('./pages/TermsPage'))
 const StudentReviewHistoryPage = lazy(() =>
   import('./pages/StudentReviewPage').then((page) => ({ default: page.StudentReviewHistoryPage })),
 )
@@ -47,6 +53,7 @@ const StudentSummaryPage = lazy(() => import('./pages/StudentSummaryPage'))
 const SystemStatusPage = lazy(() => import('./pages/SystemStatusPage'))
 const TeamsConfigPage = lazy(() => import('./pages/TeamsConfigPage'))
 const TeamsLecturerMeetingPage = lazy(() => import('./pages/TeamsLecturerMeetingPage'))
+const TeamsLauncherPage = lazy(() => import('./pages/TeamsLauncherPage'))
 const TeamsMeetingEntryPage = lazy(() => import('./pages/TeamsMeetingEntryPage'))
 const TeamsMeetingPage = lazy(() => import('./pages/TeamsMeetingPage'))
 
@@ -54,6 +61,16 @@ const TeamsMeetingPage = lazy(() => import('./pages/TeamsMeetingPage'))
 // their own home. Always sending them to /student told every lecturer and
 // administrator "Student access required".
 const home = (
+  <RoleGate allow={['student', 'lecturer', 'admin']}>
+    {(user) => <Navigate to={defaultPathForRole(user.role)} replace />}
+  </RoleGate>
+)
+
+// The one C.L.I.P tab in Teams. Teams shows every tab of an app to everyone,
+// so a tab per role would show students the lecturer and admin tabs. This one
+// signs in with Teams and opens each person's own workspace inside Teams:
+// My Learning for students, the dashboard for lecturers and admins.
+const teamsHome = (
   <RoleGate allow={['student', 'lecturer', 'admin']}>
     {(user) => <Navigate to={defaultPathForRole(user.role)} replace />}
   </RoleGate>
@@ -95,6 +112,21 @@ export default function App() {
           />
 
           <Route
+            path="/open"
+            element={teamsHome}
+          />
+
+          {/* Earlier packages had a tab per role. Kept so they still work. */}
+          <Route
+            path="/open/lecturer"
+            element={<TeamsLauncherPage target="lecturer" />}
+          />
+          <Route
+            path="/open/admin"
+            element={<TeamsLauncherPage target="admin" />}
+          />
+
+          <Route
             path="/student"
             element={
               <StudentAppProvider>
@@ -130,6 +162,19 @@ export default function App() {
               path="consideration"
               element={<StudentConsiderationPage />}
             />
+          </Route>
+
+          {/* Students retain access to their own data after withdrawing terms. */}
+          <Route
+            element={
+              <RoleGate allow={['student']} requireTerms={false}>
+                {(user) => <Outlet context={user} />}
+              </RoleGate>
+            }
+          >
+            <Route element={<ShellOutlet />}>
+              <Route path={STUDENT_DATA_PATH} element={<StudentMyDataPage />} />
+            </Route>
           </Route>
 
           {/* Shared Teams meeting entry point. RoleGate first verifies the
@@ -181,6 +226,10 @@ export default function App() {
               <Route
                 path="/admin/governance"
                 element={<AdminGovernancePage />}
+              />
+              <Route
+                path="/admin/accounts"
+                element={<AdminAccountsPage />}
               />
             </Route>
           </Route>
@@ -240,6 +289,7 @@ export default function App() {
                 element={<SessionReportPage />}
               />
 
+              <Route path="/lecturer/sessions/:sessionId/notes" element={<DiscussionNotesPage />} />
               {/* The report itself, built and downloaded as a PDF (Cyber 2). */}
               <Route
                 path="/lecturer/sessions/:sessionId/report"
@@ -248,12 +298,17 @@ export default function App() {
 
               <Route
                 path="/lecturer/groups"
-                element={<PlannedFeaturePage feature={PLANNED.groups} />}
+                element={<LecturerBreakoutPage />}
               />
 
               <Route
                 path="/lecturer/engagement"
-                element={<PlannedFeaturePage feature={PLANNED.engagement} />}
+                element={<LecturerEngagementHistoryPage />}
+              />
+
+              <Route
+                path="/courses"
+                element={<CourseRostersPage />}
               />
 
               <Route
@@ -266,6 +321,18 @@ export default function App() {
           <Route
             path="/status"
             element={<SystemStatusPage />}
+          />
+
+          {/* Public: the Teams manifest links to both, and the consent page
+              links to them before anyone accepts. */}
+          <Route
+            path="/privacy"
+            element={<PrivacyPage />}
+          />
+
+          <Route
+            path="/terms"
+            element={<TermsPage />}
           />
 
           <Route

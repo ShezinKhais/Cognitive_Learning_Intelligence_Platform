@@ -196,9 +196,20 @@ class Settings(BaseSettings):
     client_id: str = ""
     client_secret: str = ""
     tenant_id: str = ""
+    live_transcription_enabled: bool = False
+    live_transcription_model_path: str = ""
+    live_transcription_language: str = Field(default="en", pattern=r"^[a-z]{2,3}$")
+    live_transcription_cpu_threads: int = Field(default=2, ge=1, le=8)
+    teams_transcripts_enabled: bool = False
+    teams_transcripts_automatic_enabled: bool = False
+    teams_transcript_callback_url: str = ""
     teams_notifications_enabled: bool = False
     teams_app_base_url: str = ""
     teams_app_id: str = ""
+    # Where the bot gets its token to post into Teams. A single-tenant bot
+    # (an Azure Bot) uses its own tenant, the default. A bot registered in
+    # the Teams Developer Portal is multi-tenant and must use botframework.com.
+    teams_bot_token_tenant: str = ""
 
     # Session behaviour. Once a question closes, the next is due after a fresh
     # random wait between these two, so the class cannot predict it. Both 0
@@ -304,6 +315,31 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _check_teams_notifications(self) -> "Settings":
+        if self.teams_transcripts_automatic_enabled:
+            target = urlparse(self.teams_transcript_callback_url)
+            if (
+                not self.teams_transcripts_enabled
+                or target.scheme != "https"
+                or not target.hostname
+                or target.username
+                or target.password
+                or target.query
+                or target.fragment
+                or target.path != "/api/v1/teams/transcript-notifications"
+            ):
+                raise ValueError(
+                    "Automatic transcripts require TEAMS_TRANSCRIPTS_ENABLED and an HTTPS "
+                    "TEAMS_TRANSCRIPT_CALLBACK_URL ending /api/v1/teams/transcript-notifications"
+                )
+        if self.teams_transcripts_enabled:
+            from uuid import UUID
+
+            if not self.teams_configured:
+                raise ValueError(
+                    "Transcript import requires CLIENT_ID, CLIENT_SECRET and TENANT_ID"
+                )
+            UUID(self.tenant_id)
+            UUID(self.client_id)
         if self.teams_notifications_enabled:
             if not self.teams_configured:
                 raise ValueError(

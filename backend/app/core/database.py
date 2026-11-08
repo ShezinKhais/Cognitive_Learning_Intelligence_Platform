@@ -27,6 +27,7 @@ def make_engine(settings: Settings) -> AsyncEngine:
     return create_async_engine(
         settings.database_url,
         echo=settings.clip_env == "development",
+        hide_parameters=True,  # Shared transcript/answer text must not enter SQL diagnostics.
         pool_pre_ping=True,
         pool_size=settings.db_pool_size,
         max_overflow=settings.db_max_overflow,

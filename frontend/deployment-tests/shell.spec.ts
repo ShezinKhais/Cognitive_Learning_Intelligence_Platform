@@ -45,6 +45,9 @@ for (const account of [
     if (account.role === 'student') {
       await page.goto('/admin/status')
       await expect(page).toHaveURL(/\/access-denied$/)
+    } else {
+      await page.goto('/student/my-data')
+      await expect(page).toHaveURL(/\/access-denied$/)
     }
     // Unknown routes should show a helpful page for every role.
     await page.goto('/this-page-does-not-exist')
@@ -67,6 +70,7 @@ for (const account of [
   })
 }
 
+<<<<<<< HEAD
 test('unknown route works when signed out and API 404 stays JSON', async ({ page }) => {
   await page.goto('/no-such-clip-page')
 
@@ -83,4 +87,55 @@ test('unknown route works when signed out and API 404 stays JSON', async ({ page
   const response = await page.request.get('/api/v1/no-such-clip-api')
   expect(response.status()).toBe(404)
   expect(response.headers()['content-type']).toContain('application/json')
+=======
+test('student can use My data after withdrawing terms', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  const health = await page.request.get('/api/v1/health')
+  expect(health.ok()).toBeTruthy()
+  expect((await health.json()).env).toBe('development')
+  const credentials = { email: 'student@clip.example.com', password: 'StudentPass123!' }
+  const login = await page.request.post('/api/v1/auth/login', { data: credentials })
+  expect(login.ok()).toBeTruthy()
+  const { access_token } = await login.json()
+  const headers = { Authorization: `Bearer ${access_token}` }
+  const withdrawal = await page.request.post('/api/v1/auth/consent', {
+    headers,
+    data: { consent_type: 'terms', granted: false },
+  })
+  expect(withdrawal.ok()).toBeTruthy()
+
+  await page.goto('/student/reviews')
+  await expect(page).toHaveURL(/\/consent$/)
+  const dataLink = page.getByRole('link', { name: 'Open My data' })
+  await dataLink.focus()
+  await dataLink.press('Enter')
+  await expect(page.getByRole('heading', { name: 'My data', level: 1 })).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'My data', level: 1 })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+
+  const download = page.waitForEvent('download')
+  const exportResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/me/data')
+  await page.getByRole('button', { name: 'Download my data' }).click()
+  expect((await download).suggestedFilename()).toBe('my-clip-data.json')
+  expect((await exportResponse).headers()['cache-control']).toContain('no-store')
+  await page.getByRole('button', { name: 'Ask to erase my data' }).click()
+  const sendRequest = page.getByRole('button', { name: 'Send the request' })
+  await expect(sendRequest).toBeDisabled()
+  await page.getByRole('checkbox', { name: /I understand my data will be erased/ }).check()
+  await sendRequest.click()
+  await expect(page.getByText('Waiting for an administrator')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Ask to erase my data' })).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click()
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click()
+  await expect(page).toHaveURL(/\/login$/)
+  await page.goto('/student/my-data')
+  await expect(page).toHaveURL(/\/login$/)
+  await page.getByLabel('Email', { exact: true }).fill(credentials.email)
+  await page.getByLabel('Password', { exact: true }).fill(credentials.password)
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  await expect(page).toHaveURL(/\/student\/my-data$/)
+  await expect(page.getByRole('heading', { name: 'My data', level: 1 })).toBeVisible()
+>>>>>>> origin/main
 })

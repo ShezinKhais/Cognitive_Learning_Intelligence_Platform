@@ -26,7 +26,7 @@ from app.realtime.classroom import classroom
 from app.schemas.chat import ChatRequest
 from app.schemas.identity import ConsentType, Role
 from app.schemas.session import SessionStatus
-from app.services import session_lifecycle, tutor_chat
+from app.services import discussion, session_lifecycle, tutor_chat
 from app.services.tutor_guardrails import EarlierTurn
 
 router = APIRouter(
@@ -43,7 +43,8 @@ router = APIRouter(
 _EVENTS = (
     "One JSON object per line, each with `type` and `request_id`. `accepted` comes "
     "first. Then either `delta` events carrying `text`, `citation` events carrying a "
-    "`citation` (`id`, `material_title`, `source_page`, `source_slide`, `excerpt`), "
+    "`citation` (`id`, `material_title`, `source_page`, `source_slide`, `excerpt`, "
+    "optional `number` and `source_note_id` for discussion notes), "
     "`follow_up` events carrying a `prompt`, and `completed`; or one of `unsupported` "
     "(with a `reason`), `empty_retrieval` and `error` (with a `detail`)."
 )
@@ -65,13 +66,18 @@ async def session_chat(
     principal: CurrentUser,
     db: DbSession,
 ) -> StreamingResponse:
-    """Ask the tutor a question about the session's material.
+    """Ask about session materials or lecturer-published discussion minutes.
 
     The reply streams as it is written. To stop it, close the connection.
     """
-    live = await session_lifecycle.joinable_session(
-        db, principal.user_id, principal.role, session_id
-    )
+    if payload.source == "discussion":
+        live = await discussion.accessible_session(
+            db, session_id, principal.user_id, principal.role
+        )
+    else:
+        live = await session_lifecycle.joinable_session(
+            db, principal.user_id, principal.role, session_id
+        )
     if live is None:
         # A session that does not exist and one the student is not enrolled
         # for are refused alike, so a session id cannot be probed.
@@ -79,6 +85,10 @@ async def session_chat(
 
     open_question_id = classroom.state(session_id, SessionStatus(live.status)).active_question_id
     context = await tutor_chat.prepare(db, live, principal.user_id, open_question_id)
+    if payload.source == "discussion":
+        context = await tutor_chat.with_discussion(
+            db, context, payload.discussion_since, payload.discussion_until
+        )
     # The request's session is not closed until the response has been sent,
     # which here is when the reply ends. Closed now, it gives its connection
     # back, so a class asking at once does not hold one each while the model

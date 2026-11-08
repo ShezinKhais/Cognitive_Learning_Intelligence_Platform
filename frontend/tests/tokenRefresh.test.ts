@@ -83,6 +83,7 @@ const {
   renewSession,
   restoreSession,
   saveAccessToken,
+  setFallbackSignIn,
 } = await import('../src/api.ts')
 
 const settle = async () => {
@@ -374,5 +375,51 @@ test('PDF download preserves a token refreshed during the request', async () => 
   } finally {
     globalThis.fetch = originalFetch
     void clearAccessToken()
+  }
+})
+
+test('in Teams, a refused refresh signs in with the Microsoft account instead', async () => {
+  reset('stale', false)
+  let teamsSignIns = 0
+  setFallbackSignIn(async () => {
+    teamsSignIns += 1
+    valid = new Set(['from-teams'])
+    return { access_token: 'from-teams', token_type: 'bearer', expires_in: 3600, role: 'student' }
+  })
+  try {
+    const answer = await apiAuthenticatedGet<{ ok: string }>('/auth/me')
+    assert.equal(answer.ok, 'from-teams')
+    assert.equal(teamsSignIns, 1)
+    assert.equal(getAccessToken(), 'from-teams')
+  } finally {
+    setFallbackSignIn(null)
+    void clearAccessToken()
+  }
+})
+
+test('a Microsoft account with no C.L.I.P account still ends at sign-in', async () => {
+  void clearAccessToken()
+  await settle()
+  cookie = false
+  setFallbackSignIn(async () => null)
+  try {
+    assert.equal(await restoreSession(), null)
+    assert.equal(getAccessToken(), null)
+  } finally {
+    setFallbackSignIn(null)
+  }
+})
+
+test('Teams sign-in failing outright is a sign-out, not a crash', async () => {
+  void clearAccessToken()
+  await settle()
+  cookie = false
+  setFallbackSignIn(async () => {
+    throw new Error('getAuthToken failed')
+  })
+  try {
+    assert.equal(await restoreSession(), null)
+  } finally {
+    setFallbackSignIn(null)
   }
 })

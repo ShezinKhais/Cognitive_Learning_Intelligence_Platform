@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  isMobileClient,
+  isTeamsMobileAgent,
   isTeamsMockAllowed,
   normalizeTheme,
   simulatedTeamsContext,
@@ -122,4 +124,16 @@ test('lecturer meeting routing does not require a session id query parameter', (
 
   assert.equal(meetingPath.includes('sessionId='), false)
   assert.equal(sessionPath.includes('sessionId='), false)
+})
+
+test('Teams on a phone is recognised by its web view, a browser is not', () => {
+  const android =
+    'Mozilla/5.0 (Linux; Android 17; SM-S948B Build/CP2A.260605.016; wv) AppleWebKit/537.36 (KHTML, like Gecko) ' +
+    'Version/4.0 Chrome/156.0.8078.47 Mobile Safari/537.36 TeamsMobile-Android'
+  assert.equal(isTeamsMobileAgent(android), true)
+  assert.equal(isTeamsMobileAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) TeamsMobile-iOS'), true)
+  assert.equal(isTeamsMobileAgent('Mozilla/5.0 (Linux; Android 17) Chrome/156.0 Mobile Safari/537.36'), false)
+  assert.equal(isMobileClient('android'), true)
+  assert.equal(isMobileClient('desktop'), false)
+  assert.equal(isMobileClient(undefined), false)
 })

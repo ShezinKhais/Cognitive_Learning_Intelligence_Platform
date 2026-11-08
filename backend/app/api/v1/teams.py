@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, Request
 from app.api.deps import AppSettings, DbSession
 from app.core.errors import ServiceUnavailableError
 from app.schemas.meetings import TeamsActivity
-from app.services import teams_bot
+from app.services import teams_bot, teams_replies
 from app.services.teams_notifications import remember_reference
 
 router = APIRouter(prefix="/teams", tags=["teams"])
@@ -50,8 +50,9 @@ async def bot_messages(
     authenticator: Annotated[teams_bot.BotAuthenticator, Depends(get_bot_authenticator)],
 ) -> None:
     """Receive an activity from Teams. Meeting starts and ends are applied to
-    the linked session; everything else is acknowledged. An activity from any
-    other Bot Framework channel, or from another organisation, is refused."""
+    the linked session; a message gets a short reply; everything else is
+    acknowledged. An activity from any other Bot Framework channel, or from
+    another organisation, is refused."""
     await authenticator.verify(
         request.headers.get("Authorization"), activity.service_url, activity.channel_id
     )
@@ -60,3 +61,4 @@ async def bot_messages(
     # meeting reachable for checkpoint notifications.
     await remember_reference(db, activity, settings)
     await teams_bot.handle_activity(db, activity, settings)
+    await teams_replies.answer(db, activity, settings)
