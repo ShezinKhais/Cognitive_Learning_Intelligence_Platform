@@ -320,6 +320,7 @@ export default function LecturerSessionReportPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            {sessionId && <Link to={`/lecturer/sessions/${encodeURIComponent(sessionId)}/notes`} className={buttonStyles({ intent: 'secondary' })}>Discussion minutes</Link>}
             {sessionId && (
               <Link
                 to={`/lecturer/sessions/${encodeURIComponent(sessionId)}/live`}

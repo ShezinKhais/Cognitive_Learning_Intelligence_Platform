@@ -34,6 +34,10 @@ METHODS = ("get", "post", "put", "patch", "delete")
 
 # Reachable without signing in, and why.
 PUBLIC = {
+    (
+        "POST",
+        "/api/v1/teams/transcript-notifications",
+    ): "Graph validation or subscription clientState authentication",
     ("POST", "/api/v1/auth/login"): "how a user signs in",
     ("POST", "/api/v1/auth/refresh"): "the httpOnly refresh cookie is the credential",
     ("POST", "/api/v1/auth/teams"): "Teams sign-in, authenticated by the Entra token it carries",
@@ -60,6 +64,24 @@ ADMIN_ONLY = "admins"
 MEMBER = "a member of the session, decided in the handler"
 
 AUDIENCE = {
+    ("GET", "/api/v1/sessions/{session_id}/discussion/automatic-transcripts"): STAFF,
+    ("PUT", "/api/v1/sessions/{session_id}/discussion/automatic-transcripts"): STAFF,
+    (
+        "DELETE",
+        "/api/v1/sessions/{session_id}/discussion/automatic-transcripts/drafts/{transcript_id}",
+    ): STAFF,
+    ("GET", "/api/v1/sessions/{session_id}/live-transcription"): STAFF,
+    ("POST", "/api/v1/sessions/{session_id}/live-transcription/start"): STAFF,
+    ("POST", "/api/v1/sessions/{session_id}/live-transcription/{capture_id}/stop"): STAFF,
+    (
+        "POST",
+        "/api/v1/sessions/{session_id}/live-transcription/{capture_id}/chunks/{sequence}",
+    ): STAFF,
+    ("GET", "/api/v1/sessions/{session_id}/discussion/transcripts"): STAFF,
+    ("POST", "/api/v1/sessions/{session_id}/discussion/transcript-draft"): STAFF,
+    ("GET", "/api/v1/sessions/{session_id}/discussion"): MEMBER,
+    ("PUT", "/api/v1/sessions/{session_id}/discussion/{note_id}"): STAFF,
+    ("DELETE", "/api/v1/sessions/{session_id}/discussion/{note_id}"): STAFF,
     ("GET", "/api/v1/student-reviews"): STUDENT_ONLY,
     ("GET", "/api/v1/student-reviews/{session_id}"): STUDENT_ONLY,
     ("GET", "/api/v1/student-reviews/{session_id}/responses/{response_id}/sources"): STUDENT_ONLY,

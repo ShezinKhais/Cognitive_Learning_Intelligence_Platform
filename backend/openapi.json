@@ -467,6 +467,69 @@
         "title": "AuditEntryOut",
         "type": "object"
       },
+      "AutomaticTranscriptOut": {
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "drafts": {
+            "items": {
+              "$ref": "#/components/schemas/PrivateTranscriptDraft"
+            },
+            "title": "Drafts",
+            "type": "array"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "failed": {
+            "default": 0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "pending": {
+            "default": 0,
+            "title": "Pending",
+            "type": "integer"
+          },
+          "subscribed": {
+            "title": "Subscribed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configured",
+          "enabled",
+          "subscribed",
+          "message"
+        ],
+        "title": "AutomaticTranscriptOut",
+        "type": "object"
+      },
+      "AutomaticTranscriptWrite": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "participant_notice_confirmed": {
+            "default": false,
+            "title": "Participant Notice Confirmed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "AutomaticTranscriptWrite",
+        "type": "object"
+      },
       "Body_import_roster_api_v1_admin_roster_post": {
         "properties": {
           "file": {
@@ -511,6 +574,30 @@
       },
       "ChatRequest": {
         "properties": {
+          "discussion_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discussion Since"
+          },
+          "discussion_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discussion Until"
+          },
           "history": {
             "description": "The exchanges before this one, oldest first, so a follow-up can refer to them. Screened again on the server; never cited.",
             "items": {
@@ -531,6 +618,15 @@
             "minLength": 1,
             "pattern": "^[A-Za-z0-9._-]+$",
             "title": "Request Id",
+            "type": "string"
+          },
+          "source": {
+            "default": "materials",
+            "enum": [
+              "materials",
+              "discussion"
+            ],
+            "title": "Source",
             "type": "string"
           }
         },
@@ -1276,6 +1372,142 @@
         "title": "Difficulty",
         "type": "string"
       },
+      "DiscussionNoteOut": {
+        "properties": {
+          "note_id": {
+            "format": "uuid",
+            "title": "Note Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "origin": {
+            "default": "lecturer",
+            "title": "Origin",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "note_id",
+          "occurred_at",
+          "text",
+          "updated_at"
+        ],
+        "title": "DiscussionNoteOut",
+        "type": "object"
+      },
+      "DiscussionOut": {
+        "properties": {
+          "latest_recorded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Recorded At"
+          },
+          "live_transcription_active": {
+            "default": false,
+            "title": "Live Transcription Active",
+            "type": "boolean"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/DiscussionNoteOut"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "session_status": {
+            "title": "Session Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "notes",
+          "latest_recorded_at",
+          "session_status"
+        ],
+        "title": "DiscussionOut",
+        "type": "object"
+      },
+      "DiscussionWrite": {
+        "properties": {
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "shareable_confirmed": {
+            "title": "Shareable Confirmed",
+            "type": "boolean"
+          },
+          "text": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "occurred_at",
+          "text",
+          "shareable_confirmed"
+        ],
+        "title": "DiscussionWrite",
+        "type": "object"
+      },
+      "DraftMinute": {
+        "properties": {
+          "note_id": {
+            "format": "uuid",
+            "title": "Note Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "source_excerpt": {
+            "title": "Source Excerpt",
+            "type": "string"
+          },
+          "source_offset_seconds": {
+            "title": "Source Offset Seconds",
+            "type": "number"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "note_id",
+          "occurred_at",
+          "text",
+          "source_excerpt",
+          "source_offset_seconds"
+        ],
+        "title": "DraftMinute",
+        "type": "object"
+      },
       "EngagementHistory": {
         "properties": {
           "quiet": {
@@ -1562,6 +1794,82 @@
           "gaze_average"
         ],
         "title": "HistorySummaryOut",
+        "type": "object"
+      },
+      "LiveCaptureStart": {
+        "properties": {
+          "automatic_sharing_confirmed": {
+            "title": "Automatic Sharing Confirmed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "automatic_sharing_confirmed"
+        ],
+        "title": "LiveCaptureStart",
+        "type": "object"
+      },
+      "LiveCaptureStatus": {
+        "properties": {
+          "capture_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capture Id"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "language": {
+            "default": "en",
+            "title": "Language",
+            "type": "string"
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          },
+          "session_running": {
+            "title": "Session Running",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configured",
+          "running",
+          "session_running"
+        ],
+        "title": "LiveCaptureStatus",
+        "type": "object"
+      },
+      "LiveChunkOut": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiscussionNoteOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sequence"
+        ],
+        "title": "LiveChunkOut",
         "type": "object"
       },
       "LoginRequest": {
@@ -2344,6 +2652,40 @@
           "students"
         ],
         "title": "PlannedRoom",
+        "type": "object"
+      },
+      "PrivateTranscriptDraft": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/DraftMinute"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "transcript_id": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Transcript Id",
+            "type": "string"
+          },
+          "warning": {
+            "default": "AI draft: check every teaching point, timestamp and personal detail before publishing.",
+            "title": "Warning",
+            "type": "string"
+          }
+        },
+        "required": [
+          "transcript_id",
+          "notes",
+          "expires_at"
+        ],
+        "title": "PrivateTranscriptDraft",
         "type": "object"
       },
       "QuestionBulkReviewRequest": {
@@ -4136,6 +4478,106 @@
           "expected"
         ],
         "title": "TopicDifficultyOut",
+        "type": "object"
+      },
+      "TranscriptDraft": {
+        "properties": {
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/DraftMinute"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "transcript_id": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Transcript Id",
+            "type": "string"
+          },
+          "warning": {
+            "default": "AI draft: check every teaching point, timestamp and personal detail before publishing.",
+            "title": "Warning",
+            "type": "string"
+          }
+        },
+        "required": [
+          "transcript_id",
+          "notes"
+        ],
+        "title": "TranscriptDraft",
+        "type": "object"
+      },
+      "TranscriptImport": {
+        "properties": {
+          "participant_notice_confirmed": {
+            "title": "Participant Notice Confirmed",
+            "type": "boolean"
+          },
+          "transcript_id": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Transcript Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "transcript_id",
+          "participant_notice_confirmed"
+        ],
+        "title": "TranscriptImport",
+        "type": "object"
+      },
+      "TranscriptItem": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at"
+        ],
+        "title": "TranscriptItem",
+        "type": "object"
+      },
+      "TranscriptList": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "TranscriptList",
         "type": "object"
       },
       "UserOut": {
@@ -7146,7 +7588,7 @@
     },
     "/api/v1/sessions/{session_id}/chat": {
       "post": {
-        "description": "Ask the tutor a question about the session's material.\n\nThe reply streams as it is written. To stop it, close the connection.",
+        "description": "Ask about session materials or lecturer-published discussion minutes.\n\nThe reply streams as it is written. To stop it, close the connection.",
         "operationId": "session_chat_api_v1_sessions__session_id__chat_post",
         "parameters": [
           {
@@ -7175,7 +7617,7 @@
             "content": {
               "application/x-ndjson": {}
             },
-            "description": "One JSON object per line, each with `type` and `request_id`. `accepted` comes first. Then either `delta` events carrying `text`, `citation` events carrying a `citation` (`id`, `material_title`, `source_page`, `source_slide`, `excerpt`), `follow_up` events carrying a `prompt`, and `completed`; or one of `unsupported` (with a `reason`), `empty_retrieval` and `error` (with a `detail`)."
+            "description": "One JSON object per line, each with `type` and `request_id`. `accepted` comes first. Then either `delta` events carrying `text`, `citation` events carrying a `citation` (`id`, `material_title`, `source_page`, `source_slide`, `excerpt`, optional `number` and `source_note_id` for discussion notes), `follow_up` events carrying a `prompt`, and `completed`; or one of `unsupported` (with a `reason`), `empty_retrieval` and `error` (with a `detail`)."
           },
           "404": {
             "description": "No such session, or the student does not belong to it."
@@ -7200,6 +7642,407 @@
         "summary": "Session Chat",
         "tags": [
           "chat"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/discussion": {
+      "get": {
+        "operationId": "read_notes_api_v1_sessions__session_id__discussion_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscussionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Notes",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/discussion/automatic-transcripts": {
+      "get": {
+        "operationId": "read_automation_api_v1_sessions__session_id__discussion_automatic_transcripts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomaticTranscriptOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Automation",
+        "tags": [
+          "discussion"
+        ]
+      },
+      "put": {
+        "operationId": "configure_automation_api_v1_sessions__session_id__discussion_automatic_transcripts_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutomaticTranscriptWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomaticTranscriptOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Configure Automation",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/discussion/automatic-transcripts/drafts/{transcript_id}": {
+      "delete": {
+        "operationId": "discard_draft_api_v1_sessions__session_id__discussion_automatic_transcripts_drafts__transcript_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "transcript_id",
+            "required": true,
+            "schema": {
+              "title": "Transcript Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discard Draft",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/discussion/transcript-draft": {
+      "post": {
+        "operationId": "import_transcript_api_v1_sessions__session_id__discussion_transcript_draft_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranscriptImport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptDraft"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Transcript",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/discussion/transcripts": {
+      "get": {
+        "operationId": "available_transcripts_api_v1_sessions__session_id__discussion_transcripts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Available Transcripts",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/discussion/{note_id}": {
+      "delete": {
+        "operationId": "remove_note_api_v1_sessions__session_id__discussion__note_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "note_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Note Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Remove Note Api V1 Sessions  Session Id  Discussion  Note Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Note",
+        "tags": [
+          "discussion"
+        ]
+      },
+      "put": {
+        "operationId": "publish_note_api_v1_sessions__session_id__discussion__note_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "note_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Note Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscussionWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscussionNoteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Note",
+        "tags": [
+          "discussion"
         ]
       }
     },
@@ -7292,6 +8135,242 @@
         "summary": "Session Engagement",
         "tags": [
           "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/live-transcription": {
+      "get": {
+        "operationId": "status_api_v1_sessions__session_id__live_transcription_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveCaptureStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Status",
+        "tags": [
+          "live-transcription"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/live-transcription/start": {
+      "post": {
+        "operationId": "start_api_v1_sessions__session_id__live_transcription_start_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LiveCaptureStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveCaptureStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start",
+        "tags": [
+          "live-transcription"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/live-transcription/{capture_id}/chunks/{sequence}": {
+      "post": {
+        "operationId": "chunk_api_v1_sessions__session_id__live_transcription__capture_id__chunks__sequence__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "capture_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Capture Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sequence",
+            "required": true,
+            "schema": {
+              "title": "Sequence",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "started_at",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "Started At",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "audio/wav": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveChunkOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Chunk",
+        "tags": [
+          "live-transcription"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/live-transcription/{capture_id}/stop": {
+      "post": {
+        "operationId": "stop_api_v1_sessions__session_id__live_transcription__capture_id__stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "capture_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Capture Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Stop Api V1 Sessions  Session Id  Live Transcription  Capture Id  Stop Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop",
+        "tags": [
+          "live-transcription"
         ]
       }
     },
@@ -8161,6 +9240,54 @@
           }
         },
         "summary": "Bot Messages",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/v1/teams/transcript-notifications": {
+      "post": {
+        "operationId": "graph_notifications_api_v1_teams_transcript_notifications_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "validationToken",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Validationtoken"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Graph Notifications",
         "tags": [
           "teams"
         ]

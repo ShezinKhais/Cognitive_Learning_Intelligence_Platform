@@ -13,6 +13,17 @@ from fastapi.testclient import TestClient
 BACKEND = Path(__file__).resolve().parent.parent
 
 EXPECTED_PATHS = {
+    "/api/v1/teams/transcript-notifications",
+    "/api/v1/sessions/{session_id}/discussion/automatic-transcripts",
+    "/api/v1/sessions/{session_id}/discussion/automatic-transcripts/drafts/{transcript_id}",
+    "/api/v1/sessions/{session_id}/live-transcription",
+    "/api/v1/sessions/{session_id}/live-transcription/start",
+    "/api/v1/sessions/{session_id}/live-transcription/{capture_id}/stop",
+    "/api/v1/sessions/{session_id}/live-transcription/{capture_id}/chunks/{sequence}",
+    "/api/v1/sessions/{session_id}/discussion/transcripts",
+    "/api/v1/sessions/{session_id}/discussion/transcript-draft",
+    "/api/v1/sessions/{session_id}/discussion",
+    "/api/v1/sessions/{session_id}/discussion/{note_id}",
     # Phase 7 AI2: additive own-student review adapter; summary contract unchanged.
     "/api/v1/governance/history/{student_id}",
     "/api/v1/me/data",
@@ -204,12 +215,37 @@ def test_engagement_reports_confidence_and_available_signals(
 
 def test_no_event_type_can_carry_raw_media(client: TestClient) -> None:
     """The privacy commitment is architectural: there is deliberately no event
-    shape capable of transporting frames, audio or transcripts."""
+    shape capable of transporting frames, audio or raw transcript bodies.
+    REST models expose only bounded identifiers and a boolean status. Lecturer
+    audio uses a separate, role-guarded binary route inventoried below; student
+    telemetry stays derived-only. Keep these metadata exceptions exact."""
     schemas = client.get("/api/v1/openapi.json").json()["components"]["schemas"]
     banned = ("image", "frame", "audio", "transcript", "recording", "blob")
 
     for name, schema in schemas.items():
         for field in schema.get("properties", {}):
+            if name == "DiscussionOut" and field == "live_transcription_active":
+                assert schema["properties"][field]["type"] == "boolean"
+                continue
+            if (
+                name in {"TranscriptDraft", "TranscriptImport", "PrivateTranscriptDraft"}
+                and field == "transcript_id"
+            ):
+                definition = schema["properties"][field]
+                assert definition["type"] == "string" and definition["maxLength"] == 2048
+                continue
             assert not any(word in field.lower() for word in banned), (
                 f"{name}.{field} looks like raw media"
             )
+
+
+def test_only_the_dedicated_staff_route_accepts_live_wav_chunks(client: TestClient) -> None:
+    paths = client.get("/api/v1/openapi.json").json()["paths"]
+    audio = [
+        path
+        for path, operations in paths.items()
+        if "audio/wav" in operations.get("post", {}).get("requestBody", {}).get("content", {})
+    ]
+    assert audio == [
+        "/api/v1/sessions/{session_id}/live-transcription/{capture_id}/chunks/{sequence}"
+    ]

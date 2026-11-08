@@ -10,7 +10,9 @@ controls, so it is bounded here.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import AwareDatetime, BaseModel, Field, model_validator
 
 from app.services.tutor_guardrails import (
     MAX_ANSWER_CHARS,
@@ -34,6 +36,20 @@ class ChatRequest(BaseModel):
     # is held to characters that cannot break a log line.
     request_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9._-]+$")
     question: str = Field(min_length=1, max_length=MAX_QUESTION_CHARS)
+    source: Literal["materials", "discussion"] = "materials"
+    discussion_since: AwareDatetime | None = None
+    discussion_until: AwareDatetime | None = None
+
+    @model_validator(mode="after")
+    def valid_window(self):
+        if (
+            self.discussion_since
+            and self.discussion_until
+            and self.discussion_since > self.discussion_until
+        ):
+            raise ValueError("The discussion start must precede its end.")
+        return self
+
     history: list[ChatTurn] = Field(
         default_factory=list,
         max_length=MAX_EARLIER_TURNS,

@@ -25,6 +25,8 @@ from .session_support import add_course
 
 # State-changing routes left unaudited, and why.
 NOT_AUDITED = {
+    # Graph webhook only validates subscriptions and wakes an existing opted-in job.
+    ("POST", "/api/v1/teams/transcript-notifications"),
     # Nobody is signed in yet. Failed attempts and lockouts are logged and
     # counted by the login itself.
     ("POST", "/api/v1/auth/login"),

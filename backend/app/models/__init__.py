@@ -14,6 +14,7 @@ from app.models.course import Course
 from app.models.course_enrollment import CourseEnrollment, CourseLecturer
 from app.models.deletion_request import DeletionRequest
 from app.models.delivered_question import DeliveredQuestion
+from app.models.discussion_note import DiscussionNote
 from app.models.dynamic_prompt import DynamicPrompt
 from app.models.engagement_record import EngagementRecord
 from app.models.eval_answer import EvalAnswer
@@ -33,9 +34,12 @@ from app.models.teams_meeting_reference import TeamsMeetingReference
 from app.models.teams_participant_mapping import TeamsParticipantMapping
 from app.models.teams_roster_sync import TeamsRosterSync
 from app.models.teams_user_mapping import TeamsUserMapping
+from app.models.transcript_automation import TranscriptAutomation, TranscriptDraftJob
 from app.models.user import User
 
 __all__ = [
+    "TranscriptAutomation",
+    "TranscriptDraftJob",
     "AuditLog",
     "BreakoutRoom",
     "ComprehensionResult",
@@ -51,6 +55,7 @@ __all__ = [
     "Question",
     "RagChunk",
     "Session",
+    "DiscussionNote",
     "Student",
     "StudentResponse",
     "TeamsMeetingLink",

@@ -1,3 +1,4 @@
+import DiscussionPanel from '../features/discussion/DiscussionPanel'
 import { useId, useState } from 'react'
 import { ChevronDown, FileText } from 'lucide-react'
 import { Link, useParams } from 'react-router'
@@ -135,6 +136,7 @@ function Review({ sessionId }: { sessionId: string }) {
         }
       />
       <PageBody>
+        <DiscussionPanel key={sessionId} sessionId={sessionId!} />
         <div className="grid gap-6 md:grid-cols-2">
           <Panel title="Your answers" description="Unanswered questions are not counted as wrong.">
             <p className="text-lg">

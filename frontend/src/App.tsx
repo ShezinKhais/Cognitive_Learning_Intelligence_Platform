@@ -23,6 +23,7 @@ import ProtectedStudentPage from './pages/ProtectedStudentPage'
 const AccessDeniedPage = lazy(() => import('./pages/AccessDeniedPage'))
 const AdminConsole = lazy(() => import('./pages/AdminConsole'))
 const AdminStatusPage = lazy(() => import('./pages/AdminStatusPage'))
+const DiscussionNotesPage = lazy(() => import('./pages/DiscussionNotesPage'))
 const ConsentPage = lazy(() => import('./pages/ConsentPage'))
 const LecturerLiveSessionPage = lazy(() => import('./pages/LecturerLiveSessionPage'))
 const LecturerMaterialsPage = lazy(() => import('./pages/LecturerMaterialsPage'))
@@ -287,6 +288,7 @@ export default function App() {
                 element={<SessionReportPage />}
               />
 
+              <Route path="/lecturer/sessions/:sessionId/notes" element={<DiscussionNotesPage />} />
               {/* The report itself, built and downloaded as a PDF (Cyber 2). */}
               <Route
                 path="/lecturer/sessions/:sessionId/report"

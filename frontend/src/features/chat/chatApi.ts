@@ -6,6 +6,9 @@ export const MAX_CHAT_QUESTION_LENGTH = 2000
 
 export interface ChatRequest {
   sessionId: string
+  source?: 'discussion'
+  discussionSince?: string
+  discussionUntil?: string
   requestId: string
   question: string
   /** Earlier exchanges, oldest first, for a follow-up. */
@@ -26,6 +29,9 @@ export async function streamChat(request: ChatRequest): Promise<void> {
       body: JSON.stringify({
         request_id: request.requestId,
         question: request.question,
+        source: request.source,
+        discussion_since: request.discussionSince,
+        discussion_until: request.discussionUntil,
         ...(request.history?.length ? { history: request.history } : {}),
       }),
       signal: request.signal,
