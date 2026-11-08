@@ -115,6 +115,8 @@ AUDIENCE = {
     ("PATCH", "/api/v1/materials/{material_id}/questions/{question_id}"): STAFF,
     ("POST", "/api/v1/materials/{material_id}/questions/{question_id}:regenerate"): STAFF,
     ("POST", "/api/v1/materials/{material_id}/questions:bulk"): STAFF,
+    ("POST", "/api/v1/materials/{material_id}/questions"): STAFF,
+    ("POST", "/api/v1/materials/{material_id}/questions/{question_id}:reuse"): STAFF,
     ("POST", "/api/v1/meetings/events"): STAFF,
     ("GET", "/api/v1/meetings/{meeting_id}"): STAFF,
     ("PUT", "/api/v1/meetings/{meeting_id}"): STAFF,

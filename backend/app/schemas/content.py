@@ -136,6 +136,19 @@ class QuestionReviewRequest(BaseModel):
     difficulty: Difficulty | None = None
 
 
+class QuestionCreateRequest(BaseModel):
+    """A question the lecturer writes themselves. It is ready to send at once."""
+
+    type: QuestionType = QuestionType.MCQ
+    prompt: str = Field(min_length=1, max_length=MAX_PROMPT_CHARS)
+    options: list[Annotated[str, Field(max_length=MAX_OPTION_CHARS)]] | None = Field(
+        default=None, max_length=MAX_OPTIONS
+    )
+    correct_option: int | None = Field(default=None, ge=0, lt=MAX_OPTIONS)
+    difficulty: Difficulty = Difficulty.MEDIUM
+    topic: str | None = Field(default=None, max_length=255)
+
+
 # Far above any one material's question count. Unbounded, a single request
 # could name enough ids to make the lookup query itself the problem.
 MAX_BULK_REVIEW_IDS = 500

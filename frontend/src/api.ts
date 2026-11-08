@@ -549,6 +549,32 @@ export function regenerateQuestion(materialId: string, questionId: string): Prom
   )
 }
 
+export interface WriteQuestionPayload {
+  type: QuestionType
+  prompt: string
+  options?: string[]
+  correct_option?: number
+  difficulty?: Difficulty
+}
+
+// A question the lecturer writes, ready to send once saved.
+export function writeQuestion(materialId: string, payload: WriteQuestionPayload): Promise<Question> {
+  return request<Question>(
+    `/materials/${materialId}/questions`,
+    { method: 'POST', body: JSON.stringify(payload) },
+    true,
+  )
+}
+
+// Stages a copy of a question that has been asked, for another class.
+export function reuseQuestion(materialId: string, questionId: string): Promise<Question> {
+  return request<Question>(
+    `/materials/${materialId}/questions/${questionId}:reuse`,
+    { method: 'POST' },
+    true,
+  )
+}
+
 export interface QuestionBulkReviewResult {
   updated: Question[]
   skipped_ids: string[]
