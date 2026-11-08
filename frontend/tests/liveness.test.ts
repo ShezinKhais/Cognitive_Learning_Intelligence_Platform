@@ -5,8 +5,9 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import {
-  LIVENESS, MODEL_INPUT, SUGGESTED_LIVENESS, applyLiveness, cropBox, dueForCheck, faceBox, isSpoof, noteFrame, recordCheck,
-  startLiveness, type LivenessSettings, type LivenessState,
+  LIVENESS, MODEL_INPUT, SUGGESTED_LIVENESS, applyLiveness, cropBox, dueForCheck, faceBox, isSpoof, livenessFrame,
+  loadInBackground, mayLearn, noteFrame, recordCheck, startLiveness, wantsLivenessModel,
+  type LiveCheck, type LivenessSettings, type LivenessState,
 } from '../src/features/attention/liveness.ts'
 import {
   falseRejection, framesToCsv, livenessCounts, parseCsv, replayLiveness, spoofCatch, tuneLiveness, type Frame, type Label,
@@ -80,8 +81,98 @@ test('crop is 2.7x the face, centred, and slid back inside the image (as in the 
   assert.ok(big.height <= 240 && big.y >= 0 && big.x >= 0 && big.x + big.width <= 320)
 })
 
-test('model input is BGR planes, 0 to 255, not divided', () => {
-  assert.deepEqual(MODEL_INPUT, { tensorFormat: 'BGR', tensorLayout: 'NCHW', dataType: 'float32', norm: { mean: 1, bias: 0 } })
+test('MODEL_INPUT makes ONNX Runtime give BGR planes, 0 to 255, not divided', async () => {
+  // Tensor.fromImage is what the worker calls. Node has no ImageBitmap or
+  // canvas, so minimal stand-ins hand it known pixels; the conversion itself
+  // is ONNX Runtime's own code.
+  const g = globalThis as Record<string, unknown>
+  const saved = { ImageBitmap: g.ImageBitmap, OffscreenCanvas: g.OffscreenCanvas }
+  const rgba = new Uint8ClampedArray(2 * 2 * 4)
+  rgba.set([10, 20, 30, 255], 0) // first pixel: red 10, green 20, blue 30
+  rgba.set([200, 100, 50, 255], 4)
+  class FakeBitmap { width = 2; height = 2 }
+  class FakeCanvas {
+    width = 1; height = 1
+    getContext() { return { drawImage() {}, getImageData: () => ({ data: rgba }) } }
+  }
+  g.ImageBitmap = FakeBitmap
+  g.OffscreenCanvas = FakeCanvas
+  try {
+    const ort = await import('onnxruntime-web/wasm')
+    const tensor = await ort.Tensor.fromImage(new FakeBitmap() as unknown as ImageBitmap, MODEL_INPUT)
+    assert.deepEqual(tensor.dims, [1, 3, 2, 2])
+    const data = [...(tensor.data as Float32Array)]
+    // Blue plane first, then green, then red; raw 0-255 values.
+    assert.deepEqual([data[0], data[4], data[8]], [30, 20, 10])
+    assert.deepEqual([data[1], data[5], data[9]], [50, 100, 200])
+  } finally {
+    g.ImageBitmap = saved.ImageBitmap
+    g.OffscreenCanvas = saved.OffscreenCanvas
+  }
+})
+
+// -- the worker's paths: off by default, and falling back when the model fails --
+
+const seen = { face: true, forward: true, head: 'forward' } as const
+const lowCheck = async (): Promise<LiveCheck> => ({ live: 0.01, ms: 3 })
+
+test('with LIVENESS off, the worker does not load the model and judges faces as before', async () => {
+  assert.equal(wantsLivenessModel(LIVENESS, false), false, 'classroom: no import, no download')
+  assert.equal(wantsLivenessModel(LIVENESS, true), true, 'the recorder still asks for scores')
+  let calls = 0
+  const check = async () => { calls += 1; return { live: 0.01, ms: 3 } }
+  let state = startLiveness()
+  for (let ms = 0; ms < 10_000; ms += 250) {
+    const step = await livenessFrame(state, 1, ms, null, check)
+    state = step.state
+    assert.equal(step.spoof, false)
+    assert.deepEqual(applyLiveness(seen, step.spoof), seen)
+  }
+  assert.equal(calls, 0, 'no check runs while off, even with a model')
+})
+
+test('with LIVENESS off, the recorder still gets a score on every frame but nothing is rejected', async () => {
+  const step = await livenessFrame(startLiveness(), 1, 0, null, lowCheck, true)
+  assert.deepEqual(step.live, { live: 0.01, ms: 3 })
+  assert.equal(step.spoof, false)
+})
+
+test('a model that fails or hangs while loading leaves the camera without it, not stuck', async () => {
+  assert.equal(await loadInBackground(() => Promise.reject(new Error('404'))), null)
+  assert.equal(await loadInBackground(() => new Promise(() => {}), 20), null, 'hung load gives up')
+  assert.equal(await loadInBackground(async () => 'model', 1000), 'model')
+})
+
+test('with no model loaded, LIVENESS on still never rejects a face', async () => {
+  let state = startLiveness()
+  for (let ms = 0; ms < 10_000; ms += 250) {
+    const step = await livenessFrame(state, 1, ms, s, null)
+    state = step.state
+    assert.equal(step.spoof, false)
+  }
+})
+
+test('a check that throws gives no score and never counts towards rejecting', async () => {
+  let state = startLiveness()
+  for (let ms = 0; ms < 10_000; ms += 250) {
+    const step = await livenessFrame(state, 1, ms, s, () => Promise.reject(new Error('session lost')))
+    state = step.state
+    assert.equal(step.live, null)
+    assert.equal(step.spoof, false)
+    assert.deepEqual(applyLiveness(seen, step.spoof), seen)
+  }
+})
+
+test('with LIVENESS on, the same steps reject a photo, and adaptation learns nothing from it', async () => {
+  let state = startLiveness()
+  let spoof = false
+  for (const ms of [0, 1000, 2000]) ({ state, spoof } = await livenessFrame(state, 1, ms, s, lowCheck))
+  assert.equal(spoof, true)
+  assert.deepEqual(applyLiveness(seen, spoof), { face: false, forward: null, head: 'unavailable' })
+  assert.equal(mayLearn(true, false, 0, 1000), false, 'rejected face')
+  assert.equal(mayLearn(false, true, 0, 1000), false, 'calibrating')
+  assert.equal(mayLearn(false, false, 2000, 1000), false, 'no good moment')
+  assert.equal(mayLearn(false, false, 0, 1000), true)
 })
 
 // -- evaluation -------------------------------------------------------------------

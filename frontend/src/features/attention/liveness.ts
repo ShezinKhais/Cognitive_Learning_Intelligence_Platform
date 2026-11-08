@@ -78,6 +78,57 @@ export function recordCheck(state: LivenessState, live: number, timestamp: numbe
 export const isSpoof = (state: LivenessState, s: LivenessSettings) =>
   state.scores.length >= s.window && state.scores.every(live => live < s.spoofBelow)
 
+// -- what the face worker does with it --------------------------------------------
+
+/** One check's result: the live probability and how long it took, in milliseconds. */
+export interface LiveCheck { live: number; ms: number }
+
+/** The worker loads the model only while LIVENESS is on or the recorder asks for scores. */
+export const wantsLivenessModel = (s: LivenessSettings | null, withLiveScores: boolean) => s !== null || withLiveScores
+
+/** How long the model may take to load before the camera carries on without it. */
+export const LIVENESS_LOAD_TIMEOUT_MS = 30_000
+
+/**
+ * Loads the model without holding up the camera: resolves to the model, or to
+ * null if loading fails or takes longer than `timeoutMs`. A model that arrives
+ * after the timeout is not used, so faces stay judged as before.
+ */
+export function loadInBackground<T>(load: () => Promise<T>, timeoutMs = LIVENESS_LOAD_TIMEOUT_MS): Promise<T | null> {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve(null), timeoutMs)
+    load().then(model => { clearTimeout(timer); resolve(model) }, () => { clearTimeout(timer); resolve(null) })
+  })
+}
+
+/**
+ * One camera frame's anti-spoofing step, as the worker runs it. `check` runs
+ * the model on the frame's face (null while the model is not loaded). With
+ * `s` null (LIVENESS off) nothing is judged, and the model runs only when
+ * `everyFrame` asks for a score (the recorder). A failed check gives no score
+ * and never counts towards rejecting.
+ */
+export async function livenessFrame(
+  state: LivenessState,
+  faces: number,
+  timestamp: number,
+  s: LivenessSettings | null,
+  check: (() => Promise<LiveCheck | null>) | null,
+  everyFrame = false,
+): Promise<{ state: LivenessState; live: LiveCheck | null; spoof: boolean }> {
+  if (s) state = noteFrame(state, faces, timestamp, s)
+  let live: LiveCheck | null = null
+  if (check && faces === 1 && (everyFrame || (s !== null && dueForCheck(state, timestamp, s)))) {
+    live = await check().catch(() => null)
+    if (s) state = recordCheck(state, live?.live ?? Number.NaN, timestamp, s)
+  }
+  return { state, live, spoof: s !== null && isSpoof(state, s) }
+}
+
+/** Adaptation (#166) learns only from a good moment, never while calibrating or from a rejected face. */
+export const mayLearn = (spoof: boolean, calibrating: boolean, timestamp: number, learnUntil: number) =>
+  !spoof && !calibrating && timestamp < learnUntil
+
 /** A face judged not live counts as no face, with no gaze reading (#165). */
 export function applyLiveness(observation: FaceObservation, spoof: boolean): FaceObservation {
   return spoof ? { face: false, forward: null, head: 'unavailable' } : observation

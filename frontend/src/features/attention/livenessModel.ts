@@ -1,8 +1,11 @@
-// Runs the anti-spoofing model (#165) inside the face worker. Loaded only when
-// LIVENESS is on or the recorder asks for live scores, so the classroom does
-// not download it while the check is off. Same-origin assets only: the model
-// and the ONNX runtime files are copied into public/attention/ at build time
-// (scripts/prepare-attention.mjs), checksum pinned.
+// Runs the anti-spoofing model (#165) inside the face worker. The worker calls
+// loadLivenessModel only while LIVENESS is on or the recorder asks for live
+// scores, so the model and the ONNX engine (.wasm, about 12 MB) are not
+// downloaded while the check is off. The worker is built as one file (IIFE),
+// so the onnxruntime JavaScript itself (about 50 KB) is part of face.worker's
+// download either way. Same-origin assets only: the model and the engine are
+// copied into public/attention/ at build time (scripts/prepare-attention.mjs),
+// checksum pinned.
 import { LIVE_CLASS, MODEL_INPUT, MODEL_SIZE, cropBox, faceBox } from './liveness'
 
 type Ort = typeof import('ort-extern-wasm')

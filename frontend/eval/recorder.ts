@@ -167,10 +167,13 @@ start.onclick = async () => {
   worker = new Worker(new URL('../src/features/attention/face.worker.ts', import.meta.url), { type: 'module' })
   worker.onmessage = event => {
     if (event.data.type === 'ready') {
-      status.textContent = event.data.liveness
+      // The anti-spoofing model loads after the camera; wait for it before recording.
+      status.textContent = 'Camera ready. Loading the anti-spoofing model…'
+      sendFrames()
+    } else if (event.data.type === 'liveness') {
+      status.textContent = event.data.ok
         ? 'Camera ready. Pick a clip to record.'
         : 'Camera ready, but the anti-spoofing model did not load: clips will have no live score.'
-      sendFrames()
     }
     else if (event.data.type === 'observation') { busy = false; if (event.data.features) { show(event.data.features, event.data.live ?? null); keep(event.data.features, event.data.live ?? null) } }
     else if (event.data.type === 'error') { busy = false; status.textContent = 'A frame could not be read; recording continues.' }

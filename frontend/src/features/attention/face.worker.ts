@@ -4,7 +4,7 @@ import {
   type AdaptiveState, type Calibration, type FaceFeatures,
 } from './signals'
 import {
-  LIVENESS, applyLiveness, dueForCheck, isSpoof, noteFrame, recordCheck, startLiveness, type LivenessState,
+  LIVENESS, applyLiveness, livenessFrame, loadInBackground, mayLearn, startLiveness, wantsLivenessModel, type LivenessState,
 } from './liveness'
 import type { LivenessModel } from './livenessModel'
 
@@ -43,15 +43,16 @@ self.onmessage = async (event: MessageEvent) => {
         // Real yaw, pitch and roll, so looking down at notes is not forward.
         outputFacialTransformationMatrixes: true,
       })
-      if (LIVENESS || withLiveScores) {
-        // If the model cannot load, faces are judged as before: never reject
-        // a real student because the check itself is unavailable.
-        try {
-          const { loadLivenessModel } = await import('./livenessModel')
-          livenessModel = await loadLivenessModel(base)
-        } catch { livenessModel = null }
+      // The camera is ready now; the anti-spoofing model, if wanted, loads
+      // afterwards so a slow or failed load never holds attention up. Until it
+      // arrives, or if it never does, faces are judged as before.
+      self.postMessage({ type: 'ready' })
+      if (wantsLivenessModel(LIVENESS, withLiveScores)) {
+        void loadInBackground(async () => (await import('./livenessModel')).loadLivenessModel(base)).then(model => {
+          livenessModel = model
+          self.postMessage({ type: 'liveness', ok: model !== null })
+        })
       }
-      self.postMessage({ type: 'ready', liveness: livenessModel !== null })
     } else if (type === 'calibrate') {
       calibration = null
       calibrating = { until: null, frames: [] }
@@ -81,17 +82,16 @@ self.onmessage = async (event: MessageEvent) => {
         }
       }
       // #165: check now and then that the one face in view is a live person.
-      const faces = result.faceLandmarks.length
-      if (LIVENESS) liveness = noteFrame(liveness, faces, timestamp, LIVENESS)
-      let live: { live: number; ms: number } | null = null
-      if (livenessModel && faces === 1 && (withLiveScores || (LIVENESS && dueForCheck(liveness, timestamp, LIVENESS)))) {
-        live = await livenessModel.check(frame, result.faceLandmarks[0]).catch(() => null)
-        if (LIVENESS) liveness = recordCheck(liveness, live?.live ?? Number.NaN, timestamp, LIVENESS)
-      }
-      const spoof = LIVENESS !== null && isSpoof(liveness, LIVENESS)
+      const model = livenessModel
+      const step = await livenessFrame(
+        liveness, result.faceLandmarks.length, timestamp, LIVENESS,
+        model ? () => model.check(frame, result.faceLandmarks[0]) : null, withLiveScores,
+      )
+      liveness = step.state
+      const { live, spoof } = step
       const base = thresholdsFor(calibration)
       // A photo is not this student's normal, so nothing is learned from it.
-      if (ADAPTATION && adaptive && !calibrating && !spoof && timestamp < learnUntil) adaptive = learn(adaptive, features, base, ADAPTATION, GAZE_MODEL)
+      if (ADAPTATION && adaptive && mayLearn(spoof, calibrating !== null, timestamp, learnUntil)) adaptive = learn(adaptive, features, base, ADAPTATION, GAZE_MODEL)
       const value = ADAPTATION && adaptive
         ? classifyAdaptive(features, adaptive, base, ADAPTATION, GAZE_MODEL)
         : classifyFace(features, base, calibration, GAZE_MODEL)
