@@ -70,7 +70,6 @@ for (const account of [
   })
 }
 
-<<<<<<< HEAD
 test('unknown route works when signed out and API 404 stays JSON', async ({ page }) => {
   await page.goto('/no-such-clip-page')
 
@@ -87,7 +86,6 @@ test('unknown route works when signed out and API 404 stays JSON', async ({ page
   const response = await page.request.get('/api/v1/no-such-clip-api')
   expect(response.status()).toBe(404)
   expect(response.headers()['content-type']).toContain('application/json')
-=======
 test('student can use My data after withdrawing terms', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 })
   const health = await page.request.get('/api/v1/health')
@@ -137,5 +135,4 @@ test('student can use My data after withdrawing terms', async ({ page }) => {
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   await expect(page).toHaveURL(/\/student\/my-data$/)
   await expect(page.getByRole('heading', { name: 'My data', level: 1 })).toBeVisible()
->>>>>>> origin/main
 })
