@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { animate, motion, useAnimationControls, useReducedMotion } from 'motion/react'
 import { AlertCircle, ArrowRight, Eye, EyeOff, LoaderCircle } from 'lucide-react'
-import { Link, useLocation, useNavigate } from 'react-router'
+import { Link, matchPath, useLocation, useNavigate } from 'react-router'
 
 import { ApiError, getCurrentUser, login, saveAccessToken } from '../api'
-import { hasRequiredConsent, intendedPathForRole } from '../authRouting'
+import { hasRequiredConsent, intendedPathForRole, STUDENT_DATA_PATH } from '../authRouting'
 import { Wordmark } from '../components/brand/ClipMark'
 import { requestIntro } from '../components/shell/intro'
 import { SIGN_OUT_INCOMPLETE } from '../features/realtime/tokenRefusal'
@@ -156,7 +156,9 @@ export default function LoginPage() {
     const currentUser = await getCurrentUser()
     const requestedPath = (location.state as { from?: string } | null)?.from
     const destination = intendedPathForRole(currentUser.role, requestedPath)
-    if (!hasRequiredConsent(currentUser)) {
+    const opensStudentData =
+      currentUser.role === 'student' && matchPath(STUDENT_DATA_PATH, destination.split(/[?#]/, 1)[0])
+    if (!opensStudentData && !hasRequiredConsent(currentUser)) {
       navigate('/consent', { replace: true, state: { from: destination } })
       return
     }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { useLocation, useNavigate } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 import { motion } from 'motion/react'
 import { Activity, Camera, Check, Mic, type LucideIcon } from 'lucide-react'
 
@@ -10,7 +10,7 @@ import {
   recordConsent,
   type CurrentUser,
 } from '../api'
-import { intendedPathForRole } from '../authRouting'
+import { intendedPathForRole, STUDENT_DATA_PATH } from '../authRouting'
 import { Wordmark } from '../components/brand/ClipMark'
 import PageLoader from '../components/brand/PageLoader'
 import { buttonStyles } from '../components/ui/button'
@@ -260,6 +260,14 @@ export default function ConsentPage() {
           {saving ? 'Saving…' : 'Continue'}
         </button>
       </form>
+      {isStudent && (
+        <p className="mt-4 text-sm text-muted-foreground">
+          You can still download your data or request erasure without accepting the terms.{' '}
+          <Link to={STUDENT_DATA_PATH} className="font-semibold underline">
+            Open My data
+          </Link>
+        </p>
+      )}
     </Frame>
   )
 }
