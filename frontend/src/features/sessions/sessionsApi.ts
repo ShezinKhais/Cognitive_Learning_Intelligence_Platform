@@ -29,6 +29,42 @@ export interface SessionResponse {
 
 const session = (id: string) => `/sessions/${encodeURIComponent(id)}`
 
+export interface QuestionBreakdown {
+  number: number
+  question_id: string
+  prompt: string
+  type: string
+  options: string[] | null
+  correct_option: number | null
+  topic: string | null
+  eligible: number
+  answers: number
+  correct: number
+  marked: number
+  option_counts: number[] | null
+  median_seconds: number | null
+}
+
+export interface StudentBreakdown {
+  student_id: string
+  name: string
+  answered: number
+  correct: number
+  marked: number
+  missed: number
+}
+
+export interface SessionBreakdown {
+  session_id: string
+  questions: QuestionBreakdown[]
+  students: StudentBreakdown[]
+}
+
+/** Each question and each student in a session, for its lecturer. */
+export function getBreakdown(id: string): Promise<SessionBreakdown> {
+  return apiAuthenticatedGet<SessionBreakdown>(`${session(id)}/breakdown`)
+}
+
 export function listSessions(limit = 100): Promise<Page<SessionSummary>> {
   return apiAuthenticatedGet<Page<SessionSummary>>(`/sessions?limit=${limit}`)
 }

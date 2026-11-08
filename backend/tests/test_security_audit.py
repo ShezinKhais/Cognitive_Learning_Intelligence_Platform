@@ -127,6 +127,8 @@ AUDIENCE = {
     ("POST", "/api/v1/sessions/{session_id}/alerts/{alert_id}/acknowledge"): STAFF,
     ("POST", "/api/v1/sessions/{session_id}/chat"): STUDENT_ONLY,
     ("POST", "/api/v1/sessions/{session_id}/end"): STAFF,
+    ("GET", "/api/v1/sessions/{session_id}/breakdown"): STAFF,
+    ("GET", "/api/v1/sessions/{session_id}/results.csv"): STAFF,
     ("GET", "/api/v1/sessions/{session_id}/engagement"): STAFF,
     ("POST", "/api/v1/sessions/{session_id}/pause"): STAFF,
     ("GET", "/api/v1/sessions/{session_id}/questions"): STAFF,

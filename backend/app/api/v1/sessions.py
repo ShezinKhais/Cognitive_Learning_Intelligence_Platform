@@ -14,6 +14,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi.responses import Response
 
 from app.api.deps import (
     AppSettings,
@@ -38,6 +39,7 @@ from app.schemas.session import (
     DeliverableQuestionOut,
     EngagementOut,
     ResponseOut,
+    SessionBreakdownOut,
     SessionCreateRequest,
     SessionOut,
     SessionReadinessOut,
@@ -45,7 +47,7 @@ from app.schemas.session import (
     StudentSessionSummary,
     TopicDifficultyOut,
 )
-from app.services import alert_store, breakout, session_lifecycle, session_reads
+from app.services import alert_store, breakout, session_breakdown, session_lifecycle, session_reads
 from app.services.engagement_view import staff_confidence, staff_score, staff_signals
 from app.services.session_access import may_view_session_analytics
 from app.services.student_report import build_student_summary, record_staff_view
@@ -314,6 +316,43 @@ async def require_analytics_access(db: DbSession, principal: CurrentUser, sessio
         row, user_id=principal.user_id, role=principal.role
     ):
         raise NotFoundError("Session was not found.", {"session_id": str(session_id)})
+
+
+@router.get("/{session_id}/breakdown", response_model=SessionBreakdownOut, dependencies=_staff)
+async def session_breakdown_view(
+    session_id: UUID, principal: CurrentUser, db: DbSession
+) -> SessionBreakdownOut:
+    """Each question asked, with how the choices split, and each student's
+    answers, right answers and misses."""
+    await require_analytics_access(db, principal, session_id)
+    return await session_breakdown.build(db, session_id)
+
+
+@router.get(
+    "/{session_id}/results.csv",
+    dependencies=_staff,
+    response_class=Response,
+    responses={200: {"content": {"text/csv": {}}}},
+)
+@audit_action("SESSION_RESULTS_EXPORTED")
+async def session_results_csv(
+    session_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> Response:
+    """Every answer in the session as a CSV, one row per answer."""
+    await require_analytics_access(db, principal, session_id)
+    body = await session_breakdown.csv_rows(db, session_id)
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="session-{session_id}.csv"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.get(
