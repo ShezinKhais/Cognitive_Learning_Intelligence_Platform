@@ -64,6 +64,18 @@ def _created_id(result: Any) -> UUID | None:
     return None
 
 
+def _kind(result: Any, action_type: str) -> str:
+    """What a create returned: SessionOut is a session. Otherwise the first
+    word of the action, SESSION_CREATED being a session too."""
+    name = type(result).__name__
+    if name.endswith("Out") and len(name) > 3:
+        return "".join(
+            f"_{c.lower()}" if c.isupper() and i else c.lower()
+            for i, c in enumerate(name.removesuffix("Out"))
+        )[:50]
+    return action_type.split("_")[0].lower()
+
+
 def audit_action(
     action_type: str,
     *,
@@ -111,23 +123,23 @@ def audit_action(
                     raise RuntimeError("Production audited endpoints must receive a db parameter.")
 
                 recorded = False
+                entry: AuditLog | None = None
 
                 def record(session: Any) -> None:
-                    nonlocal recorded
+                    nonlocal recorded, entry
                     # A released savepoint is not the durable endpoint commit.
                     if getattr(session, "in_nested_transaction", lambda: False)():
                         return
                     if recorded:
                         return
-                    session.add(
-                        AuditLog(
-                            user_id=user_id,
-                            action_type=action_type,
-                            target_type=target_type,
-                            target_id=target_id,
-                            details=details or None,
-                        )
+                    entry = AuditLog(
+                        user_id=user_id,
+                        action_type=action_type,
+                        target_type=target_type,
+                        target_id=target_id,
+                        details=details or None,
                     )
+                    session.add(entry)
                     recorded = True
 
                 # Services may commit before returning (and then announce live
@@ -137,11 +149,17 @@ def audit_action(
                     event.listen(sync, "before_commit", record)
                 try:
                     result = await func(*args, **kwargs)
-                    if target_id is None and not recorded:
+                    if target_id is None:
                         # A create names its target only in what it returns.
                         target_id = _created_id(result)
                         if target_id is not None:
-                            target_type = target_type or action_type.split("_")[0].lower()
+                            target_type = _kind(result, action_type)
+                            if entry is not None:
+                                # Recorded already, by a commit inside the
+                                # service. The record kept its place in that
+                                # commit; its target follows with the request's.
+                                entry.target_type, entry.target_id = target_type, target_id
+                                db.add(entry)
                     record(db)
                     await db.flush()
                     if commit:

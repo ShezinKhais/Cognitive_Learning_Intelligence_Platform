@@ -281,3 +281,29 @@ async def test_a_course_is_named_by_its_code_and_a_create_by_what_it_returns() -
     )
     [session] = created.added
     assert (session.target_type, session.target_id, session.details) == ("session", made, None)
+
+
+@pytest.mark.asyncio
+async def test_an_id_from_the_result_is_typed_by_what_was_returned() -> None:
+    """A meeting route that creates a session records the session, with the
+    meeting in details, rather than a meeting target holding a session id."""
+
+    class SessionOut:
+        def __init__(self, id):  # noqa: A002, ANN001
+            self.id = id
+
+    settings = SimpleNamespace(is_production=True)
+    db = FakeSession()
+    made = uuid4()
+
+    @audit_action("MEETING_LINKED")
+    async def link(meeting_id, *, principal, settings, db):
+        return SessionOut(made)
+
+    await link(
+        "19:meeting-abc", principal=SimpleNamespace(user_id=uuid4()), settings=settings, db=db
+    )
+
+    [record] = db.added
+    assert (record.target_type, record.target_id) == ("session", made)
+    assert record.details == {"meeting_id": "19:meeting-abc"}
