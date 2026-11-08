@@ -43,8 +43,8 @@ from app.schemas.session import (
     SessionOut,
     SessionReadinessOut,
     SessionStatus,
-    StudentSessionSummary,
     SessionUpdateRequest,
+    StudentSessionSummary,
     TopicDifficultyOut,
 )
 from app.services import alert_store, breakout, session_lifecycle, session_reads
@@ -140,9 +140,7 @@ async def copy_session(
     )
 
 
-@router.delete(
-    "/{session_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=_staff
-)
+@router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=_staff)
 @audit_action("SESSION_DELETED")
 async def delete_session(
     session_id: UUID,
