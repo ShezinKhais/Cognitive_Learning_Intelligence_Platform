@@ -351,6 +351,7 @@ export const GAZE_GRID = {
   maxYawDegrees: [10, 15, 20, 25],
   maxPitchDegrees: [12, 16, 20, 25],
   maxEyeDisagreement: 0.15,
+  maxRollDegrees: 45,
 }
 
 /** The gaze model and limits with the best balanced accuracy on `frames`; ties keep the earlier one. */
@@ -361,7 +362,7 @@ export function tuneGaze(
   let best: { gaze: GazeModel; thresholds: Thresholds; balancedAccuracy: number | null } | null = null
   for (const kYaw of GAZE_GRID.kYaw) {
     for (const kPitch of GAZE_GRID.kPitch) {
-      const gaze = { kYaw, kPitch, maxEyeDisagreement: GAZE_GRID.maxEyeDisagreement }
+      const gaze = { kYaw, kPitch, maxEyeDisagreement: GAZE_GRID.maxEyeDisagreement, maxRollDegrees: GAZE_GRID.maxRollDegrees }
       for (const maxYawDegrees of GAZE_GRID.maxYawDegrees) {
         for (const maxPitchDegrees of GAZE_GRID.maxPitchDegrees) {
           const thresholds = { ...base, maxYawDegrees, maxPitchDegrees }
@@ -373,7 +374,7 @@ export function tuneGaze(
       }
     }
   }
-  return best ?? { gaze: { kYaw: 0, kPitch: 0, maxEyeDisagreement: GAZE_GRID.maxEyeDisagreement }, thresholds: base, balancedAccuracy: null }
+  return best ?? { gaze: { kYaw: 0, kPitch: 0, maxEyeDisagreement: GAZE_GRID.maxEyeDisagreement, maxRollDegrees: GAZE_GRID.maxRollDegrees }, thresholds: base, balancedAccuracy: null }
 }
 
 // -- confidence intervals ----------------------------------------------------------

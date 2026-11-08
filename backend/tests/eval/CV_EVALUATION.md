@@ -180,6 +180,7 @@ otherwise.
 | Part | File | What it does |
 |---|---|---|
 | Combined gaze | `signals.ts` (`GazeModel`, `gazeAngles`) | gaze yaw = head yaw + k × (iris x − the student's iris x), and the same for pitch. The eyes can rescue a turned head as well as veto a still one. |
+| Head tilt | `signals.ts` (`GazeModel.maxRollDegrees`) | With the combined gaze, tilting the head (ear towards shoulder) is ignored up to 45°, then gives no reading. A tilt hardly moves where the eyes point; with the #159 rule, P2's `screen_head_turned` clip (head tilted about 30°, eyes on the screen) read 3% "looking", 93% with the change. |
 | Eyes that disagree | `signals.ts` (`gazeAngles`, `Calibration.eyeGapX`) | If the two irises disagree by more than 0.15 beyond the student's own calibrated gap, there is no reading, never "away". A squint present while calibrating is the student's normal. |
 | Adaptive limits | `signals.ts` (`learn`, `adaptedThresholds`, `classifyAdaptive`) | Learns the student's centre and spread from good moments; limits = 3 × their spread, never below the standard limits, never above 25° / 30° / 25°. A wider normal than that gives "no reading". |
 | Good moments | `face.worker.ts`, `localSensors.ts` (`markLookingAtScreen`), `StudentLiveSessionPage.tsx` | The calibration, and 1.5 s after each key typed in a checkpoint answer. Frames far from the current normal are skipped, so a glance at the keyboard or a long look away is not learned. |

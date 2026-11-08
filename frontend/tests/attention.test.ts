@@ -230,7 +230,7 @@ function pose(yaw: number, pitch = 0, roll = 0, irisX = 0.5, irisY = 0.5, gapX =
     pose: { yaw, pitch, roll }, leftEye: eye(irisX + gapX / 2), rightEye: eye(irisX - gapX / 2),
   }
 }
-const GAZE: GazeModel = { kYaw: -100, kPitch: 0, maxEyeDisagreement: 0.15 }
+const GAZE: GazeModel = { kYaw: -100, kPitch: 0, maxEyeDisagreement: 0.15, maxRollDegrees: 45 }
 const centre = { yaw: 0, pitch: 0, roll: 0, irisX: 0.5, irisY: 0.5 }
 
 test('the combined gaze and adaptation stay off until recordings support them', () => {
@@ -253,6 +253,18 @@ test('with a gaze model, the eyes can rescue a turned head as well as veto a sti
   assert.equal(classifyFace(pose(0), t, centre, GAZE).forward, true)
   const closed = { ...pose(0), leftEye: { ...pose(0).leftEye!, open: 0 } }
   assert.equal(classifyFace(closed, t, centre, GAZE).forward, null)
+})
+
+test('with a gaze model, a tilted head is not "away"; tilted too far it is no reading', () => {
+  const t = CALIBRATED_THRESHOLDS
+  // P2 kept the eyes on the screen with the head tilted about 30 degrees.
+  const tilted = pose(0, 0, 30)
+  assert.equal(classifyFace(tilted, t, centre).forward, false)
+  assert.equal(classifyFace(tilted, t, centre, GAZE).forward, true)
+  assert.equal(classifyFace(tilted, t, centre, GAZE).head, 'turned')
+  assert.equal(classifyFace(pose(0, 0, 60), t, centre, GAZE).forward, null)
+  // A tilt does not rescue a glance away.
+  assert.equal(classifyFace(pose(0, 0, 30, 0.7), t, centre, GAZE).forward, false)
 })
 
 test('eyes that point different ways give no reading, unless that is this student\'s own normal', () => {
