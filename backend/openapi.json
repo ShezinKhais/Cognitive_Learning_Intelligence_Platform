@@ -2633,6 +2633,27 @@
         "title": "Page[SessionOut]",
         "type": "object"
       },
+      "PasswordChangeRequest": {
+        "properties": {
+          "current_password": {
+            "maxLength": 1024,
+            "title": "Current Password",
+            "type": "string"
+          },
+          "new_password": {
+            "maxLength": 1024,
+            "minLength": 12,
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "PasswordChangeRequest",
+        "type": "object"
+      },
       "PlannedRoom": {
         "properties": {
           "label": {
@@ -5364,6 +5385,41 @@
           }
         },
         "summary": "Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/password": {
+      "post": {
+        "description": "Change the signed-in user's own password. The current one is checked,\nand a wrong one counts towards the account lock as a failed sign-in does,\nso this cannot be used to guess it.",
+        "operationId": "change_password_api_v1_auth_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Password",
         "tags": [
           "auth"
         ]

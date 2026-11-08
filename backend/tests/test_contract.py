@@ -38,6 +38,7 @@ EXPECTED_PATHS = {
     "/api/v1/auth/teams",
     "/api/v1/auth/logout",
     "/api/v1/auth/me",
+    "/api/v1/auth/password",
     "/api/v1/auth/consent",
     "/api/v1/admin/timetable",
     "/api/v1/admin/roster",

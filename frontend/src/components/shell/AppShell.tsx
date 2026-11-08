@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react'
-import { Keyboard, LogOut, Menu, Search, X } from 'lucide-react'
+import { KeyRound, Keyboard, LogOut, Menu, Search, X } from 'lucide-react'
 import { Link, useLocation } from 'react-router'
 
 import type { CurrentUser } from '../../api'
@@ -8,6 +8,7 @@ import { signOutToLogin } from '../../features/realtime/tokenRefusal'
 import { Wordmark as Brand } from '../brand/ClipMark'
 import { cn } from '../ui/cn'
 import NotificationBell from '../../features/notifications/NotificationBell'
+import ChangePasswordDialog from './ChangePasswordDialog'
 import IntroOverlay from './IntroOverlay'
 import { introPlayed, takeIntro } from './intro'
 import { currentItem, NAVIGATION, ROLE_NAME, type NavItem } from './navigation'
@@ -274,6 +275,7 @@ function MenuGroup({ items, current }: { items: NavItem[]; current?: NavItem }) 
 }
 
 function Account({ user, onShortcuts }: { user: CurrentUser; onShortcuts: () => void }) {
+  const [changingPassword, setChangingPassword] = useState(false)
   return (
     <div className="mt-auto">
       <div className="mb-3 space-y-3">
@@ -295,6 +297,15 @@ function Account({ user, onShortcuts }: { user: CurrentUser; onShortcuts: () => 
           <LogOut size={16} aria-hidden />
           Sign out
         </button>
+        <button
+          type="button"
+          onClick={() => setChangingPassword(true)}
+          className="mt-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <KeyRound size={16} aria-hidden />
+          Change password
+        </button>
+        <ChangePasswordDialog open={changingPassword} onClose={() => setChangingPassword(false)} />
         <button
           type="button"
           onClick={onShortcuts}

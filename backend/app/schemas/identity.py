@@ -38,6 +38,16 @@ class LoginRequest(BaseModel):
     password: str = Field(max_length=MAX_PASSWORD_LENGTH)
 
 
+# Long enough that a guessed password is not the easy way in, with no rules
+# about character classes, which push people to predictable patterns.
+MIN_NEW_PASSWORD_LENGTH = 12
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(max_length=MAX_PASSWORD_LENGTH)
+    new_password: str = Field(min_length=MIN_NEW_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
+
+
 class TeamsSignInRequest(BaseModel):
     # An Entra access token from TeamsJS authentication.getAuthToken().
     token: str = Field(min_length=1, max_length=16384)
