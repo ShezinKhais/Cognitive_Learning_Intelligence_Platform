@@ -58,7 +58,7 @@ import {
   CALIBRATED_THRESHOLDS, DEFAULT_THRESHOLDS, calibrate, classifyFace, faceFeatures, poseFromMatrix, thresholdsFor, type FaceFeatures,
 } from '../src/features/attention/signals.ts'
 import {
-  balancedAccuracy, bootstrap, calibrations, count, dropCountdown, framesToCsv, parseCsv, folds, observe, precision, recall, tune, type Frame,
+  balancedAccuracy, bootstrap, calibrations, count, dropCountdown, framesToCsv, parseCsv, folds, observe, precision, recall, score, tune, type Frame,
 } from '../eval/evaluation.ts'
 
 /** A 4x4 column-major rotation about x (pitch) or y (yaw), in degrees. */
@@ -394,4 +394,11 @@ test('in the evaluation, adaptation learns from calibrate clips only', () => {
   // With no calibrate clips at all there is nothing to learn from.
   const none = observe(scored, { thresholds: DEFAULT_THRESHOLDS, calibrated: false, adaptation: SUGGESTED_ADAPTATION }, calibrations(scored))
   assert.ok(none.every(s => s.forward === false))
+})
+
+test('spoof clips count for face presence but not for looking at the screen', () => {
+  const frames = [...clip('P1', 'c1', 'screen', pose(0)), ...clip('P1', 'c2', 'photo_on_phone', pose(0))]
+  const s = score(frames, { thresholds: DEFAULT_THRESHOLDS, calibrated: false })
+  assert.equal(s.looking.tp + s.looking.fp + s.looking.fn + s.looking.tn, 10)
+  assert.equal(s.face.fp, 10)
 })

@@ -252,13 +252,19 @@ export function observe(frames: Frame[], settings: Settings, calibrationsByKey =
 
 export interface Scores { face: Counts; looking: Counts }
 
-/** Face presence and looking-at-screen counts. Calibration clips are not scored. */
+/**
+ * Face presence and looking-at-screen counts. Calibration clips are not
+ * scored. Spoof clips (#165) count for face presence but not for looking: the
+ * gaze rule cannot tell a photo from a face, which is the liveness check's
+ * job, so they would blur the gaze numbers (#166) without measuring gaze.
+ */
 export function score(frames: Frame[], setting: Settings, calibrationsByKey = calibrations(frames)): Scores {
   const scored = frames.filter(f => f.label !== 'calibrate')
   const seen = observe(scored, setting, calibrationsByKey)
+  const gaze = scored.map((f, i) => ({ f, s: seen[i] })).filter(({ f }) => !isSpoofLabel(f.label))
   return {
     face: count(scored.map((f, i) => ({ truth: faceTruth(f.label), predicted: seen[i].face }))),
-    looking: count(scored.map((f, i) => ({ truth: lookingTruth(f.label), predicted: seen[i].forward }))),
+    looking: count(gaze.map(({ f, s }) => ({ truth: lookingTruth(f.label), predicted: s.forward }))),
   }
 }
 
@@ -347,7 +353,11 @@ export function tune(
  */
 export const GAZE_GRID = {
   kYaw: [-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150],
-  kPitch: [-60, -30, 0, 30, 60],
+  // Left-right only. Iris height is unreliable: looking down lowers the
+  // eyelids over the iris (P1, P2, P3), and on the first three participants a
+  // fitted kPitch flipped sign between rounds (+60, +60, -60) and made the
+  // held-out person worse (P3: 77.9% with it, 84.8% without).
+  kPitch: [0],
   maxYawDegrees: [10, 15, 20, 25],
   maxPitchDegrees: [12, 16, 20, 25],
   maxEyeDisagreement: 0.15,
