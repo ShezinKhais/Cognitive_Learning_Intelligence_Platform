@@ -1,6 +1,187 @@
 {
   "components": {
     "schemas": {
+      "AccountCreate": {
+        "properties": {
+          "course_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Required for a student.",
+            "title": "Course Id"
+          },
+          "email": {
+            "maxLength": 255,
+            "minLength": 3,
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+            "title": "Email",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "website_password": {
+            "default": false,
+            "description": "Issue a password for the website. Students in Teams do not need one; staff do, to reach the dashboards.",
+            "title": "Website Password",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "email",
+          "role"
+        ],
+        "title": "AccountCreate",
+        "type": "object"
+      },
+      "AccountIssued": {
+        "description": "An account and, when one was issued, its password. The password is\nshown this once and kept only as a hash.",
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/AccountOut"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          }
+        },
+        "required": [
+          "account"
+        ],
+        "title": "AccountIssued",
+        "type": "object"
+      },
+      "AccountOut": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "course": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CourseOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The student's course. Staff have none."
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "has_password": {
+            "description": "Can sign in on the website, not only through Teams.",
+            "title": "Has Password",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "teams_linked": {
+            "description": "Has signed in through Teams at least once.",
+            "title": "Teams Linked",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email",
+          "role",
+          "active",
+          "course",
+          "has_password",
+          "teams_linked"
+        ],
+        "title": "AccountOut",
+        "type": "object"
+      },
+      "AccountUpdate": {
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active"
+          },
+          "course_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Move a student to this course.",
+            "title": "Course Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Role"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Lecturer and admin can swap. A student stays a student."
+          }
+        },
+        "title": "AccountUpdate",
+        "type": "object"
+      },
       "ActionItem": {
         "description": "One thing a student could do next, worked out from their marked answers.\n\nOnly comprehension and missed questions give rise to one. Engagement never\ndoes: how someone's camera or click rate read says nothing about what they\nshould study.",
         "properties": {
@@ -286,6 +467,69 @@
         "title": "AuditEntryOut",
         "type": "object"
       },
+      "AutomaticTranscriptOut": {
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "drafts": {
+            "items": {
+              "$ref": "#/components/schemas/PrivateTranscriptDraft"
+            },
+            "title": "Drafts",
+            "type": "array"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "failed": {
+            "default": 0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "pending": {
+            "default": 0,
+            "title": "Pending",
+            "type": "integer"
+          },
+          "subscribed": {
+            "title": "Subscribed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configured",
+          "enabled",
+          "subscribed",
+          "message"
+        ],
+        "title": "AutomaticTranscriptOut",
+        "type": "object"
+      },
+      "AutomaticTranscriptWrite": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "participant_notice_confirmed": {
+            "default": false,
+            "title": "Participant Notice Confirmed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "AutomaticTranscriptWrite",
+        "type": "object"
+      },
       "Body_import_roster_api_v1_admin_roster_post": {
         "properties": {
           "file": {
@@ -330,6 +574,30 @@
       },
       "ChatRequest": {
         "properties": {
+          "discussion_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discussion Since"
+          },
+          "discussion_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discussion Until"
+          },
           "history": {
             "description": "The exchanges before this one, oldest first, so a follow-up can refer to them. Screened again on the server; never cited.",
             "items": {
@@ -350,6 +618,15 @@
             "minLength": 1,
             "pattern": "^[A-Za-z0-9._-]+$",
             "title": "Request Id",
+            "type": "string"
+          },
+          "source": {
+            "default": "materials",
+            "enum": [
+              "materials",
+              "discussion"
+            ],
+            "title": "Source",
             "type": "string"
           }
         },
@@ -381,6 +658,45 @@
           "answer"
         ],
         "title": "ChatTurn",
+        "type": "object"
+      },
+      "ClientErrorIn": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "render",
+              "script",
+              "promise",
+              "load"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "page": {
+            "description": "The path, without its query.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Page",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "page"
+        ],
+        "title": "ClientErrorIn",
         "type": "object"
       },
       "ComprehensionLabel": {
@@ -708,6 +1024,97 @@
         "title": "ConsiderationOut",
         "type": "object"
       },
+      "CourseCreate": {
+        "properties": {
+          "code": {
+            "maxLength": 20,
+            "minLength": 2,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "CourseCreate",
+        "type": "object"
+      },
+      "CourseLecturersSet": {
+        "properties": {
+          "lecturer_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Lecturer Ids",
+            "type": "array"
+          }
+        },
+        "title": "CourseLecturersSet",
+        "type": "object"
+      },
+      "CourseOut": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name"
+        ],
+        "title": "CourseOut",
+        "type": "object"
+      },
+      "CourseRoster": {
+        "description": "Who teaches a course and which students are on it. Only those\nstudents see the course's classes.",
+        "properties": {
+          "course": {
+            "$ref": "#/components/schemas/CourseOut"
+          },
+          "lecturers": {
+            "items": {
+              "$ref": "#/components/schemas/RosterPerson"
+            },
+            "title": "Lecturers",
+            "type": "array"
+          },
+          "students": {
+            "items": {
+              "$ref": "#/components/schemas/RosterPerson"
+            },
+            "title": "Students",
+            "type": "array"
+          }
+        },
+        "required": [
+          "course",
+          "lecturers",
+          "students"
+        ],
+        "title": "CourseRoster",
+        "type": "object"
+      },
       "DeletionRequestCreate": {
         "properties": {
           "reason": {
@@ -965,6 +1372,173 @@
         "title": "Difficulty",
         "type": "string"
       },
+      "DiscussionNoteOut": {
+        "properties": {
+          "note_id": {
+            "format": "uuid",
+            "title": "Note Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "origin": {
+            "default": "lecturer",
+            "title": "Origin",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "note_id",
+          "occurred_at",
+          "text",
+          "updated_at"
+        ],
+        "title": "DiscussionNoteOut",
+        "type": "object"
+      },
+      "DiscussionOut": {
+        "properties": {
+          "latest_recorded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Recorded At"
+          },
+          "live_transcription_active": {
+            "default": false,
+            "title": "Live Transcription Active",
+            "type": "boolean"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/DiscussionNoteOut"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "session_status": {
+            "title": "Session Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "notes",
+          "latest_recorded_at",
+          "session_status"
+        ],
+        "title": "DiscussionOut",
+        "type": "object"
+      },
+      "DiscussionWrite": {
+        "properties": {
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "shareable_confirmed": {
+            "title": "Shareable Confirmed",
+            "type": "boolean"
+          },
+          "text": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "occurred_at",
+          "text",
+          "shareable_confirmed"
+        ],
+        "title": "DiscussionWrite",
+        "type": "object"
+      },
+      "DraftMinute": {
+        "properties": {
+          "note_id": {
+            "format": "uuid",
+            "title": "Note Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "source_excerpt": {
+            "title": "Source Excerpt",
+            "type": "string"
+          },
+          "source_offset_seconds": {
+            "title": "Source Offset Seconds",
+            "type": "number"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "note_id",
+          "occurred_at",
+          "text",
+          "source_excerpt",
+          "source_offset_seconds"
+        ],
+        "title": "DraftMinute",
+        "type": "object"
+      },
+      "EngagementHistory": {
+        "properties": {
+          "quiet": {
+            "description": "Students who missed most of the recent classes or answered few checkpoints in them. Students with an approved special consideration are never listed.",
+            "items": {
+              "$ref": "#/components/schemas/QuietStudent"
+            },
+            "title": "Quiet",
+            "type": "array"
+          },
+          "recent_window": {
+            "description": "How many recent classes the quiet list looks at.",
+            "title": "Recent Window",
+            "type": "integer"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/SessionEngagement"
+            },
+            "title": "Sessions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sessions",
+          "quiet",
+          "recent_window"
+        ],
+        "title": "EngagementHistory",
+        "type": "object"
+      },
       "EngagementOut": {
         "description": "Engagement and comprehension are reported separately and must not be\ncombined into a single figure anywhere in the API.",
         "properties": {
@@ -1034,6 +1608,68 @@
         ],
         "title": "EngagementStatus",
         "type": "string"
+      },
+      "ErrorGroupOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "first_at": {
+            "format": "date-time",
+            "title": "First At",
+            "type": "string"
+          },
+          "last_at": {
+            "format": "date-time",
+            "title": "Last At",
+            "type": "string"
+          },
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "source": {
+            "enum": [
+              "server",
+              "client"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "where": {
+            "description": "The logger, or the page and kind for a browser crash.",
+            "title": "Where",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "level",
+          "where",
+          "message",
+          "count",
+          "first_at",
+          "last_at",
+          "request_id"
+        ],
+        "title": "ErrorGroupOut",
+        "type": "object"
       },
       "HTTPValidationError": {
         "properties": {
@@ -1158,6 +1794,82 @@
           "gaze_average"
         ],
         "title": "HistorySummaryOut",
+        "type": "object"
+      },
+      "LiveCaptureStart": {
+        "properties": {
+          "automatic_sharing_confirmed": {
+            "title": "Automatic Sharing Confirmed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "automatic_sharing_confirmed"
+        ],
+        "title": "LiveCaptureStart",
+        "type": "object"
+      },
+      "LiveCaptureStatus": {
+        "properties": {
+          "capture_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capture Id"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "language": {
+            "default": "en",
+            "title": "Language",
+            "type": "string"
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          },
+          "session_running": {
+            "title": "Session Running",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configured",
+          "running",
+          "session_running"
+        ],
+        "title": "LiveCaptureStatus",
+        "type": "object"
+      },
+      "LiveChunkOut": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiscussionNoteOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sequence"
+        ],
+        "title": "LiveChunkOut",
         "type": "object"
       },
       "LoginRequest": {
@@ -1374,6 +2086,76 @@
         "title": "MaterialUpdateRequest",
         "type": "object"
       },
+      "MeetingClassStart": {
+        "properties": {
+          "course_code": {
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Course Code",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "course_code",
+          "title"
+        ],
+        "title": "MeetingClassStart",
+        "type": "object"
+      },
+      "MeetingClassSuggestion": {
+        "description": "What the side panel offers for a meeting with no session: the course\nand title guessed from the meeting's title, and the lecturer's courses\nto choose from instead.",
+        "properties": {
+          "course_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The course guessed for this class.",
+            "title": "Course Code"
+          },
+          "courses": {
+            "items": {
+              "$ref": "#/components/schemas/CourseOut"
+            },
+            "title": "Courses",
+            "type": "array"
+          },
+          "meeting_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The title Teams gives the meeting, if known.",
+            "title": "Meeting Title"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "meeting_title",
+          "course_code",
+          "title",
+          "courses"
+        ],
+        "title": "MeetingClassSuggestion",
+        "type": "object"
+      },
       "MeetingEventIn": {
         "description": "A meeting started or ended. Teams can deliver an event more than once,\nso one that finds the session already in that state changes nothing.",
         "properties": {
@@ -1539,6 +2321,37 @@
           "executed_at"
         ],
         "title": "MyDeletionRequestOut",
+        "type": "object"
+      },
+      "Page_AccountOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AccountOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[AccountOut]",
         "type": "object"
       },
       "Page_AuditEntryOut_": {
@@ -1820,6 +2633,61 @@
         "title": "Page[SessionOut]",
         "type": "object"
       },
+      "PlannedRoom": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "students": {
+            "items": {
+              "$ref": "#/components/schemas/RoomMember"
+            },
+            "title": "Students",
+            "type": "array"
+          }
+        },
+        "required": [
+          "label",
+          "students"
+        ],
+        "title": "PlannedRoom",
+        "type": "object"
+      },
+      "PrivateTranscriptDraft": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/DraftMinute"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "transcript_id": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Transcript Id",
+            "type": "string"
+          },
+          "warning": {
+            "default": "AI draft: check every teaching point, timestamp and personal detail before publishing.",
+            "title": "Warning",
+            "type": "string"
+          }
+        },
+        "required": [
+          "transcript_id",
+          "notes",
+          "expires_at"
+        ],
+        "title": "PrivateTranscriptDraft",
+        "type": "object"
+      },
       "QuestionBulkReviewRequest": {
         "properties": {
           "question_ids": {
@@ -2050,6 +2918,55 @@
         "title": "QuestionType",
         "type": "string"
       },
+      "QuietStudent": {
+        "properties": {
+          "answer_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Their answers over the checkpoints of the classes they joined.",
+            "title": "Answer Rate"
+          },
+          "course_code": {
+            "title": "Course Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sessions_considered": {
+            "description": "Recent classes of their course looked at.",
+            "title": "Sessions Considered",
+            "type": "integer"
+          },
+          "sessions_missed": {
+            "description": "Of those, how many they did not join.",
+            "title": "Sessions Missed",
+            "type": "integer"
+          },
+          "student_id": {
+            "format": "uuid",
+            "title": "Student Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "student_id",
+          "name",
+          "course_code",
+          "sessions_considered",
+          "sessions_missed",
+          "answer_rate"
+        ],
+        "title": "QuietStudent",
+        "type": "object"
+      },
       "ReadinessIssue": {
         "description": "One reason a session cannot start yet, or one thing worth a warning.",
         "properties": {
@@ -2119,6 +3036,44 @@
           "dependencies"
         ],
         "title": "ReadinessResponse",
+        "type": "object"
+      },
+      "RecentErrorsOut": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorGroupOut"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "server_error_spike": {
+            "title": "Server Error Spike",
+            "type": "boolean"
+          },
+          "since": {
+            "description": "When this server started counting.",
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since",
+          "total",
+          "version",
+          "server_error_spike",
+          "groups"
+        ],
+        "title": "RecentErrorsOut",
         "type": "object"
       },
       "ReportJobOut": {
@@ -2604,6 +3559,147 @@
         "title": "Role",
         "type": "string"
       },
+      "RoomMember": {
+        "properties": {
+          "connected": {
+            "description": "Has the class open now.",
+            "title": "Connected",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "name",
+          "connected"
+        ],
+        "title": "RoomMember",
+        "type": "object"
+      },
+      "RoomPlanIn": {
+        "properties": {
+          "rooms": {
+            "items": {
+              "$ref": "#/components/schemas/RoomPlanRoomIn"
+            },
+            "maxItems": 50,
+            "title": "Rooms",
+            "type": "array"
+          }
+        },
+        "title": "RoomPlanIn",
+        "type": "object"
+      },
+      "RoomPlanOut": {
+        "properties": {
+          "rooms": {
+            "items": {
+              "$ref": "#/components/schemas/PlannedRoom"
+            },
+            "title": "Rooms",
+            "type": "array"
+          },
+          "running": {
+            "description": "The class is running, so rooms can be assigned.",
+            "title": "Running",
+            "type": "boolean"
+          },
+          "unassigned": {
+            "description": "Students on the course in no room.",
+            "items": {
+              "$ref": "#/components/schemas/RoomMember"
+            },
+            "title": "Unassigned",
+            "type": "array"
+          }
+        },
+        "required": [
+          "running",
+          "rooms",
+          "unassigned"
+        ],
+        "title": "RoomPlanOut",
+        "type": "object"
+      },
+      "RoomPlanRoomIn": {
+        "properties": {
+          "label": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "user_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "User Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "label",
+          "user_ids"
+        ],
+        "title": "RoomPlanRoomIn",
+        "type": "object"
+      },
+      "RosterPerson": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "home_course": {
+            "default": false,
+            "description": "For a student: this is their home course. Removing it moves home to another.",
+            "title": "Home Course",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email"
+        ],
+        "title": "RosterPerson",
+        "type": "object"
+      },
+      "RosterStudentAdd": {
+        "properties": {
+          "email": {
+            "maxLength": 255,
+            "minLength": 3,
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "RosterStudentAdd",
+        "type": "object"
+      },
       "SessionCreateRequest": {
         "properties": {
           "course_code": {
@@ -2634,6 +3730,86 @@
           "title"
         ],
         "title": "SessionCreateRequest",
+        "type": "object"
+      },
+      "SessionEngagement": {
+        "properties": {
+          "answer_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Answers over the answers that were possible, 0 to 1. None with no checkpoints.",
+            "title": "Answer Rate"
+          },
+          "checkpoints": {
+            "title": "Checkpoints",
+            "type": "integer"
+          },
+          "correct_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Of the answers that could be marked, the share that were right.",
+            "title": "Correct Rate"
+          },
+          "course_code": {
+            "title": "Course Code",
+            "type": "string"
+          },
+          "held_at": {
+            "format": "date-time",
+            "title": "Held At",
+            "type": "string"
+          },
+          "on_screen": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Average share of time looking at the screen, from students who turned the indicator on. None unless at least three did, so no one student can be read off it.",
+            "title": "On Screen"
+          },
+          "present": {
+            "description": "Students who joined.",
+            "title": "Present",
+            "type": "integer"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "title",
+          "course_code",
+          "held_at",
+          "present",
+          "checkpoints",
+          "answer_rate",
+          "correct_rate",
+          "on_screen"
+        ],
+        "title": "SessionEngagement",
         "type": "object"
       },
       "SessionOut": {
@@ -3130,6 +4306,21 @@
         "title": "TeamsActivity",
         "type": "object"
       },
+      "TeamsSignInRequest": {
+        "properties": {
+          "token": {
+            "maxLength": 16384,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "TeamsSignInRequest",
+        "type": "object"
+      },
       "TimetableImportResult": {
         "description": "Result of an administrator uploading a timetable CSV or XLSX.\n\nCSV and XLSX are parsed as structured data. There is no OCR path, because a\nmisread digit would silently assign a student to the wrong session.",
         "properties": {
@@ -3289,6 +4480,106 @@
         "title": "TopicDifficultyOut",
         "type": "object"
       },
+      "TranscriptDraft": {
+        "properties": {
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/DraftMinute"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "transcript_id": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Transcript Id",
+            "type": "string"
+          },
+          "warning": {
+            "default": "AI draft: check every teaching point, timestamp and personal detail before publishing.",
+            "title": "Warning",
+            "type": "string"
+          }
+        },
+        "required": [
+          "transcript_id",
+          "notes"
+        ],
+        "title": "TranscriptDraft",
+        "type": "object"
+      },
+      "TranscriptImport": {
+        "properties": {
+          "participant_notice_confirmed": {
+            "title": "Participant Notice Confirmed",
+            "type": "boolean"
+          },
+          "transcript_id": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Transcript Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "transcript_id",
+          "participant_notice_confirmed"
+        ],
+        "title": "TranscriptImport",
+        "type": "object"
+      },
+      "TranscriptItem": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at"
+        ],
+        "title": "TranscriptItem",
+        "type": "object"
+      },
+      "TranscriptList": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "TranscriptList",
+        "type": "object"
+      },
       "UserOut": {
         "properties": {
           "consents": {
@@ -3374,6 +4665,234 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/admin/accounts": {
+      "get": {
+        "description": "Everyone with an account, staff first, filtered by role or by a part\nof their name or email.",
+        "operationId": "list_accounts_api_v1_admin_accounts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Role"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AccountOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Accounts",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Add a person. A student needs a course. A website password, when\nasked for, is returned this once.",
+        "operationId": "create_account_api_v1_admin_accounts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountIssued"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Account",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/accounts/{user_id}": {
+      "patch": {
+        "description": "Rename, switch on or off, swap lecturer and admin, or move a student\nto another course. A switched-off account cannot sign in.",
+        "operationId": "update_account_api_v1_admin_accounts__user_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Account",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/accounts/{user_id}/password": {
+      "post": {
+        "description": "Issue a new website password, returned this once. The old one stops\nworking at once.",
+        "operationId": "reset_password_api_v1_admin_accounts__user_id__password_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountIssued"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Password",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/consideration-requests": {
       "get": {
         "description": "Requests to decide, oldest first; `show=all` adds the decided ones after them.",
@@ -3551,6 +5070,94 @@
         "summary": "Reject Request",
         "tags": [
           "consideration"
+        ]
+      }
+    },
+    "/api/v1/admin/courses": {
+      "get": {
+        "description": "Courses a student can be enrolled on.",
+        "operationId": "list_courses_api_v1_admin_courses_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CourseOut"
+                  },
+                  "title": "Response List Courses Api V1 Admin Courses Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Courses",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Add a course by its code and name.",
+        "operationId": "create_course_api_v1_admin_courses_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CourseCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Course",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/errors": {
+      "get": {
+        "description": "Server errors and browser crashes since this server started, grouped,\nnewest first.",
+        "operationId": "recent_errors_api_v1_admin_errors_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecentErrorsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Recent Errors",
+        "tags": [
+          "monitoring"
         ]
       }
     },
@@ -3781,6 +5388,371 @@
         "summary": "Refresh",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/teams": {
+      "post": {
+        "description": "Sign in with the Microsoft account Teams is signed in with.\n\nThe tab sends the Entra token Teams gave it. The account must already\nexist in C.L.I.P; see app/services/teams_sso.py.",
+        "operationId": "teams_sign_in_api_v1_auth_teams_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamsSignInRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "The Microsoft account has no C.L.I.P account."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many failed sign-ins from this address recently."
+          },
+          "503": {
+            "description": "Teams sign-in is not configured, or Microsoft is unreachable."
+          }
+        },
+        "summary": "Teams Sign In",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/client-errors": {
+      "post": {
+        "description": "A page crashed in someone's browser. Shown to admins on the status page.",
+        "operationId": "report_client_error_api_v1_client_errors_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientErrorIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Report Client Error",
+        "tags": [
+          "monitoring"
+        ]
+      }
+    },
+    "/api/v1/courses/mine": {
+      "get": {
+        "description": "The courses the caller manages: those they teach, or every course for\nan admin.",
+        "operationId": "my_courses_api_v1_courses_mine_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CourseOut"
+                  },
+                  "title": "Response My Courses Api V1 Courses Mine Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "My Courses",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/v1/courses/{code}/lecturers": {
+      "put": {
+        "description": "Admin only: who teaches this course.",
+        "operationId": "set_lecturers_api_v1_courses__code__lecturers_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CourseLecturersSet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseRoster"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Lecturers",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/v1/courses/{code}/roster": {
+      "get": {
+        "description": "The course's lecturers and the students on it.",
+        "operationId": "get_roster_api_v1_courses__code__roster_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseRoster"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Roster",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/v1/courses/{code}/students": {
+      "post": {
+        "description": "Put an existing student account on this course, by email.",
+        "operationId": "add_student_api_v1_courses__code__students_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RosterStudentAdd"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseRoster"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Student",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/v1/courses/{code}/students/{user_id}": {
+      "delete": {
+        "description": "Take a student off this course. They stop seeing its classes.",
+        "operationId": "remove_student_api_v1_courses__code__students__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseRoster"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Student",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/v1/engagement-history": {
+      "get": {
+        "description": "Each finished class with its attendance and answers, newest first, and\nthe students who have gone quiet over the recent ones.",
+        "operationId": "get_engagement_history_api_v1_engagement_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "course_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Course Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngagementHistory"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Engagement History",
+        "tags": [
+          "sessions"
         ]
       }
     },
@@ -5088,7 +7060,7 @@
         ]
       },
       "put": {
-        "description": "Hold a session in this meeting. Either side's old link is replaced.",
+        "description": "Hold a session in this meeting. Either side's old link is replaced.\nWith Teams live, a lecturer must be the meeting's organiser; admins may\nlink any meeting.",
         "operationId": "link_meeting_api_v1_meetings__meeting_id__put",
         "parameters": [
           {
@@ -5136,6 +7108,106 @@
           }
         },
         "summary": "Link Meeting",
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/meetings/{meeting_id}/class": {
+      "post": {
+        "description": "Yes, this is a class: create its session, link it to this meeting and\nstart it. Only the meeting's organiser, or an admin.",
+        "operationId": "start_class_api_v1_meetings__meeting_id__class_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeetingClassStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Class",
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/meetings/{meeting_id}/class-suggestion": {
+      "get": {
+        "description": "For a meeting with no session: the course and title to offer when\nthe side panel asks whether this is a class, guessed from the meeting's\ntitle.",
+        "operationId": "class_suggestion_api_v1_meetings__meeting_id__class_suggestion_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingClassSuggestion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Class Suggestion",
         "tags": [
           "meetings"
         ]
@@ -5516,7 +7588,7 @@
     },
     "/api/v1/sessions/{session_id}/chat": {
       "post": {
-        "description": "Ask the tutor a question about the session's material.\n\nThe reply streams as it is written. To stop it, close the connection.",
+        "description": "Ask about session materials or lecturer-published discussion minutes.\n\nThe reply streams as it is written. To stop it, close the connection.",
         "operationId": "session_chat_api_v1_sessions__session_id__chat_post",
         "parameters": [
           {
@@ -5545,7 +7617,7 @@
             "content": {
               "application/x-ndjson": {}
             },
-            "description": "One JSON object per line, each with `type` and `request_id`. `accepted` comes first. Then either `delta` events carrying `text`, `citation` events carrying a `citation` (`id`, `material_title`, `source_page`, `source_slide`, `excerpt`), `follow_up` events carrying a `prompt`, and `completed`; or one of `unsupported` (with a `reason`), `empty_retrieval` and `error` (with a `detail`)."
+            "description": "One JSON object per line, each with `type` and `request_id`. `accepted` comes first. Then either `delta` events carrying `text`, `citation` events carrying a `citation` (`id`, `material_title`, `source_page`, `source_slide`, `excerpt`, optional `number` and `source_note_id` for discussion notes), `follow_up` events carrying a `prompt`, and `completed`; or one of `unsupported` (with a `reason`), `empty_retrieval` and `error` (with a `detail`)."
           },
           "404": {
             "description": "No such session, or the student does not belong to it."
@@ -5570,6 +7642,407 @@
         "summary": "Session Chat",
         "tags": [
           "chat"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/discussion": {
+      "get": {
+        "operationId": "read_notes_api_v1_sessions__session_id__discussion_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscussionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Notes",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/discussion/automatic-transcripts": {
+      "get": {
+        "operationId": "read_automation_api_v1_sessions__session_id__discussion_automatic_transcripts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomaticTranscriptOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Automation",
+        "tags": [
+          "discussion"
+        ]
+      },
+      "put": {
+        "operationId": "configure_automation_api_v1_sessions__session_id__discussion_automatic_transcripts_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutomaticTranscriptWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomaticTranscriptOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Configure Automation",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/discussion/automatic-transcripts/drafts/{transcript_id}": {
+      "delete": {
+        "operationId": "discard_draft_api_v1_sessions__session_id__discussion_automatic_transcripts_drafts__transcript_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "transcript_id",
+            "required": true,
+            "schema": {
+              "title": "Transcript Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discard Draft",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/discussion/transcript-draft": {
+      "post": {
+        "operationId": "import_transcript_api_v1_sessions__session_id__discussion_transcript_draft_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranscriptImport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptDraft"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Transcript",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/discussion/transcripts": {
+      "get": {
+        "operationId": "available_transcripts_api_v1_sessions__session_id__discussion_transcripts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Available Transcripts",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/discussion/{note_id}": {
+      "delete": {
+        "operationId": "remove_note_api_v1_sessions__session_id__discussion__note_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "note_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Note Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Remove Note Api V1 Sessions  Session Id  Discussion  Note Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Note",
+        "tags": [
+          "discussion"
+        ]
+      },
+      "put": {
+        "operationId": "publish_note_api_v1_sessions__session_id__discussion__note_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "note_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Note Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscussionWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscussionNoteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Note",
+        "tags": [
+          "discussion"
         ]
       }
     },
@@ -5662,6 +8135,242 @@
         "summary": "Session Engagement",
         "tags": [
           "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/live-transcription": {
+      "get": {
+        "operationId": "status_api_v1_sessions__session_id__live_transcription_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveCaptureStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Status",
+        "tags": [
+          "live-transcription"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/live-transcription/start": {
+      "post": {
+        "operationId": "start_api_v1_sessions__session_id__live_transcription_start_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LiveCaptureStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveCaptureStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start",
+        "tags": [
+          "live-transcription"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/live-transcription/{capture_id}/chunks/{sequence}": {
+      "post": {
+        "operationId": "chunk_api_v1_sessions__session_id__live_transcription__capture_id__chunks__sequence__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "capture_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Capture Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sequence",
+            "required": true,
+            "schema": {
+              "title": "Sequence",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "started_at",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "Started At",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "audio/wav": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveChunkOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Chunk",
+        "tags": [
+          "live-transcription"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/live-transcription/{capture_id}/stop": {
+      "post": {
+        "operationId": "stop_api_v1_sessions__session_id__live_transcription__capture_id__stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "capture_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Capture Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Stop Api V1 Sessions  Session Id  Live Transcription  Capture Id  Stop Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop",
+        "tags": [
+          "live-transcription"
         ]
       }
     },
@@ -6035,6 +8744,144 @@
         ]
       }
     },
+    "/api/v1/sessions/{session_id}/rooms": {
+      "delete": {
+        "description": "Bring everyone back: empty every room and tell the class to return to\nthe main meeting. Close the rooms in Teams as well.",
+        "operationId": "close_rooms_api_v1_sessions__session_id__rooms_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomPlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Close Rooms",
+        "tags": [
+          "sessions"
+        ]
+      },
+      "get": {
+        "description": "Who is in which breakout room, and who is in none. The lecturer who\nruns the session, or an admin.",
+        "operationId": "room_plan_api_v1_sessions__session_id__rooms_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomPlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Room Plan",
+        "tags": [
+          "sessions"
+        ]
+      },
+      "put": {
+        "description": "Split the running class into rooms. Each student's panel then says\nwhich room to join; open rooms with the same names in Teams. Replaces\nany earlier plan, and a student left out is told they have no room.",
+        "operationId": "assign_rooms_api_v1_sessions__session_id__rooms_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoomPlanIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomPlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assign Rooms",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
     "/api/v1/sessions/{session_id}/start": {
       "post": {
         "description": "Blocked until the session is ready. GET /readiness says why it is not.",
@@ -6360,7 +9207,7 @@
     },
     "/api/v1/teams/messages": {
       "post": {
-        "description": "Receive an activity from Teams. Meeting starts and ends are applied to\nthe linked session; everything else is acknowledged. An activity from any\nother Bot Framework channel, or from another organisation, is refused.",
+        "description": "Receive an activity from Teams. Meeting starts and ends are applied to\nthe linked session; a message gets a short reply; everything else is\nacknowledged. An activity from any other Bot Framework channel, or from\nanother organisation, is refused.",
         "operationId": "bot_messages_api_v1_teams_messages_post",
         "requestBody": {
           "content": {
@@ -6393,6 +9240,54 @@
           }
         },
         "summary": "Bot Messages",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/v1/teams/transcript-notifications": {
+      "post": {
+        "operationId": "graph_notifications_api_v1_teams_transcript_notifications_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "validationToken",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Validationtoken"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Graph Notifications",
         "tags": [
           "teams"
         ]

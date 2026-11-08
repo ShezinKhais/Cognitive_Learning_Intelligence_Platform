@@ -1,10 +1,10 @@
 {
   "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
   "manifestVersion": "1.17",
-  "version": "0.1.0",
+  "version": "0.3.2",
   "id": "${{TEAMS_APP_ID}}",
   "developer": {
-    "name": "CSIT321 Team 4, University of Wollongong in Dubai",
+    "name": "CSIT321 Team 4, UOWD",
     "websiteUrl": "https://github.com/ShezinKhais/Cognitive_Learning_Intelligence_Platform",
     "privacyUrl": "${{BASE_URL}}/privacy",
     "termsOfUseUrl": "${{BASE_URL}}/terms"
@@ -23,23 +23,14 @@
   },
   "accentColor": "#6264A7",
 
+  "showLoadingIndicator": true,
+
   "staticTabs": [
     {
-      "entityId": "clip.student",
-      "name": "My Learning",
-      "contentUrl": "${{BASE_URL}}/student",
-      "scopes": ["personal"]
-    },
-    {
-      "entityId": "clip.lecturer",
-      "name": "Dashboard",
-      "contentUrl": "${{BASE_URL}}/lecturer",
-      "scopes": ["personal"]
-    },
-    {
-      "entityId": "clip.admin",
-      "name": "Administration",
-      "contentUrl": "${{BASE_URL}}/admin",
+      "entityId": "clip.home",
+      "name": "C.L.I.P",
+      "contentUrl": "${{BASE_URL}}/open",
+      "websiteUrl": "${{BASE_URL}}/login",
       "scopes": ["personal"]
     }
   ],
@@ -48,7 +39,7 @@
     {
       "configurationUrl": "${{BASE_URL}}/config",
       "scopes": ["groupChat"],
-      "context": ["meetingSidePanel"],
+      "context": ["meetingChatTab", "meetingDetailsTab", "meetingSidePanel"],
       "supportedSharePointHosts": []
     }
   ],
@@ -68,7 +59,7 @@
 
   "webApplicationInfo": {
     "id": "${{BOT_ID}}",
-    "resource": "https://RscBasedStoreApp"
+    "resource": "api://${{BASE_DOMAIN}}/${{BOT_ID}}"
   },
 
   "authorization": {

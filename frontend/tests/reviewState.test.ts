@@ -7,9 +7,11 @@ const q = (status: 'draft' | 'approved' | 'rejected' | 'staged' | 'delivered') =
 
 test('each question sits in one filter, and all of them in All', () => {
   const questions = [q('draft'), q('draft'), q('approved'), q('staged'), q('delivered'), q('rejected')]
-  assert.deepEqual(countByFilter(questions), { review: 2, approved: 1, staged: 2, rejected: 1, all: 6 })
+  // An 'approved' row from before approving made it ready counts as ready.
+  assert.deepEqual(countByFilter(questions), { review: 2, staged: 3, rejected: 1, all: 6 })
   assert.equal(inFilter(q('delivered'), 'staged'), true)
-  assert.equal(inFilter(q('draft'), 'approved'), false)
+  assert.equal(inFilter(q('approved'), 'staged'), true)
+  assert.equal(inFilter(q('draft'), 'staged'), false)
 })
 
 test('review starts on what needs a decision, then shows everything', () => {

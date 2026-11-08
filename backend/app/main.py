@@ -17,7 +17,7 @@ from app.api.v1.router import api_router, ws_router
 from app.auth.dev_seed import ensure_dev_users
 from app.core.config import get_settings
 from app.core.errors import register_error_handlers
-from app.core.logging import configure_logging, request_id_var
+from app.core.logging import configure_logging, monitoring_request_id_var, request_id_var
 from app.realtime.classroom import classroom
 from app.repositories.teams_meeting_repository import DatabaseMeetingDirectory
 from app.services.ai_gateway import get_ai_gateway
@@ -29,6 +29,11 @@ from app.services.reports import get_report_queue
 from app.services.retention_tasks import register_database_purges
 from app.services.scheduler import ScheduledJob, Scheduler
 from app.services.teams_notifications import notifications
+from app.services.transcript_automation import (
+    maintain_subscriptions,
+    prepare_drafts,
+    scan_transcripts,
+)
 from app.services.uploads import get_background_processor
 
 settings = get_settings()
@@ -68,6 +73,14 @@ def housekeeping() -> Scheduler:
 
     return Scheduler(
         [
+            ScheduledJob("transcript-subscriptions", timedelta(minutes=1), maintain_subscriptions),
+            ScheduledJob(
+                "transcript-scan",
+                timedelta(seconds=30),
+                scan_transcripts,
+                first_after=timedelta(seconds=30),
+            ),
+            ScheduledJob("transcript-drafts", timedelta(seconds=30), prepare_drafts),
             # Ends materials whose job stopped without recording how it ended.
             ScheduledJob(
                 "stranded-material-sweep",
@@ -106,6 +119,7 @@ async def lifespan(app: FastAPI):
     # after a class.
     install_live_store(classroom)
     classroom.checkpoint_notifier = notifications.enqueue
+    classroom.alert_notifier = notifications.enqueue_alert
     meetings.directory = DatabaseMeetingDirectory()
     classroom.check_wiring()
     meetings.check_wiring()
@@ -188,12 +202,15 @@ def create_app() -> FastAPI:
         Honours an inbound X-Request-ID so a trace survives the Teams proxy,
         but only when it passes resolve_request_id.
         """
-        rid = resolve_request_id(request.headers.get("X-Request-ID"))
+        inbound_id = request.headers.get("X-Request-ID")
+        rid = resolve_request_id(inbound_id)
         request.state.request_id = rid
         token = request_id_var.set(rid)
+        monitoring_token = monitoring_request_id_var.set(rid if rid != inbound_id else None)
         try:
             response = await call_next(request)
         finally:
+            monitoring_request_id_var.reset(monitoring_token)
             request_id_var.reset(token)
         response.headers["X-Request-ID"] = rid
         return response

@@ -1,7 +1,7 @@
 {
   "machine": {
-    "when": "2026-10-15T18:16:02+00:00",
-    "commit": "3c8a46e1",
+    "when": "2026-10-21T12:57:10+00:00",
+    "commit": "40656c6e",
     "platform": "Windows-11-10.0.26300-SP0",
     "processor": "Intel64 Family 6 Model 151 Stepping 2, GenuineIntel",
     "cpus": 20,
@@ -15,42 +15,42 @@
       "title": "40 students in one class, 8 questions",
       "passed": true,
       "figures": {
-        "connect_all_seconds": 1.39,
+        "connect_all_seconds": 1.38,
         "time_to_ready": {
           "count": 40,
-          "p50_ms": 612.2,
-          "p95_ms": 713.0,
-          "max_ms": 715.0
+          "p50_ms": 602.6,
+          "p95_ms": 650.0,
+          "max_ms": 660.8
         },
         "question_fan_out": {
           "count": 320,
-          "p50_ms": 25.0,
-          "p95_ms": 53.0,
-          "max_ms": 53.7
+          "p50_ms": 21.9,
+          "p95_ms": 37.8,
+          "max_ms": 38.8
         },
         "of_which_server_to_student": {
           "count": 320,
           "p50_ms": 1.1,
-          "p95_ms": 2.2,
+          "p95_ms": 2.7,
           "max_ms": 2.7
         },
         "of_which_the_lecturers_request": {
           "count": 8,
-          "p50_ms": 27.3,
-          "p95_ms": 54.4,
-          "max_ms": 54.4
+          "p50_ms": 23.9,
+          "p95_ms": 39.8,
+          "max_ms": 39.8
         },
         "fan_out_first_to_last_student": {
           "count": 8,
-          "p50_ms": 2.1,
-          "p95_ms": 2.5,
-          "max_ms": 2.5
+          "p50_ms": 1.9,
+          "p95_ms": 2.3,
+          "max_ms": 2.3
         },
         "answer_to_receipt": {
           "count": 320,
-          "p50_ms": 16.0,
-          "p95_ms": 127.1,
-          "max_ms": 301.3
+          "p50_ms": 15.0,
+          "p95_ms": 24.3,
+          "max_ms": 48.7
         },
         "scenario_seconds": 17.9
       },
@@ -63,7 +63,7 @@
         {
           "name": "all connected inside 10 s",
           "ok": true,
-          "detail": "1.39 s"
+          "detail": "1.38 s"
         },
         {
           "name": "the lecturer's panel counts every student once",
@@ -83,12 +83,12 @@
         {
           "name": "the slowest question reached its last student inside 2 s",
           "ok": true,
-          "detail": "54 ms"
+          "detail": "39 ms"
         },
         {
           "name": "the slowest receipt came back inside 2 s",
           "ok": true,
-          "detail": "301 ms"
+          "detail": "49 ms"
         },
         {
           "name": "every answer is in the database",
@@ -108,21 +108,21 @@
       "title": "Dropped connections, resumed",
       "passed": true,
       "figures": {
-        "half_class_resume_seconds": 0.4,
-        "whole_class_reconnect_seconds": 0.58,
+        "half_class_resume_seconds": 0.38,
+        "whole_class_reconnect_seconds": 0.65,
         "reconnect_time_to_ready": {
           "count": 40,
-          "p50_ms": 411.4,
-          "p95_ms": 502.7,
-          "max_ms": 537.2
+          "p50_ms": 474.4,
+          "p95_ms": 575.8,
+          "max_ms": 623.5
         },
         "fan_out_after_reconnects": {
           "count": 40,
-          "p50_ms": 18.2,
-          "p95_ms": 19.3,
-          "max_ms": 19.4
+          "p50_ms": 18.3,
+          "p95_ms": 19.2,
+          "max_ms": 19.3
         },
-        "scenario_seconds": 7.4
+        "scenario_seconds": 7.5
       },
       "checks": [
         {
@@ -148,12 +148,12 @@
         {
           "name": "that question closed with the whole class counted",
           "ok": true,
-          "detail": "{'question_id': 'ef4fa0fe-ead9-41db-ae40-08f3be9b2c1f', 'reason': 'window_elapsed', 'respondents': 40, 'eligible': 40}"
+          "detail": "{'question_id': '0b945291-92bd-4fd7-8018-29312e2b0d94', 'reason': 'window_elapsed', 'respondents': 40, 'eligible': 40}"
         },
         {
           "name": "the whole class was back inside 10 s",
           "ok": true,
-          "detail": "0.58 s"
+          "detail": "0.65 s"
         },
         {
           "name": "all were resumed from the cursor they offered, with no gap",
@@ -178,24 +178,24 @@
       "title": "Attention signals and breakout rooms under load",
       "passed": true,
       "figures": {
-        "signals_sent": 2466,
-        "signals_per_second": 154.1,
+        "signals_sent": 2450,
+        "signals_per_second": 153.1,
         "fan_out_while_signalling": {
           "count": 40,
-          "p50_ms": 27.0,
-          "p95_ms": 28.3,
-          "max_ms": 28.4
+          "p50_ms": 18.6,
+          "p95_ms": 19.3,
+          "max_ms": 19.4
         },
-        "room_status_events": 107,
+        "room_status_events": 101,
         "refocus_prompts": 0,
         "attention_minutes_stored": 40,
-        "scenario_seconds": 56.6
+        "scenario_seconds": 18.2
       },
       "checks": [
         {
           "name": "a question still reached everyone inside 2 s",
           "ok": true,
-          "detail": "28 ms"
+          "detail": "19 ms"
         },
         {
           "name": "no signal was refused or throttled",
@@ -257,18 +257,18 @@
       "figures": {
         "fan_out_with_reports_building": {
           "count": 120,
-          "p50_ms": 20.1,
-          "p95_ms": 24.2,
-          "max_ms": 24.4
+          "p50_ms": 21.9,
+          "p95_ms": 28.8,
+          "max_ms": 29.2
         },
         "fan_out_baseline": {
           "count": 320,
-          "p50_ms": 25.0,
-          "p95_ms": 53.0,
-          "max_ms": 53.7
+          "p50_ms": 21.9,
+          "p95_ms": 37.8,
+          "max_ms": 38.8
         },
         "report_pdf_bytes": 3409,
-        "purge_runs_during_class": 2,
+        "purge_runs_during_class": 1,
         "scenario_seconds": 6.1
       },
       "checks": [
@@ -280,12 +280,12 @@
         {
           "name": "asking again while it is built returns the same report",
           "ok": true,
-          "detail": "['{\"report_id\":\"4cce7458-3d37-488c-8b7d-d10dc7e59599\",\"session_id\":\"53a3edbb-92fa-4b90-acc6-9d57a778e7e0\",\"status\":\"queued', '{\"report_id\":\"4cce7458-3d37-488c-8b7d-d10dc7e59599\",\"session_id\":\"53a3edbb-92fa-4b90-acc6-9d57a778e7e0\",\"status\":\"runnin']"
+          "detail": "['{\"report_id\":\"661129f5-e994-4d42-b927-81600c5b7bff\",\"session_id\":\"9aeeec50-9eb4-445b-809d-8c89297577ee\",\"status\":\"queued', '{\"report_id\":\"661129f5-e994-4d42-b927-81600c5b7bff\",\"session_id\":\"9aeeec50-9eb4-445b-809d-8c89297577ee\",\"status\":\"runnin']"
         },
         {
           "name": "questions still reached everyone inside 2 s",
           "ok": true,
-          "detail": "24 ms"
+          "detail": "29 ms"
         },
         {
           "name": "the report became ready",
@@ -315,7 +315,7 @@
         {
           "name": "every purge during the class gave way to it and deleted nothing",
           "ok": true,
-          "detail": "['2026-10-15 22:14:03,807 INFO     [-] clip.retention  retention_purge deleted 0 item(s) older than 2026-07-17 (stored-uploads: 0); stopped early, the next run continues', '2026-10-15 22:14:07,417 INFO     [-] clip.retention  retention_purge deleted 0 item(s) older than 2026-07-17 (stored-uploads: 0); stopped early, the next run continues']"
+          "detail": "['2026-10-21 16:55:13,468 INFO     [-] clip.retention  retention_purge deleted 0 item(s) older than 2026-07-23 (session-data: 0); stopped early, the next run continues']"
         }
       ],
       "notes": []
@@ -327,9 +327,9 @@
       "figures": {
         "chat_time_to_failure": {
           "count": 4,
-          "p50_ms": 5436.2,
-          "p95_ms": 7797.5,
-          "max_ms": 7797.5
+          "p50_ms": 5565.0,
+          "p95_ms": 8083.7,
+          "max_ms": 8083.7
         },
         "chat_endings": [
           "error",
@@ -339,11 +339,11 @@
         ],
         "fan_out_with_model_down": {
           "count": 40,
-          "p50_ms": 16.3,
-          "p95_ms": 17.1,
-          "max_ms": 17.1
+          "p50_ms": 25.8,
+          "p95_ms": 26.6,
+          "max_ms": 26.8
         },
-        "scenario_seconds": 18.8
+        "scenario_seconds": 19.0
       },
       "checks": [
         {
@@ -354,12 +354,12 @@
         {
           "name": "questions still go out and are answered with the model down",
           "ok": true,
-          "detail": "{'question_id': '02c18914-1ede-41ee-ab20-e0cd05ceb635', 'reason': 'window_elapsed', 'respondents': 40, 'eligible': 40}"
+          "detail": "{'question_id': 'b1a6178d-2faa-440a-9b94-49f9768a2ec1', 'reason': 'window_elapsed', 'respondents': 40, 'eligible': 40}"
         },
         {
           "name": "readiness reports the model as down",
           "ok": true,
-          "detail": "{\"ready\":true,\"checked_at\":\"2026-10-15T18:14:28.011955Z\",\"dependencies\":[{\"name\":\"postgres\",\"ok\":true,\"detail\":null,\"latency_ms\":null},{\"name\":\"ollama\",\"ok\":false,\"detail\":null,\"latency_ms\":null}]}"
+          "detail": "{\"ready\":true,\"checked_at\":\"2026-10-21T12:55:35.596634Z\",\"dependencies\":[{\"name\":\"postgres\",\"ok\":true,\"detail\":null,\"latency_ms\":null},{\"name\":\"ollama\",\"ok\":false,\"detail\":null,\"latency_ms\":null}]}"
         }
       ],
       "notes": []
@@ -369,14 +369,14 @@
       "title": "The server is killed mid-question and restarted",
       "passed": true,
       "figures": {
-        "clients_noticed_seconds": 0.06,
-        "restart_to_healthy_seconds": 3.62,
+        "clients_noticed_seconds": 0.05,
+        "restart_to_healthy_seconds": 3.61,
         "whole_class_back_seconds": 0.88,
         "fan_out_after_restart": {
           "count": 40,
-          "p50_ms": 482.0,
-          "p95_ms": 482.8,
-          "max_ms": 482.8
+          "p50_ms": 462.9,
+          "p95_ms": 463.8,
+          "max_ms": 463.8
         },
         "deliveries_left_unclosed_by_the_crash": 1,
         "scenario_seconds": 7.6
@@ -410,7 +410,7 @@
         {
           "name": "the next question reached and was answered by the whole class",
           "ok": true,
-          "detail": "{'question_id': '4934acef-9402-4532-96b9-72086aa9921c', 'reason': 'window_elapsed', 'respondents': 40, 'eligible': 40}"
+          "detail": "{'question_id': '1f5ac4d2-d541-4cdf-8e52-802b5c99d42f', 'reason': 'window_elapsed', 'respondents': 40, 'eligible': 40}"
         }
       ],
       "notes": [
@@ -422,19 +422,19 @@
       "title": "A planned shutdown and restart during a class",
       "passed": true,
       "figures": {
-        "shutdown_seconds": 0.43,
+        "shutdown_seconds": 0.39,
         "close_codes_seen": [
           1012
         ],
-        "restart_to_healthy_seconds": 3.59,
-        "whole_class_back_seconds": 0.72,
+        "restart_to_healthy_seconds": 3.6,
+        "whole_class_back_seconds": 0.87,
         "fan_out_after_restart": {
           "count": 40,
-          "p50_ms": 457.2,
-          "p95_ms": 458.0,
-          "max_ms": 458.0
+          "p50_ms": 457.3,
+          "p95_ms": 458.1,
+          "max_ms": 458.2
         },
-        "scenario_seconds": 7.2
+        "scenario_seconds": 7.3
       },
       "checks": [
         {
@@ -445,7 +445,7 @@
         {
           "name": "the class carried on: the next question was answered by everyone",
           "ok": true,
-          "detail": "{'question_id': '5915094d-3b4d-41de-bd55-77d9bfa02b83', 'reason': 'window_elapsed', 'respondents': 40, 'eligible': 40}"
+          "detail": "{'question_id': 'bb80e980-e7f5-4874-832b-3469a5008773', 'reason': 'window_elapsed', 'respondents': 40, 'eligible': 40}"
         }
       ],
       "notes": []
@@ -456,16 +456,16 @@
       "passed": true,
       "figures": {
         "readiness_answered_in_seconds": 11.09,
-        "delivery_refused_in_seconds": 10.31,
-        "ready_again_after_seconds": 2.9,
+        "delivery_refused_in_seconds": 10.37,
+        "ready_again_after_seconds": 2.89,
         "errors_logged_during_outage": 3,
         "fan_out_after_recovery": {
           "count": 40,
-          "p50_ms": 73.3,
-          "p95_ms": 74.6,
-          "max_ms": 74.8
+          "p50_ms": 72.7,
+          "p95_ms": 73.4,
+          "max_ms": 73.4
         },
-        "scenario_seconds": 37.8
+        "scenario_seconds": 37.7
       },
       "checks": [
         {
@@ -481,7 +481,7 @@
         {
           "name": "a delivery is refused with an error and not left hanging",
           "ok": true,
-          "detail": "500 {\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"An unexpected error occurred\",\"detail\":{}},\"request_id\":\"16388049-e833-4a9a"
+          "detail": "500 {\"error\":{\"code\":\"INTERNAL_ERROR\",\"message\":\"An unexpected error occurred\",\"detail\":{}},\"request_id\":\"cb05256d-dd34-4c46"
         },
         {
           "name": "no socket was dropped while the database was away",
@@ -496,7 +496,7 @@
         {
           "name": "with the database back, a question reached and was answered by everyone",
           "ok": true,
-          "detail": "{'question_id': '2e5f7cea-46c0-4400-8a1d-ec3bce93207b', 'reason': 'window_elapsed', 'respondents': 40, 'eligible': 40}"
+          "detail": "{'question_id': 'bda79df3-6e95-42f8-80be-15800b11b9bf', 'reason': 'window_elapsed', 'respondents': 40, 'eligible': 40}"
         },
         {
           "name": "no stream had a gap across the outage",
@@ -513,17 +513,17 @@
       "figures": {
         "meeting_start_to_last_student": {
           "count": 40,
-          "p50_ms": 41.1,
-          "p95_ms": 41.7,
-          "max_ms": 41.8
+          "p50_ms": 49.8,
+          "p95_ms": 50.5,
+          "max_ms": 50.5
         },
-        "scenario_seconds": 2.2
+        "scenario_seconds": 2.3
       },
       "checks": [
         {
           "name": "the meeting was linked to a prepared session",
           "ok": true,
-          "detail": "{\"id\":\"6b86d464-e9b1-467f-a643-dde7a413d8c1\",\"course_code\":\"LOAD101\",\"title\":\"Teams class\",\"lecturer_id\":\"0381496f-f1b4-4569-bbd9-ac97b90671c3\",\"status\":\"prepared\",\"starts_at\":\"2026-10-15T18:15:21.126"
+          "detail": "{\"id\":\"c9017bb7-d649-4de2-98be-4dc60c805962\",\"course_code\":\"LOAD101\",\"title\":\"Teams class\",\"lecturer_id\":\"1abe9479-452c-453e-8ecc-c32b487b5d6a\",\"status\":\"prepared\",\"starts_at\":\"2026-10-21T12:56:28.675"
         },
         {
           "name": "students waiting in the meeting are told the session is prepared",
@@ -548,7 +548,7 @@
         {
           "name": "a meeting with no session linked creates and starts one",
           "ok": true,
-          "detail": "{\"id\":\"4d9741e8-a187-4701-9ff1-aa1dfabf72e6\",\"course_code\":\"LOAD101\",\"title\":\"Teams meeting\",\"lecturer_id\":\"0381496f-f1b4-4569-bbd9-ac97b90671c3\",\"status\":\"active\",\"starts_at\":\"2026-10-15T18:15:22.404"
+          "detail": "{\"id\":\"9606205b-f699-4f8a-a1f6-83df59e524b7\",\"course_code\":\"LOAD101\",\"title\":\"Teams meeting\",\"lecturer_id\":\"1abe9479-452c-453e-8ecc-c32b487b5d6a\",\"status\":\"active\",\"starts_at\":\"2026-10-21T12:56:30.004"
         },
         {
           "name": "the real Teams adapter answers 503 while no Teams credentials are set",
@@ -570,12 +570,12 @@
         "expected_per_session": "about 10",
         "seconds_between_questions": {
           "count": 95,
-          "p50": 3.02,
-          "max": 3.04
+          "p50": 3.01,
+          "max": 3.05
         },
         "seconds_between_questions_expected": 3.0,
-        "worst_lateness_seconds": 0.04,
-        "scenario_seconds": 35.9
+        "worst_lateness_seconds": 0.05,
+        "scenario_seconds": 35.7
       },
       "checks": [
         {
@@ -586,7 +586,7 @@
         {
           "name": "no question was more than a second late",
           "ok": true,
-          "detail": "0.04 s"
+          "detail": "0.05 s"
         },
         {
           "name": "every question closed with its whole class answered",

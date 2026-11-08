@@ -25,6 +25,7 @@ from app.models.session import Session as SessionModel
 from app.models.student import Student
 from app.schemas.identity import Role
 from app.schemas.session import SessionStatus
+from app.services.course_membership import students_on
 
 # Sessions that may still be joined. A session that has ended or was
 # cancelled has no live stream left to join, regardless of who is asking --
@@ -59,7 +60,7 @@ async def session_membership_allowed(
         result = await db.execute(
             select(Student.student_id).where(
                 Student.user_id == user_id,
-                Student.course_id == session_row.course_id,
+                Student.student_id.in_(students_on(session_row.course_id)),
             )
         )
         return result.first() is not None

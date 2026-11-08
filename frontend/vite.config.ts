@@ -15,6 +15,9 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5173,
       strictPort: true,
+      // Teams loads the dev server through a dev tunnel, which Vite would
+      // otherwise refuse as an unknown host.
+      allowedHosts: ['.devtunnels.ms'],
       proxy,
     },
     preview: { port: 4173, strictPort: true, proxy },

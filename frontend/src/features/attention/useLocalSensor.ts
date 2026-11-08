@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { sensorProblem } from './sensorProblem'
+
 export type SensorStatus = 'off' | 'starting' | 'on' | 'unavailable'
 export interface SensorSamples<T> { values: T[]; latestAt: number }
 type Starter<T> = (signal: AbortSignal, report: (value: T) => void, failed: () => void) => Promise<void>
@@ -36,15 +38,17 @@ export function useLocalSensor<T>(
     const current = new AbortController()
     controller.current = current
     const isCurrent = () => controller.current === current && !current.signal.aborted
-    const failed = () => {
+    const failed = (error?: unknown) => {
       if (!isCurrent()) return
       stop()
       setStatus('unavailable')
-      failure.current(`${label} unavailable. Check browser permission or device use in another app. You can continue without it.`)
+      // A tab inside Teams is framed by it; the fix for a refusal is there.
+      const inTeams = window.self !== window.top
+      failure.current(sensorProblem(label, error, inTeams))
     }
     setStatus('starting')
     try {
-      if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) throw new Error('Unavailable')
+      if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) throw new Error('Insecure')
       await starter(current.signal, value => {
         if (!isCurrent()) return
         if (value !== null) {
@@ -58,8 +62,8 @@ export function useLocalSensor<T>(
         activeAt.current = performance.now()
         setStatus('on')
       }
-    } catch {
-      failed()
+    } catch (error) {
+      failed(error)
     }
   }, [label, maxSamples, starter, stop])
 

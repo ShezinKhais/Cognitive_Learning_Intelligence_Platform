@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { useLocation, useNavigate } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 import { motion } from 'motion/react'
 import { Activity, Camera, Check, Mic, type LucideIcon } from 'lucide-react'
 
@@ -10,13 +10,14 @@ import {
   recordConsent,
   type CurrentUser,
 } from '../api'
-import { intendedPathForRole } from '../authRouting'
+import { intendedPathForRole, STUDENT_DATA_PATH } from '../authRouting'
 import { Wordmark } from '../components/brand/ClipMark'
 import PageLoader from '../components/brand/PageLoader'
 import { buttonStyles } from '../components/ui/button'
 import { cn } from '../components/ui/cn'
 import { ProblemState } from '../components/ui/ProblemState'
 import { problemArt } from '../components/ui/problem'
+import { choicesToSave } from '../features/student/monitoringChoices'
 
 export default function ConsentPage() {
   const navigate = useNavigate()
@@ -114,12 +115,10 @@ export default function ConsentPage() {
       await recordConsent('terms', true)
 
       if (user.role === 'student') {
-        await recordConsent(
-          'engagement_monitoring',
-          monitoring,
-        )
-        await recordConsent('camera', camera)
-        await recordConsent('microphone', microphone)
+        const saved = choicesToSave({ monitoring, camera, microphone })
+        await recordConsent('engagement_monitoring', saved.monitoring)
+        await recordConsent('camera', saved.camera)
+        await recordConsent('microphone', saved.microphone)
       }
 
       const requestedPath = (
@@ -194,6 +193,17 @@ export default function ConsentPage() {
             <span className="block text-sm text-muted-foreground">Required</span>
           </span>
         </label>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Read the{' '}
+          <a href="/terms" target="_blank" rel="noopener" className="font-semibold text-primary underline underline-offset-2">
+            terms of use
+          </a>{' '}
+          and the{' '}
+          <a href="/privacy" target="_blank" rel="noopener" className="font-semibold text-primary underline underline-offset-2">
+            privacy notice
+          </a>{' '}
+          (open in a new tab).
+        </p>
 
         {isStudent && (
           <fieldset className="mt-6">
@@ -205,7 +215,7 @@ export default function ConsentPage() {
               <Permission
                 icon={Activity}
                 label="Engagement monitoring"
-                detail="Estimates from how you take part, such as answering checkpoints."
+                detail="Estimates from how you take part, such as answering checkpoints. Turn this on to choose the camera and microphone indicators."
                 checked={monitoring}
                 onChange={setMonitoring}
               />
@@ -213,17 +223,30 @@ export default function ConsentPage() {
                 icon={Camera}
                 label="Camera indicators"
                 detail="Whether a face is in view, worked out in your browser. The video is not sent."
-                checked={camera}
+                checked={monitoring && camera}
                 onChange={setCamera}
+                disabled={!monitoring}
+                nested
               />
               <Permission
                 icon={Mic}
                 label="Microphone indicators"
                 detail="Whether you are speaking, worked out in your browser. The sound is not sent."
-                checked={microphone}
+                checked={monitoring && microphone}
                 onChange={setMicrophone}
+                disabled={!monitoring}
+                nested
               />
             </div>
+            <p className="mt-3 text-sm text-muted-foreground">
+              The indicators you turn on here start by themselves when you join a live class. Your browser asks for
+              permission the first time. You can turn either off during a class, or change your choice here, at any
+              time and still take part in everything.
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              These indicators are separate from your camera and microphone in Microsoft Teams, which Teams handles under
+              its own privacy terms.
+            </p>
           </fieldset>
         )}
 
@@ -237,6 +260,14 @@ export default function ConsentPage() {
           {saving ? 'Saving…' : 'Continue'}
         </button>
       </form>
+      {isStudent && (
+        <p className="mt-4 text-sm text-muted-foreground">
+          You can still download your data or request erasure without accepting the terms.{' '}
+          <Link to={STUDENT_DATA_PATH} className="font-semibold underline">
+            Open My data
+          </Link>
+        </p>
+      )}
     </Frame>
   )
 }
@@ -265,15 +296,25 @@ function Permission({
   detail,
   checked,
   onChange,
+  disabled = false,
+  nested = false,
 }: {
   icon: LucideIcon
   label: string
   detail: string
   checked: boolean
   onChange: (checked: boolean) => void
+  disabled?: boolean
+  nested?: boolean
 }) {
   return (
-    <label className="flex cursor-pointer items-start gap-3 px-4 py-3.5">
+    <label
+      className={cn(
+        'flex items-start gap-3 py-3.5 pr-4',
+        nested ? 'pl-10' : 'pl-4',
+        disabled ? 'cursor-not-allowed opacity-55' : 'cursor-pointer',
+      )}
+    >
       <Icon size={18} aria-hidden className="mt-0.5 shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1">
         <span className="block font-semibold">{label}</span>
@@ -283,6 +324,7 @@ function Permission({
         type="checkbox"
         role="switch"
         checked={checked}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
         className="peer sr-only"
       />

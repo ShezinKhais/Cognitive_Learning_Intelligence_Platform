@@ -23,9 +23,10 @@ The bot acts on a meeting starting or ending, which Teams sends to a bot
 installed in the meeting's chat with the OnlineMeeting.ReadBasic.Chat
 permission the manifest asks for. It starts or ends the linked session as
 the session's lecturer, through the same service the mock adapter's routes
-use, and only while that lecturer could still do so themselves. Messages,
-installs and participant events are acknowledged and not acted on:
-participants need BBIS's Teams user mappings first.
+use, and only while that lecturer could still do so themselves. Messages
+and the bot being added to a chat get a short reply (teams_replies).
+Participant events are acknowledged and not acted on: who is in the class
+comes from C.L.I.P sign-in, not from the meeting roster.
 """
 
 from __future__ import annotations
@@ -50,7 +51,12 @@ from app.core.errors import (
     ServiceUnavailableError,
 )
 from app.core.security import TokenValidationError, extract_bearer_token
-from app.schemas.meetings import MeetingEventIn, MeetingEventKind, TeamsActivity
+from app.schemas.meetings import (
+    MeetingEventIn,
+    MeetingEventKind,
+    TeamsActivity,
+    activity_meeting_id,
+)
 from app.services import session_lifecycle
 
 log = logging.getLogger("clip.teams")
@@ -220,8 +226,13 @@ class BotAuthenticator:
         except (TokenValidationError, jwt.PyJWTError) as exc:
             raise _refusal("token", str(exc)) from exc
         # A token stolen from one channel must not be replayed from another.
-        if claims.get("serviceUrl") != service_url:
-            raise _refusal("token", "serviceUrl mismatch")
+        # Bot Framework names the claim serviceurl, all lower case, as its
+        # SDKs read it; serviceUrl is accepted too.
+        claimed = claims.get("serviceurl") or claims.get("serviceUrl")
+        if not isinstance(claimed, str) or _same_url(claimed) != _same_url(service_url):
+            raise _refusal(
+                "token", f"serviceUrl mismatch: token {claimed!r}, activity {service_url!r}"
+            )
         # A key Bot Framework has not endorsed for this channel cannot vouch
         # for an activity claiming to come from it. An empty set endorses
         # nothing in particular, as Bot Framework's SDKs read it.
@@ -237,6 +248,11 @@ class BotAuthenticator:
         tenant = _tenant_of(activity)
         if tenant is None or tenant.lower() != self._tenant_id:
             raise _refusal("origin", f"tenant {tenant!r} is not this deployment's")
+
+
+def _same_url(url: str) -> str:
+    """A service URL as compared: case and a trailing slash do not matter."""
+    return url.strip().rstrip("/").lower()
 
 
 def _tenant_of(activity: TeamsActivity) -> str | None:
@@ -259,8 +275,7 @@ def meeting_event(activity: TeamsActivity) -> MeetingEventIn | None:
     kind = MEETING_EVENTS.get(activity.name or "") if activity.type == "event" else None
     if kind is None:
         return None
-    meeting = (activity.channel_data or {}).get("meeting") or {}
-    meeting_id = meeting.get("id") if isinstance(meeting, dict) else None
+    meeting_id = activity_meeting_id(activity)
     if not isinstance(meeting_id, str) or not meeting_id:
         log.warning("a meeting %s arrived without a meeting id", kind.value)
         return None

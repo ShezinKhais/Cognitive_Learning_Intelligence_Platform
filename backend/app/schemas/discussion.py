@@ -1,0 +1,102 @@
+from datetime import datetime
+from uuid import UUID
+
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+
+
+class DiscussionWrite(BaseModel):
+    occurred_at: AwareDatetime
+    text: str = Field(min_length=1, max_length=2000)
+    shareable_confirmed: bool
+
+    @field_validator("text")
+    @classmethod
+    def nonempty(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Write a discussion note.")
+        return value
+
+
+class DiscussionNoteOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    note_id: UUID
+    occurred_at: datetime
+    text: str
+    updated_at: datetime
+    origin: str = "lecturer"
+
+
+class DiscussionOut(BaseModel):
+    notes: list[DiscussionNoteOut]
+    latest_recorded_at: datetime | None
+    session_status: str
+    live_transcription_active: bool = False
+
+
+class TranscriptItem(BaseModel):
+    id: str = Field(min_length=1, max_length=2048)
+    created_at: AwareDatetime
+
+
+class TranscriptList(BaseModel):
+    enabled: bool
+    items: list[TranscriptItem] = Field(default_factory=list)
+    message: str | None = None
+
+
+class TranscriptImport(BaseModel):
+    transcript_id: str = Field(min_length=1, max_length=2048)
+    participant_notice_confirmed: bool
+
+
+class DraftMinute(BaseModel):
+    note_id: UUID
+    occurred_at: datetime
+    text: str
+    source_excerpt: str
+    source_offset_seconds: float
+
+
+class TranscriptDraft(BaseModel):
+    transcript_id: str = Field(min_length=1, max_length=2048)
+    notes: list[DraftMinute]
+    warning: str = (
+        "AI draft: check every teaching point, timestamp and personal detail before publishing."
+    )
+
+
+class LiveCaptureStart(BaseModel):
+    automatic_sharing_confirmed: bool
+
+
+class LiveCaptureStatus(BaseModel):
+    configured: bool
+    running: bool
+    session_running: bool
+    capture_id: UUID | None = None
+    language: str = "en"
+
+
+class LiveChunkOut(BaseModel):
+    sequence: int
+    note: DiscussionNoteOut | None = None
+
+
+class AutomaticTranscriptWrite(BaseModel):
+    enabled: bool
+    participant_notice_confirmed: bool = False
+
+
+class PrivateTranscriptDraft(TranscriptDraft):
+    expires_at: datetime
+
+
+class AutomaticTranscriptOut(BaseModel):
+    configured: bool
+    enabled: bool
+    subscribed: bool
+    message: str
+    drafts: list[PrivateTranscriptDraft] = Field(default_factory=list)
+    pending: int = 0
+    failed: int = 0

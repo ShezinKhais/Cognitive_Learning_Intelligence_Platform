@@ -34,8 +34,13 @@ METHODS = ("get", "post", "put", "patch", "delete")
 
 # Reachable without signing in, and why.
 PUBLIC = {
+    (
+        "POST",
+        "/api/v1/teams/transcript-notifications",
+    ): "Graph validation or subscription clientState authentication",
     ("POST", "/api/v1/auth/login"): "how a user signs in",
     ("POST", "/api/v1/auth/refresh"): "the httpOnly refresh cookie is the credential",
+    ("POST", "/api/v1/auth/teams"): "Teams sign-in, authenticated by the Entra token it carries",
     ("POST", "/api/v1/auth/logout"): "clears the refresh cookie, and does nothing without one",
     ("GET", "/api/v1/health"): "liveness for a load balancer",
     ("GET", "/api/v1/ready"): "readiness for a load balancer",
@@ -47,6 +52,7 @@ NO_CONSENT_NEEDED = {
     ("GET", "/api/v1/me/data"): "a student can always take a copy of their own data",
     ("POST", "/api/v1/me/deletion-request"): "a student can always ask to be erased",
     ("GET", "/api/v1/me/deletion-request"): "a student can always see where that request stands",
+    ("POST", "/api/v1/client-errors"): "a page can crash before the terms are accepted",
 }
 
 # Who each route is for. Anything not named here fails the audit, so a new
@@ -58,15 +64,50 @@ ADMIN_ONLY = "admins"
 MEMBER = "a member of the session, decided in the handler"
 
 AUDIENCE = {
+    ("GET", "/api/v1/sessions/{session_id}/discussion/automatic-transcripts"): STAFF,
+    ("PUT", "/api/v1/sessions/{session_id}/discussion/automatic-transcripts"): STAFF,
+    (
+        "DELETE",
+        "/api/v1/sessions/{session_id}/discussion/automatic-transcripts/drafts/{transcript_id}",
+    ): STAFF,
+    ("GET", "/api/v1/sessions/{session_id}/live-transcription"): STAFF,
+    ("POST", "/api/v1/sessions/{session_id}/live-transcription/start"): STAFF,
+    ("POST", "/api/v1/sessions/{session_id}/live-transcription/{capture_id}/stop"): STAFF,
+    (
+        "POST",
+        "/api/v1/sessions/{session_id}/live-transcription/{capture_id}/chunks/{sequence}",
+    ): STAFF,
+    ("GET", "/api/v1/sessions/{session_id}/discussion/transcripts"): STAFF,
+    ("POST", "/api/v1/sessions/{session_id}/discussion/transcript-draft"): STAFF,
+    ("GET", "/api/v1/sessions/{session_id}/discussion"): MEMBER,
+    ("PUT", "/api/v1/sessions/{session_id}/discussion/{note_id}"): STAFF,
+    ("DELETE", "/api/v1/sessions/{session_id}/discussion/{note_id}"): STAFF,
     ("GET", "/api/v1/student-reviews"): STUDENT_ONLY,
     ("GET", "/api/v1/student-reviews/{session_id}"): STUDENT_ONLY,
     ("GET", "/api/v1/student-reviews/{session_id}/responses/{response_id}/sources"): STUDENT_ONLY,
     ("POST", "/api/v1/auth/consent"): ANY_USER,
     ("GET", "/api/v1/auth/me"): ANY_USER,
+    ("POST", "/api/v1/client-errors"): ANY_USER,
+    ("GET", "/api/v1/admin/errors"): ADMIN_ONLY,
     ("POST", "/api/v1/admin/roster"): ADMIN_ONLY,
+    ("GET", "/api/v1/admin/accounts"): ADMIN_ONLY,
+    ("POST", "/api/v1/admin/accounts"): ADMIN_ONLY,
+    ("PATCH", "/api/v1/admin/accounts/{user_id}"): ADMIN_ONLY,
+    ("POST", "/api/v1/admin/accounts/{user_id}/password"): ADMIN_ONLY,
+    ("GET", "/api/v1/admin/courses"): ADMIN_ONLY,
+    ("POST", "/api/v1/admin/courses"): ADMIN_ONLY,
+    ("GET", "/api/v1/courses/mine"): STAFF,
+    ("GET", "/api/v1/courses/{code}/roster"): STAFF,
+    ("POST", "/api/v1/courses/{code}/students"): STAFF,
+    ("DELETE", "/api/v1/courses/{code}/students/{user_id}"): STAFF,
+    ("PUT", "/api/v1/courses/{code}/lecturers"): STAFF,
     ("POST", "/api/v1/admin/timetable"): ADMIN_ONLY,
     ("POST", "/api/v1/materials"): STAFF,
     ("GET", "/api/v1/materials"): STAFF,
+    ("GET", "/api/v1/engagement-history"): STAFF,
+    ("GET", "/api/v1/sessions/{session_id}/rooms"): STAFF,
+    ("PUT", "/api/v1/sessions/{session_id}/rooms"): STAFF,
+    ("DELETE", "/api/v1/sessions/{session_id}/rooms"): STAFF,
     ("GET", "/api/v1/materials/{material_id}"): STAFF,
     ("PATCH", "/api/v1/materials/{material_id}"): STAFF,
     ("DELETE", "/api/v1/materials/{material_id}"): STAFF,
@@ -77,6 +118,8 @@ AUDIENCE = {
     ("POST", "/api/v1/meetings/events"): STAFF,
     ("GET", "/api/v1/meetings/{meeting_id}"): STAFF,
     ("PUT", "/api/v1/meetings/{meeting_id}"): STAFF,
+    ("GET", "/api/v1/meetings/{meeting_id}/class-suggestion"): STAFF,
+    ("POST", "/api/v1/meetings/{meeting_id}/class"): STAFF,
     ("POST", "/api/v1/sessions"): STAFF,
     ("GET", "/api/v1/sessions"): ANY_USER,
     ("GET", "/api/v1/sessions/{session_id}"): MEMBER,

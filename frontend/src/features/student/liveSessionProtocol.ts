@@ -139,6 +139,14 @@ export function parseAttentionPrompt(value: unknown): AttentionPrompt | null {
   return value as unknown as AttentionPrompt
 }
 
+/** The room label in a room.assigned event, null for "rooms closed", or
+ * undefined when the event is malformed. */
+export function parseRoomAssigned(value: unknown): string | null | undefined {
+  if (!isRecord(value)) return undefined
+  if (value.room_label === null) return null
+  return typeof value.room_label === 'string' && value.room_label.trim() ? value.room_label : undefined
+}
+
 export function parseLiveError(value: unknown): LiveErrorEvent | null {
   if (!isRecord(value) || typeof value.code !== 'string') return null
   if (!isStringOrNull(value.detail)) return null

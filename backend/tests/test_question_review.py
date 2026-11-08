@@ -219,7 +219,8 @@ async def test_owning_lecturer_can_approve_a_question(db_client, app):
 
         assert resp.status_code == 200
         body = resp.json()
-        assert body["status"] == "approved"
+        # Approving makes it ready to send; there is no separate step.
+        assert body["status"] == "staged"
         assert body["id"] == str(question_id)
     finally:
         await _cleanup(session_factory, question_id)

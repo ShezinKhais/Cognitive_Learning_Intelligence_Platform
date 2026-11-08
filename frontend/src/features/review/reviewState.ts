@@ -1,10 +1,9 @@
 import type { Question, QuestionStatus } from '../../api'
 
-export type ReviewFilter = 'review' | 'approved' | 'staged' | 'rejected' | 'all'
+export type ReviewFilter = 'review' | 'staged' | 'rejected' | 'all'
 
 export const FILTERS: readonly { key: ReviewFilter; label: string }[] = [
   { key: 'review', label: 'To review' },
-  { key: 'approved', label: 'Approved' },
   { key: 'staged', label: 'Ready to send' },
   { key: 'rejected', label: 'Rejected' },
   { key: 'all', label: 'All' },
@@ -12,9 +11,10 @@ export const FILTERS: readonly { key: ReviewFilter; label: string }[] = [
 
 const IN_FILTER: Record<Exclude<ReviewFilter, 'all'>, readonly QuestionStatus[]> = {
   review: ['draft'],
-  approved: ['approved'],
-  // Delivered questions were staged first; they sit with what was sent.
-  staged: ['staged', 'delivered'],
+  // Approving makes a question ready to send. Delivered questions were ready
+  // first; they sit with what was sent. 'approved' is only on rows from
+  // before approving did both.
+  staged: ['approved', 'staged', 'delivered'],
   rejected: ['rejected'],
 }
 
@@ -23,9 +23,9 @@ export function inFilter(question: Pick<Question, 'status'>, filter: ReviewFilte
 }
 
 export function countByFilter(questions: readonly Pick<Question, 'status'>[]): Record<ReviewFilter, number> {
-  const counts: Record<ReviewFilter, number> = { review: 0, approved: 0, staged: 0, rejected: 0, all: questions.length }
+  const counts: Record<ReviewFilter, number> = { review: 0, staged: 0, rejected: 0, all: questions.length }
   for (const question of questions) {
-    for (const key of ['review', 'approved', 'staged', 'rejected'] as const) {
+    for (const key of ['review', 'staged', 'rejected'] as const) {
       if (IN_FILTER[key].includes(question.status)) counts[key] += 1
     }
   }

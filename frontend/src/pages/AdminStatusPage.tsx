@@ -5,6 +5,7 @@ import { apiGet, apiUrl, type Health } from '../api'
 import { buttonStyles } from '../components/ui/button'
 import { PageBody, PageHeader, Panel, Tag } from '../components/ui/primitives'
 import { ProblemState } from '../components/ui/ProblemState'
+import RecentErrorsPanel from '../features/monitoring/RecentErrors'
 
 interface Dependency {
   name: string
@@ -33,10 +34,12 @@ export default function AdminStatusPage() {
   const [ready, setReady] = useState<Readiness | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [checking, setChecking] = useState(false)
+  const [round, setRound] = useState(0)
 
   const check = useCallback(async () => {
     setChecking(true)
     setError(null)
+    setRound((n) => n + 1)
     try {
       const [h, r] = await Promise.all([apiGet<Health>('/health'), readReadiness()])
       setHealth(h)
@@ -56,7 +59,7 @@ export default function AdminStatusPage() {
     <>
       <PageHeader
         title="System status"
-        description="Whether the database and AI models are reachable, and how this deployment is set up."
+        description="Whether the database and AI models are reachable, how this deployment is set up, and what has gone wrong lately."
         actions={
           <button type="button" className={buttonStyles({ intent: 'secondary' })} onClick={check} disabled={checking}>
             <RefreshCw size={16} aria-hidden className={checking ? 'animate-spin' : undefined} />
@@ -104,6 +107,7 @@ export default function AdminStatusPage() {
               <p className="text-muted-foreground">Checking…</p>
             )}
           </Panel>
+          <RecentErrorsPanel refresh={round} />
         </div>
         )}
       </PageBody>

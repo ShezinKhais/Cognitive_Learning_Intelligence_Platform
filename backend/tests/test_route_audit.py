@@ -25,9 +25,14 @@ from .session_support import add_course
 
 # State-changing routes left unaudited, and why.
 NOT_AUDITED = {
+    # Graph webhook only validates subscriptions and wakes an existing opted-in job.
+    ("POST", "/api/v1/teams/transcript-notifications"),
     # Nobody is signed in yet. Failed attempts and lockouts are logged and
     # counted by the login itself.
     ("POST", "/api/v1/auth/login"),
+    # Teams single sign-on, the same as a login. Nobody is signed in yet, each
+    # attempt is in the security log, and linking the Teams identity is logged.
+    ("POST", "/api/v1/auth/teams"),
     # A student asking for their own data to be erased. The deletion request
     # service writes the audit entry itself (DELETION_REQUESTED).
     ("POST", "/api/v1/me/deletion-request"),
@@ -38,6 +43,9 @@ NOT_AUDITED = {
     # Drops the caller's own refresh cookie and changes nothing that is kept.
     # It is in the security log.
     ("POST", "/api/v1/auth/logout"),
+    # A browser reporting its own crash. Kept only in the in-memory error
+    # view for admins, and changes nothing that is stored.
+    ("POST", "/api/v1/client-errors"),
     # Authenticated by Bot Framework, not a user; acts through the meeting
     # routes' service, and each activity is logged.
     ("POST", "/api/v1/teams/messages"),

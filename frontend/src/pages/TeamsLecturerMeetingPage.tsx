@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react'
-import { Navigate } from 'react-router'
 
-import { apiAuthenticatedGet } from '../api'
+import { ApiError, apiAuthenticatedGet } from '../api'
+import LecturerMeetingPanel from '../features/live/LecturerMeetingPanel'
+import MeetingSessionPicker from '../features/live/MeetingSessionPicker'
 import {
-  lecturerLiveSessionPath,
   meetingSessionPath,
   type MeetingSession,
 } from '../teams/lecturerMeeting'
 import { useTeams } from '../teams/TeamsProvider'
 
 /**
- * Resolves the lecturer's Microsoft Teams meeting surface to the existing
- * C.L.I.P lecturer workspace.
+ * Resolves the lecturer's Microsoft Teams meeting surface to its session and
+ * shows the compact lecturer panel, which links to the full workspace.
  *
  * Microsoft Teams supplies meeting context only. It does not authorize
  * access to the lecturer workspace. C.L.I.P authentication, consent and
@@ -30,6 +30,8 @@ export default function TeamsLecturerMeetingPage() {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // The meeting has no session of the lecturer's yet: offer to link one.
+  const [unlinked, setUnlinked] = useState(false)
 
   const meetingId = teams.context?.meetingId ?? null
 
@@ -49,6 +51,7 @@ export default function TeamsLecturerMeetingPage() {
       async function resolveMeetingSession(): Promise<void> {
         setIsLoading(true)
         setError(null)
+        setUnlinked(false)
 
         try {
           const session = await apiAuthenticatedGet<MeetingSession>(
@@ -72,6 +75,10 @@ export default function TeamsLecturerMeetingPage() {
           }
 
           setSessionId(null)
+          if (caught instanceof ApiError && caught.status === 404) {
+            setUnlinked(true)
+            return
+          }
           setError(
             caught instanceof Error
               ? caught.message
@@ -128,6 +135,18 @@ export default function TeamsLecturerMeetingPage() {
     )
   }
 
+  if (unlinked && meetingId && !sessionId) {
+    return (
+      <MeetingSessionPicker
+        meetingId={meetingId}
+        onLinked={(linked) => {
+          setUnlinked(false)
+          setSessionId(linked)
+        }}
+      />
+    )
+  }
+
   if (error || !sessionId) {
     return (
       <main className="grid min-h-screen place-items-center bg-background p-6">
@@ -148,10 +167,5 @@ export default function TeamsLecturerMeetingPage() {
     )
   }
 
-  return (
-    <Navigate
-      to={lecturerLiveSessionPath(sessionId)}
-      replace
-    />
-  )
+  return <LecturerMeetingPanel sessionId={sessionId} />
 }

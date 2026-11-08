@@ -1,6 +1,7 @@
 import { app } from '@microsoft/teams-js'
 
 import {
+  isTeamsMobileAgent,
   isTeamsMockAllowed,
   normalizeTeamsContext,
   normalizeTheme,
@@ -78,7 +79,7 @@ export function createTeamsHost(
     return new SimulatedTeamsHost(currentWindow.location.search)
   }
 
-  if (currentWindow.self !== currentWindow.top) {
+  if (currentWindow.self !== currentWindow.top || isTeamsMobileAgent(currentWindow.navigator.userAgent)) {
     return new MicrosoftTeamsHost()
   }
 

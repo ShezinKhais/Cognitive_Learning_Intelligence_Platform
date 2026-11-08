@@ -48,6 +48,7 @@ from app.core.security import (
 from app.models.user import User
 from app.realtime.classroom import classroom
 from app.repositories.consent_repository import ConsentRepository
+from app.repositories.teams_user_mapping_repository import TeamsUserMappingRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.identity import (
     ConsentOut,
@@ -55,10 +56,12 @@ from app.schemas.identity import (
     ConsentType,
     LoginRequest,
     Role,
+    TeamsSignInRequest,
     TimetableImportResult,
     TokenResponse,
     UserOut,
 )
+from app.services.teams_sso import EntraIdentity, verify_entra_token
 from app.services.timetable_import import (
     detect_timetable_conflicts,
     match_names,
@@ -335,6 +338,100 @@ async def _authenticate(
         expires_in=expires_in,
         role=role,
     )
+
+
+@auth.post(
+    "/teams",
+    response_model=TokenResponse,
+    responses={
+        429: {"description": "Too many failed sign-ins from this address recently."},
+        403: {"description": "The Microsoft account has no C.L.I.P account."},
+        503: {"description": "Teams sign-in is not configured, or Microsoft is unreachable."},
+    },
+)
+async def teams_sign_in(
+    payload: TeamsSignInRequest,
+    request: Request,
+    response: Response,
+    settings: AppSettings,
+    db: DbSession,
+) -> TokenResponse:
+    """Sign in with the Microsoft account Teams is signed in with.
+
+    The tab sends the Entra token Teams gave it. The account must already
+    exist in C.L.I.P; see app/services/teams_sso.py.
+    """
+    ip_address = request.client.host if request.client is not None else "unknown"
+    limiter = get_login_address_limiter()
+    limiter.begin(ip_address)
+    try:
+        identity = await verify_entra_token(payload.token, settings)
+        user = await _teams_account(identity, settings, db)
+    except (AuthenticationError, PermissionError_):
+        limiter.record_failure(ip_address)
+        raise
+    finally:
+        limiter.end(ip_address)
+
+    role = _normalise_role(user.role)
+    token, expires_in = create_access_token(
+        user_id=user.id, role=role, email=user.email, settings=settings
+    )
+    claims = decode_access_token(token, settings)
+    refresh_token, max_age = create_refresh_token(
+        user_id=user.id,
+        role=role,
+        email=user.email,
+        settings=settings,
+        auth_time=claims.auth_time,
+    )
+    _set_refresh_cookie(response, refresh_token, max_age, settings)
+    log.info("security_event=LOGIN_SUCCEEDED user_id=%s role=%s method=teams", user.id, role.value)
+    return TokenResponse(access_token=token, expires_in=expires_in, role=role)
+
+
+TEAMS_NO_ACCOUNT = (
+    "This Microsoft account has no C.L.I.P account yet. Ask your C.L.I.P administrator to add it."
+)
+
+
+async def _teams_account(identity: EntraIdentity, settings: Settings, db: AsyncSession):
+    """The active account for a validated Entra identity, linking it the
+    first time by sign-in name."""
+    if settings.is_production:
+        users = UserRepository(db)
+
+        async def by_id(user_id):
+            return await users.get_by_id(user_id)
+
+        async def by_email(email):
+            return await users.get_by_email(email)
+    else:
+        dev = get_user_repository(settings)
+
+        async def by_id(user_id):
+            return dev.get_by_id(user_id)
+
+        async def by_email(email):
+            return dev.get_by_email(email)
+
+    mappings = TeamsUserMappingRepository(db)
+    linked = await mappings.user_for(tenant_id=identity.tenant_id, teams_user_id=identity.object_id)
+    user = await by_id(linked) if linked is not None else None
+    if user is None and identity.sign_in_name:
+        user = await by_email(identity.sign_in_name)
+        if user is not None:
+            await mappings.link_user(
+                tenant_id=identity.tenant_id, teams_user_id=identity.object_id, user_id=user.id
+            )
+            log.info("audit_event=TEAMS_USER_LINKED user_id=%s method=sso", user.id)
+    if user is None:
+        log.warning("security_event=LOGIN_FAILED reason=teams_no_account")
+        raise PermissionError_(TEAMS_NO_ACCOUNT)
+    if not user.active:
+        log.warning("security_event=LOGIN_FAILED user_id=%s reason=inactive", user.id)
+        raise AuthenticationError(GENERIC_LOGIN_ERROR)
+    return user
 
 
 @auth.post(

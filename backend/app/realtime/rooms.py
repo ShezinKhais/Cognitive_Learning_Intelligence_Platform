@@ -125,6 +125,10 @@ class Rooms:
     def __bool__(self) -> bool:
         return bool(self._rooms)
 
+    def members(self) -> list[UUID]:
+        """Every student in a room, whoever put them there."""
+        return list(self._where)
+
     def room_of(self, user_id: UUID) -> str | None:
         """The label of the room this student confirmed, if any."""
         key = self._where.get(user_id)

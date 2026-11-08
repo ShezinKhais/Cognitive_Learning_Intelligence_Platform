@@ -23,10 +23,13 @@ WORKDIR /srv/clip
 # files Alembic needs are kept in the working directory.
 COPY pyproject.toml ./
 COPY app ./app
-RUN pip install .  && rm -rf ./app
+ARG ENABLE_LIVE_TRANSCRIPTION=false
+RUN if [ "$ENABLE_LIVE_TRANSCRIPTION" = "true" ]; then pip install ".[transcription]"; else pip install .; fi \
+    && rm -rf ./app
 
 COPY alembic.ini ./
 COPY migrations ./migrations
+COPY scripts/prepare_live_speech.py ./scripts/prepare_live_speech.py
 
 # Applies migrations, then replaces the shell with uvicorn so SIGTERM reaches it
 # and the lifespan shutdown (drain jobs, stop session timers) runs.
