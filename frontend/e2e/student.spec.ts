@@ -428,6 +428,7 @@ test('missing self-hosted face model stops capture and explains unavailability',
 })
 
 test('both sensors stop independently and disabling releases every track', async ({ page }) => {
+  await showIndicators(page)
   await page.getByLabel('I opt in to camera indicators').check()
   await page.getByLabel('I opt in to microphone indicators').check()
   await page.getByRole('button', { name: 'Save my choice' }).click()
@@ -524,6 +525,10 @@ for (const theme of ['dark', 'contrast']) {
 test('a choice already given is remembered and the devices start by themselves', async ({ page }) => {
   for (const consent of ['engagement_monitoring', 'camera', 'microphone']) granted.add(consent)
   await page.reload()
+  // The devices start without the panel being opened; its one line can stop them.
+  await expect.poll(() => page.evaluate(() => (window as any).probe.requests)).toBeGreaterThan(0)
+  await expect(page.getByRole('button', { name: 'Stop indicators' })).toBeVisible()
+  await showIndicators(page)
   await expect(page.getByLabel('I opt in to camera indicators')).toBeChecked()
   await expect(page.getByLabel('I opt in to microphone indicators')).toBeChecked()
   await expect.poll(() => page.evaluate(() => (window as any).probe.requests)).toBeGreaterThan(0)
