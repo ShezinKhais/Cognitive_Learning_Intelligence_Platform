@@ -187,9 +187,28 @@ def test_the_classroom_follows_the_class_pacing() -> None:
     paced, usual = uuid4(), uuid4()
     built.remember_ai(paced, AiControls(checkpoint_minutes=5, answer_seconds=45))
 
+    assert built.state(paced, SessionStatus.ACTIVE).ai.checkpoint_minutes is None
     assert built._window(paced) == timedelta(seconds=45)
     assert built._window(usual) == timedelta(seconds=30)
     for _ in range(20):
         wait = built._next_wait(paced)
         assert wait is not None
         assert timedelta(seconds=270) <= wait <= timedelta(seconds=330)
+
+
+async def test_class_pacing_runs_even_when_the_deployment_cycle_is_off(
+    fake_session_repository,  # noqa: ANN001
+) -> None:
+    built, _ = make_room(interval=0.0)
+    row = make_row()
+    live = built.activate(row.session_id)
+    assert (live.cycle, live.countdown.due) == (None, None)
+
+    await built.set_ai(row.session_id, AiControls(checkpoint_minutes=5), SessionStatus.ACTIVE)
+
+    assert live.cycle is not None
+    assert live.countdown.due is not None
+    first = live.countdown.due
+    await built.set_ai(row.session_id, AiControls(checkpoint_minutes=30), SessionStatus.ACTIVE)
+    assert live.countdown.due is not None and live.countdown.due > first
+    await built.shutdown()
