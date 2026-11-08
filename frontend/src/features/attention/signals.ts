@@ -105,7 +105,15 @@ export const thresholdsFor = (calibration: Calibration | null): Thresholds =>
  * One student's own "looking at the screen": the head angles and iris
  * position they hold while doing so. Kept in the browser only.
  */
-export interface Calibration { yaw: number; pitch: number; roll: number; irisX: number; irisY: number }
+export interface Calibration {
+  yaw: number; pitch: number; roll: number; irisX: number; irisY: number
+  /**
+   * Left iris x minus right iris x while looking at the screen. Most people's
+   * eyes move together, so this is about 0; for a squint it is not, and the
+   * combined gaze (#166) compares the eyes against this person's own gap.
+   */
+  eyeGapX?: number
+}
 
 /** MediaPipe's 4x4 matrix is column-major: element (row, column) is data[column * 4 + row]. */
 export function poseFromMatrix(data: ArrayLike<number>): PoseAngles | null {
@@ -158,12 +166,14 @@ export function classifyFace(
   f: FaceFeatures,
   t: Thresholds = DEFAULT_THRESHOLDS,
   calibration: Calibration | null = null,
+  gaze: GazeModel | null = null,
 ): FaceObservation {
   const unavailable: FaceObservation = { face: null, forward: null, head: 'unavailable' }
   if (f.faces === 0) return { ...unavailable, face: false }
   if (f.faces !== 1 || !f.valid || f.width === null) return unavailable
   if (f.width < t.minFaceWidth) return { ...unavailable, face: true }
   const c = calibration ?? { yaw: 0, pitch: 0, roll: 0, irisX: 0.5, irisY: 0.5 }
+  if (gaze && f.pose) return classifyGaze(f, f.pose, t, c, gaze)
   let forwardHead: boolean
   if (f.pose) {
     // Looking down at notes is a pitch the landmark proxies cannot see.
@@ -188,6 +198,72 @@ export function classifyFace(
   const left = eyeOnScreen(f.leftEye)
   const right = eyeOnScreen(f.rightEye)
   return { face: true, head, forward: left === null || right === null ? null : forwardHead && left && right }
+}
+
+// -- #166: one gaze direction from head and eyes together ----------------------
+
+/**
+ * How far the eyes turn for a unit of iris movement inside the eye, per axis.
+ * Fitted on recordings (`frontend/eval/evaluation.ts`, `tuneGaze`), leaving one
+ * participant out. The sign is part of the fit: it depends on which way
+ * MediaPipe's angles and the image's x run, which the data settles.
+ */
+export interface GazeModel {
+  /** Degrees of gaze yaw per unit of iris x (0 to 1 across the eye). */
+  kYaw: number
+  /** Degrees of gaze pitch per unit of iris y. */
+  kPitch: number
+  /**
+   * How far the two eyes may disagree (iris x, beyond this person's own
+   * calibrated gap) before there is no reliable reading. Eyes that point
+   * different ways (a squint, a prosthetic eye) give "no reading", never "away".
+   */
+  maxEyeDisagreement: number
+}
+
+/**
+ * What ships. Null keeps #159's rule (the head check, with the eyes as a veto)
+ * until `screen_head_turned` and `away_eyes_only` recordings exist to fit k on:
+ * the #159 recordings have neither case, so a k fitted on them means nothing.
+ */
+export const GAZE_MODEL: GazeModel | null = null
+
+/** One gaze direction, in degrees from the student's centre, or null when there is no reliable reading. */
+export function gazeAngles(
+  f: FaceFeatures, pose: PoseAngles, c: Calibration, gaze: GazeModel,
+): { yaw: number; pitch: number } | null {
+  const l = f.leftEye, r = f.rightEye
+  if (!l || !r) return null
+  if (Math.abs((l.irisX - r.irisX) - (c.eyeGapX ?? 0)) > gaze.maxEyeDisagreement) return null
+  const irisX = (l.irisX + r.irisX) / 2
+  const irisY = (l.irisY + r.irisY) / 2
+  return {
+    yaw: (pose.yaw - c.yaw) + gaze.kYaw * (irisX - c.irisX),
+    pitch: (pose.pitch - c.pitch) + gaze.kPitch * (irisY - c.irisY),
+  }
+}
+
+/**
+ * With a gaze model, "head 20° right, eyes 20° left" is looking at the screen
+ * and "head still, eyes 20° left" is not: the eyes can rescue a turned head as
+ * well as veto a still one. The yaw and pitch limits then apply to the gaze;
+ * roll still applies to the head.
+ */
+function classifyGaze(f: FaceFeatures, pose: PoseAngles, t: Thresholds, c: Calibration, gaze: GazeModel): FaceObservation {
+  const forwardHead = Math.abs(pose.yaw - c.yaw) < t.maxYawDegrees
+    && Math.abs(pose.pitch - c.pitch) < t.maxPitchDegrees
+    && Math.abs(pose.roll - c.roll) < t.maxRollDegrees
+  const head = forwardHead ? 'forward' : 'turned'
+  const eyeOpen = (e: EyeFeatures | null) => e !== null && e.width >= t.minEyeWidth && e.open >= t.minOpenEyeRatio
+  if (!eyeOpen(f.leftEye) || !eyeOpen(f.rightEye)) return { face: true, head, forward: null }
+  const g = gazeAngles(f, pose, c, gaze)
+  if (!g) return { face: true, head, forward: null }
+  return {
+    face: true,
+    head,
+    forward: Math.abs(g.yaw) < t.maxYawDegrees && Math.abs(g.pitch) < t.maxPitchDegrees
+      && Math.abs(pose.roll - c.roll) < t.maxRollDegrees,
+  }
 }
 
 export function observeFace(
@@ -227,6 +303,7 @@ export function calibrate(frames: FaceFeatures[]): Calibration | null {
     roll: median(usable.map(f => f.pose!.roll)),
     irisX: median(usable.map(f => (f.leftEye!.irisX + f.rightEye!.irisX) / 2)),
     irisY: median(usable.map(f => (f.leftEye!.irisY + f.rightEye!.irisY) / 2)),
+    eyeGapX: median(usable.map(f => f.leftEye!.irisX - f.rightEye!.irisX)),
   }
   const plausible = [calibration.yaw, calibration.roll]
     .every(angle => Math.abs(angle) <= MAX_CALIBRATION_OFFSET_DEGREES)
@@ -235,6 +312,136 @@ export function calibrate(frames: FaceFeatures[]): Calibration | null {
     && Math.abs(calibration.irisX - 0.5) <= MAX_CALIBRATION_IRIS_OFFSET
     && Math.abs(calibration.irisY - 0.5) <= MAX_CALIBRATION_IRIS_OFFSET
   return plausible ? calibration : null
+}
+
+// -- #166: limits that adapt to each student during the session ----------------
+
+/**
+ * How the camera learns one student's own normal while the class runs, in the
+ * browser only. It learns from good moments, when the student is very likely
+ * looking at the screen (the calibration, typing an answer), and it can only
+ * make the judgement fairer: a learned limit is never stricter than the
+ * standard one, and a normal wider than the camera can measure gives "no
+ * reading" rather than "away". It never tries to work out why a student's
+ * normal is what it is.
+ */
+export interface AdaptationSettings {
+  /** Weight of one good frame in the running centre and spread, 0 to 1. */
+  rate: number
+  /**
+   * The most the centre may move for one frame, in degrees: enough to follow a
+   * laptop being moved over a few seconds, too little for one odd frame to matter.
+   */
+  maxCentreStepDegrees: number
+  /** Limits are this many times the student's own spread (standard deviation). */
+  spreadMultiplier: number
+  /** The loosest limits adaptation may reach, in degrees. A wider normal gives no reading. */
+  maxLimits: { yaw: number; pitch: number; roll: number }
+  /** Good frames needed before the spread is trusted; until then the standard limits apply. */
+  minFrames: number
+}
+
+/**
+ * What ships. Null keeps #159's fixed limits until the evaluation on longer,
+ * natural recordings shows adaptation helps (see CV_EVALUATION.md); the
+ * evaluation replays with SUGGESTED_ADAPTATION meanwhile.
+ */
+export const ADAPTATION: AdaptationSettings | null = null
+export const SUGGESTED_ADAPTATION: AdaptationSettings = {
+  rate: 0.05,
+  maxCentreStepDegrees: 0.5,
+  spreadMultiplier: 3,
+  maxLimits: { yaw: 25, pitch: 30, roll: 25 },
+  minFrames: 12,
+}
+
+export interface AdaptiveState {
+  /** Good frames learned from so far. */
+  frames: number
+  /** The student's centre now: the calibration, then followed as it drifts. */
+  centre: Calibration
+  /** Running mean squared distance from the centre while looking, in degrees squared. */
+  variance: { yaw: number; pitch: number; roll: number }
+}
+
+const NO_CENTRE: Calibration = { yaw: 0, pitch: 0, roll: 0, irisX: 0.5, irisY: 0.5, eyeGapX: 0 }
+
+export function startAdaptation(calibration: Calibration | null): AdaptiveState {
+  return { frames: 0, centre: { ...NO_CENTRE, ...calibration }, variance: { yaw: 0, pitch: 0, roll: 0 } }
+}
+
+/** The limits for this student now, never stricter than `base`, and whether their normal fits what the camera can measure. */
+export function adaptedThresholds(
+  state: AdaptiveState, base: Thresholds, s: AdaptationSettings,
+): { thresholds: Thresholds; measurable: boolean } {
+  if (state.frames < s.minFrames) return { thresholds: base, measurable: true }
+  let measurable = true
+  const limit = (variance: number, standard: number, cap: number) => {
+    const wanted = s.spreadMultiplier * Math.sqrt(variance)
+    const ceiling = Math.max(standard, cap)
+    if (wanted > ceiling) measurable = false
+    return Math.max(standard, Math.min(ceiling, wanted))
+  }
+  const thresholds = {
+    ...base,
+    maxYawDegrees: limit(state.variance.yaw, base.maxYawDegrees, s.maxLimits.yaw),
+    maxPitchDegrees: limit(state.variance.pitch, base.maxPitchDegrees, s.maxLimits.pitch),
+    maxRollDegrees: limit(state.variance.roll, base.maxRollDegrees, s.maxLimits.roll),
+  }
+  return { thresholds, measurable }
+}
+
+const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value))
+
+/**
+ * Learn from one frame of a good moment. A frame far outside even the loosest
+ * limits is skipped, so glancing at the keyboard while typing, or a long look
+ * away, does not become the new normal; the centre moves a little per frame
+ * and stays inside the range a calibration may have.
+ */
+export function learn(
+  state: AdaptiveState, f: FaceFeatures, base: Thresholds, s: AdaptationSettings, gaze: GazeModel | null = null,
+): AdaptiveState {
+  if (f.faces !== 1 || !f.valid || !f.pose || !f.leftEye || !f.rightEye) return state
+  const c = state.centre
+  const irisX = (f.leftEye.irisX + f.rightEye.irisX) / 2
+  const irisY = (f.leftEye.irisY + f.rightEye.irisY) / 2
+  if (Math.abs(irisX - c.irisX) > MAX_CALIBRATION_IRIS_OFFSET || Math.abs(irisY - c.irisY) > MAX_CALIBRATION_IRIS_OFFSET) return state
+  const g = gaze ? gazeAngles(f, f.pose, c, gaze) : null
+  if (gaze && !g) return state
+  const d = { yaw: g ? g.yaw : f.pose.yaw - c.yaw, pitch: g ? g.pitch : f.pose.pitch - c.pitch, roll: f.pose.roll - c.roll }
+  const { thresholds } = adaptedThresholds(state, base, s)
+  const tooFar = (deviation: number, now: number, cap: number) => Math.abs(deviation) > Math.min(1.5 * now, Math.max(now, cap))
+  if (tooFar(d.yaw, thresholds.maxYawDegrees, s.maxLimits.yaw)
+    || tooFar(d.pitch, thresholds.maxPitchDegrees, s.maxLimits.pitch)
+    || tooFar(d.roll, thresholds.maxRollDegrees, s.maxLimits.roll)) return state
+  const step = (now: number, seen: number, most: number) => now + clamp(s.rate * (seen - now), -most, most)
+  const degrees = s.maxCentreStepDegrees
+  const centre: Calibration = {
+    yaw: clamp(step(c.yaw, f.pose.yaw, degrees), -MAX_CALIBRATION_OFFSET_DEGREES, MAX_CALIBRATION_OFFSET_DEGREES),
+    pitch: clamp(step(c.pitch, f.pose.pitch, degrees), -MAX_CALIBRATION_UP_DEGREES, MAX_CALIBRATION_OFFSET_DEGREES),
+    roll: clamp(step(c.roll, f.pose.roll, degrees), -MAX_CALIBRATION_OFFSET_DEGREES, MAX_CALIBRATION_OFFSET_DEGREES),
+    irisX: clamp(step(c.irisX, irisX, degrees / 100), 0.5 - MAX_CALIBRATION_IRIS_OFFSET, 0.5 + MAX_CALIBRATION_IRIS_OFFSET),
+    irisY: clamp(step(c.irisY, irisY, degrees / 100), 0.5 - MAX_CALIBRATION_IRIS_OFFSET, 0.5 + MAX_CALIBRATION_IRIS_OFFSET),
+    eyeGapX: step(c.eyeGapX ?? 0, f.leftEye.irisX - f.rightEye.irisX, degrees / 100),
+  }
+  // The first frames weigh more, so the spread settles in seconds, not minutes.
+  const weight = Math.max(s.rate, 1 / (state.frames + 1))
+  const blend = (now: number, deviation: number) => (1 - weight) * now + weight * deviation * deviation
+  return {
+    frames: state.frames + 1,
+    centre,
+    variance: { yaw: blend(state.variance.yaw, d.yaw), pitch: blend(state.variance.pitch, d.pitch), roll: blend(state.variance.roll, d.roll) },
+  }
+}
+
+/** classifyFace with this student's learned centre and limits; "away" beyond what can be measured becomes "no reading". */
+export function classifyAdaptive(
+  f: FaceFeatures, state: AdaptiveState, base: Thresholds, s: AdaptationSettings, gaze: GazeModel | null = null,
+): FaceObservation {
+  const { thresholds, measurable } = adaptedThresholds(state, base, s)
+  const seen = classifyFace(f, thresholds, state.centre, gaze)
+  return !measurable && seen.forward === false ? { ...seen, forward: null } : seen
 }
 
 /** Null is absence, not a negative signal. Only the frozen wire shape leaves. */

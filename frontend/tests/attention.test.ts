@@ -213,3 +213,173 @@ test('bootstrap intervals resample whole clips and repeat with the same seed', (
   assert.deepEqual(bootstrap(frames, metric, 200, 7), bootstrap(frames, metric, 200, 7))
   assert.equal(bootstrap(frames.slice(0, 2), metric), null)
 })
+
+// -- #166: combined gaze and adaptive limits ------------------------------------
+
+import {
+  ADAPTATION, GAZE_MODEL, SUGGESTED_ADAPTATION, adaptedThresholds, classifyAdaptive, learn, startAdaptation,
+  type AdaptiveState, type GazeModel,
+} from '../src/features/attention/signals.ts'
+import { GAZE_LABELS, lookingTruth, seeded, tuneGaze } from '../eval/evaluation.ts'
+
+/** One valid face with the given head angles and iris position (both eyes alike unless `gapX`). */
+function pose(yaw: number, pitch = 0, roll = 0, irisX = 0.5, irisY = 0.5, gapX = 0): FaceFeatures {
+  const eye = (x: number) => ({ width: 0.1, open: 0.3, irisX: x, irisY })
+  return {
+    faces: 1, valid: true, width: 0.4, yawProxy: 0, rollProxy: 0,
+    pose: { yaw, pitch, roll }, leftEye: eye(irisX + gapX / 2), rightEye: eye(irisX - gapX / 2),
+  }
+}
+const GAZE: GazeModel = { kYaw: -100, kPitch: 0, maxEyeDisagreement: 0.15 }
+const centre = { yaw: 0, pitch: 0, roll: 0, irisX: 0.5, irisY: 0.5 }
+
+test('the combined gaze and adaptation stay off until recordings support them', () => {
+  assert.equal(GAZE_MODEL, null)
+  assert.equal(ADAPTATION, null)
+})
+
+test('with a gaze model, the eyes can rescue a turned head as well as veto a still one', () => {
+  const t = CALIBRATED_THRESHOLDS
+  // Head 20 degrees one way, eyes 0.2 the other: still looking at the screen.
+  const compensating = pose(20, 0, 0, 0.7)
+  assert.equal(classifyFace(compensating, t, centre).forward, false)
+  assert.equal(classifyFace(compensating, t, centre, GAZE).forward, true)
+  assert.equal(classifyFace(compensating, t, centre, GAZE).head, 'turned')
+  // Head still, eyes to the side but inside the wide iris box: a glance away.
+  const glance = pose(0, 0, 0, 0.7)
+  assert.equal(classifyFace(glance, t, centre).forward, true)
+  assert.equal(classifyFace(glance, t, centre, GAZE).forward, false)
+  // Plain looking at the screen is unchanged, and closed eyes are still no reading.
+  assert.equal(classifyFace(pose(0), t, centre, GAZE).forward, true)
+  const closed = { ...pose(0), leftEye: { ...pose(0).leftEye!, open: 0 } }
+  assert.equal(classifyFace(closed, t, centre, GAZE).forward, null)
+})
+
+test('eyes that point different ways give no reading, unless that is this student\'s own normal', () => {
+  const t = CALIBRATED_THRESHOLDS
+  const squint = pose(0, 0, 0, 0.5, 0.5, 0.3)
+  assert.equal(classifyFace(squint, t, centre, GAZE).forward, null)
+  // A calibration taken with the same gap reads the same eyes normally.
+  const calibration = calibrate(Array.from({ length: 10 }, () => squint))!
+  assert.ok(Math.abs(calibration.eyeGapX! - 0.3) < 1e-9)
+  assert.equal(classifyFace(squint, t, calibration, GAZE).forward, true)
+})
+
+function learnAll(frames: FaceFeatures[], state: AdaptiveState = startAdaptation(null), base = DEFAULT_THRESHOLDS): AdaptiveState {
+  for (const f of frames) state = learn(state, f, base, SUGGESTED_ADAPTATION)
+  return state
+}
+
+test('learned limits are never stricter than the standard ones', () => {
+  const random = seeded(7)
+  for (const base of [DEFAULT_THRESHOLDS, CALIBRATED_THRESHOLDS]) {
+    for (let run = 0; run < 50; run++) {
+      const spread = random() * 30
+      const frames = Array.from({ length: 80 }, () => pose((random() - 0.5) * spread, (random() - 0.5) * spread, (random() - 0.5) * spread))
+      let state = startAdaptation(null)
+      for (const f of frames) {
+        state = learn(state, f, base, SUGGESTED_ADAPTATION)
+        const { thresholds } = adaptedThresholds(state, base, SUGGESTED_ADAPTATION)
+        assert.ok(thresholds.maxYawDegrees >= base.maxYawDegrees)
+        assert.ok(thresholds.maxPitchDegrees >= base.maxPitchDegrees)
+        assert.ok(thresholds.maxRollDegrees >= base.maxRollDegrees)
+        // Nothing else about the judgement changes.
+        assert.deepEqual(thresholds.irisX, base.irisX)
+      }
+    }
+  }
+})
+
+test('a still student keeps the standard limits; one who moves a lot while looking gets wider ones', () => {
+  const still = learnAll(Array.from({ length: 40 }, (_, i) => pose(i % 2 ? 1 : -1)))
+  assert.equal(adaptedThresholds(still, DEFAULT_THRESHOLDS, SUGGESTED_ADAPTATION).thresholds.maxYawDegrees, DEFAULT_THRESHOLDS.maxYawDegrees)
+  // Head yaw swinging about 6 degrees either way while looking (a tremor, say).
+  const moving = learnAll(Array.from({ length: 60 }, (_, i) => pose(i % 2 ? 6 : -6)))
+  const { thresholds, measurable } = adaptedThresholds(moving, DEFAULT_THRESHOLDS, SUGGESTED_ADAPTATION)
+  assert.ok(measurable)
+  assert.ok(thresholds.maxYawDegrees > 15 && thresholds.maxYawDegrees <= SUGGESTED_ADAPTATION.maxLimits.yaw)
+  assert.equal(classifyFace(pose(13), DEFAULT_THRESHOLDS).forward, false)
+  assert.equal(classifyAdaptive(pose(13), moving, DEFAULT_THRESHOLDS, SUGGESTED_ADAPTATION).forward, true)
+  // Well beyond the student's own normal is still away.
+  assert.equal(classifyAdaptive(pose(40), moving, DEFAULT_THRESHOLDS, SUGGESTED_ADAPTATION).forward, false)
+})
+
+test('until enough good frames, the standard limits apply', () => {
+  const few = learnAll(Array.from({ length: SUGGESTED_ADAPTATION.minFrames - 1 }, (_, i) => pose(i % 2 ? 8 : -8)))
+  assert.equal(adaptedThresholds(few, DEFAULT_THRESHOLDS, SUGGESTED_ADAPTATION).thresholds, DEFAULT_THRESHOLDS)
+})
+
+test('a normal wider than the camera can measure gives no reading, not "away"', () => {
+  // Learned limits only widen up to the cap; this student needs more.
+  const s = { ...SUGGESTED_ADAPTATION, maxLimits: { yaw: 12, pitch: 30, roll: 25 } }
+  let state = startAdaptation(null)
+  for (let i = 0; i < 60; i++) state = learn(state, pose(i % 2 ? 7 : -7), DEFAULT_THRESHOLDS, s)
+  const { measurable } = adaptedThresholds(state, DEFAULT_THRESHOLDS, s)
+  assert.equal(measurable, false)
+  assert.equal(classifyAdaptive(pose(30), state, DEFAULT_THRESHOLDS, s).forward, null)
+  assert.equal(classifyAdaptive(pose(0), state, DEFAULT_THRESHOLDS, s).forward, true)
+})
+
+test('the centre follows a slow drift but a long look away does not become normal', () => {
+  // The laptop is moved: looking at the screen slowly goes from 0 to 8 degrees of yaw.
+  const drift = learnAll(Array.from({ length: 400 }, (_, i) => pose(8 * Math.min(1, i / 200))))
+  assert.ok(Math.abs(drift.centre.yaw - 8) < 1)
+  // A minute looking far to the side during a good moment is skipped, frame by frame.
+  const settled = learnAll(Array.from({ length: 40 }, () => pose(0)))
+  const after = learnAll(Array.from({ length: 240 }, () => pose(40)), settled)
+  assert.equal(after.centre.yaw, settled.centre.yaw)
+  assert.equal(after.frames, settled.frames)
+  // One odd frame moves the centre by at most the step limit.
+  const odd = learn(settled, pose(12), DEFAULT_THRESHOLDS, SUGGESTED_ADAPTATION)
+  assert.ok(Math.abs(odd.centre.yaw - settled.centre.yaw) <= SUGGESTED_ADAPTATION.maxCentreStepDegrees + 1e-9)
+})
+
+test('frames with no face, two faces or no pose teach nothing', () => {
+  const state = startAdaptation(null)
+  for (const f of [faceFeatures([]), faceFeatures([face(), face()]), faceFeatures([face()])]) {
+    assert.equal(learn(state, f, DEFAULT_THRESHOLDS, SUGGESTED_ADAPTATION), state)
+  }
+})
+
+function clip(participant: string, name: string, label: Frame['label'], features: FaceFeatures, n = 10): Frame[] {
+  return Array.from({ length: n }, (_, i) => ({
+    participant, clip: name, label, t: i / 4,
+    conditions: { glasses: 'no', lighting: 'normal', position: 'centred', distance: 'near' },
+    features,
+  }))
+}
+
+test('the #166 labels round-trip and count as looking or away', () => {
+  assert.deepEqual([...GAZE_LABELS], ['screen_head_turned', 'away_eyes_only'])
+  assert.equal(lookingTruth('screen_head_turned'), true)
+  assert.equal(lookingTruth('away_eyes_only'), false)
+  const frames = [...clip('P1', 'c1', 'screen_head_turned', pose(20, 0, 0, 0.7), 1), ...clip('P1', 'c2', 'away_eyes_only', pose(0, 0, 0, 0.7), 1)]
+  assert.deepEqual(parseCsv(framesToCsv(frames)).map(f => f.label), ['screen_head_turned', 'away_eyes_only'])
+})
+
+test('tuning the gaze model finds the k that tells a compensating head from an eye-only glance', () => {
+  const frames = ['P1', 'P2', 'P3'].flatMap(p => [
+    ...clip(p, 'c1', 'calibrate', pose(0)),
+    ...clip(p, 'c2', 'screen_head_turned', pose(20, 0, 0, 0.7)),
+    ...clip(p, 'c3', 'away_eyes_only', pose(0, 0, 0, 0.7)),
+    ...clip(p, 'c4', 'screen', pose(0)),
+  ])
+  const { gaze, balancedAccuracy: value } = tuneGaze(frames, CALIBRATED_THRESHOLDS, DEFAULT_THRESHOLDS)
+  assert.ok(gaze.kYaw < 0)
+  assert.equal(value, 1)
+})
+
+test('in the evaluation, adaptation learns from calibrate clips only', () => {
+  // Calibrate clips with lots of yaw movement; the scored clip is 13 degrees off.
+  const calibrating = Array.from({ length: 40 }, (_, i) => ({ ...clip('P1', 'c1', 'calibrate', pose(i % 2 ? 6 : -6), 1)[0], t: i / 4 }))
+  const scored = clip('P1', 'c2', 'screen', pose(13))
+  const frames = [...calibrating, ...scored]
+  const byKey = calibrations(frames)
+  const fixed = observe(scored, { thresholds: DEFAULT_THRESHOLDS, calibrated: false }, byKey)
+  const adapted = observe(scored, { thresholds: DEFAULT_THRESHOLDS, calibrated: false, adaptation: SUGGESTED_ADAPTATION }, byKey)
+  assert.ok(fixed.every(s => s.forward === false))
+  assert.ok(adapted.every(s => s.forward === true))
+  // With no calibrate clips at all there is nothing to learn from.
+  const none = observe(scored, { thresholds: DEFAULT_THRESHOLDS, calibrated: false, adaptation: SUGGESTED_ADAPTATION }, calibrations(scored))
+  assert.ok(none.every(s => s.forward === false))
+})

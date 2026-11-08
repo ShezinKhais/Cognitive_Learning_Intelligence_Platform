@@ -1,4 +1,4 @@
-# Camera attention recordings (#159)
+# Camera attention recordings (#159, #166)
 
 The recorder's CSV files go in this folder; they are not committed. Each row is
 one camera frame turned into numbers (head angles, how open the eyes are, where
@@ -31,6 +31,19 @@ three is the minimum for a split by person. For each person, at least:
 
 That is 4 sets of 8 clips, about 7 minutes per person. People who wear glasses
 should also do the first row without them, if they can.
+
+**For #166 (adaptive limits, combined head and eye gaze)**, also record, in the
+first row's conditions:
+
+- `screen_head_turned`: eyes on the screen while turning or tilting the head a
+  little left, right, up and down. The eyes move against the head to stay on
+  the screen.
+- `away_eyes_only`: head still, look to the side with the eyes only.
+- One `screen` clip of 3 minutes (the "Clip length" menu) while reading or
+  watching a short lecture as you normally would, so adaptation has time to learn.
+
+Participants with a condition the camera may misjudge (see #166) are very
+welcome if they choose to take part; never record what the condition is.
 
 ## Evaluating
 

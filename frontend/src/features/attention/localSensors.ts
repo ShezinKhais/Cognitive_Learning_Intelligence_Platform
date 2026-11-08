@@ -31,6 +31,16 @@ export function calibrateCamera(done: (result: CalibrationResult) => void): bool
   return true
 }
 
+/**
+ * Tell the camera the student is very likely looking at the screen now (for
+ * example, typing an answer), so it may learn their own normal from the next
+ * moment of frames (#166). Does nothing without a running camera, or while
+ * adaptation is off. Sends nothing anywhere.
+ */
+export function markLookingAtScreen(): void {
+  cameraWorker?.postMessage({ type: 'looking', timestamp: performance.now() })
+}
+
 export function stopTracks(stream: MediaStream): void {
   stream.getTracks().forEach(track => track.stop())
 }

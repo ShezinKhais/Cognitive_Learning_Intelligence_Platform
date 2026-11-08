@@ -334,6 +334,7 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
           <li>Shared every five seconds: whether a face was present, the share of time facing the screen, and whether you spoke.</li>
           <li>Never shared or stored: video, audio, images, face measurements or what you said.</li>
           <li>These are rough estimates. They do not prove attention or understanding.</li>
+          <li>Leaving the camera off, or turning it off at any time, never counts against you.</li>
           <li>Sensing stops when you leave, hide this page, or disconnect, and never restarts on its own. Turning it off does not change your saved choice.</li>
         </ul>
       </details>
