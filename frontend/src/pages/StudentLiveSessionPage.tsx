@@ -166,7 +166,7 @@ export function LiveSessionPanel({
           </p>
         )}
         {LOCAL_ATTENTION_ENABLED && !teams.context?.mobile && (
-          <AttentionControls key={session.id} onSignal={sendAttention}
+          <AttentionControls key={`attention-${session.id}`} onSignal={sendAttention}
             consentRejected={attentionConsentRejected}
             enabled={state.connection === 'connected' && state.sessionStatus === 'active' && !state.paused} />
         )}
@@ -256,7 +256,7 @@ export function LiveSessionPanel({
           </AnimatePresence>
         </section>
 
-        <DiscussionPanel key={session.id} sessionId={session.id} />
+        <DiscussionPanel key={`discussion-${session.id}`} sessionId={session.id} />
 
         {SOCRATIC_CHAT_ENABLED && !finished && (
           <div className="mt-5" hidden={activeView !== 'chat'}>

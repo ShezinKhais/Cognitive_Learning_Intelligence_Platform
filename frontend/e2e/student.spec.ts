@@ -1,7 +1,14 @@
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
+// The indicators panel is one line until it is opened.
+async function showIndicators(page: Page) {
+  const show = page.getByRole('button', { name: 'Show options' })
+  if (await show.isVisible()) await show.click()
+}
+
 async function optIn(page: Page, sensor: 'camera' | 'microphone') {
+  await showIndicators(page)
   await page.getByLabel(`I opt in to ${sensor} indicators`).check()
   await page.getByRole('button', { name: 'Save my choice' }).click()
   await expect(page.getByRole('button', { name: 'Turn on' })).toBeEnabled()
@@ -230,6 +237,7 @@ for (const socket of ['student', 'lecturer', 'progress']) {
 }
 
 test('devices remain off until saved opt-in and explicit enable; denial is recoverable', async ({ page }) => {
+  await showIndicators(page)
   await expect(page.getByRole('button', { name: 'Turn on' })).toBeDisabled()
   await optIn(page, 'camera')
   expect(await page.evaluate(() => (window as any).probe.requests)).toBe(0)
@@ -244,6 +252,7 @@ test('devices remain off until saved opt-in and explicit enable; denial is recov
 
 test('microphone denial and consent-save failure never strand the interface', async ({ page }) => {
   await page.route('**/api/v1/auth/consent', route => route.fulfill({ status: 503, json: {} }))
+  await showIndicators(page)
   await page.getByLabel('I opt in to microphone indicators').check()
   await page.getByRole('button', { name: 'Save my choice' }).click()
   await expect(page.getByRole('alert')).toContainText('No device was started')
@@ -256,6 +265,16 @@ test('microphone denial and consent-save failure never strand the interface', as
   })
   await page.getByRole('button', { name: 'Turn on' }).click()
   await expect(page.getByText('Camera: off. Microphone: unavailable.')).toBeVisible()
+})
+
+test('the panel is one line until opened, and a remembered choice starts from it', async ({ page }) => {
+  await expect(page.getByRole('heading', { name: 'Camera and microphone indicators' })).toBeVisible()
+  await expect(page.getByLabel('I opt in to camera indicators')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Start indicators' })).toHaveCount(0)
+  await optIn(page, 'camera')
+  await page.getByRole('button', { name: 'Hide options' }).click()
+  await expect(page.getByLabel('I opt in to camera indicators')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Start indicators' })).toBeEnabled()
 })
 
 test('cancel a pending permission request and release a late stream', async ({ page }) => {
@@ -379,6 +398,7 @@ test('keyboard can cancel a live incremental response and keep partial text', as
 })
 
 test('keyboard-only opt-in and disable controls are operable', async ({ page }) => {
+  await showIndicators(page)
   const checkbox = page.getByLabel('I opt in to camera indicators')
   await checkbox.focus()
   await page.keyboard.press('Space')

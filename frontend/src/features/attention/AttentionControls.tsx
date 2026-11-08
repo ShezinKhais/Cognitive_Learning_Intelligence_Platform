@@ -1,4 +1,4 @@
-import { Camera, Crosshair, Info, Mic, Power, ShieldCheck } from 'lucide-react'
+import { Camera, ChevronDown, Crosshair, Info, Mic, Power, ShieldCheck } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getCurrentUser, recordConsent } from '../../api'
 import { calibrateCamera, startCamera, startMicrophone, type CalibrationResult } from './localSensors'
@@ -19,6 +19,9 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
   const [savedConsent, setSavedConsent] = useState({ monitoring: false, camera: false, microphone: false })
   const [savingConsent, setSavingConsent] = useState(false)
   const [message, setMessage] = useState('')
+  // The panel is one line until the student opens it. A student who chose
+  // the indicators at sign-in never needs to: they start by themselves.
+  const [open, setOpen] = useState(false)
   const awayStart = useRef<number | null>(null)
   const lastFaceObservationAt = useRef<number | null>(null)
   const lastForward = useRef<boolean | null>(null)
@@ -213,27 +216,52 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
   const sensing = running ? 'Local sensing active — raw media is not uploaded'
     : pending ? 'Starting — your device may be active while models load' : 'Local sensing off'
   const statusOf = (sensor: Sensor) => sensor === 'camera' ? cameraStatus : microphoneStatus
+  const agreed = savedConsent.monitoring && (savedConsent.camera || savedConsent.microphone)
+  function startAgreed() {
+    if (savedConsent.camera) void enable('camera')
+    if (savedConsent.microphone) void enable('microphone')
+  }
   return (
     <section aria-label="Optional local indicators"
-      className="mt-5 rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)] sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <span aria-hidden="true" className="grid size-10 shrink-0 place-items-center rounded-full bg-info/10 text-info">
-            <ShieldCheck size={20} />
-          </span>
-          <div className="min-w-0">
-            <h2 className="text-lg font-semibold">Optional local indicators</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Your camera and microphone stay on this device. Only a short summary is shared every
-              five seconds. Neither is required.
-            </p>
-          </div>
-        </div>
-        <p role="status" className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground">
+      className="mt-5 rounded-xl border border-border bg-card px-4 py-3 shadow-[var(--shadow-card)]">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <ShieldCheck aria-hidden="true" size={18} className="shrink-0 text-info" />
+        <h2 className="text-sm font-semibold">Camera and microphone indicators</h2>
+        <p role="status" className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground">
           <span aria-hidden="true" className={`size-2 rounded-full ${running ? 'bg-success' : pending ? 'bg-warning' : 'bg-muted-foreground'}`} />
           {sensing}
         </p>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {(running || pending) ? (
+            <button type="button" onClick={stopAll}
+              className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold hover:bg-muted">
+              Stop indicators
+            </button>
+          ) : agreed && (
+            <button type="button" disabled={!enabled} onClick={startAgreed}
+              className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold hover:bg-muted disabled:opacity-50">
+              Start indicators
+            </button>
+          )}
+          <button type="button" aria-expanded={open} onClick={() => setOpen(value => !value)}
+            className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground">
+            {open ? 'Hide options' : 'Show options'}
+            <ChevronDown aria-hidden="true" size={15} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
       </div>
+      {message && (
+        <p role="alert" className="mt-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm">
+          <Info aria-hidden="true" size={16} className="mt-0.5 shrink-0 text-warning" />
+          <span>{message}</span>
+        </p>
+      )}
+
+      {open && <div className="mt-3 border-t border-border pt-3">
+      <p className="text-sm text-muted-foreground">
+        Optional. Your camera and microphone stay on this device; only a short summary is shared every
+        five seconds. You can choose these once on the sign-in terms page and they start by themselves.
+      </p>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {(['camera', 'microphone'] as const).map(sensor => {
@@ -339,12 +367,7 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
         </ul>
       </details>
       {!enabled && <p className="mt-3 text-sm text-muted-foreground">Available while connected to an active, unpaused session.</p>}
-      {message && (
-        <p role="alert" className="mt-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm">
-          <Info aria-hidden="true" size={16} className="mt-0.5 shrink-0 text-warning" />
-          <span>{message}</span>
-        </p>
-      )}
+      </div>}
     </section>
   )
 }
