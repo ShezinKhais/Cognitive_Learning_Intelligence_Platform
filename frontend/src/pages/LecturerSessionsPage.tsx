@@ -347,7 +347,9 @@ function EditSession({
     if (!name) return setError('Enter a title for this session.')
     const changes: { title: string; starts_at?: string | null } = { title: name }
     const when = fromLocalInput(startsAt)
-    if (movable && when) changes.starts_at = when
+    // Only a changed start is sent: the box holds minutes, so sending it back
+    // unchanged would drop the seconds of the stored time.
+    if (movable && when && startsAt !== toLocalInput(session.starts_at)) changes.starts_at = when
     setSaving(true)
     setError(null)
     updateSession(session.id, changes).then(onSaved, (caught: unknown) => {
