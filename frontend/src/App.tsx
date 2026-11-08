@@ -21,6 +21,7 @@ import ProtectedStudentPage from './pages/ProtectedStudentPage'
 // lecturer's live view and the charts. Sign-in, the guards and the shell stay
 // in the first download: every visit needs them.
 const AccessDeniedPage = lazy(() => import('./pages/AccessDeniedPage'))
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
 const AdminConsole = lazy(() => import('./pages/AdminConsole'))
 const AdminStatusPage = lazy(() => import('./pages/AdminStatusPage'))
 const DiscussionNotesPage = lazy(() => import('./pages/DiscussionNotesPage'))
@@ -56,7 +57,7 @@ const TeamsLauncherPage = lazy(() => import('./pages/TeamsLauncherPage'))
 const TeamsMeetingEntryPage = lazy(() => import('./pages/TeamsMeetingEntryPage'))
 const TeamsMeetingPage = lazy(() => import('./pages/TeamsMeetingPage'))
 
-// Sends whoever arrives at the root, or at a page that does not exist, to
+// Sends whoever arrives at the root to
 // their own home. Always sending them to /student told every lecturer and
 // administrator "Student access required".
 const home = (
@@ -336,7 +337,7 @@ export default function App() {
 
           <Route
             path="*"
-            element={home}
+            element={<NotFoundPage />}
           />
         </Routes>
       </Suspense>
