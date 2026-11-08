@@ -5,8 +5,8 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import {
-  LIVENESS, SUGGESTED_LIVENESS, applyLiveness, cropBox, dueForCheck, faceBox, isSpoof, noteFrame, recordCheck,
-  startLiveness, toModelInput, type LivenessSettings, type LivenessState,
+  LIVENESS, MODEL_INPUT, SUGGESTED_LIVENESS, applyLiveness, cropBox, dueForCheck, faceBox, isSpoof, noteFrame, recordCheck,
+  startLiveness, type LivenessSettings, type LivenessState,
 } from '../src/features/attention/liveness.ts'
 import {
   falseRejection, framesToCsv, livenessCounts, parseCsv, replayLiveness, spoofCatch, tuneLiveness, type Frame, type Label,
@@ -81,12 +81,7 @@ test('crop is 2.7x the face, centred, and slid back inside the image (as in the 
 })
 
 test('model input is BGR planes, 0 to 255, not divided', () => {
-  const rgba = new Uint8ClampedArray(2 * 2 * 4)
-  rgba.set([10, 20, 30, 255], 0) // first pixel R, G, B, A
-  const input = toModelInput(rgba, 2)
-  assert.equal(input.length, 12)
-  assert.deepEqual([input[0], input[4], input[8]], [30, 20, 10])
-  assert.throws(() => toModelInput(new Uint8ClampedArray(4), 2))
+  assert.deepEqual(MODEL_INPUT, { tensorFormat: 'BGR', tensorLayout: 'NCHW', dataType: 'float32', norm: { mean: 1, bias: 0 } })
 })
 
 // -- evaluation -------------------------------------------------------------------
@@ -166,8 +161,8 @@ test('the model loads and gives three probabilities for an 80x80 crop', async ()
   const ort = await import('onnxruntime-web/wasm')
   ort.env.wasm.numThreads = 1
   const session = await ort.InferenceSession.create(new Uint8Array(await readFile(modelPath)))
-  const pixels = new Uint8ClampedArray(80 * 80 * 4).map((_, i) => (i * 37) % 256)
-  const out = await session.run({ input: new ort.Tensor('float32', toModelInput(pixels), [1, 3, 80, 80]) })
+  const pixels = new Float32Array(3 * 80 * 80).map((_, i) => (i * 37) % 256)
+  const out = await session.run({ input: new ort.Tensor('float32', pixels, [1, 3, 80, 80]) })
   const probs = [...(out.probs.data as Float32Array)]
   assert.equal(probs.length, 3)
   assert.ok(probs.every(p => p >= 0 && p <= 1))

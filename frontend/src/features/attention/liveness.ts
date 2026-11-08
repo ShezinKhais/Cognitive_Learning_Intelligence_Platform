@@ -35,6 +35,14 @@ export const SUGGESTED_LIVENESS: LivenessSettings = { everyMs: 2000, window: 3, 
 /** The model's input: an 80 x 80 crop, 2.7 times the face box, as it was trained. */
 export const MODEL_SIZE = 80
 export const CROP_SCALE = 2.7
+/**
+ * How ONNX Runtime turns the 80 x 80 crop into the model's input: blue, green,
+ * red planes, 0 to 255 ((pixel + 0) / 1). The model was trained on OpenCV
+ * images, which are BGR and not divided by 255.
+ */
+export const MODEL_INPUT = {
+  tensorFormat: 'BGR', tensorLayout: 'NCHW', dataType: 'float32', norm: { mean: 1, bias: 0 },
+} as const
 /** Index of "live" in the model's three outputs (the other two are spoof types). */
 export const LIVE_CLASS = 1
 
@@ -115,21 +123,4 @@ export function cropBox(face: Box, imageWidth: number, imageHeight: number, scal
   const l = Math.trunc(left)
   const t = Math.trunc(top)
   return { x: l, y: t, width: Math.trunc(right) - l + 1, height: Math.trunc(bottom) - t + 1 }
-}
-
-/**
- * RGBA pixels of the resized crop (as a canvas gives them) to the model's
- * input: blue, green, red planes one after the other, 0 to 255 (the model was
- * trained on OpenCV images, which are BGR and not divided by 255).
- */
-export function toModelInput(rgba: ArrayLike<number>, size = MODEL_SIZE): Float32Array {
-  const plane = size * size
-  if (rgba.length < plane * 4) throw new Error('crop is smaller than the model input')
-  const out = new Float32Array(3 * plane)
-  for (let i = 0; i < plane; i++) {
-    out[i] = rgba[i * 4 + 2]
-    out[plane + i] = rgba[i * 4 + 1]
-    out[2 * plane + i] = rgba[i * 4]
-  }
-  return out
 }
