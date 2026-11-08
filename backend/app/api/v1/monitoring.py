@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, Response, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser, require_consents, require_roles
+from app.api.v1.health import APP_VERSION
 from app.core.error_log import error_log
 from app.schemas.identity import ConsentType, Role
 
@@ -28,10 +29,19 @@ WINDOW_SECONDS = 60.0
 
 router = APIRouter(tags=["monitoring"])
 
+CLIENT_AREAS = frozenset({"admin", "consent", "lecturer", "login", "student", "teams"})
+CLIENT_SUMMARIES = {
+    "render": "Page failed to render",
+    "script": "Browser script failed",
+    "promise": "Browser operation failed",
+    "load": "Page code failed to load",
+}
+
 
 class ClientErrorIn(BaseModel):
-    kind: Literal["render", "script", "promise"]
-    message: str = Field(min_length=1, max_length=500)
+    kind: Literal["render", "script", "promise", "load"]
+    # Older clients may still send a message. Never store it.
+    message: str | None = Field(default=None, max_length=500)
     page: str = Field(min_length=1, max_length=200, description="The path, without its query.")
 
 
@@ -49,6 +59,8 @@ class ErrorGroupOut(BaseModel):
 class RecentErrorsOut(BaseModel):
     since: datetime = Field(description="When this server started counting.")
     total: int
+    version: str
+    server_error_spike: bool
     groups: list[ErrorGroupOut]
 
 
@@ -75,12 +87,14 @@ limiter = _Limiter()
 async def report_client_error(payload: ClientErrorIn, principal: CurrentUser) -> Response:
     """A page crashed in someone's browser. Shown to admins on the status page."""
     if limiter.allow(principal.user_id, time.monotonic()):
-        page = payload.page.split("?", 1)[0].split("#", 1)[0]
+        path = payload.page.split("?", 1)[0].split("#", 1)[0]
+        area = path.removeprefix("/").split("/", 1)[0]
+        page = f"/{area}" if area in CLIENT_AREAS else "Other page"
         error_log.add(
             source="client",
             level="ERROR",
             where=f"{page} ({payload.kind}, {principal.role.value})",
-            message=payload.message,
+            message=CLIENT_SUMMARIES[payload.kind],
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -99,6 +113,8 @@ async def recent_errors() -> RecentErrorsOut:
     return RecentErrorsOut(
         since=error_log.started_at,
         total=error_log.total,
+        version=APP_VERSION,
+        server_error_spike=error_log.server_error_spike(),
         groups=[
             ErrorGroupOut.model_validate(group, from_attributes=True)
             for group in error_log.recent()

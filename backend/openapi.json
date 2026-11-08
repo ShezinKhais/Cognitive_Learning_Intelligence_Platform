@@ -570,16 +570,23 @@
             "enum": [
               "render",
               "script",
-              "promise"
+              "promise",
+              "load"
             ],
             "title": "Kind",
             "type": "string"
           },
           "message": {
-            "maxLength": 500,
-            "minLength": 1,
-            "title": "Message",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
           },
           "page": {
             "description": "The path, without its query.",
@@ -591,7 +598,6 @@
         },
         "required": [
           "kind",
-          "message",
           "page"
         ],
         "title": "ClientErrorIn",
@@ -2699,6 +2705,10 @@
             "title": "Groups",
             "type": "array"
           },
+          "server_error_spike": {
+            "title": "Server Error Spike",
+            "type": "boolean"
+          },
           "since": {
             "description": "When this server started counting.",
             "format": "date-time",
@@ -2708,11 +2718,17 @@
           "total": {
             "title": "Total",
             "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
           }
         },
         "required": [
           "since",
           "total",
+          "version",
+          "server_error_spike",
           "groups"
         ],
         "title": "RecentErrorsOut",
