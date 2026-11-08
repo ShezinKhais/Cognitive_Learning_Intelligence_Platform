@@ -28,6 +28,7 @@ from app.repositories.material_repository import MaterialRepository
 from app.repositories.question_repository import QuestionRepository
 from app.schemas.common import Page
 from app.schemas.content import (
+    QuestionCreateRequest,
     MaterialOut,
     MaterialStatus,
     MaterialUpdateRequest,
@@ -44,6 +45,7 @@ from app.services.material_edits import (
     remove_stored_file,
     update_material,
 )
+from app.services import question_bank
 from app.services.material_pages import page_previews
 from app.services.question_ownership import filter_owned_questions, get_owned_question
 from app.services.regeneration import regenerate
@@ -285,6 +287,46 @@ async def review_question(
     )
 
     return _to_question_out(updated)
+
+
+@router.post(
+    "/{material_id}/questions",
+    response_model=QuestionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+@audit_action("QUESTION_WRITTEN")
+async def write_question(
+    material_id: UUID,
+    payload: QuestionCreateRequest,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> QuestionOut:
+    """Add a question of the lecturer's own to one of their materials. It is
+    ready to send straight away."""
+    return _to_question_out(await question_bank.write_question(db, principal, material_id, payload))
+
+
+@router.post(
+    "/{material_id}/questions/{question_id}:reuse",
+    response_model=QuestionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+@audit_action("QUESTION_REUSED")
+async def reuse_question(
+    material_id: UUID,
+    question_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> QuestionOut:
+    """Stage a copy of a question that has been asked, for another class
+    (409 for one that has not been asked)."""
+    repo = QuestionRepository(db)
+    question = await get_owned_question(question_id, principal, repo, material_id=material_id)
+    return _to_question_out(await question_bank.reuse_question(db, principal, question))
 
 
 @router.post(
