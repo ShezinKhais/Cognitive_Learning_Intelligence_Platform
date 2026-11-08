@@ -12,6 +12,7 @@ from app.models.consent import Consent
 from app.models.consideration_request import ConsiderationRequest
 from app.models.course import Course
 from app.models.course_enrollment import CourseEnrollment, CourseLecturer
+from app.models.course_request import CourseRequest
 from app.models.deletion_request import DeletionRequest
 from app.models.delivered_question import DeliveredQuestion
 from app.models.discussion_note import DiscussionNote
@@ -48,6 +49,7 @@ __all__ = [
     "Course",
     "CourseEnrollment",
     "CourseLecturer",
+    "CourseRequest",
     "DeletionRequest",
     "DynamicPrompt",
     "EngagementRecord",

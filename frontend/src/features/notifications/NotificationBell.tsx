@@ -6,6 +6,7 @@ import { Link } from 'react-router'
 
 import { apiUrl, type CurrentUser } from '../../api'
 import Illustration from '../../components/ui/Illustration'
+import { listCourseRequests } from '../courses/courseRequestsApi'
 import { listMaterials } from '../materials/materialApi'
 import { listSessions } from '../sessions/sessionsApi'
 import { LIVE_SESSIONS_ENABLED } from '../student/studentApi'
@@ -119,14 +120,15 @@ function useNotifications(user: CurrentUser): AppNotification[] {
   useEffect(() => {
     let cancelled = false
     async function load() {
-      const [sessions, materials, down] = await Promise.all([
+      const [sessions, materials, down, courseRequests] = await Promise.all([
         user.role === 'student' && !LIVE_SESSIONS_ENABLED
           ? Promise.resolve([])
           : listSessions().then((page) => page.items, () => []),
         user.role === 'student' ? Promise.resolve([]) : listMaterials().catch(() => []),
         user.role === 'admin' ? readinessDown() : Promise.resolve([]),
+        user.role === 'student' ? Promise.resolve([]) : listCourseRequests().catch(() => []),
       ])
-      if (!cancelled) setItems(buildNotifications(user.role, { sessions, materials, down }))
+      if (!cancelled) setItems(buildNotifications(user.role, { sessions, materials, down, courseRequests }))
     }
     void load()
     const timer = window.setInterval(() => void load(), REFRESH_MS)

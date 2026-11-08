@@ -1,5 +1,6 @@
 import type { Role } from '../../api'
 import { daysBetween } from '../format/relativeTime.ts'
+import type { CourseRequest } from '../courses/courseRequests'
 import type { Material } from '../materials/types'
 import type { SessionSummary } from '../sessions/sessionsApi'
 
@@ -21,6 +22,8 @@ export interface NotificationSources {
   materials?: readonly Material[]
   /** Services /ready reports as unreachable. */
   down?: readonly string[]
+  /** Course requests: every one for an admin, a lecturer's own for them. */
+  courseRequests?: readonly CourseRequest[]
   now?: number
 }
 
@@ -68,6 +71,38 @@ export function buildNotifications(role: Role, sources: NotificationSources): Ap
           to: `/materials/${material.id}/review`,
           action: 'Review questions',
           at: material.uploaded_at,
+        })
+      }
+    }
+  }
+
+  const requests = sources.courseRequests ?? []
+  if (role === 'admin') {
+    const waiting = requests.filter((request) => request.status === 'pending')
+    if (waiting.length > 0) {
+      const newest = waiting.reduce((a, b) => (Date.parse(a.created_at) > Date.parse(b.created_at) ? a : b))
+      found.push({
+        // Changes as requests arrive, so a new one is unread again.
+        id: `course-requests-${newest.id}`,
+        kind: 'ready',
+        title: waiting.length === 1 ? `${newest.code} is waiting for approval` : `${waiting.length} course requests are waiting`,
+        detail: waiting.length === 1 ? `Asked for by ${newest.requester_name ?? 'a lecturer'}` : 'Lecturers asked for new courses',
+        to: '/courses',
+        action: 'Review requests',
+        at: newest.created_at,
+      })
+    }
+  } else if (role === 'lecturer') {
+    for (const request of requests) {
+      if (request.status !== 'pending' && recent(request.decided_at)) {
+        found.push({
+          id: `course-request-${request.id}`,
+          kind: request.status === 'approved' ? 'ready' : 'problem',
+          title: request.status === 'approved' ? `${request.code} was added` : `${request.code} was declined`,
+          detail: request.status === 'approved' ? 'You are its lecturer' : (request.decision_note ?? 'An admin declined the request'),
+          to: '/courses',
+          action: request.status === 'approved' ? 'Open the course' : 'See your requests',
+          at: request.decided_at!,
         })
       }
     }

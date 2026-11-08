@@ -24,8 +24,14 @@ from app.schemas.accounts import (
     CourseOut,
 )
 from app.schemas.common import Page
+from app.schemas.course_requests import (
+    CourseRename,
+    CourseRequestApprove,
+    CourseRequestDecline,
+    CourseRequestOut,
+)
 from app.schemas.identity import ConsentType, Role
-from app.services import accounts
+from app.services import accounts, course_requests
 
 router = APIRouter(
     prefix="/admin",
@@ -117,3 +123,45 @@ async def create_course(
 ) -> CourseOut:
     """Add a course by its code and name."""
     return await accounts.create_course(db, payload)
+
+
+@router.patch("/courses/{code}", response_model=CourseOut)
+@audit_action("COURSE_RENAMED")
+async def rename_course(
+    code: str,
+    payload: CourseRename,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> CourseOut:
+    """Correct a course's name. Its code stays, since imports and links use it."""
+    return CourseOut.model_validate(await course_requests.rename_course(db, code, payload.name))
+
+
+@router.post("/course-requests/{request_id}/approve", response_model=CourseRequestOut)
+@audit_action("COURSE_REQUEST_APPROVED")
+async def approve_course_request(
+    request_id: UUID,
+    payload: CourseRequestApprove,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> CourseRequestOut:
+    """Create the course asked for, with the lecturer who asked as its lecturer."""
+    return await course_requests.approve(db, principal, request_id, payload)
+
+
+@router.post("/course-requests/{request_id}/decline", response_model=CourseRequestOut)
+@audit_action("COURSE_REQUEST_DECLINED")
+async def decline_course_request(
+    request_id: UUID,
+    payload: CourseRequestDecline,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> CourseRequestOut:
+    """Turn a course request down, with a note the lecturer sees."""
+    return await course_requests.decline(db, principal, request_id, payload)
