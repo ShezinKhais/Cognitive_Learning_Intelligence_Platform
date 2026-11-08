@@ -222,6 +222,9 @@ async def test_database_review_is_own_ended_session_only(database, question):  #
         assert result.questions_attempted == 1
         assert result.answers[0].answer == "Incorrect"
         assert result.answers[0].is_correct is False
+        # Once the class has ended, the review says what the right answer was.
+        assert result.answers[0].correct_answer == "Correct"
+        assert result.missed_questions == []
         assert result.engagement.score is None
         assert result.total == 1
         with pytest.raises(NotFoundError):
@@ -274,3 +277,35 @@ async def test_database_review_is_own_ended_session_only(database, question):  #
         )
         assert unrelated_sources.items == []
         await db.rollback()
+
+
+async def test_the_review_lists_missed_questions_with_their_answer(database, question):  # noqa: F811
+    from datetime import UTC, datetime, timedelta
+
+    from app.models.delivered_question import DeliveredQuestion
+    from app.models.missed_response import MissedResponse
+
+    async with database() as db:
+        session = await db.get(Session, question.session)
+        session.status = "ended"
+        student = (
+            await db.execute(select(Student).where(Student.user_id == question.user))
+        ).scalar_one()
+        now = datetime.now(UTC)
+        delivery = DeliveredQuestion(
+            session_id=question.session,
+            question_id=question.question,
+            delivered_at=now,
+            closes_at=now + timedelta(seconds=30),
+            window_seconds=30,
+        )
+        db.add(delivery)
+        await db.flush()
+        db.add(MissedResponse(delivery_id=delivery.delivery_id, student_id=student.student_id))
+        await db.flush()
+
+        result = await service.read_review(db, question.user, question.session, 20, 0)
+
+        assert result.questions_missed == 1
+        [missed] = result.missed_questions
+        assert (missed.question, missed.correct_answer) == ("Which option is correct?", "Correct")

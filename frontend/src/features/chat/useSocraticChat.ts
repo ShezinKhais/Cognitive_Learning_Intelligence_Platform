@@ -14,10 +14,41 @@ import {
   historyFor,
   initialChatState,
 } from './chatState'
+import type { ChatExchange, ChatState } from './chatTypes'
+
+// Finished exchanges are kept for this tab, so leaving the page and coming
+// back, or reviewing after class, does not lose what the tutor said. Only
+// this tab: a shared computer does not show the next person the transcript.
+const KEPT = 20
+
+function storageKey(sessionId: string, discussion: boolean): string {
+  return `clip.tutor.${sessionId}.${discussion ? 'discussion' : 'material'}`
+}
+
+function restore(key: string): ChatState {
+  try {
+    const raw = window.sessionStorage.getItem(key)
+    const kept = raw ? (JSON.parse(raw) as ChatExchange[]) : []
+    const exchanges = Array.isArray(kept) ? kept.filter((exchange) => exchange?.phase === 'completed') : []
+    return { ...initialChatState, exchanges }
+  } catch {
+    return initialChatState
+  }
+}
 
 export function useSocraticChat(sessionId: string, discussionSince?: string, discussionUntil?: string, discussion = false, discussionRollingMinutes?: number) {
-  const [state, dispatch] = useReducer(chatReducer, initialChatState)
+  const key = storageKey(sessionId, discussion)
+  const [state, dispatch] = useReducer(chatReducer, key, restore)
   const controller = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    const done = state.exchanges.filter((exchange) => exchange.phase === 'completed').slice(-KEPT)
+    try {
+      window.sessionStorage.setItem(key, JSON.stringify(done))
+    } catch {
+      // Storage full or blocked: the conversation still works, it is just not kept.
+    }
+  }, [key, state.exchanges])
 
   useEffect(() => () => controller.current?.abort(), [])
 

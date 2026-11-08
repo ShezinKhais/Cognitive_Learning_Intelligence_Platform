@@ -23,6 +23,7 @@ from app.models.student import Student
 from app.models.student_response import StudentResponse
 from app.schemas.common import Page
 from app.schemas.student_review import (
+    MissedQuestion,
     ReviewAnswer,
     ReviewSession,
     ReviewSource,
@@ -84,6 +85,14 @@ def answer_text(response: StudentResponse, question: Question) -> str:
     return "Answer text unavailable"
 
 
+def correct_answer(question: Question) -> str | None:
+    """The right option, or the model answer for a written question."""
+    index = question.correct_option
+    if index is not None and question.options and 0 <= index < len(question.options):
+        return question.options[index]
+    return question.reference_answer or None
+
+
 async def read_review(db: AsyncSession, user_id: UUID, session_id: UUID, limit: int, offset: int):
     session, code, student_id = await own_session(db, user_id, session_id)
     scope = (StudentResponse.session_id == session_id, StudentResponse.student_id == student_id)
@@ -117,14 +126,27 @@ async def read_review(db: AsyncSession, user_id: UUID, session_id: UUID, limit: 
             label=c.label if c else None,
             confidence=c.confidence_score if c else None,
             submitted_at=r.submitted_at,
+            correct_answer=correct_answer(q),
         )
         for r, q, c in rows
+    ]
+    missed_rows = await db.scalars(
+        select(Question)
+        .join(DeliveredQuestion, DeliveredQuestion.question_id == Question.question_id)
+        .join(MissedResponse, MissedResponse.delivery_id == DeliveredQuestion.delivery_id)
+        .where(DeliveredQuestion.session_id == session_id, MissedResponse.student_id == student_id)
+        .order_by(DeliveredQuestion.delivered_at)
+    )
+    missed_questions = [
+        MissedQuestion(question=q.question_text, topic=q.topic, correct_answer=correct_answer(q))
+        for q in missed_rows
     ]
     return StudentReview(
         session=session_out(session, code),
         questions_attempted=total,
         questions_missed=missed or 0,
         answers=answers,
+        missed_questions=missed_questions,
         total=total,
         limit=limit,
         offset=offset,

@@ -2224,6 +2224,43 @@
         "title": "MeetingLinkRequest",
         "type": "object"
       },
+      "MissedQuestion": {
+        "description": "A question the student was sent and did not answer.",
+        "properties": {
+          "correct_answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correct Answer"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic"
+          }
+        },
+        "required": [
+          "question",
+          "topic"
+        ],
+        "title": "MissedQuestion",
+        "type": "object"
+      },
       "MyConsiderationOut": {
         "description": "The student's most recent request, if any.",
         "properties": {
@@ -3355,6 +3392,18 @@
             ],
             "title": "Confidence"
           },
+          "correct_answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The right option, or the lecturer's model answer for a written question. Shown only once the session has ended.",
+            "title": "Correct Answer"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -4168,6 +4217,13 @@
           "limit": {
             "title": "Limit",
             "type": "integer"
+          },
+          "missed_questions": {
+            "items": {
+              "$ref": "#/components/schemas/MissedQuestion"
+            },
+            "title": "Missed Questions",
+            "type": "array"
           },
           "offset": {
             "title": "Offset",

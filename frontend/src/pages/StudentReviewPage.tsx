@@ -1,4 +1,5 @@
 import DiscussionPanel from '../features/discussion/DiscussionPanel'
+import { SocraticChatPanel } from '../features/chat/SocraticChatPanel'
 import { useId, useState } from 'react'
 import { ChevronDown, FileText } from 'lucide-react'
 import { Link, useParams } from 'react-router'
@@ -13,6 +14,8 @@ import { formatRelative, sinceVerb } from '../features/format/relativeTime'
 import { comprehensionText, comprehensionTone, needsReview, reviewError } from '../features/review/reviewDisplay'
 import type { ReviewAnswer, ReviewPage, ReviewSession, ReviewSources, StudentReview } from '../features/review/reviewTypes'
 import { useReviewResource } from '../features/review/useReviewResource'
+
+const TUTOR_ENABLED = import.meta.env.VITE_SOCRATIC_CHAT_ENABLED === 'true'
 
 const PAGE_SIZE = 20
 
@@ -192,6 +195,41 @@ function Review({ sessionId }: { sessionId: string }) {
           )}
           <Pager offset={offset} total={data.total} onChange={setOffset} noun="answers" />
         </section>
+
+        {TUTOR_ENABLED && sessionId && (
+          <section aria-labelledby="tutor-heading" className="mt-10">
+            <h2 id="tutor-heading" className="text-lg font-bold">
+              Ask the tutor about this class
+            </h2>
+            <p className="mb-4 mt-1 text-sm text-muted-foreground">
+              It answers from this class&apos;s material, and walks you through it rather than giving the answer away.
+            </p>
+            <SocraticChatPanel key={sessionId} sessionId={sessionId} compact />
+          </section>
+        )}
+
+        {(data.missed_questions?.length ?? 0) > 0 && (
+          <section aria-labelledby="missed-heading" className="mt-10">
+            <h2 id="missed-heading" className="text-lg font-bold">
+              Questions you did not answer
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">Not counted against you. Worth a look before next class.</p>
+            <ol className="mt-4 space-y-3">
+              {data.missed_questions!.map((missed, index) => (
+                <li key={index} className="rounded-lg border border-border bg-card px-5 py-4">
+                  <MetaLine items={[missed.topic ?? 'No topic']} />
+                  <h3 className="mt-2 whitespace-pre-wrap font-semibold">{missed.question}</h3>
+                  {missed.correct_answer && (
+                    <>
+                      <p className="mt-3 text-sm font-semibold text-success">The answer</p>
+                      <p className="mt-0.5 whitespace-pre-wrap break-words">{missed.correct_answer}</p>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
       </PageBody>
     </>
   )
@@ -212,6 +250,14 @@ function Answer({ answer, sessionId }: { answer: ReviewAnswer; sessionId: string
       <h3 className="mt-2 whitespace-pre-wrap font-semibold">{answer.question}</h3>
       <p className="mt-3 text-sm font-semibold text-muted-foreground">Your answer</p>
       <p className="mt-0.5 whitespace-pre-wrap break-words">{answer.answer}</p>
+      {answer.correct_answer && answer.is_correct !== true && (
+        <>
+          <p className="mt-3 text-sm font-semibold text-success">
+            {answer.is_correct === false ? 'The right answer' : 'What a full answer covers'}
+          </p>
+          <p className="mt-0.5 whitespace-pre-wrap break-words">{answer.correct_answer}</p>
+        </>
+      )}
       {answer.label && answer.confidence !== null && !uncertain && (
         <p className="mt-2 text-sm text-muted-foreground">
           {Math.round(answer.confidence * 100)}% sure of this reading. It is an estimate, not a grade.

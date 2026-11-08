@@ -25,6 +25,19 @@ class ReviewAnswer(BaseModel):
     label: ComprehensionLabel | None
     confidence: float | None = Field(ge=0, le=1)
     submitted_at: datetime
+    correct_answer: str | None = Field(
+        default=None,
+        description="The right option, or the lecturer's model answer for a written question. "
+        "Shown only once the session has ended.",
+    )
+
+
+class MissedQuestion(BaseModel):
+    """A question the student was sent and did not answer."""
+
+    question: str
+    topic: str | None
+    correct_answer: str | None = None
 
 
 class ReviewEngagement(BaseModel):
@@ -42,6 +55,7 @@ class StudentReview(BaseModel):
     questions_missed: int
     engagement: ReviewEngagement = Field(default_factory=ReviewEngagement)
     answers: list[ReviewAnswer]
+    missed_questions: list[MissedQuestion] = Field(default_factory=list)
     total: int
     limit: int
     offset: int

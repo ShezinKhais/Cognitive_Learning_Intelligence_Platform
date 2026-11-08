@@ -14,6 +14,14 @@ export interface ReviewAnswer {
   label: 'mastered' | 'partial' | 'struggling' | null
   confidence: number | null
   submitted_at: string
+  /** The right option, or the model answer for a written question. */
+  correct_answer?: string | null
+}
+
+export interface MissedQuestion {
+  question: string
+  topic: string | null
+  correct_answer?: string | null
 }
 
 export interface ReviewPage<T> {
@@ -28,6 +36,7 @@ export interface StudentReview {
   questions_missed: number
   engagement: { status: 'unavailable'; score: null; explanation: string }
   answers: ReviewAnswer[]
+  missed_questions?: MissedQuestion[]
   total: number
   limit: number
   offset: number

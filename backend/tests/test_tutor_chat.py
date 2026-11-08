@@ -516,11 +516,24 @@ async def test_a_student_not_enrolled_for_the_session_is_told_it_is_not_there(
     assert tutor.model.embedded == []
 
 
-async def test_a_session_that_is_over_has_no_tutor(db, app, tutor) -> None:
+async def test_the_tutor_still_answers_after_class(db, app, tutor) -> None:
+    """The review page sends students to the tutor, so it answers about an
+    ended session's material for its enrolled students."""
     client, _, _ = db
     live = await _running_class(db, app)
     sign_in_as(app, LECTURER_ID, Role.LECTURER)
     assert client.post(f"/api/v1/sessions/{live.id}/end").status_code == 200
+    sign_in_as(app, STUDENT_ID, Role.STUDENT)
+
+    assert _ask(client, live.id).status_code == 200
+
+
+async def test_a_session_on_another_course_has_no_tutor_after_class(db, app, tutor) -> None:
+    client, factory, created = db
+    live = await _running_class(db, app)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    assert client.post(f"/api/v1/sessions/{live.id}/end").status_code == 200
+    await enrol(factory, await add_course(factory, created))
     sign_in_as(app, STUDENT_ID, Role.STUDENT)
 
     assert _ask(client, live.id).status_code == 404
