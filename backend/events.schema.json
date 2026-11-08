@@ -246,6 +246,7 @@
             "alert.raised",
             "material.progress",
             "room.status",
+            "room.assigned",
             "error"
           ],
           "title": "ServerEventType",
@@ -763,6 +764,26 @@
         "user_id"
       ],
       "title": "ReadyPayload",
+      "type": "object"
+    },
+    "room.assigned": {
+      "description": "The breakout room the lecturer put this student in, sent only to that\nstudent. room_label null means the rooms are closed: back to the main\nmeeting. C.L.I.P cannot move anyone in Teams; this says where to go.",
+      "properties": {
+        "room_label": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Room Label"
+        }
+      },
+      "title": "RoomAssignedPayload",
       "type": "object"
     },
     "room.status": {

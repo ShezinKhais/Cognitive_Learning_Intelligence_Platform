@@ -37,7 +37,8 @@ def _token(**overrides) -> str:  # noqa: ANN003
         "aud": APP_ID,
         "exp": now + 600,
         "nbf": now - 10,
-        "serviceUrl": SERVICE_URL,
+        # Bot Framework's own spelling of the claim.
+        "serviceurl": SERVICE_URL,
         **overrides,
     }
     return jwt.encode(claims, KEY, algorithm="RS256", headers={"kid": "test"})
@@ -81,13 +82,22 @@ async def test_a_token_from_bot_framework_for_this_bot_is_accepted() -> None:
         {"aud": "another-bot"},
         {"iss": "https://sts.windows.net/someone/"},
         {"exp": int(time.time()) - teams_bot.CLOCK_SKEW_SECONDS - 60},
-        {"serviceUrl": "https://attacker.example/"},
+        {"serviceurl": "https://attacker.example/"},
+        {"serviceurl": None},
     ],
-    ids=["another bot", "another issuer", "expired", "another channel"],
+    ids=["another bot", "another issuer", "expired", "another channel", "no channel"],
 )
 async def test_a_token_meant_for_something_else_is_refused(claims: dict) -> None:
     with pytest.raises(AuthenticationError):
         await _authenticator().verify(f"Bearer {_token(**claims)}", SERVICE_URL)
+
+
+async def test_the_service_url_claim_is_read_as_bot_framework_spells_it() -> None:
+    # Teams' tokens carry serviceurl in lower case. Reading only serviceUrl
+    # refused every real activity, so the bot never learned of a meeting.
+    await _authenticator().verify(f"Bearer {_token()}", SERVICE_URL.rstrip("/"))
+    camel = _token(serviceurl=None, serviceUrl=SERVICE_URL)
+    await _authenticator().verify(f"Bearer {camel}", SERVICE_URL)
 
 
 async def test_a_token_signed_with_another_key_is_refused() -> None:

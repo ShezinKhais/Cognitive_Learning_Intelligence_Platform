@@ -157,6 +157,18 @@ export default function LecturerSessionReportPage() {
     }
   }
 
+  // The report is what the lecturer came for, so it is asked for as soon as
+  // the page opens rather than behind a button. Once per session shown: a
+  // failure leaves Generate again for the lecturer to choose.
+  const requestedFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (!sessionId || requestedFor.current === sessionId) return
+    requestedFor.current = sessionId
+    void generateReport()
+    // generateReport reads the current session through a ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId])
+
   async function refreshReport() {
     if (!activeJob || !sessionId) return
 
@@ -308,6 +320,7 @@ export default function LecturerSessionReportPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            {sessionId && <Link to={`/lecturer/sessions/${encodeURIComponent(sessionId)}/notes`} className={buttonStyles({ intent: 'secondary' })}>Discussion minutes</Link>}
             {sessionId && (
               <Link
                 to={`/lecturer/sessions/${encodeURIComponent(sessionId)}/live`}
@@ -340,9 +353,9 @@ export default function LecturerSessionReportPage() {
                 </h2>
 
                 <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-                  Generate a protected report from the session data
-                  stored by C.L.I.P. Comprehension evidence remains
-                  separate from engagement evidence.
+                  Built from the session data stored by C.L.I.P.
+                  Comprehension evidence is kept separate from engagement
+                  evidence. Download it as a PDF to keep a copy.
                 </p>
 
                 <p className="mt-2 text-xs text-muted-foreground">
@@ -365,15 +378,6 @@ export default function LecturerSessionReportPage() {
                     : 'Generate report'}
               </button>
             )}
-          </div>
-
-          <div className="mt-5 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
-            <p className="font-medium">PDF language limitation</p>
-            <p className="mt-1 text-muted-foreground">
-              The current PDF exporter uses built-in fonts. Non-Latin
-              text, including Arabic, may appear as boxes in the
-              downloaded PDF. The report shown on this page is unaffected.
-            </p>
           </div>
 
           {error && (

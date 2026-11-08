@@ -210,6 +210,9 @@ class LiveSession:
         # the end of the session waits for them.
         self.storing: set[asyncio.Task[None]] = set()
         self.rooms = rooms
+        # The rooms the lecturer assigned, by student user id. Empty when the
+        # lecturer has not split the class, or has brought it back.
+        self.plan: dict[UUID, str] = {}
         # The timer that looks at signals and rooms. Started by the first of
         # either, so a class with neither has no timer.
         self.watch: asyncio.Task[None] | None = None
@@ -248,6 +251,8 @@ class Classroom:
         self.alert_recorder: AlertRecorder | None = None
         self.attention_recorder: AttentionRecorder | None = None
         self.checkpoint_notifier: Callable[[UUID, UUID, float], None] | None = None
+        # Tells the session's lecturer in Teams that an alert was raised.
+        self.alert_notifier: Callable[[UUID], None] | None = None
 
     def _next_wait(self) -> timedelta | None:
         """A fresh random wait before the next scheduled question, or None
@@ -534,6 +539,16 @@ class Classroom:
         for staff_id in self._hub.staff_ids(session_id):
             await self._hub.send_to_user(session_id, staff_id, event, data)
 
+    async def _raise_alert(self, session_id: UUID, data: dict) -> None:
+        """Tell connected staff about an alert, and the lecturer in Teams,
+        whose side panel may be closed."""
+        await self._tell_staff(session_id, ServerEventType.ALERT_RAISED, data)
+        if self.alert_notifier is not None:
+            try:
+                self.alert_notifier(session_id)
+            except Exception:
+                log.warning("Could not enqueue Teams alert notification")
+
     def welcome(
         self, session_id: UUID, recorded: SessionStatus, user_id: UUID, role: Role | None
     ) -> list[tuple[ServerEventType, dict]]:
@@ -577,6 +592,9 @@ class Classroom:
         prompt = live.attention.waiting(user_id, now)
         if prompt is not None:
             events.append((ServerEventType.PROMPT_ATTENTION, _json(prompt.payload)))
+        if role is Role.STUDENT and user_id in live.plan:
+            # A panel reopened in a breakout room still says which one.
+            events.append((ServerEventType.ROOM_ASSIGNED, {"room_label": live.plan[user_id]}))
         if role in (Role.LECTURER, Role.ADMIN):
             # A panel opened or refreshed mid-class shows the rooms as they
             # are, and is told of each change after that.
@@ -1010,6 +1028,65 @@ class Classroom:
             await self._raise_room_alert(alert)
         return None
 
+    def room_plan(self, session_id: UUID) -> dict[UUID, str] | None:
+        """The lecturer's room assignments, or None when the class is not running here."""
+        live = self._live.get(session_id)
+        return dict(live.plan) if live is not None else None
+
+    async def assign_rooms(self, session_id: UUID, plan: dict[UUID, str]) -> bool:
+        """Put each student in the room the lecturer chose, and tell each one
+        where they are going. A student left out of a new plan is told they
+        have no room. Returns False when the class is not running here.
+
+        The caller has checked the labels and that every student is on the
+        course. Status tracking is the same as for a room a student names.
+        """
+        live = self._live.get(session_id)
+        if live is None:
+            return False
+        async with live.lock:
+            if self._live.get(session_id) is not live:
+                return False
+            dropped = set(live.plan) - set(plan)
+            for user_id in set(live.plan) | set(plan):
+                live.rooms.leave(user_id)
+            for user_id, label in plan.items():
+                live.rooms.confirm(user_id, label)
+            live.plan = {
+                user_id: live.rooms.room_of(user_id) or label for user_id, label in plan.items()
+            }
+            for user_id, label in live.plan.items():
+                await self._hub.send_to_user(
+                    session_id, user_id, ServerEventType.ROOM_ASSIGNED, {"room_label": label}
+                )
+            for user_id in dropped:
+                await self._hub.send_to_user(
+                    session_id, user_id, ServerEventType.ROOM_ASSIGNED, {"room_label": None}
+                )
+            self._start_watch(live)
+            alerts = await self._tell_rooms_locked(live, _now())
+        for alert in alerts:
+            await self._raise_room_alert(alert)
+        return True
+
+    async def close_rooms(self, session_id: UUID) -> bool:
+        """Bring everyone back: empty every room, assigned or named by the
+        student, and tell the class the rooms are closed."""
+        live = self._live.get(session_id)
+        if live is None:
+            return False
+        async with live.lock:
+            if self._live.get(session_id) is not live:
+                return False
+            for user_id in live.rooms.members():
+                live.rooms.leave(user_id)
+            live.plan = {}
+            await self._hub.broadcast(
+                session_id, ServerEventType.ROOM_ASSIGNED, {"room_label": None}
+            )
+            await self._tell_rooms_locked(live, _now())
+        return True
+
     def rooms(self, session_id: UUID) -> list[RoomStatusPayload]:
         """How each breakout room of a session this process is running is
         doing now, in label order."""
@@ -1100,10 +1177,8 @@ class Classroom:
             await best_effort(
                 self.alert_recorder.record_room_alert(alert), "store a room alert", alert.session_id
             )
-        await self._tell_staff(
-            alert.session_id,
-            ServerEventType.ALERT_RAISED,
-            _json(_raised(AlertKind.BREAKOUT_INACTIVE, alert)),
+        await self._raise_alert(
+            alert.session_id, _json(_raised(AlertKind.BREAKOUT_INACTIVE, alert))
         )
 
     def _monitored_in(self, question: _OpenQuestion) -> tuple[set[UUID], set[UUID]]:
@@ -1184,11 +1259,7 @@ class Classroom:
         live = self._live.get(session_id)
         if live is not None:
             live.alerts.append(stored)
-        await self._tell_staff(
-            session_id,
-            ServerEventType.ALERT_RAISED,
-            _json(_raised(AlertKind.TOPIC_DIFFICULTY, stored)),
-        )
+        await self._raise_alert(session_id, _json(_raised(AlertKind.TOPIC_DIFFICULTY, stored)))
 
     async def _check_comprehension(self, live: LiveSession, closed: ClosedQuestion) -> None:
         """Raise a class comprehension alert to the lecturer once enough of
@@ -1239,10 +1310,8 @@ class Classroom:
             await best_effort(
                 self.alert_recorder.record_alert(stored), "store an alert", closed.session_id
             )
-        await self._tell_staff(
-            closed.session_id,
-            ServerEventType.ALERT_RAISED,
-            _json(_raised(AlertKind.TOPIC_DIFFICULTY, stored)),
+        await self._raise_alert(
+            closed.session_id, _json(_raised(AlertKind.TOPIC_DIFFICULTY, stored))
         )
 
     def engagement(self, session_id: UUID) -> list[ScoredStudent]:

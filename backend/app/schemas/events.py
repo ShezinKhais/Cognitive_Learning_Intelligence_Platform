@@ -106,6 +106,7 @@ class ServerEventType(StrEnum):
     ALERT_RAISED = "alert.raised"
     MATERIAL_PROGRESS = "material.progress"
     ROOM_STATUS = "room.status"
+    ROOM_ASSIGNED = "room.assigned"
     ERROR = "error"
 
 
@@ -324,6 +325,14 @@ class RoomStatusPayload(BaseModel):
     task_interactions: int = 0
 
 
+class RoomAssignedPayload(BaseModel):
+    """The breakout room the lecturer put this student in, sent only to that
+    student. room_label null means the rooms are closed: back to the main
+    meeting. C.L.I.P cannot move anyone in Teams; this says where to go."""
+
+    room_label: str | None = Field(default=None, max_length=MAX_ROOM_LABEL_LENGTH)
+
+
 class ReadyPayload(BaseModel):
     """Handshake complete. The client may start sending events."""
 
@@ -389,5 +398,6 @@ SERVER_PAYLOADS: dict[ServerEventType, type[BaseModel] | None] = {
     ServerEventType.ALERT_RAISED: AlertRaisedPayload,
     ServerEventType.MATERIAL_PROGRESS: MaterialProgressPayload,
     ServerEventType.ROOM_STATUS: RoomStatusPayload,
+    ServerEventType.ROOM_ASSIGNED: RoomAssignedPayload,
     ServerEventType.ERROR: ErrorPayload,
 }

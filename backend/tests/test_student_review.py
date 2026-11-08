@@ -65,7 +65,9 @@ def test_query_is_scoped_to_user_and_ended_sessions():
     assert user in compiled.params.values()
     assert "ended" in compiled.params.values()
     assert "student.user_id =" in str(compiled)
-    assert "student.course_id = session.course_id" in str(compiled)
+    # Any course the student is on, home or added: see course_membership.
+    assert "session.course_id IN" in str(compiled)
+    assert "membership" in str(compiled)
 
 
 def test_review_route_uses_identity_and_private_cache(as_student, app, monkeypatch):

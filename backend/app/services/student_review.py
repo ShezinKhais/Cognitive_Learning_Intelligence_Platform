@@ -29,14 +29,15 @@ from app.schemas.student_review import (
     ReviewSources,
     StudentReview,
 )
+from app.services.course_membership import courses_of_user
 
 
 def sessions_query(user_id: UUID):
     return (
         select(Session, Course.code, Student.student_id)
         .join(Course, Course.id == Session.course_id)
-        .join(Student, Student.course_id == Session.course_id)
-        .where(Student.user_id == user_id, Session.status == "ended")
+        .join(Student, Student.user_id == user_id)
+        .where(Session.course_id.in_(courses_of_user(user_id)), Session.status == "ended")
     )
 
 

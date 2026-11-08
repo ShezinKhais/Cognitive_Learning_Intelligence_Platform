@@ -616,9 +616,12 @@ export default function LecturerLiveSessionPage() {
               </span>
             )}
             {sessionId && (
-              <Link to={`/lecturer/sessions/${sessionId}/report`} className={buttonStyles({ intent: 'secondary' })}>
-                Report
-              </Link>
+              <>
+                <Link to={`/lecturer/sessions/${sessionId}/notes`} className={buttonStyles({ intent: 'secondary' })}>Discussion minutes</Link>
+                <Link to={`/lecturer/sessions/${sessionId}/report`} className={buttonStyles({ intent: 'secondary' })}>
+                  Report
+                </Link>
+              </>
             )}
           </>
         }

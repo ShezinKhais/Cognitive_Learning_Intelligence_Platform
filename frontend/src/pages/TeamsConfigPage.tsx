@@ -52,7 +52,7 @@ export default function TeamsConfigPage() {
   return (
     <ConfigStatus
       title={error ? 'C.L.I.P could not be added' : 'Add C.L.I.P to this meeting'}
-      message={error ?? 'Select Save to make the student side panel available in this meeting.'}
+      message={error ?? 'Select Save to add the C.L.I.P side panel to this meeting. Students see their class panel, and the lecturer sees the class controls.'}
       isError={Boolean(error)}
     />
   )

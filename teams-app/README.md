@@ -36,9 +36,9 @@ also create the session for a meeting that starts unlinked, when the event
 names the course. Teams may deliver an event twice, and either path returns
 the session unchanged the second time.
 
-Which meeting holds which session is BBIS's to store. Until their
-`MeetingDirectory` is registered it is kept in memory, links are lost on
-restart, and production refuses to start.
+Which meeting holds which session is stored in the database
+(`teams_meeting_link`, through BBIS's `DatabaseMeetingDirectory`), so links
+survive a restart.
 
 ## Running it without Teams
 
@@ -56,6 +56,11 @@ The script signs a development token with the local secret, so it only
 works against a backend sharing the same `.env`, and never in production.
 
 ## Running it in Teams
+
+For the team's tenant (CLIP736), follow `docs/teams-tenant-setup.md`: it runs
+the demo stack in production mode behind a tunnel, with Teams single sign-on,
+and covers the accounts, the Azure registration and the upload. The steps
+below are the short version for a development server.
 
 This needs the "Upload custom apps" permission on the tenant.
 
@@ -94,8 +99,8 @@ This needs the "Upload custom apps" permission on the tenant.
 ## Not done yet
 
 - **Participant join and leave events.** They are acknowledged but not acted
-  on. They need BBIS's Teams user mappings to know which C.L.I.P user a
-  Teams participant is.
+  on. The Teams user mappings they need are now recorded the first time
+  someone signs in with Teams single sign-on (`POST /api/v1/auth/teams`).
 - **Checking the meeting organizer when a meeting is linked.** Nothing yet
   checks that the lecturer organises the meeting. It needs the bot's
   outbound calls to Teams, which need the tenant.

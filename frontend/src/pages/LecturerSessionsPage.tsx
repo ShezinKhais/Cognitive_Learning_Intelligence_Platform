@@ -15,6 +15,8 @@ import { sinceVerb } from '../features/format/relativeTime'
 import { createSession } from '../features/live/sessionActions'
 import { formatWhen, groupOf, groupSessions, statusLabel, statusTone } from '../features/sessions/format'
 import { listSessions, type SessionSummary } from '../features/sessions/sessionsApi'
+import { myCourses } from '../features/courses/coursesApi'
+import type { Course } from '../features/governance/accountsApi'
 
 type Load = { state: 'loading' } | { state: 'error'; message: string; cause: unknown } | { state: 'ready'; sessions: SessionSummary[] }
 
@@ -223,6 +225,19 @@ function CreateSession({ onCancel }: { onCancel: () => void }) {
   const navigate = useNavigate()
   const [courseCode, setCourseCode] = useState('')
   const [title, setTitle] = useState('')
+  // Lecturers mostly teach their own courses, so those are offered and the
+  // first is filled in. Another course's code can still be typed.
+  const [mine, setMine] = useState<Course[]>([])
+  const suggestions = useId()
+  useEffect(() => {
+    myCourses().then(
+      (found) => {
+        setMine(found)
+        setCourseCode((current) => current || found[0]?.code || '')
+      },
+      () => setMine([]),
+    )
+  }, [])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -254,7 +269,7 @@ function CreateSession({ onCancel }: { onCancel: () => void }) {
     <Panel
       className="mb-10 max-w-2xl"
       title="New session"
-      description="Use the course code of the material you prepared, so its approved questions are ready to send."
+      description="Your courses are suggested; another course's code can be typed. Its approved questions are ready to send."
     >
       <form className="grid gap-4 sm:grid-cols-[12rem_1fr]" onSubmit={submit}>
         <label className="text-sm font-semibold">
@@ -264,10 +279,18 @@ function CreateSession({ onCancel }: { onCancel: () => void }) {
             onChange={(event) => setCourseCode(event.target.value)}
             placeholder="CSIT321"
             autoComplete="off"
+            list={suggestions}
             maxLength={20}
             disabled={saving}
             className={field}
           />
+          <datalist id={suggestions}>
+            {mine.map((course) => (
+              <option key={course.id} value={course.code}>
+                {course.name}
+              </option>
+            ))}
+          </datalist>
         </label>
         <label className="text-sm font-semibold">
           Title

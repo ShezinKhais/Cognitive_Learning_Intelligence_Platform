@@ -15,7 +15,7 @@ import {
   initialChatState,
 } from './chatState'
 
-export function useSocraticChat(sessionId: string) {
+export function useSocraticChat(sessionId: string, discussionSince?: string, discussionUntil?: string, discussion = false, discussionRollingMinutes?: number) {
   const [state, dispatch] = useReducer(chatReducer, initialChatState)
   const controller = useRef<AbortController | null>(null)
 
@@ -31,8 +31,12 @@ export function useSocraticChat(sessionId: string) {
     dispatch({ type: 'submit-started', id: requestId, question })
 
     try {
+      const discussionEnd = discussionRollingMinutes ? Date.now() : undefined
       await streamChat({
         sessionId,
+        source: discussion ? 'discussion' : undefined,
+        discussionSince: discussionRollingMinutes && discussionEnd !== undefined ? new Date(discussionEnd - discussionRollingMinutes * 60_000).toISOString() : discussionSince,
+        discussionUntil: discussionEnd !== undefined ? new Date(discussionEnd).toISOString() : discussionUntil,
         requestId,
         question,
         history: historyFor(state.exchanges),
@@ -53,7 +57,7 @@ export function useSocraticChat(sessionId: string) {
     } finally {
       if (controller.current === nextController) controller.current = null
     }
-  }, [sessionId, state.draft, state.exchanges])
+  }, [sessionId, discussion, discussionSince, discussionUntil, discussionRollingMinutes, state.draft, state.exchanges])
 
   const cancel = useCallback(() => {
     if (!controller.current) return

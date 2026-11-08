@@ -41,6 +41,8 @@ function citation(value: unknown): ChatCitation | null {
 
   return {
     id,
+    ...(typeof item.source_note_id === 'string' && /^[0-9a-f-]{36}$/i.test(item.source_note_id)
+      ? { source_note_id: item.source_note_id } : {}),
     ...(number === undefined ? {} : { number }),
     material_title: materialTitle,
     source_page: sourcePage,

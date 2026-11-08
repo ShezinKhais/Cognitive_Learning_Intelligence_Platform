@@ -112,7 +112,7 @@ Nothing else about the server is changed.
 
 <!-- results:begin -->
 
-Run on 2026-10-15T18:16:02+00:00 at commit `3c8a46e1`, with 40 students.
+Run on 2026-10-21T12:57:10+00:00 at commit `40656c6e`, with 40 students.
 
 - Machine: Windows-11-10.0.26300-SP0, 20 logical processors, Python 3.12.10.
 - The backend, Postgres and all the clients ran on that one machine.
@@ -121,27 +121,27 @@ Run on 2026-10-15T18:16:02+00:00 at commit `3c8a46e1`, with 40 students.
 | Scenario | Checks passed | Took |
 |---|---|---|
 | 40 students in one class, 8 questions | 9 of 9 | 17.9 s |
-| Dropped connections, resumed | 9 of 9 | 7.4 s |
-| Attention signals and breakout rooms under load | 11 of 11 | 56.6 s |
+| Dropped connections, resumed | 9 of 9 | 7.5 s |
+| Attention signals and breakout rooms under load | 11 of 11 | 18.2 s |
 | Reports and the retention purge during a class | 9 of 9 | 6.1 s |
-| The language model is unreachable | 3 of 3 | 18.8 s |
+| The language model is unreachable | 3 of 3 | 19.0 s |
 | The server is killed mid-question and restarted | 6 of 6 | 7.6 s |
-| A planned shutdown and restart during a class | 2 of 2 | 7.2 s |
-| The database is stopped for 8 s during a class | 7 of 7 | 37.8 s |
-| A Teams meeting through the mock adapter | 7 of 7 | 2.2 s |
-| 10 sessions at once on the automatic question cycle | 4 of 4 | 35.9 s |
+| A planned shutdown and restart during a class | 2 of 2 | 7.3 s |
+| The database is stopped for 8 s during a class | 7 of 7 | 37.7 s |
+| A Teams meeting through the mock adapter | 7 of 7 | 2.3 s |
+| 10 sessions at once on the automatic question cycle | 4 of 4 | 35.7 s |
 
 ### 40 students in one class, 8 questions
 
 | Measured | Result |
 |---|---|
-| Connect all seconds | 1.39 |
-| Time to ready | median 612.2 ms, 95th percentile 713 ms, worst 715 ms (40 samples) |
-| Question fan out | median 25 ms, 95th percentile 53 ms, worst 53.7 ms (320 samples) |
-| Of which server to student | median 1.1 ms, 95th percentile 2.2 ms, worst 2.7 ms (320 samples) |
-| Of which the lecturers request | median 27.3 ms, 95th percentile 54.4 ms, worst 54.4 ms (8 samples) |
-| Fan out first to last student | median 2.1 ms, 95th percentile 2.5 ms, worst 2.5 ms (8 samples) |
-| Answer to receipt | median 16 ms, 95th percentile 127.1 ms, worst 301.3 ms (320 samples) |
+| Connect all seconds | 1.38 |
+| Time to ready | median 602.6 ms, 95th percentile 650 ms, worst 660.8 ms (40 samples) |
+| Question fan out | median 21.9 ms, 95th percentile 37.8 ms, worst 38.8 ms (320 samples) |
+| Of which server to student | median 1.1 ms, 95th percentile 2.7 ms, worst 2.7 ms (320 samples) |
+| Of which the lecturers request | median 23.9 ms, 95th percentile 39.8 ms, worst 39.8 ms (8 samples) |
+| Fan out first to last student | median 1.9 ms, 95th percentile 2.3 ms, worst 2.3 ms (8 samples) |
+| Answer to receipt | median 15 ms, 95th percentile 24.3 ms, worst 48.7 ms (320 samples) |
 
 | Check | Result |
 |---|---|
@@ -159,10 +159,10 @@ Run on 2026-10-15T18:16:02+00:00 at commit `3c8a46e1`, with 40 students.
 
 | Measured | Result |
 |---|---|
-| Half class resume seconds | 0.4 |
-| Whole class reconnect seconds | 0.58 |
-| Reconnect time to ready | median 411.4 ms, 95th percentile 502.7 ms, worst 537.2 ms (40 samples) |
-| Fan out after reconnects | median 18.2 ms, 95th percentile 19.3 ms, worst 19.4 ms (40 samples) |
+| Half class resume seconds | 0.38 |
+| Whole class reconnect seconds | 0.65 |
+| Reconnect time to ready | median 474.4 ms, 95th percentile 575.8 ms, worst 623.5 ms (40 samples) |
+| Fan out after reconnects | median 18.3 ms, 95th percentile 19.2 ms, worst 19.3 ms (40 samples) |
 
 | Check | Result |
 |---|---|
@@ -180,10 +180,10 @@ Run on 2026-10-15T18:16:02+00:00 at commit `3c8a46e1`, with 40 students.
 
 | Measured | Result |
 |---|---|
-| Signals sent | 2466 |
-| Signals per second | 154.1 |
-| Fan out while signalling | median 27 ms, 95th percentile 28.3 ms, worst 28.4 ms (40 samples) |
-| Room status events | 107 |
+| Signals sent | 2450 |
+| Signals per second | 153.1 |
+| Fan out while signalling | median 18.6 ms, 95th percentile 19.3 ms, worst 19.4 ms (40 samples) |
+| Room status events | 101 |
 | Refocus prompts | 0 |
 | Attention minutes stored | 40 |
 
@@ -205,10 +205,10 @@ Run on 2026-10-15T18:16:02+00:00 at commit `3c8a46e1`, with 40 students.
 
 | Measured | Result |
 |---|---|
-| Fan out with reports building | median 20.1 ms, 95th percentile 24.2 ms, worst 24.4 ms (120 samples) |
-| Fan out baseline | median 25 ms, 95th percentile 53 ms, worst 53.7 ms (320 samples) |
+| Fan out with reports building | median 21.9 ms, 95th percentile 28.8 ms, worst 29.2 ms (120 samples) |
+| Fan out baseline | median 21.9 ms, 95th percentile 37.8 ms, worst 38.8 ms (320 samples) |
 | Report pdf bytes | 3409 |
-| Purge runs during class | 2 |
+| Purge runs during class | 1 |
 
 | Check | Result |
 |---|---|
@@ -226,9 +226,9 @@ Run on 2026-10-15T18:16:02+00:00 at commit `3c8a46e1`, with 40 students.
 
 | Measured | Result |
 |---|---|
-| Chat time to failure | median 5436.2 ms, 95th percentile 7797.5 ms, worst 7797.5 ms (4 samples) |
+| Chat time to failure | median 5565 ms, 95th percentile 8083.7 ms, worst 8083.7 ms (4 samples) |
 | Chat endings | error, error, error, error |
-| Fan out with model down | median 16.3 ms, 95th percentile 17.1 ms, worst 17.1 ms (40 samples) |
+| Fan out with model down | median 25.8 ms, 95th percentile 26.6 ms, worst 26.8 ms (40 samples) |
 
 | Check | Result |
 |---|---|
@@ -240,10 +240,10 @@ Run on 2026-10-15T18:16:02+00:00 at commit `3c8a46e1`, with 40 students.
 
 | Measured | Result |
 |---|---|
-| Clients noticed seconds | 0.06 |
-| Restart to healthy seconds | 3.62 |
+| Clients noticed seconds | 0.05 |
+| Restart to healthy seconds | 3.61 |
 | Whole class back seconds | 0.88 |
-| Fan out after restart | median 482 ms, 95th percentile 482.8 ms, worst 482.8 ms (40 samples) |
+| Fan out after restart | median 462.9 ms, 95th percentile 463.8 ms, worst 463.8 ms (40 samples) |
 | Deliveries left unclosed by the crash | 1 |
 
 | Check | Result |
@@ -261,11 +261,11 @@ Note: The question open at the crash has no recorded close. Readers treat a deli
 
 | Measured | Result |
 |---|---|
-| Shutdown seconds | 0.43 |
+| Shutdown seconds | 0.39 |
 | Close codes seen | 1012 |
-| Restart to healthy seconds | 3.59 |
-| Whole class back seconds | 0.72 |
-| Fan out after restart | median 457.2 ms, 95th percentile 458 ms, worst 458 ms (40 samples) |
+| Restart to healthy seconds | 3.6 |
+| Whole class back seconds | 0.87 |
+| Fan out after restart | median 457.3 ms, 95th percentile 458.1 ms, worst 458.2 ms (40 samples) |
 
 | Check | Result |
 |---|---|
@@ -277,10 +277,10 @@ Note: The question open at the crash has no recorded close. Readers treat a deli
 | Measured | Result |
 |---|---|
 | Readiness answered in seconds | 11.09 |
-| Delivery refused in seconds | 10.31 |
-| Ready again after seconds | 2.9 |
+| Delivery refused in seconds | 10.37 |
+| Ready again after seconds | 2.89 |
 | Errors logged during outage | 3 |
-| Fan out after recovery | median 73.3 ms, 95th percentile 74.6 ms, worst 74.8 ms (40 samples) |
+| Fan out after recovery | median 72.7 ms, 95th percentile 73.4 ms, worst 73.4 ms (40 samples) |
 
 | Check | Result |
 |---|---|
@@ -296,7 +296,7 @@ Note: The question open at the crash has no recorded close. Readers treat a deli
 
 | Measured | Result |
 |---|---|
-| Meeting start to last student | median 41.1 ms, 95th percentile 41.7 ms, worst 41.8 ms (40 samples) |
+| Meeting start to last student | median 49.8 ms, 95th percentile 50.5 ms, worst 50.5 ms (40 samples) |
 
 | Check | Result |
 |---|---|
@@ -314,9 +314,9 @@ Note: The question open at the crash has no recorded close. Readers treat a deli
 |---|---|
 | Questions per session | fewest 10, most 11 |
 | Expected per session | about 10 |
-| Seconds between questions | count 95, p50 3.02, max 3.04 |
+| Seconds between questions | count 95, p50 3.01, max 3.05 |
 | Seconds between questions expected | 3.0 |
-| Worst lateness seconds | 0.04 |
+| Worst lateness seconds | 0.05 |
 
 | Check | Result |
 |---|---|

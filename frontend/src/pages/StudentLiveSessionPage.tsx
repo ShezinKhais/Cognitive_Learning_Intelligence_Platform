@@ -1,3 +1,4 @@
+import DiscussionPanel from '../features/discussion/DiscussionPanel'
 
 import {
   CheckCircle2,
@@ -31,9 +32,11 @@ import type {
 } from '../features/student/liveSessionTypes'
 import type { StudentSession } from '../features/student/types'
 import ParticipationGauge from '../features/student/ParticipationGauge'
+import AssignedRoom from '../features/student/AssignedRoom'
 import RoomConfirm from '../features/student/RoomConfirm'
 import { useLiveSession } from '../features/student/useLiveSession'
 import { AttentionControls } from '../features/attention/AttentionControls'
+import { useTeams } from '../teams/TeamsProvider'
 
 const SOCRATIC_CHAT_ENABLED =
   import.meta.env.VITE_SOCRATIC_CHAT_ENABLED === 'true'
@@ -75,6 +78,7 @@ export function LiveSessionPanel({
   compact?: boolean
 }) {
   const [activeView, setActiveView] = useState<'class' | 'chat'>('class')
+  const teams = useTeams()
   const {
     state,
     selectOption,
@@ -144,7 +148,9 @@ export function LiveSessionPanel({
               <ParticipationGauge answered={state.answeredIds.length} delivered={state.questionsDelivered} />
             </span>
           </div>
-          {state.sessionStatus === 'active' && !compact && (
+          {state.sessionStatus === 'active' && state.assignedRoom ? (
+            <AssignedRoom label={state.assignedRoom.label} />
+          ) : state.sessionStatus === 'active' && !compact && (
             <RoomConfirm onConfirm={confirmRoom} serverError={state.error}
               enabled={state.connection === 'connected' && !state.paused} />
           )}
@@ -152,7 +158,13 @@ export function LiveSessionPanel({
 
         {!finished && <ConnectionNotice status={state.connection} />}
 
-        {LOCAL_ATTENTION_ENABLED && (
+        {LOCAL_ATTENTION_ENABLED && teams.context?.mobile && (
+          <p className="mt-5 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+            Teams on a phone does not let apps use the camera or microphone, so the optional indicators are off
+            here. Checkpoints and the tutor work as usual. Join from Teams on a computer to use them.
+          </p>
+        )}
+        {LOCAL_ATTENTION_ENABLED && !teams.context?.mobile && (
           <AttentionControls key={session.id} onSignal={sendAttention}
             consentRejected={attentionConsentRejected}
             enabled={state.connection === 'connected' && state.sessionStatus === 'active' && !state.paused} />
@@ -242,6 +254,8 @@ export function LiveSessionPanel({
             </motion.div>
           </AnimatePresence>
         </section>
+
+        <DiscussionPanel key={session.id} sessionId={session.id} />
 
         {SOCRATIC_CHAT_ENABLED && !finished && (
           <div className="mt-5" hidden={activeView !== 'chat'}>

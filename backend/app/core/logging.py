@@ -12,6 +12,10 @@ from contextvars import ContextVar
 
 request_id_var: ContextVar[str] = ContextVar("request_id", default="-")
 
+monitoring_request_id_var: ContextVar[str | None] = ContextVar(
+    "monitoring_request_id", default=None
+)
+
 DEFAULT_LEVEL = "INFO"
 
 
@@ -52,9 +56,15 @@ def configure_logging(level: str) -> None:
     )
     handler.addFilter(RequestIdFilter())
 
+    # The admin status page's view of recent errors (core/error_log.py).
+    from app.core.error_log import ErrorLogHandler
+
+    recent = ErrorLogHandler()
+
     root = logging.getLogger()
     root.handlers.clear()
     root.addHandler(handler)
+    root.addHandler(recent)
 
     resolved, problem = resolve_level(level)
     root.setLevel(resolved)
