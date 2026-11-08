@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 from typing import Any
 from uuid import UUID
@@ -101,3 +102,27 @@ class MeetingClassSuggestion(BaseModel):
 class MeetingClassStart(BaseModel):
     course_code: str = Field(min_length=1, max_length=MAX_COURSE_CODE_LENGTH)
     title: str = Field(min_length=1, max_length=MAX_TITLE_LENGTH)
+
+
+class LecturerUpdateOut(BaseModel):
+    at: datetime
+    kind: str = Field(description="alert, checkpoint or attention.")
+    text: str
+
+
+class TeamsUpdatesOut(BaseModel):
+    """What the lecturer's Teams update pop-up shows: the latest updates for
+    the class, newest first, whether they are muted, and how many of the
+    course's students C.L.I.P can reach in Teams."""
+
+    muted: bool
+    updates: list[LecturerUpdateOut]
+    students_on_course: int
+    students_in_teams: int | None = Field(
+        description="Students who have opened C.L.I.P in Teams, so checkpoints pop up for "
+        "them. None when Teams notifications are off."
+    )
+
+
+class TeamsUpdatesMute(BaseModel):
+    muted: bool

@@ -11,6 +11,7 @@ import { lecturerLiveSessionPath } from '../../teams/lecturerMeeting'
 import { statusLabel, statusTone } from '../sessions/format'
 import { getSession, listAllResponses, type SessionSummary } from '../sessions/sessionsApi'
 import ManualQuestionTrigger from './ManualQuestionTrigger'
+import TeamsUpdatesSection from './TeamsUpdatesSection'
 import { initialLifecycle, lifecycleReducer } from './panelLifecycle'
 import {
   getSessionReadiness,
@@ -354,6 +355,8 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
             </p>
           )}
         </section>
+
+        {(live || status === 'prepared') && <TeamsUpdatesSection sessionId={sessionId} />}
 
         <a
           href={dashboard}

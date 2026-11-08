@@ -1796,6 +1796,31 @@
         "title": "HistorySummaryOut",
         "type": "object"
       },
+      "LecturerUpdateOut": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "kind": {
+            "description": "alert, checkpoint or attention.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "kind",
+          "text"
+        ],
+        "title": "LecturerUpdateOut",
+        "type": "object"
+      },
       "LiveCaptureStart": {
         "properties": {
           "automatic_sharing_confirmed": {
@@ -4319,6 +4344,59 @@
           "token"
         ],
         "title": "TeamsSignInRequest",
+        "type": "object"
+      },
+      "TeamsUpdatesMute": {
+        "properties": {
+          "muted": {
+            "title": "Muted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "muted"
+        ],
+        "title": "TeamsUpdatesMute",
+        "type": "object"
+      },
+      "TeamsUpdatesOut": {
+        "description": "What the lecturer's Teams update pop-up shows: the latest updates for\nthe class, newest first, whether they are muted, and how many of the\ncourse's students C.L.I.P can reach in Teams.",
+        "properties": {
+          "muted": {
+            "title": "Muted",
+            "type": "boolean"
+          },
+          "students_in_teams": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Students who have opened C.L.I.P in Teams, so checkpoints pop up for them. None when Teams notifications are off.",
+            "title": "Students In Teams"
+          },
+          "students_on_course": {
+            "title": "Students On Course",
+            "type": "integer"
+          },
+          "updates": {
+            "items": {
+              "$ref": "#/components/schemas/LecturerUpdateOut"
+            },
+            "title": "Updates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "muted",
+          "updates",
+          "students_on_course",
+          "students_in_teams"
+        ],
+        "title": "TeamsUpdatesOut",
         "type": "object"
       },
       "TimetableImportResult": {
@@ -7010,6 +7088,102 @@
           }
         },
         "summary": "Meeting Event",
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/meetings/sessions/{session_id}/updates": {
+      "get": {
+        "description": "The latest Teams updates for the lecturer's class, for the pop-up\nthey open, and how many of its students C.L.I.P can reach in Teams.",
+        "operationId": "teams_updates_api_v1_meetings_sessions__session_id__updates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamsUpdatesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Teams Updates",
+        "tags": [
+          "meetings"
+        ]
+      },
+      "put": {
+        "description": "Mute, or unmute, the lecturer's Teams pop-ups for the rest of the class.\nThe updates are still listed.",
+        "operationId": "mute_teams_updates_api_v1_meetings_sessions__session_id__updates_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamsUpdatesMute"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamsUpdatesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mute Teams Updates",
         "tags": [
           "meetings"
         ]

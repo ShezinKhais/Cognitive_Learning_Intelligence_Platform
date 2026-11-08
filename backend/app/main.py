@@ -120,6 +120,8 @@ async def lifespan(app: FastAPI):
     install_live_store(classroom)
     classroom.checkpoint_notifier = notifications.enqueue
     classroom.alert_notifier = notifications.enqueue_alert
+    classroom.lecturer_update_notifier = notifications.update_lecturer
+    classroom.class_ended_notifier = notifications.enqueue_class_ended
     meetings.directory = DatabaseMeetingDirectory()
     classroom.check_wiring()
     meetings.check_wiring()

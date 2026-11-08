@@ -32,6 +32,7 @@ from app.models.course import Course
 from app.models.session import Session
 from app.schemas.meetings import TeamsActivity
 from app.services.meeting_directory import meetings
+from app.services.teams_meeting_flow import card_action
 from app.services.teams_notifications import connector_url, notifications
 
 log = logging.getLogger("clip.teams.replies")
@@ -111,6 +112,9 @@ def _bot_added(activity: TeamsActivity) -> bool:
 async def reply_text(db: AsyncSession, activity: TeamsActivity) -> str | None:
     """What to say to this activity, or None to stay quiet."""
     if activity.type == "message":
+        if card_action(activity) is not None:
+            # A press on one of C.L.I.P's cards, answered by teams_meeting_flow.
+            return None
         if command_of((activity.model_extra or {}).get("text")) == "status":
             return await status_text(db, _meeting_id(activity))
         return HELP

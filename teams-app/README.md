@@ -96,11 +96,40 @@ This needs the "Upload custom apps" permission on the tenant.
    `OnlineMeeting.ReadBasic.Chat` permission for this.
 
 
+## In the meeting
+
+With `TEAMS_NOTIFICATIONS_ENABLED`, the bot does more than start and end a
+linked class (`backend/app/services/teams_meeting_flow.py` and
+`teams_notifications.py`):
+
+- **A meeting with nothing linked.** When it starts, the bot reads the
+  meeting's title and organiser from Teams. A title naming one course the
+  organiser teaches ("CSIT321 Week 5") starts that class, and a card in the
+  meeting chat says so, with a **Not a class** button that ends it. Any other
+  title gets an **Is this a class?** card listing the organiser's courses.
+  Only the organiser's press counts. The organiser must have opened C.L.I.P
+  in Teams once, so their Teams account is linked.
+- **People joining.** Whoever joins a meeting whose class is running gets a
+  pop-up that opens C.L.I.P, and so does everyone in the meeting chat when the
+  class starts. Joins and leaves are kept as roster events, by Teams identity
+  only.
+- **Lecturer updates.** Pop-ups only the lecturer sees: an alert, how many
+  answered a checkpoint, and engagement low across the class. Counts and
+  course content only, never a name, at most one a minute (engagement every
+  five), and **Mute** on the update page (`/lecturer/teams/update`) stops them
+  for the rest of the class.
+- **Students.** The checkpoint pop-up says how long is left. When the class
+  ends, the meeting chat gets a card linking to the review. The lecturer's
+  update page shows how many of the course's students have opened C.L.I.P in
+  Teams, since only they get checkpoint pop-ups.
+
+Participant events need the bot subscribed to them: in the Developer Portal,
+the bot's **Meeting event subscriptions**, tick **Participant join** and
+**Participant leave** beside meeting start and end. The manifest is unchanged:
+its permissions already cover all of this.
+
 ## Not done yet
 
-- **Participant join and leave events.** They are acknowledged but not acted
-  on. The Teams user mappings they need are now recorded the first time
-  someone signs in with Teams single sign-on (`POST /api/v1/auth/teams`).
 - **Checking the meeting organizer when a meeting is linked.** Nothing yet
   checks that the lecturer organises the meeting. It needs the bot's
   outbound calls to Teams, which need the tenant.

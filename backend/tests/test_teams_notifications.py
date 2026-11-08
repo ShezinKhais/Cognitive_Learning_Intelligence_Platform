@@ -230,7 +230,8 @@ async def test_an_alert_pops_up_for_the_lecturer_alone(monkeypatch) -> None:
     body = json.loads(posts[0].content)
     assert body["value"]["recipients"] == ["29:lecturer"]
     popup = body["value"]["surfaces"][0]["content"]["value"]
-    assert popup["url"] == f"https://clip.example/teams/meeting?sessionId={session_id}"
+    # The update page, which lists the alert and lets the lecturer mute updates.
+    assert popup["url"] == f"https://clip.example/lecturer/teams/update?sessionId={session_id}"
 
 
 async def test_an_unlinked_lecturer_gets_no_alert_pop_up(monkeypatch) -> None:
@@ -444,9 +445,9 @@ async def test_a_raised_alert_reaches_the_teams_notifier_and_survives_its_failur
     room, _ = make_room()
     session_id = uuid4()
     told = []
-    room.alert_notifier = told.append
-    await room._raise_alert(session_id, {"alert_id": "a"})
-    assert told == [session_id]
+    room.alert_notifier = lambda sid, message: told.append((sid, message))
+    await room._raise_alert(session_id, {"alert_id": "a", "message": "Much of the class is lost."})
+    assert told == [(session_id, "Much of the class is lost.")]
 
     def broken(*args):
         raise RuntimeError("unavailable")
@@ -581,3 +582,175 @@ async def test_persisted_reference_and_course_recipient_filter_against_database(
         await session.commit()
     await sender.send(notice, configured())
     assert len(sent) == 2  # A queued notification cannot revive a closed checkpoint.
+
+
+# -- the lecturer updates, welcomes and the end of class ---------------------------
+
+
+async def test_lecturer_updates_are_kept_spaced_out_and_mutable(monkeypatch) -> None:
+    monkeypatch.setattr(module, "get_settings", configured)
+    sender = TeamsNotifications()
+    sent = []
+
+    async def record(notice):
+        sent.append(notice)
+
+    monkeypatch.setattr(sender, "_run", record)
+    session_id = uuid4()
+    sender.update_lecturer(session_id, "checkpoint", "Checkpoint closed: 3 of 4 students answered.")
+    sender.update_lecturer(session_id, "checkpoint", "Checkpoint closed: 4 of 4 students answered.")
+    # An alert is never held back by an update that is not one.
+    sender.enqueue_alert(session_id, "Much of the class is struggling with recursion.")
+    await asyncio.gather(*sender.tasks)
+
+    assert [(n.title, n.delay) for n in sent] == [
+        ("Checkpoint closed: 3 of 4 students answered.", module.UPDATE_DELAY_SECONDS),
+        ("Much of the class is struggling with recursion.", 0),
+    ]
+    muted, recent = sender.recent_updates(session_id)
+    assert not muted
+    assert [u.kind for u in recent] == ["alert", "checkpoint", "checkpoint"]
+
+    sender.mute(session_id, True)
+    sender.alerted_at.clear()
+    sender.enqueue_alert(session_id, "Room 2 has been quiet for 3 minutes.")
+    await asyncio.gather(*sender.tasks)
+    assert len(sent) == 2
+    assert sender.recent_updates(session_id)[1][0].text == "Room 2 has been quiet for 3 minutes."
+
+    sender.enqueue_class_ended(session_id)
+    assert sender.recent_updates(session_id) == (False, [])
+
+
+async def test_an_update_is_dropped_when_another_pop_up_went_out_while_it_waited(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(module, "get_settings", configured)
+    sender = TeamsNotifications()
+    sender.send_alert = AsyncMock()
+    session_id = uuid4()
+    held = sender._held(session_id)
+    queued = time.monotonic()
+    held.popped_at = queued + 1
+    notice = AlertNotice(session_id, time.time() + 30, "Checkpoint closed", 0.01, queued)
+    await sender._run(notice)
+    sender.send_alert.assert_not_awaited()
+
+    held.popped_at = None
+    await sender._run(notice)
+    sender.send_alert.assert_awaited_once()
+
+
+def test_a_long_update_is_shortened_for_the_pop_up_title() -> None:
+    assert len(module._title("x" * 500)) == module.MAX_TITLE
+
+
+async def test_someone_rejoining_soon_after_is_not_popped_up_again(monkeypatch) -> None:
+    monkeypatch.setattr(module, "get_settings", configured)
+    sender = TeamsNotifications()
+    sent = []
+
+    async def record(notice):
+        sent.append(notice)
+
+    monkeypatch.setattr(sender, "_run", record)
+    session_id = uuid4()
+    sender.enqueue_welcome(session_id, {"aad-1": "29:one"})
+    sender.enqueue_welcome(session_id, {"aad-1": "29:one", "aad-2": "29:two"})
+    sender.enqueue_welcome(session_id, {"aad-2": "29:two"})
+    await asyncio.gather(*sender.tasks)
+    assert [n.people for n in sent] == [{"aad-1": "29:one"}, {"aad-2": "29:two"}]
+
+
+def _fake_db(first, scalar=None):  # noqa: ANN001, ANN202
+    class Db:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def execute(self, statement):
+            return SimpleNamespace(first=lambda: first)
+
+        async def scalar(self, statement):
+            return scalar
+
+    return Db
+
+
+def _connector(monkeypatch, requests, members=()):  # noqa: ANN001, ANN202
+    def handler(request):
+        requests.append(request)
+        if request.url.host == "login.microsoftonline.com":
+            return httpx.Response(200, json={"access_token": "bot-token", "expires_in": 3600})
+        if request.method == "GET":
+            return httpx.Response(200, json={"members": list(members)})
+        return httpx.Response(202, json={})
+
+    client_type = httpx.AsyncClient
+    monkeypatch.setattr(
+        module.httpx,
+        "AsyncClient",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handler), **kwargs),
+    )
+
+
+async def test_the_welcome_pop_up_skips_the_lecturer(monkeypatch) -> None:
+    session_id = uuid4()
+    link = SimpleNamespace(meeting_id="meeting-1")
+    reference = SimpleNamespace(
+        service_url="https://smba.trafficmanager.net/emea/",
+        conversation_id="chat-1",
+        tenant_id="tenant",
+    )
+    session = SimpleNamespace(instructor_id=uuid4())
+    monkeypatch.setattr(
+        module, "get_session_factory", lambda: _fake_db((link, reference, session), "AAD-L")
+    )
+    requests = []
+    _connector(
+        monkeypatch,
+        requests,
+        [{"id": "29:l", "aadObjectId": "aad-l"}, {"id": "29:s", "aadObjectId": "aad-s"}],
+    )
+    # Everyone in the meeting chat, when the class has just started.
+    await TeamsNotifications().send_welcome(
+        module.WelcomeNotice(session_id, time.time() + 30), configured()
+    )
+    # Only those who joined, when someone joins.
+    await TeamsNotifications().send_welcome(
+        module.WelcomeNotice(session_id, time.time() + 30, {"aad-l": "29:l", "aad-x": "29:x"}),
+        configured(),
+    )
+    popups = [json.loads(r.content) for r in requests if r.url.path.endswith("/notification")]
+    assert [p["value"]["recipients"] for p in popups] == [["29:s"], ["29:x"]]
+    url = popups[0]["value"]["surfaces"][0]["content"]["value"]["url"]
+    assert url == f"https://clip.example/teams/meeting?sessionId={session_id}"
+
+
+async def test_the_end_of_class_card_links_to_the_review(monkeypatch) -> None:
+    session_id = uuid4()
+    reference = SimpleNamespace(
+        service_url="https://smba.trafficmanager.net/emea/",
+        conversation_id="chat-1",
+        tenant_id="tenant",
+    )
+    found = (reference, SimpleNamespace(title="Week 5"), SimpleNamespace(code="CS101"))
+    monkeypatch.setattr(module, "get_session_factory", lambda: _fake_db(found))
+    requests = []
+    _connector(monkeypatch, requests)
+    await TeamsNotifications().send_ended(
+        module.EndedNotice(session_id, time.time() + 30), configured()
+    )
+    [post] = [
+        r for r in requests if r.method == "POST" and r.url.host != "login.microsoftonline.com"
+    ]
+    card = json.loads(post.content)["attachments"][0]["content"]
+    assert card["body"][1]["text"] == "CS101: Week 5"
+    assert card["actions"][0]["url"] == f"https://clip.example/student/reviews/{session_id}"
+
+
+def test_the_checkpoint_card_says_how_long_is_left() -> None:
+    card = checkpoint_card("https://clip.example/x", "CS101", "Class", 45)
+    assert "closes in about 45 seconds" in json.dumps(card)
