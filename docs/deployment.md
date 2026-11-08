@@ -176,8 +176,9 @@ ignores it) while the stack runs:
 sh deploy/backup.sh
 ```
 
-`deploy/restore.sh` puts them back, after asking. Run it with no class in progress, since a
-running class is held in the backend's memory and is not in the dump:
+`deploy/restore.sh` puts them back, after asking. It stops the backend while it runs, so
+run it with no class in progress, and restores in one transaction, so a failed restore
+leaves the database as it was:
 
 ```bash
 sh deploy/restore.sh backups/clip-<timestamp>.sql.gz backups/clip-<timestamp>-uploads.tar.gz
