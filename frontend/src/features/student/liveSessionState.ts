@@ -25,6 +25,9 @@ export interface LiveSessionState {
   attentionPrompt: AttentionPrompt | null
   error: LiveErrorEvent | null
   attentionConsentRejected: number
+  /** The breakout room the lecturer assigned. null: never told. A label of
+   * null: the rooms were closed, back to the main meeting. */
+  assignedRoom: { label: string | null } | null
 }
 
 export type LiveSessionAction =
@@ -48,6 +51,7 @@ export type LiveSessionAction =
   | { type: 'error'; payload: LiveErrorEvent }
   | { type: 'clear-error' }
   | { type: 'attention-consent-rejected' }
+  | { type: 'room-assigned'; label: string | null }
 
 export function initialLiveSessionState(
   status: SessionStatus,
@@ -65,6 +69,7 @@ export function initialLiveSessionState(
     attentionPrompt: null,
     error: null,
     attentionConsentRejected: 0,
+    assignedRoom: null,
   }
 }
 
@@ -121,6 +126,11 @@ export function liveSessionReducer(
   switch (action.type) {
     case 'attention-consent-rejected':
       return { ...state, attentionConsentRejected: state.attentionConsentRejected + 1 }
+    case 'room-assigned':
+      // Told the rooms are closed before ever being given one: nothing to say.
+      return action.label === null && state.assignedRoom === null
+        ? state
+        : { ...state, assignedRoom: { label: action.label } }
     case 'connection': {
       const connectionLost =
         action.status === 'offline' ||

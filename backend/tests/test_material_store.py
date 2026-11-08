@@ -329,3 +329,29 @@ def test_page_previews_flag_thin_and_image_heavy_pages() -> None:
     assert "No page number." in by_page[1].text
     assert not by_page[2].is_thin and by_page[2].word_count == 40
     assert by_page[3].is_visual_heavy and by_page[3].visual_element_count == 2
+
+
+async def test_a_material_naming_one_course_is_filed_under_it(sessions, lecturer) -> None:
+    from app.models.course import Course
+
+    course_id, code = uuid.uuid4(), f"ZZTS{uuid.uuid4().int % 9000 + 1000}"
+    async with sessions() as session, session.begin():
+        session.add(Course(id=course_id, code=code, name="Store test course"))
+    try:
+        store = DatabaseMaterialStore(lambda: sessions)
+        material_id = uuid.uuid4()
+        await store.record_accepted(
+            replace(_stored(material_id), filename=f"{code}_week3.pdf"), lecturer
+        )
+        await store.record_completed(_completed(material_id))
+
+        async with sessions() as session:
+            row = await MaterialRepository(session).get_by_id(material_id)
+        assert row is not None and row.course_id == course_id
+    finally:
+        async with sessions() as session, session.begin():
+            await session.execute(
+                text("update source_material set course_id = null where course_id = :c"),
+                {"c": course_id},
+            )
+            await session.execute(text("delete from course where id = :c"), {"c": course_id})

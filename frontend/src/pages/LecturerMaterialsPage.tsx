@@ -15,7 +15,9 @@ import { countBy, filterMaterials, materialState, type MaterialFilter } from '..
 import { sinceVerb } from '../features/format/relativeTime'
 import { MaterialActionForm, MaterialMenu, type MaterialActionMode } from '../features/materials/MaterialActions'
 import MaterialDetails from '../features/materials/MaterialDetails'
-import { getMaterial, listMaterials, uploadMaterial } from '../features/materials/materialApi'
+import { getMaterial, listMaterials, updateMaterial, uploadMaterial } from '../features/materials/materialApi'
+import { myCourses } from '../features/courses/coursesApi'
+import type { Course } from '../features/governance/accountsApi'
 import type { Material, MaterialProgress } from '../features/materials/types'
 import {
   ACCEPT_ATTRIBUTE,
@@ -34,6 +36,9 @@ const PIPELINE_ENABLED = import.meta.env.VITE_MATERIAL_PIPELINE_ENABLED === 'tru
 // When live updates are not reaching this tab, unfinished materials are
 // checked this often instead.
 const POLL_MS = 5000
+// The course choice that leaves filing to C.L.I.P, which reads a course code
+// from the file name or the slides once processing finishes.
+const DETECT = ''
 
 interface Uploading {
   key: string
@@ -59,6 +64,18 @@ export default function LecturerMaterialsPage() {
   const counts = useMemo(() => countBy(materials ?? [], materialState), [materials])
   const shown = useMemo(() => filterMaterials(materials ?? [], query, filter), [materials, query, filter])
   const dragDepth = useRef(0)
+  const [courses, setCourses] = useState<Course[]>([])
+  const [courseCode, setCourseCode] = useState(DETECT)
+
+  useEffect(() => {
+    myCourses().then(
+      (found) => {
+        setCourses(found)
+        setCourseCode((current) => current || found[0]?.code || DETECT)
+      },
+      () => setCourses([]),
+    )
+  }, [])
 
   const refresh = useCallback(async (id: string) => {
     try {
@@ -106,8 +123,17 @@ export default function LecturerMaterialsPage() {
     setProblem(null)
     const key = `${file.name}-${Date.now()}`
     setUploading((current) => [{ key, name: file.name, size: file.size }, ...current])
+    // Read now, so a file is filed under the course chosen when it was dropped.
+    const course = courseCode
     try {
-      const created = await uploadMaterial(file)
+      let created = await uploadMaterial(file)
+      if (course !== DETECT) {
+        try {
+          created = await updateMaterial(created.id, { course_code: course })
+        } catch {
+          setProblem(`${file.name} was uploaded but not filed under ${course}. Use Change course on its row.`)
+        }
+      }
       setMaterials((current) => upsertMaterial(current ?? [], created))
       setProgress((current) => (current[created.id] ? current : { ...current, [created.id]: progressFromStatus(created) }))
     } catch (caught: unknown) {
@@ -165,6 +191,22 @@ export default function LecturerMaterialsPage() {
                   event.target.value = ''
                 }}
               />
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                For
+                <select
+                  aria-label="Course for new uploads"
+                  className="rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+                  value={courseCode}
+                  onChange={(event) => setCourseCode(event.target.value)}
+                >
+                  {courses.map((course) => (
+                    <option key={course.id} value={course.code}>
+                      {course.code} {course.name}
+                    </option>
+                  ))}
+                  <option value={DETECT}>Work it out from the file</option>
+                </select>
+              </label>
               <button type="button" className={buttonStyles()} onClick={() => input.current?.click()}>
                 <Upload size={16} aria-hidden />
                 Upload

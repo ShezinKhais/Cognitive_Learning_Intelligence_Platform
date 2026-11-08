@@ -19,6 +19,7 @@ import {
   parseAttentionPrompt,
   parseFeedbackResult,
   parseLiveError,
+  parseRoomAssigned,
   parseLiveQuestion,
   parseQuestionClosed,
   parseReady,
@@ -331,6 +332,15 @@ export function useLiveSession(
                 type: 'attention-prompt',
                 payload,
               })
+            }
+            break
+          }
+
+          case 'room.assigned': {
+            const label = parseRoomAssigned(event.data)
+
+            if (label !== undefined) {
+              dispatch({ type: 'room-assigned', label })
             }
             break
           }

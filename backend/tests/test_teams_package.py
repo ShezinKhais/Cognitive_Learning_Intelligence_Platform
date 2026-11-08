@@ -39,12 +39,12 @@ def test_the_committed_manifest_and_icons_are_packageable(package: ModuleType) -
     assert package.file_problems(_manifest(package)) == []
 
 
-def test_the_meeting_tab_is_offered_only_as_the_side_panel(package: ModuleType) -> None:
-    """The configured tab opens the student panel, so a chat or details tab
-    would send the lecturer to a page they cannot use. Widen this once those
-    surfaces exist."""
-    [tab] = json.loads(_manifest(package))["configurableTabs"]
-    assert tab["context"] == ["meetingSidePanel"]
+def test_the_meeting_tab_is_installable_before_and_during_a_private_meeting(package) -> None:
+    manifest = json.loads(_manifest(package))
+    [tab] = manifest["configurableTabs"]
+    assert set(tab["context"]) == {"meetingChatTab", "meetingDetailsTab", "meetingSidePanel"}
+    assert tab["scopes"] == ["groupChat"]
+    assert manifest["bots"][0]["scopes"] == ["groupChat"]
 
 
 @pytest.mark.parametrize(
@@ -84,9 +84,7 @@ def test_the_package_carries_the_filled_manifest_and_both_icons(
     assert manifest["id"] == GOOD["TEAMS_APP_ID"]
     assert manifest["bots"][0]["botId"] == GOOD["BOT_ID"]
     assert manifest["validDomains"] == ["abc123-5173.euw.devtunnels.ms"]
-    assert (
-        manifest["staticTabs"][0]["contentUrl"] == "https://abc123-5173.euw.devtunnels.ms/student"
-    )
+    assert manifest["staticTabs"][0]["contentUrl"] == "https://abc123-5173.euw.devtunnels.ms/open"
 
 
 def test_an_icon_of_the_wrong_size_is_refused(

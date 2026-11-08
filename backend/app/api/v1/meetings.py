@@ -16,9 +16,15 @@ from fastapi import APIRouter, Depends, Path, Request
 from app.api.deps import AppSettings, CurrentUser, DbSession, require_consents, require_roles
 from app.core.audit import audit_action
 from app.schemas.identity import ConsentType, Role
-from app.schemas.meetings import MAX_MEETING_ID_LENGTH, MeetingEventIn, MeetingLinkRequest
+from app.schemas.meetings import (
+    MAX_MEETING_ID_LENGTH,
+    MeetingClassStart,
+    MeetingClassSuggestion,
+    MeetingEventIn,
+    MeetingLinkRequest,
+)
 from app.schemas.session import SessionOut
-from app.services import session_lifecycle
+from app.services import meeting_organiser, session_lifecycle, unscheduled_class
 
 router = APIRouter(
     prefix="/meetings",
@@ -51,8 +57,40 @@ async def link_meeting(
     settings: AppSettings,
     db: DbSession,
 ) -> SessionOut:
-    """Hold a session in this meeting. Either side's old link is replaced."""
+    """Hold a session in this meeting. Either side's old link is replaced.
+    With Teams live, a lecturer must be the meeting's organiser; admins may
+    link any meeting."""
+    await meeting_organiser.require_organiser(db, principal, meeting_id, settings)
     return await session_lifecycle.link_meeting(db, principal, meeting_id, payload.session_id)
+
+
+@router.get("/{meeting_id}/class-suggestion", response_model=MeetingClassSuggestion)
+async def class_suggestion(
+    meeting_id: Annotated[str, Path(min_length=1, max_length=MAX_MEETING_ID_LENGTH)],
+    principal: CurrentUser,
+    settings: AppSettings,
+    db: DbSession,
+) -> MeetingClassSuggestion:
+    """For a meeting with no session: the course and title to offer when
+    the side panel asks whether this is a class, guessed from the meeting's
+    title."""
+    title = await unscheduled_class.meeting_title(db, meeting_id, settings)
+    return await unscheduled_class.suggest(db, principal, title)
+
+
+@router.post("/{meeting_id}/class", response_model=SessionOut)
+@audit_action("UNSCHEDULED_CLASS_STARTED")
+async def start_class(
+    meeting_id: Annotated[str, Path(min_length=1, max_length=MAX_MEETING_ID_LENGTH)],
+    payload: MeetingClassStart,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> SessionOut:
+    """Yes, this is a class: create its session, link it to this meeting and
+    start it. Only the meeting's organiser, or an admin."""
+    return await unscheduled_class.start_class(db, principal, meeting_id, payload, settings)
 
 
 @router.post("/events", response_model=SessionOut)

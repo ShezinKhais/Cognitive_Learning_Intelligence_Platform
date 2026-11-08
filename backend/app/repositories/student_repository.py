@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.student import Student
+from app.services.course_membership import students_on
 
 
 class StudentRepository:
@@ -32,7 +33,7 @@ class StudentRepository:
     async def list_by_course(self, course_id: uuid.UUID) -> list[Student]:
         result = await self.session.execute(
             select(Student)
-            .where(Student.course_id == course_id)
+            .where(Student.student_id.in_(students_on(course_id)))
             .order_by(Student.enrolled_at, Student.student_id)
         )
         return list(result.scalars().all())

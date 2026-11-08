@@ -31,10 +31,12 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import re
 import time
 from collections import deque
 from collections.abc import AsyncIterator, Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime
 from functools import lru_cache
 from typing import Any
 from uuid import UUID
@@ -51,6 +53,7 @@ from app.models.session import Session
 from app.repositories.session_repository import SessionRepository
 from app.schemas.content import MaterialStatus
 from app.services.ai_gateway import AiGateway, AiRequest, Priority, get_ai_gateway
+from app.services.discussion import notes_for
 from app.services.retrieval import RetrievedChunk
 from app.services.tutor_guardrails import EarlierTurn, OpenQuestion, TutorPrompt, guarded_chat
 
@@ -148,6 +151,113 @@ class MaterialSource:
 
 
 @dataclass(frozen=True)
+class DiscussionSource:
+    note_id: UUID
+    occurred_at: datetime
+    text: str
+    origin: str = "lecturer"
+
+
+async def with_discussion(
+    db: AsyncSession, context: ChatContext, since: datetime | None, until: datetime | None
+) -> ChatContext:
+    notes = await notes_for(db, context.session_id)
+    return replace(
+        context,
+        discussion=tuple(
+            DiscussionSource(note.note_id, note.occurred_at, note.text, note.origin)
+            for note in notes
+            if (since is None or note.occurred_at >= since)
+            and (until is None or note.occurred_at <= until)
+        ),
+    )
+
+
+def discussion_chunks(
+    notes: tuple[DiscussionSource, ...], question: str, limit: int
+) -> list[RetrievedChunk]:
+    # A catch-up request names a time window rather than a topic. Other
+    # questions retrieve matching notes and return empty when none match.
+    broad = bool(
+        re.search(
+            r"\b(miss(?:ed)?|catch.?up|summari[sz]e|recap|discuss(?:ed)?|covered|say|said|repeat)\b",
+            question,
+            re.I,
+        )
+    )
+    stop = {
+        "what",
+        "when",
+        "where",
+        "which",
+        "this",
+        "that",
+        "with",
+        "from",
+        "about",
+        "please",
+        "explain",
+        "could",
+        "would",
+        "have",
+        "were",
+        "does",
+        "tell",
+        "more",
+        "session",
+        "class",
+        "miss",
+        "missed",
+        "summarize",
+        "summarise",
+        "recap",
+        "discussed",
+        "covered",
+        "recorded",
+        "notes",
+        "range",
+        "time",
+        "main",
+        "ideas",
+        "said",
+        "saying",
+        "just",
+        "latest",
+        "recent",
+        "lecturer",
+        "teacher",
+        "repeat",
+        "discuss",
+    }
+    terms = set(re.findall(r"[^\W_]{4,}", question.lower())) - stop
+    ranked = sorted(
+        notes,
+        key=lambda n: (len(terms & set(re.findall(r"[^\W_]{4,}", n.text.lower()))), n.occurred_at),
+        reverse=True,
+    )
+    matching = [n for n in ranked if terms & set(re.findall(r"[^\W_]{4,}", n.text.lower()))]
+    if matching or not broad:
+        ranked = matching
+    elif len(ranked) > limit and not re.search(r"\b(just|latest|recent|now)\b", question, re.I):
+        # A recap samples the requested window instead of taking only its last
+        # few ten-second chunks. It is still an overview of cited sources.
+        ordered = sorted(ranked, key=lambda note: note.occurred_at)
+        ranked = (
+            [ordered[-1]]
+            if limit == 1
+            else [
+                ordered[round(index * (len(ordered) - 1) / (limit - 1))] for index in range(limit)
+            ]
+        )
+    return [
+        RetrievedChunk(
+            n.note_id, i, f"{n.origin}, {n.occurred_at.isoformat()}: {n.text}", None, 0.0
+        )
+        for i, n in enumerate(ranked[:limit])
+    ]
+
+
+@dataclass(frozen=True)
 class ChatContext:
     """Everything an exchange needs that only the request's database session
     and signed-in user can supply, gathered before the reply starts. The
@@ -157,6 +267,7 @@ class ChatContext:
     user_id: UUID
     open_question: OpenQuestion | None
     materials: dict[UUID, MaterialSource]
+    discussion: tuple[DiscussionSource, ...] | None = None
 
 
 async def prepare(
@@ -253,6 +364,10 @@ class TutorExchange:
             )
 
     async def _retrieve(self, question: str) -> Sequence[RetrievedChunk]:
+        if self._context.discussion is not None:
+            return discussion_chunks(
+                self._context.discussion, question, self._settings.chat_retrieved_chunks
+            )
         if not self._context.materials:
             return []
         vectors = await self._gateway.embed(
@@ -291,9 +406,20 @@ class TutorExchange:
         return found
 
     async def _generate(self, prompt: TutorPrompt) -> AsyncIterator[str]:
+        system = prompt.system
+        if self._context.discussion is not None:
+            system += (
+                " The excerpts include reviewed minutes and unreviewed automatic "
+                "live speech transcripts. "
+                "Automatic speech can contain recognition errors; acknowledge uncertainty. "
+                "Explain or recap only what "
+                "these notes record, with citations. They may be incomplete. Never claim to have "
+                "heard the meeting or to cover unrecorded discussion. "
+                "Keep the assessment restrictions."
+            )
         request = AiRequest(
             messages=[
-                {"role": "system", "content": prompt.system},
+                {"role": "system", "content": system},
                 {"role": "user", "content": prompt.user},
             ],
             purpose="tutor",
@@ -307,6 +433,22 @@ class TutorExchange:
 
     def _describe(self, chunk: RetrievedChunk, number: int) -> dict[str, Any]:
         """A citation as the panel's parser expects it."""
+        if self._context.discussion is not None:
+            note = next(n for n in self._context.discussion if n.note_id == chunk.chunk_id)
+            return {
+                "id": str(note.note_id),
+                "source_note_id": str(note.note_id),
+                "number": number,
+                "material_title": (
+                    "Automatic live transcript (unreviewed)"
+                    if note.origin == "live_transcript"
+                    else "Discussion note"
+                )
+                + f" — {note.occurred_at.isoformat()}",
+                "source_page": None,
+                "source_slide": None,
+                "excerpt": note.text[:CITATION_EXCERPT_CHARS],
+            }
         source = self._context.materials[self._found_in[chunk.chunk_id]]
         excerpt = " ".join(chunk.chunk_text.split())[:CITATION_EXCERPT_CHARS]
         return {

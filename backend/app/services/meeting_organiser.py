@@ -1,0 +1,102 @@
+"""Who may link a session to a Teams meeting: its organiser, or an admin.
+
+Owner: General CS, Phase 4. Reviewed by Cyber 1.
+
+A meeting id is not a secret. Anyone in a meeting can read it from the Teams
+client, so without this check any lecturer in a meeting could link their own
+session to it, and the bot would then start and end their class with someone
+else's meeting.
+
+The organiser comes from Teams itself, through the bot: the Bot Framework
+meeting API (GET {serviceUrl}v1/meetings/{id}) returns the organiser's Entra
+object id, which is compared with the Teams account the lecturer signed in
+with (their TeamsUserMapping). Nothing the browser says about the meeting is
+trusted.
+
+It only applies when Teams is live (TEAMS_NOTIFICATIONS_ENABLED), because that
+is when the bot keeps a reference to each meeting it is in. In development
+and with the mock adapter there is no meeting to ask about, and the check is
+skipped.
+"""
+
+from __future__ import annotations
+
+import logging
+from urllib.parse import quote
+
+import httpx
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import Principal
+from app.core.config import Settings
+from app.core.errors import ConflictError, PermissionError_, ServiceUnavailableError
+from app.models.teams_meeting_reference import TeamsMeetingReference
+from app.repositories.teams_user_mapping_repository import TeamsUserMappingRepository
+from app.schemas.identity import Role
+from app.services.teams_notifications import connector_url, notifications
+
+log = logging.getLogger("clip.teams.organiser")
+
+
+def organiser_of(details: object) -> str | None:
+    """The organiser's Entra object id in a Bot Framework meeting details body."""
+    if not isinstance(details, dict):
+        return None
+    organiser = details.get("organizer")
+    oid = organiser.get("aadObjectId") if isinstance(organiser, dict) else None
+    return oid.lower() if isinstance(oid, str) and oid else None
+
+
+async def fetch_meeting_details(settings: Settings, service_url: str, meeting_id: str) -> dict:
+    base = connector_url(service_url)
+    async with httpx.AsyncClient(timeout=4, follow_redirects=False) as client:
+        token = await notifications.access_token(client, settings)
+        response = await client.get(
+            base + f"v1/meetings/{quote(meeting_id, safe='')}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        response.raise_for_status()
+        body = response.json()
+    return body if isinstance(body, dict) else {}
+
+
+async def require_organiser(
+    db: AsyncSession,
+    principal: Principal,
+    meeting_id: str,
+    settings: Settings,
+    fetch=fetch_meeting_details,
+) -> None:
+    """Refuse a lecturer who did not organise this meeting. Admins may link any."""
+    if not settings.teams_notifications_enabled or principal.is_(Role.ADMIN):
+        return
+    teams_user = await TeamsUserMappingRepository(db).teams_user_for(
+        tenant_id=settings.tenant_id, user_id=principal.user_id
+    )
+    if teams_user is None:
+        raise PermissionError_(
+            "Open C.L.I.P in Teams once so your Teams account is linked, then try again."
+        )
+    reference = await db.scalar(
+        select(TeamsMeetingReference).where(TeamsMeetingReference.meeting_id == meeting_id)
+    )
+    if reference is None or reference.tenant_id.lower() != settings.tenant_id.lower():
+        raise ConflictError(
+            "C.L.I.P is not in this meeting yet. Add it from Apps in the meeting, then try again."
+        )
+    try:
+        details = await fetch(settings, reference.service_url, meeting_id)
+    except (httpx.HTTPError, ValueError) as exc:
+        log.warning("meeting details for %s unavailable: %s", meeting_id, type(exc).__name__)
+        raise ServiceUnavailableError(
+            "Teams could not confirm who organised this meeting. Try again."
+        ) from exc
+    organiser = organiser_of(details)
+    if organiser is None or organiser != teams_user.lower():
+        log.warning(
+            "security_event=MEETING_LINK_NOT_ORGANISER user=%s meeting=%s",
+            principal.user_id,
+            meeting_id,
+        )
+        raise PermissionError_("Only the meeting's organiser can link a session to it.")

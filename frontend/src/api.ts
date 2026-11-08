@@ -157,6 +157,30 @@ function scheduleRefresh(retry = false): void {
 
 type Renewal = { token: string } | 'refused' | 'unreachable'
 
+// Inside Teams there is a second way back in: the Microsoft account Teams is
+// signed in with (teams/teamsSignIn.ts). It is tried when the refresh cookie
+// is refused, which is also the first visit, so a Teams user never sees the
+// sign-in form. Null outside Teams.
+type FallbackSignIn = () => Promise<LoginResponse | null>
+let fallbackSignIn: FallbackSignIn | null = null
+
+export function setFallbackSignIn(signIn: FallbackSignIn | null): void {
+  fallbackSignIn = signIn
+}
+
+async function signInAnotherWay(asked: number): Promise<Renewal> {
+  if (!fallbackSignIn) return 'refused'
+  let signedIn: LoginResponse | null
+  try {
+    signedIn = await fallbackSignIn()
+  } catch {
+    return 'refused'
+  }
+  if (!signedIn || signOuts !== asked) return 'refused'
+  saveAccessToken(signedIn.access_token, signedIn.expires_in)
+  return { token: signedIn.access_token }
+}
+
 let refreshing: Promise<Renewal> | null = null
 
 function renew(): Promise<Renewal> {
@@ -203,7 +227,8 @@ async function renewToken(): Promise<Renewal> {
   }
   if (response.status === 401) {
     forgetAccessToken()
-    return 'refused'
+    // Counted from here, so only a sign-out during the Teams sign-in stops it.
+    return signInAnotherWay(signOuts)
   }
   if (!response.ok) {
     scheduleRefresh(true)

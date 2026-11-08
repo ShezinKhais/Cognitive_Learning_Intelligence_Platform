@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useReducer,
@@ -44,9 +45,15 @@ type StudentAppAction =
       type: 'session-selected'
       sessionId: string
     }
+  | {
+      type: 'sessions-refreshed'
+      sessions: StudentSession[]
+    }
 
 interface StudentAppContextValue extends StudentAppState {
   selectSession: (sessionId: string) => void
+  /** Lists the student's sessions again, keeping the signed-in state. */
+  refreshSessions: () => Promise<void>
 }
 
 const initialState: StudentAppState = {
@@ -95,6 +102,11 @@ function reducer(
         ...state,
         selectedSessionId: action.sessionId,
       }
+
+    case 'sessions-refreshed':
+      return state.authStatus === 'authenticated'
+        ? { ...state, sessions: action.sessions }
+        : state
   }
 }
 
@@ -181,6 +193,18 @@ export function StudentAppProvider({
     }
   }, [])
 
+  const canList =
+    state.currentUser?.role === 'student' &&
+    hasRequiredConsent(state.currentUser)
+
+  const refreshSessions = useCallback(async (): Promise<void> => {
+    if (!canList) {
+      return
+    }
+    const sessionPage = await phaseOneStudentApi.listSessions()
+    dispatch({ type: 'sessions-refreshed', sessions: sessionPage.items })
+  }, [canList])
+
   function selectSession(sessionId: string): void {
     dispatch({
       type: 'session-selected',
@@ -193,6 +217,7 @@ export function StudentAppProvider({
       value={{
         ...state,
         selectSession,
+        refreshSessions,
       }}
     >
       {children}

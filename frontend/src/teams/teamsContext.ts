@@ -37,7 +37,21 @@ export function normalizeTeamsContext(context: app.Context): TeamsContext {
     locale: context.app.locale || 'en-us',
     theme: normalizeTheme(context.app.theme),
     frameContext: String(context.page.frameContext),
+    mobile: isMobileClient(context.app.host?.clientType),
   }
+}
+
+const MOBILE_CLIENTS = new Set(['android', 'ios', 'ipados'])
+
+/** Teams on a phone shows a tab full screen, not framed by Teams, so being
+ * framed cannot tell it apart from a browser. Its web view says so instead:
+ * the user agent ends TeamsMobile-Android or TeamsMobile-iOS. */
+export function isTeamsMobileAgent(userAgent: string): boolean {
+  return /\bTeamsMobile-(Android|iOS)\b/i.test(userAgent)
+}
+
+export function isMobileClient(clientType: unknown): boolean {
+  return typeof clientType === 'string' && MOBILE_CLIENTS.has(clientType.toLowerCase())
 }
 
 export function simulatedTeamsContext(search: string): TeamsContext {
@@ -52,5 +66,6 @@ export function simulatedTeamsContext(search: string): TeamsContext {
     locale: query.get('locale') ?? 'en-us',
     theme: normalizeTheme(query.get('theme')),
     frameContext: 'sidePanel',
+    mobile: query.get('mobile') === '1',
   }
 }

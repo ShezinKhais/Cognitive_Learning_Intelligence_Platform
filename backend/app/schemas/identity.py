@@ -38,6 +38,11 @@ class LoginRequest(BaseModel):
     password: str = Field(max_length=MAX_PASSWORD_LENGTH)
 
 
+class TeamsSignInRequest(BaseModel):
+    # An Entra access token from TeamsJS authentication.getAuthToken().
+    token: str = Field(min_length=1, max_length=16384)
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: Literal["bearer"] = "bearer"
