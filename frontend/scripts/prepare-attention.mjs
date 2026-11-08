@@ -28,4 +28,11 @@ if (!existing || !valid(existing)) {
   if (!valid(data)) throw new Error('Face model checksum mismatch')
   await writeFile(target, data)
 }
-console.log('Local attention assets ready (pinned face model checksum verified).')
+// #165: the anti-spoofing model is committed (converted from Minivision's
+// Apache-2.0 weights by attention-models/convert_minifasnet.py), so it is copied, not downloaded.
+const spoofModel = await readFile(path.join(root, 'attention-models/minifasnet_v2_80x80.onnx'))
+if (createHash('sha256').update(spoofModel).digest('hex') !== '9c6b11e41aa610366c9becdebaf93f10beaf53c1be34a613c32763707b9a6fe3') {
+  throw new Error('Anti-spoofing model checksum mismatch')
+}
+await writeFile(path.join(output, 'minifasnet_v2_80x80.onnx'), spoofModel)
+console.log('Local attention assets ready (pinned face and anti-spoofing model checksums verified).')

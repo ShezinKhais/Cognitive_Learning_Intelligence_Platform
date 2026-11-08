@@ -9,10 +9,11 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import {
-  CONDITIONS, GAZE_LABELS, LABELS, ORIGINAL_THRESHOLDS, balancedAccuracy, bootstrap, calibrations, confusion, coverage, folds, observe, parseCsv,
-  precision, recall, score, tune, tuneGaze,
-  type Condition, type Counts, type Frame, type Label, type Settings,
+  CONDITIONS, GAZE_LABELS, LABELS, MAX_FALSE_REJECTION, ORIGINAL_THRESHOLDS, SPOOF_LABELS, balancedAccuracy, bootstrap, calibrations, confusion,
+  coverage, falseRejection, folds, isSpoofLabel, livenessCounts, observe, parseCsv, precision, recall, score, spoofCatch, tune, tuneGaze, tuneLiveness,
+  type Condition, type Counts, type Frame, type Label, type LivenessCounts, type Settings,
 } from '../eval/evaluation.ts'
+import { LIVENESS, SUGGESTED_LIVENESS, type LivenessSettings } from '../src/features/attention/liveness.ts'
 import {
   ADAPTATION, CALIBRATED_THRESHOLDS, DEFAULT_THRESHOLDS, GAZE_MODEL, SUGGESTED_ADAPTATION, type GazeModel, type Thresholds,
 } from '../src/features/attention/signals.ts'
@@ -23,9 +24,13 @@ const out = rest[0] === '--out' ? rest[1] : undefined
 
 const files = (await readdir(folder)).filter(name => name.endsWith('.csv')).sort()
 if (!files.length) throw new Error(`no CSV files in ${folder}`)
-const frames: Frame[] = []
+const allFrames: Frame[] = []
 // Clip codes restart at c1 in every download, so they are kept apart by file.
-for (const name of files) frames.push(...parseCsv(await readFile(path.join(folder, name), 'utf8')).map(f => ({ ...f, clip: `${name}:${f.clip}` })))
+for (const name of files) allFrames.push(...parseCsv(await readFile(path.join(folder, name), 'utf8')).map(f => ({ ...f, clip: `${name}:${f.clip}` })))
+
+// #165's photo and video clips are judged on their own, below, so the #159
+// and #166 numbers stay comparable with earlier reports.
+const frames = allFrames.filter(f => !isSpoofLabel(f.label))
 
 // "Before" is #63's judgement: the landmark proxies, as if no pose came with the frame.
 const withoutPose = (fs: Frame[]) => fs.map(f => ({ ...f, features: { ...f.features, pose: null } }))
@@ -85,7 +90,7 @@ const people = [...new Set(frames.map(f => f.participant))].sort()
 const clipsOf = (fs: Frame[]) => new Set(fs.map(f => `${f.participant}/${f.clip}`)).size
 say('# Camera attention evaluation')
 say()
-say(`Issues #159 and #166. ${files.length} recording file(s), ${people.length} participant(s), ${clipsOf(frames)} clips, ${frames.length} frames.`)
+say(`Issues #159, #165 and #166. ${files.length} recording file(s), ${people.length} participant(s), ${clipsOf(allFrames)} clips, ${allFrames.length} frames.`)
 say('Made with `scripts/evaluate-attention.ts`; recordings from `eval/attention-recorder.html` hold derived numbers only, no video.')
 say()
 say('## The recordings')
@@ -93,7 +98,7 @@ say()
 say('| Label | What the person did | Clips | Frames |')
 say('|---|---|---|---|')
 for (const [label, instruction] of Object.entries(LABELS) as [Label, string][]) {
-  const of = frames.filter(f => f.label === label)
+  const of = allFrames.filter(f => f.label === label)
   say(`| ${label} | ${instruction} | ${clipsOf(of)} | ${of.length} |`)
 }
 say()
@@ -212,6 +217,82 @@ say()
   say()
   say(`Adaptation settings replayed: \`${JSON.stringify(adaptation)}\`${ADAPTATION ? ' (shipped)' : ' (suggested; `ADAPTATION` is off in `signals.ts`)'}. The recordings' only certain "looking" moments are the calibrate clips, so adaptation learns from those; the classroom also learns while a student types an answer, which these clips do not contain.`)
   say()
+}
+
+// -- #165: anti-spoofing ----------------------------------------------------------
+{
+  say('## Anti-spoofing (#165)')
+  say()
+  const scored = allFrames.filter(f => f.features.faces === 1 && typeof f.live === 'number')
+  const spoofs = scored.filter(f => isSpoofLabel(f.label))
+  const livePeople = [...new Set(scored.filter(f => !isSpoofLabel(f.label)).map(f => f.participant))].sort()
+  if (!spoofs.length || livePeople.length < 2) {
+    say(`Not enough recordings yet: ${clipsOf(spoofs)} spoof clip(s) (${SPOOF_LABELS.join(', ')}) and live scores from ${livePeople.length} participant(s). Record the spoof labels with the recorder, alongside live clips from the same people, then run this again. \`LIVENESS\` stays off until then.`)
+    say()
+  } else {
+    // Leave one participant out, as above: settings tuned on the others,
+    // judged on the person held out (their live and spoof clips both).
+    const roundsL = livePeople.map(held => ({ held, tuned: tuneLiveness(scored.filter(f => f.participant !== held)), test: scored.filter(f => f.participant === held) }))
+    const settingFor = (f: Frame) => roundsL.find(r => r.held === f.participant)?.tuned.settings ?? SUGGESTED_LIVENESS
+    const heldCounts = (fs: Frame[]): LivenessCounts => {
+      const total: LivenessCounts = { liveFrames: 0, liveRejected: 0, spoofFrames: 0, spoofCaught: 0, liveClips: 0, liveClipsRejected: 0 }
+      for (const person of new Set(fs.map(f => f.participant))) {
+        const mine = fs.filter(f => f.participant === person)
+        const c = livenessCounts(mine, settingFor(mine[0]))
+        for (const k of Object.keys(total) as (keyof LivenessCounts)[]) total[k] += c[k]
+      }
+      return total
+    }
+    const held = roundsL.flatMap(r => r.test)
+    const cell = (fs: Frame[], measure: (c: LivenessCounts) => number | null) =>
+      `${pct(measure(heldCounts(fs)))}${ci(bootstrap(fs, sample => measure(heldCounts(sample))))}`
+    const fixedCell = (fs: Frame[], s: LivenessSettings, measure: (c: LivenessCounts) => number | null) =>
+      `${pct(measure(livenessCounts(fs, s)))}${ci(bootstrap(fs, sample => measure(livenessCounts(sample, s))))}`
+    say(`Held out one participant at a time (${livePeople.length} rounds). Acceptance bar to agree: under ${pct(MAX_FALSE_REJECTION)} of live faces rejected, in every condition. Only frames with exactly one face count.`)
+    say()
+    say('| Setting | Spoofs caught | Live faces wrongly rejected | Live clips with any rejection |')
+    say('|---|---|---|---|')
+    const clipShare = (c: LivenessCounts) => c.liveClips ? c.liveClipsRejected / c.liveClips : null
+    say(`| Suggested \`${JSON.stringify(SUGGESTED_LIVENESS)}\` | ${fixedCell(held, SUGGESTED_LIVENESS, spoofCatch)} | ${fixedCell(held, SUGGESTED_LIVENESS, falseRejection)} | ${pct(clipShare(livenessCounts(held, SUGGESTED_LIVENESS)))} |`)
+    say(`| Tuned without the held-out person | ${cell(held, spoofCatch)} | ${cell(held, falseRejection)} | ${pct(clipShare(heldCounts(held)))} |`)
+    say()
+    say('**Per participant** (tuned without them):')
+    say()
+    say('| Held out | Settings | Spoofs caught | Live faces wrongly rejected |')
+    say('|---|---|---|---|')
+    for (const r of roundsL) {
+      const c = livenessCounts(r.test, r.tuned.settings)
+      say(`| ${r.held} | \`${JSON.stringify(r.tuned.settings)}\`${r.tuned.meetsBar ? '' : ' (bar not met on tuning set)'} | ${pct(spoofCatch(c))} | ${pct(falseRejection(c))} |`)
+    }
+    say()
+    say('**By condition** (tuned without the held-out person):')
+    say()
+    say('| Condition | Value | Spoofs caught | Live faces wrongly rejected |')
+    say('|---|---|---|---|')
+    for (const [name, values] of Object.entries(CONDITIONS) as [Condition, readonly string[]][]) {
+      for (const value of values) {
+        const of = held.filter(f => f.conditions[name] === value)
+        if (of.length) say(`| ${name} | ${value} | ${cell(of, spoofCatch)} | ${cell(of, falseRejection)} |`)
+      }
+    }
+    say()
+    say('**By spoof type** (caught, tuned without the held-out person):')
+    say()
+    for (const label of SPOOF_LABELS) {
+      const of = held.filter(f => f.label === label)
+      if (of.length) say(`- ${label}: ${cell(of, spoofCatch)} of ${of.length} frames`)
+    }
+    say()
+    const times = scored.map(f => f.liveMs).filter((v): v is number => typeof v === 'number').sort((a, b) => a - b)
+    if (times.length) {
+      const at = (q: number) => times[Math.min(times.length - 1, Math.floor(q * times.length))].toFixed(1)
+      say(`Time per check in the browser: median ${at(0.5)} ms, 95th percentile ${at(0.95)} ms (${times.length} checks). Note the device each participant used: a slow laptop is the case that matters.`)
+      say()
+    }
+    const final = tuneLiveness(scored)
+    say(`Tuned on every recording: \`${JSON.stringify(final.settings)}\` (${final.meetsBar ? 'meets' : '**does not meet**'} the bar there: ${pct(spoofCatch(final.counts))} caught, ${pct(falseRejection(final.counts))} live rejected). Shipped \`LIVENESS\`: ${LIVENESS ? `\`${JSON.stringify(LIVENESS)}\`` : 'off'}.`)
+    say()
+  }
 }
 
 const show = (t: Thresholds) => `maxYawDegrees: ${t.maxYawDegrees}, maxPitchDegrees: ${t.maxPitchDegrees}, maxRollDegrees: ${t.maxRollDegrees}, irisX: [${t.irisX.join(', ')}]`

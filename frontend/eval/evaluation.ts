@@ -9,6 +9,9 @@ import {
   calibrate, classifyAdaptive, classifyFace, DEFAULT_THRESHOLDS, learn, startAdaptation,
   type AdaptationSettings, type Calibration, type FaceFeatures, type FaceObservation, type GazeModel, type Thresholds,
 } from '../src/features/attention/signals.ts'
+import {
+  dueForCheck, isSpoof, noteFrame, recordCheck, startLiveness, type LivenessSettings,
+} from '../src/features/attention/liveness.ts'
 
 /** What the person was asked to do during a clip. */
 export const LABELS = {
@@ -23,10 +26,18 @@ export const LABELS = {
   // #166: the two cases a head-only rule gets wrong, missing from #159's recordings.
   screen_head_turned: 'Keep your eyes on the screen while turning or tilting your head a little left, right, up and down',
   away_eyes_only: 'Keep your head still and look to the side with your eyes only, left then right',
+  // #165: presentation attacks. Step out of view and hold the photo or video
+  // where your face was, moving it a little as a hand would.
+  photo_on_phone: 'Step out of view and hold up a photo of your face on a phone',
+  video_on_phone: 'Step out of view and hold up a video of your face playing on a phone',
+  printed_photo: 'Step out of view and hold up a printed photo of your face',
 } as const
 /** Labels added for #166, reported on their own so the #159 numbers stay comparable. */
 export const GAZE_LABELS: readonly Label[] = ['screen_head_turned', 'away_eyes_only']
 export type Label = keyof typeof LABELS
+/** #165: a photo or video of a face, not a live person. Kept out of the #159 numbers. */
+export const SPOOF_LABELS: readonly Label[] = ['photo_on_phone', 'video_on_phone', 'printed_photo']
+export const isSpoofLabel = (label: Label) => SPOOF_LABELS.includes(label)
 
 export const CONDITIONS = {
   glasses: ['no', 'yes'],
@@ -43,12 +54,17 @@ export interface Frame {
   conditions: Record<Condition, string>
   t: number
   features: FaceFeatures
+  /** #165: the anti-spoofing model's live probability for this frame, if checked. */
+  live?: number | null
+  /** #165: how long that check took in the browser, in milliseconds. */
+  liveMs?: number | null
 }
 
 export const COLUMNS = [
   'participant', 'clip', 'label', 'glasses', 'lighting', 'position', 'distance', 't',
   'faces', 'valid', 'width', 'yaw_proxy', 'roll_proxy', 'yaw', 'pitch', 'roll',
   'l_width', 'l_open', 'l_iris_x', 'l_iris_y', 'r_width', 'r_open', 'r_iris_x', 'r_iris_y',
+  'live', 'live_ms',
 ] as const
 
 const number = (value: number | null | undefined) => value === null || value === undefined ? '' : String(Number(value.toFixed(5)))
@@ -62,6 +78,7 @@ export function frameToRow(f: Frame): string {
     number(x.pose?.yaw), number(x.pose?.pitch), number(x.pose?.roll),
     number(x.leftEye?.width), number(x.leftEye?.open), number(x.leftEye?.irisX), number(x.leftEye?.irisY),
     number(x.rightEye?.width), number(x.rightEye?.open), number(x.rightEye?.irisX), number(x.rightEye?.irisY),
+    number(f.live), number(f.liveMs),
   ].join(',')
 }
 
@@ -111,6 +128,9 @@ function parseRows(text: string): Frame[] {
         position: get('position'), distance: get('distance'),
       },
       t: Number(get('t')),
+      // Files from before #165 have no live columns: no score, not a failed one.
+      live: num('live'),
+      liveMs: num('live_ms'),
       features: {
         faces: Number(get('faces')),
         valid: get('valid') === '1',
@@ -128,7 +148,7 @@ function parseRows(text: string): Frame[] {
 // -- what each label should give ------------------------------------------------
 
 /** Is there a face in view? Two faces is still a face. */
-export const faceTruth = (label: Label) => label !== 'no_face'
+export const faceTruth = (label: Label) => label !== 'no_face' && !isSpoofLabel(label)
 /** Is the person looking at the screen? */
 export const lookingTruth = (label: Label) => label === 'screen' || label === 'calibrate' || label === 'screen_head_turned'
 
@@ -396,4 +416,95 @@ export function bootstrap(
   if (values.length < rounds / 2) return null
   values.sort((a, b) => a - b)
   return [values[Math.floor(values.length * 0.025)], values[Math.min(values.length - 1, Math.floor(values.length * 0.975))]]
+}
+
+// -- anti-spoofing (#165) --------------------------------------------------------
+
+/**
+ * Replays the browser's vote (liveness.ts) over one clip's frames in time
+ * order: a check every `everyMs` using that frame's recorded score. True where
+ * the face would be rejected as not live.
+ */
+export function replayLiveness(clip: Frame[], s: LivenessSettings): boolean[] {
+  let state = startLiveness()
+  return clip.map(f => {
+    const ms = f.t * 1000
+    state = noteFrame(state, f.features.faces, ms, s)
+    if (f.features.faces === 1 && dueForCheck(state, ms, s)) state = recordCheck(state, f.live ?? Number.NaN, ms, s)
+    return isSpoof(state, s)
+  })
+}
+
+export interface LivenessCounts {
+  /** Frames with one live face, and how many of them were rejected. */
+  liveFrames: number; liveRejected: number
+  /** Frames with one spoofed face, and how many of them were caught. */
+  spoofFrames: number; spoofCaught: number
+  /** Live clips, and how many had any frame rejected (what a student would notice). */
+  liveClips: number; liveClipsRejected: number
+}
+
+const clipGroups = (frames: Frame[]) => {
+  const clips = new Map<string, Frame[]>()
+  for (const f of frames) clips.set(`${f.participant}/${f.clip}`, [...(clips.get(`${f.participant}/${f.clip}`) ?? []), f])
+  return [...clips.values()].map(c => [...c].sort((a, b) => a.t - b.t))
+}
+
+/** Only frames with one face count: no face or two faces is not a liveness question. */
+export function livenessCounts(frames: Frame[], s: LivenessSettings): LivenessCounts {
+  const c: LivenessCounts = { liveFrames: 0, liveRejected: 0, spoofFrames: 0, spoofCaught: 0, liveClips: 0, liveClipsRejected: 0 }
+  for (const clip of clipGroups(frames)) {
+    const rejected = replayLiveness(clip, s)
+    const spoof = isSpoofLabel(clip[0].label)
+    let any = false
+    let counted = false
+    clip.forEach((f, i) => {
+      if (f.features.faces !== 1) return
+      counted = true
+      if (spoof) { c.spoofFrames += 1; if (rejected[i]) c.spoofCaught += 1 }
+      else { c.liveFrames += 1; if (rejected[i]) { c.liveRejected += 1; any = true } }
+    })
+    if (!spoof && counted) { c.liveClips += 1; if (any) c.liveClipsRejected += 1 }
+  }
+  return c
+}
+
+/** Live faces wrongly rejected: the number that must stay very low. */
+export const falseRejection = (c: LivenessCounts) => c.liveFrames ? c.liveRejected / c.liveFrames : null
+/** Photos and videos caught. */
+export const spoofCatch = (c: LivenessCounts) => c.spoofFrames ? c.spoofCaught / c.spoofFrames : null
+
+/** The #165 acceptance bar to agree as a team: under 2% of live faces rejected. */
+export const MAX_FALSE_REJECTION = 0.02
+
+export const LIVENESS_GRID = {
+  everyMs: [1000, 2000, 3000],
+  window: [2, 3, 4],
+  spoofBelow: [0.05, 0.1, 0.2, 0.3, 0.5],
+}
+
+/**
+ * The settings that catch the most spoofs while rejecting under
+ * MAX_FALSE_REJECTION of live faces. If none get under the bar, the one that
+ * rejects the fewest live faces (ties: the more cautious one), so the result
+ * never trades students for spoofs.
+ */
+export function tuneLiveness(frames: Frame[], grid = LIVENESS_GRID): { settings: LivenessSettings; counts: LivenessCounts; meetsBar: boolean } {
+  let best: { settings: LivenessSettings; counts: LivenessCounts; meetsBar: boolean } | null = null
+  const better = (a: NonNullable<typeof best>, b: typeof best) => {
+    if (!b) return true
+    if (a.meetsBar !== b.meetsBar) return a.meetsBar
+    const [fa, fb] = [falseRejection(a.counts) ?? 0, falseRejection(b.counts) ?? 0]
+    if (!a.meetsBar) return fa < fb || (fa === fb && a.settings.spoofBelow < b.settings.spoofBelow)
+    const [ca, cb] = [spoofCatch(a.counts) ?? 0, spoofCatch(b.counts) ?? 0]
+    return ca > cb || (ca === cb && fa < fb)
+  }
+  for (const everyMs of grid.everyMs) for (const window of grid.window) for (const spoofBelow of grid.spoofBelow) {
+    const settings = { everyMs, window, spoofBelow }
+    const counts = livenessCounts(frames, settings)
+    const frr = falseRejection(counts)
+    const candidate = { settings, counts, meetsBar: frr !== null && frr < MAX_FALSE_REJECTION }
+    if (better(candidate, best)) best = candidate
+  }
+  return best!
 }

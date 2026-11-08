@@ -1,4 +1,4 @@
-# Camera attention recordings (#159, #166)
+# Camera attention recordings (#159, #165, #166)
 
 The recorder's CSV files go in this folder; they are not committed. Each row is
 one camera frame turned into numbers (head angles, how open the eyes are, where
@@ -41,6 +41,21 @@ first row's conditions:
 - `away_eyes_only`: head still, look to the side with the eyes only.
 - One `screen` clip of 3 minutes (the "Clip length" menu) while reading or
   watching a short lecture as you normally would, so adaptation has time to learn.
+
+**For #165 (anti-spoofing)**, the recorder now saves the anti-spoofing
+model's "live" score with every frame. In the first row's conditions, and
+then in dim light, record each of these as a 10-second clip, standing out of
+view and holding the photo or video where your face was, moving it slightly as
+a hand would:
+
+- `photo_on_phone`: a photo of your own face on a phone screen.
+- `video_on_phone`: a short video of your own face playing on a phone.
+- `printed_photo`: a printed photo of your face (A4 or smaller), if you can.
+
+Use photos of yourself only, never of someone who is not taking part. The live
+clips you record for the other labels are what show whether real faces are
+wrongly rejected, so every person should record both. Note the laptop you used
+(for example "2019 i5, 8 GB"): the report shows the time per check.
 
 Participants with a condition the camera may misjudge (see #166) are very
 welcome if they choose to take part; never record what the condition is.
