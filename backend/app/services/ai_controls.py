@@ -31,6 +31,8 @@ def _store(row: object, controls: AiControls) -> None:
     row.ai_learning_assistant = controls.learning_assistant  # type: ignore[attr-defined]
     row.ai_refocus_nudges = controls.refocus_nudges  # type: ignore[attr-defined]
     row.ai_engagement_estimates = controls.engagement_estimates  # type: ignore[attr-defined]
+    row.checkpoint_minutes = controls.checkpoint_minutes  # type: ignore[attr-defined]
+    row.answer_seconds = controls.answer_seconds  # type: ignore[attr-defined]
 
 
 async def read(db: AsyncSession, principal: Principal, session_id: UUID) -> AiControlsOut:

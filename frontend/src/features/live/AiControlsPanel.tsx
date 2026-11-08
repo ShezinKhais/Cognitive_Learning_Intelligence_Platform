@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState, type FormEvent } from 'react'
 import { Power, Sparkles } from 'lucide-react'
 
 import { ApiError } from '../../api'
+import { buttonStyles } from '../../components/ui/button'
 import { cn } from '../../components/ui/cn'
 import {
   AI_SWITCHES,
@@ -9,9 +10,12 @@ import {
   allOn,
   anyOn,
   matchesCourse,
+  pacingOf,
+  readPacing,
   switchesOf,
   type AiControls,
   type AiControlsView,
+  type ClassPacing,
 } from './aiControls'
 import { getAiControls, saveAiControls } from './aiControlsApi'
 
@@ -57,10 +61,10 @@ export default function AiControlsPanel({
   }, [sessionId])
 
   const save = useCallback(
-    (controls: AiControls, applyToCourse: boolean) => {
+    (controls: AiControls, applyToCourse: boolean, pacing: ClassPacing) => {
       setSaving(true)
       setError(null)
-      saveAiControls(sessionId, controls, applyToCourse).then(
+      saveAiControls(sessionId, controls, applyToCourse, pacing).then(
         (saved) => {
           setView(saved)
           setSaving(false)
@@ -83,6 +87,7 @@ export default function AiControlsPanel({
   }
 
   const current = switchesOf(view)
+  const pacing = pacingOf(view)
   const on = anyOn(current)
 
   return (
@@ -98,7 +103,7 @@ export default function AiControlsPanel({
         <button
           type="button"
           disabled={saving}
-          onClick={() => save(on ? allOff() : allOn(), forCourse)}
+          onClick={() => save(on ? allOff() : allOn(), forCourse, pacing)}
           className={cn(
             'inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-semibold disabled:opacity-50',
             on
@@ -125,7 +130,7 @@ export default function AiControlsPanel({
               aria-label={label}
               title={compact ? detail : undefined}
               disabled={saving}
-              onClick={() => save({ ...current, [key]: !current[key] }, forCourse)}
+              onClick={() => save({ ...current, [key]: !current[key] }, forCourse, pacing)}
               className={cn(
                 'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors disabled:opacity-50',
                 current[key] ? 'border-primary bg-primary' : 'border-input bg-muted',
@@ -143,6 +148,14 @@ export default function AiControlsPanel({
         ))}
       </ul>
 
+      <PacingForm
+        key={`${pacing.checkpoint_minutes}-${pacing.answer_seconds}`}
+        pacing={pacing}
+        disabled={saving}
+        autoCheckpoints={current.auto_checkpoints}
+        onSave={(next) => save(current, forCourse, next)}
+      />
+
       <label htmlFor={courseId} className="mt-2 flex cursor-pointer items-start gap-2 text-xs text-muted-foreground">
         <input
           id={courseId}
@@ -152,7 +165,7 @@ export default function AiControlsPanel({
           disabled={saving}
           onChange={(event) => {
             setForCourse(event.target.checked)
-            if (event.target.checked) save(current, true)
+            if (event.target.checked) save(current, true, pacing)
           }}
         />
         <span>
@@ -167,6 +180,79 @@ export default function AiControlsPanel({
         </p>
       )}
     </section>
+  )
+}
+
+function PacingForm({
+  pacing,
+  disabled,
+  autoCheckpoints,
+  onSave,
+}: {
+  pacing: ClassPacing
+  disabled: boolean
+  autoCheckpoints: boolean
+  onSave: (pacing: ClassPacing) => void
+}) {
+  const id = useId()
+  const [minutes, setMinutes] = useState(pacing.checkpoint_minutes?.toString() ?? '')
+  const [seconds, setSeconds] = useState(pacing.answer_seconds?.toString() ?? '')
+  const [problem, setProblem] = useState<string | null>(null)
+  const changed =
+    minutes.trim() !== (pacing.checkpoint_minutes?.toString() ?? '') ||
+    seconds.trim() !== (pacing.answer_seconds?.toString() ?? '')
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const every = readPacing(minutes, 'checkpoint_minutes')
+    const answer = readPacing(seconds, 'answer_seconds')
+    if ('error' in every) return setProblem(`Minutes between checkpoints: ${every.error}`)
+    if ('error' in answer) return setProblem(`Seconds to answer: ${answer.error}`)
+    setProblem(null)
+    onSave({ checkpoint_minutes: every.value, answer_seconds: answer.value })
+  }
+
+  const field = 'mt-1 w-full rounded-md border border-input bg-input-background px-2.5 py-1.5 text-sm'
+  return (
+    <form onSubmit={submit} className="mt-3 border-t border-border pt-3">
+      <p className="text-sm font-medium">Pacing</p>
+      <div className="mt-1 grid grid-cols-2 gap-3">
+        <label htmlFor={`${id}-every`} className="text-xs text-muted-foreground">
+          Minutes between checkpoints
+          <input
+            id={`${id}-every`}
+            inputMode="numeric"
+            placeholder="15 to 20"
+            value={minutes}
+            disabled={disabled || !autoCheckpoints}
+            onChange={(event) => setMinutes(event.target.value)}
+            className={field}
+          />
+        </label>
+        <label htmlFor={`${id}-answer`} className="text-xs text-muted-foreground">
+          Seconds to answer
+          <input
+            id={`${id}-answer`}
+            inputMode="numeric"
+            placeholder="30"
+            value={seconds}
+            disabled={disabled}
+            onChange={(event) => setSeconds(event.target.value)}
+            className={field}
+          />
+        </label>
+      </div>
+      {problem && (
+        <p role="alert" className="mt-1.5 text-xs text-critical">
+          {problem}
+        </p>
+      )}
+      {changed && (
+        <button type="submit" disabled={disabled} className={buttonStyles({ className: 'mt-2' })}>
+          Save pacing
+        </button>
+      )}
+    </form>
   )
 }
 

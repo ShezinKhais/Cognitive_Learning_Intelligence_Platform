@@ -35,7 +35,7 @@ class SessionRepository:
         start_time: datetime,
         status: str,
         mode: str,
-        **ai_switches: bool,
+        **ai_switches: bool | int | None,
     ) -> Session:
         row = Session(
             instructor_id=instructor_id,
