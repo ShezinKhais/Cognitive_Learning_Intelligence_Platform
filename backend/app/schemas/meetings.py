@@ -125,4 +125,4 @@ class TeamsUpdatesOut(BaseModel):
 
 
 class TeamsUpdatesMute(BaseModel):
-    muted: bool
+    muted: bool = Field(default=True, description="False turns the pop-ups back on.")

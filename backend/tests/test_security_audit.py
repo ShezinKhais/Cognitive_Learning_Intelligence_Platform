@@ -120,6 +120,8 @@ AUDIENCE = {
     ("PUT", "/api/v1/meetings/{meeting_id}"): STAFF,
     ("GET", "/api/v1/meetings/{meeting_id}/class-suggestion"): STAFF,
     ("POST", "/api/v1/meetings/{meeting_id}/class"): STAFF,
+    ("GET", "/api/v1/meetings/sessions/{session_id}/updates"): STAFF,
+    ("PUT", "/api/v1/meetings/sessions/{session_id}/updates"): STAFF,
     ("POST", "/api/v1/sessions"): STAFF,
     ("GET", "/api/v1/sessions"): ANY_USER,
     ("GET", "/api/v1/sessions/{session_id}"): MEMBER,

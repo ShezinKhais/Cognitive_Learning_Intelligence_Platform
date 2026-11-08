@@ -4349,13 +4349,12 @@
       "TeamsUpdatesMute": {
         "properties": {
           "muted": {
+            "default": true,
+            "description": "False turns the pop-ups back on.",
             "title": "Muted",
             "type": "boolean"
           }
         },
-        "required": [
-          "muted"
-        ],
         "title": "TeamsUpdatesMute",
         "type": "object"
       },
