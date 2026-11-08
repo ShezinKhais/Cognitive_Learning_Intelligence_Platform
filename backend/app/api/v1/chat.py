@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentUser, DbSession, require_consents, require_roles
-from app.core.errors import NotFoundError
+from app.core.errors import NotFoundError, PermissionError_
 from app.realtime.classroom import classroom
 from app.schemas.chat import ChatRequest
 from app.schemas.identity import ConsentType, Role
@@ -82,6 +82,11 @@ async def session_chat(
         # A session that does not exist and one the student is not enrolled
         # for are refused alike, so a session id cannot be probed.
         raise NotFoundError("Session was not found.", {"session_id": str(session_id)})
+    if principal.role is Role.STUDENT and not getattr(live, "ai_learning_assistant", True):
+        raise PermissionError_(
+            "Your lecturer has turned the learning assistant off for this class.",
+            {"session_id": str(session_id), "reason": "learning_assistant_off"},
+        )
 
     open_question_id = classroom.state(session_id, SessionStatus(live.status)).active_question_id
     context = await tutor_chat.prepare(db, live, principal.user_id, open_question_id)

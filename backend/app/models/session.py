@@ -10,7 +10,7 @@ restart does not quietly resume the question cycle.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, true
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -75,4 +75,19 @@ class Session(Base):
     status: Mapped[str] = mapped_column(
         String(30),
         nullable=False,
+    )
+
+    # The lecturer's AI switches for this class, copied from the course when
+    # the class is created.
+    ai_auto_checkpoints: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=true()
+    )
+    ai_learning_assistant: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=true()
+    )
+    ai_refocus_nudges: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=true()
+    )
+    ai_engagement_estimates: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=true()
     )

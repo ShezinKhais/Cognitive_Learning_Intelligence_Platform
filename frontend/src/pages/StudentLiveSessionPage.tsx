@@ -101,6 +101,9 @@ export function LiveSessionPanel({
   const finished =
     state.sessionStatus === 'ended' ||
     state.sessionStatus === 'cancelled'
+  // The learning assistant is offered while the class runs, unless the
+  // lecturer has turned it off for this class.
+  const assistant = SOCRATIC_CHAT_ENABLED && !finished && state.ai.learning_assistant
 
   const secondsRemaining = state.checkpoint
     ? remainingResponseSeconds(
@@ -165,13 +168,18 @@ export function LiveSessionPanel({
             here. Checkpoints and the tutor work as usual. Join from Teams on a computer to use them.
           </p>
         )}
-        {LOCAL_ATTENTION_ENABLED && !teams.context?.mobile && (
-          <AttentionControls key={session.id} onSignal={sendAttention}
+        {LOCAL_ATTENTION_ENABLED && !teams.context?.mobile && (state.ai.engagement_estimates ? (
+          <AttentionControls key={`attention-${session.id}`} onSignal={sendAttention}
             consentRejected={attentionConsentRejected}
             enabled={state.connection === 'connected' && state.sessionStatus === 'active' && !state.paused} />
-        )}
+        ) : !finished && (
+          // Unmounting the controls stops the camera and microphone at once.
+          <p className="mt-5 rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+            Your lecturer has turned the camera and microphone indicators off for this class.
+          </p>
+        ))}
 
-        {SOCRATIC_CHAT_ENABLED && !finished && (
+        {assistant && (
           <SegmentedTabs
             label="Student session tools"
             value={activeView}
@@ -221,7 +229,7 @@ export function LiveSessionPanel({
         <section
           className="mt-5"
           aria-live="polite"
-          hidden={SOCRATIC_CHAT_ENABLED && !finished && activeView !== 'class' && !state.checkpoint}
+          hidden={assistant && activeView !== 'class' && !state.checkpoint}
         >
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
@@ -256,9 +264,9 @@ export function LiveSessionPanel({
           </AnimatePresence>
         </section>
 
-        <DiscussionPanel key={session.id} sessionId={session.id} />
+        <DiscussionPanel key={`discussion-${session.id}`} sessionId={session.id} />
 
-        {SOCRATIC_CHAT_ENABLED && !finished && (
+        {assistant && (
           <div className="mt-5" hidden={activeView !== 'chat'}>
             <SocraticChatPanel
               key={session.id}

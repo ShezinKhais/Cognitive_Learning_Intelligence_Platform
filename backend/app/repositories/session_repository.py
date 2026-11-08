@@ -35,6 +35,7 @@ class SessionRepository:
         start_time: datetime,
         status: str,
         mode: str,
+        **ai_switches: bool,
     ) -> Session:
         row = Session(
             instructor_id=instructor_id,
@@ -43,6 +44,7 @@ class SessionRepository:
             start_time=start_time,
             status=status,
             mode=mode,
+            **ai_switches,
         )
         self.session.add(row)
         await self.session.flush()

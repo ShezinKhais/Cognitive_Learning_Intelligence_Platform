@@ -129,6 +129,8 @@ AUDIENCE = {
     ("POST", "/api/v1/sessions/{session_id}/end"): STAFF,
     ("GET", "/api/v1/sessions/{session_id}/engagement"): STAFF,
     ("POST", "/api/v1/sessions/{session_id}/pause"): STAFF,
+    ("GET", "/api/v1/sessions/{session_id}/ai-controls"): STAFF,
+    ("PUT", "/api/v1/sessions/{session_id}/ai-controls"): STAFF,
     ("GET", "/api/v1/sessions/{session_id}/questions"): STAFF,
     ("POST", "/api/v1/sessions/{session_id}/questions/{question_id}:deliver"): STAFF,
     ("GET", "/api/v1/sessions/{session_id}/readiness"): STAFF,

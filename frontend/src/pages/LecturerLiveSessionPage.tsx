@@ -31,6 +31,7 @@ import type {
 import {
   getSessionTopics,
 } from '../features/intelligence/topicRecoveryApi'
+import AiControlsPanel from '../features/live/AiControlsPanel'
 import LiveAlertsPanel from '../features/live/LiveAlertsPanel'
 import CheckpointMonitor from '../features/live/CheckpointMonitor'
 import {
@@ -792,6 +793,10 @@ export default function LecturerLiveSessionPage() {
                 : (sessionState?.participant_count ?? '-')}
             </p>
           </Panel>
+
+          {sessionId && sessionState?.status !== 'ended' && sessionState?.status !== 'cancelled' && (
+            <AiControlsPanel sessionId={sessionId} courseCode={details?.course_code} />
+          )}
 
           <LecturerAttentionPanel
             students={engagement}

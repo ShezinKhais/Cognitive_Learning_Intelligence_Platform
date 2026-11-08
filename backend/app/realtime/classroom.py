@@ -88,6 +88,7 @@ from app.realtime.signals import signals_low
 from app.repositories.session_repository import SessionRepository
 from app.schemas.content import QuestionType
 from app.schemas.events import (
+    AiControls,
     AlertKind,
     AlertRaisedPayload,
     AnswerReceiptPayload,
@@ -253,6 +254,9 @@ class Classroom:
         self.checkpoint_notifier: Callable[[UUID, UUID, float], None] | None = None
         # Tells the session's lecturer in Teams that an alert was raised.
         self.alert_notifier: Callable[[UUID], None] | None = None
+        # The lecturer's AI switches, by session. A session not here has all
+        # of them on.
+        self._ai: dict[UUID, AiControls] = {}
 
     def _next_wait(self) -> timedelta | None:
         """A fresh random wait before the next scheduled question, or None
@@ -306,6 +310,36 @@ class Classroom:
 
     # -- lifecycle ----------------------------------------------------------
 
+    def ai(self, session_id: UUID) -> AiControls:
+        """The lecturer's AI switches for a session."""
+        return self._ai.get(session_id) or AiControls()
+
+    def remember_ai(self, session_id: UUID, controls: AiControls) -> None:
+        """Hold a session's switches, as read from its row, before it runs."""
+        self._ai[session_id] = controls
+
+    async def set_ai(self, session_id: UUID, controls: AiControls, status: SessionStatus) -> None:
+        """Apply a change the lecturer has saved, and tell the class.
+
+        Automatic checkpoints off clears the wait for the next one; on starts
+        a fresh wait, unless a question is open (its close starts one) or the
+        class is paused (the resume does). Turning a switch off never takes
+        back a question already sent or a prompt already shown.
+        """
+        self._ai[session_id] = controls
+        live = self._live.get(session_id)
+        if live is not None:
+            async with live.lock:
+                if not controls.auto_checkpoints:
+                    live.countdown.start(None)
+                elif live.open is None and live.countdown.due is None:
+                    live.countdown.start(self._next_wait())
+        await self.announce(session_id, status)
+
+    def _next_wait_for(self, live: LiveSession) -> timedelta | None:
+        """The next scheduled wait, or None while automatic checkpoints are off."""
+        return self._next_wait() if self.ai(live.session_id).auto_checkpoints else None
+
     def get_running(self, session_id: UUID) -> LiveSession | None:
         return self._live.get(session_id)
 
@@ -322,7 +356,7 @@ class Classroom:
             live = self._live[session_id] = LiveSession(
                 session_id,
                 delivered,
-                self._next_wait(),
+                self._next_wait() if self.ai(session_id).auto_checkpoints else None,
                 Rooms(RoomLimits.from_settings(self._settings())),
                 paused,
             )
@@ -343,6 +377,7 @@ class Classroom:
             delivered = await SessionRepository(db).count_delivered(row.session_id)
             if row.session_id in self._finished:
                 return None
+            self.remember_ai(row.session_id, AiControls.of(row))
             live = self.activate(row.session_id, delivered, paused=row.paused_at is not None)
         return live
 
@@ -385,7 +420,7 @@ class Classroom:
             if live.countdown.paused:
                 left = live.countdown.resume()
                 if live.open is None:
-                    live.countdown.start(left if left is not None else self._next_wait())
+                    live.countdown.start(left if left is not None else self._next_wait_for(live))
                 self._start_cycle(live)
             await self.announce(live.session_id, SessionStatus.ACTIVE)
 
@@ -397,6 +432,7 @@ class Classroom:
         prompt still waiting on a student is recorded as expired.
         """
         self._finished[session_id] = status
+        self._ai.pop(session_id, None)
         self._finished.move_to_end(session_id)
         while len(self._finished) > MAX_FINISHED_SESSIONS:
             self._finished.popitem(last=False)
@@ -475,6 +511,7 @@ class Classroom:
             active_question_id=live.open.question.question_id if live and live.open else None,
             questions_delivered=live.delivered if live else delivered,
             paused=bool(live and live.countdown.paused),
+            ai=self.ai(session_id),
         )
 
     async def announce(self, session_id: UUID, status: SessionStatus, delivered: int = 0) -> None:
@@ -692,7 +729,7 @@ class Classroom:
                 closed = await self._close_locked(live, QuestionCloseReason.WINDOW_ELAPSED)
                 # The next wait starts now, not at the delivery, so the
                 # response window is not taken out of the teaching time.
-                live.countdown.start(self._next_wait())
+                live.countdown.start(self._next_wait_for(live))
                 await self._nudge_absent_locked(live, open_)
                 await self._score_engagement_locked(live, open_)
         await self._after_close(live, closed)
@@ -762,7 +799,7 @@ class Classroom:
                 pass  # Paused, or a manual question is open; its close reschedules.
             except Exception:
                 log.exception("scheduled delivery failed for session %s", live.session_id)
-                live.countdown.start(self._next_wait())
+                live.countdown.start(self._next_wait_for(live))
 
     async def _deliver_on_schedule(self, live: LiveSession) -> bool:
         """One scheduled delivery. False once the session is no longer active.
@@ -781,7 +818,7 @@ class Classroom:
         if delivered is None:
             log.info("No static question available for session %s", live.session_id)
             if live.open is None and live.countdown.due is None:
-                live.countdown.start(self._next_wait())
+                live.countdown.start(self._next_wait_for(live))
         return True
 
     # -- answers ------------------------------------------------------------
@@ -936,6 +973,8 @@ class Classroom:
         Engagement scoring can prompt for its own reasons through
         prompt_student(); both obey the same limits.
         """
+        if not self.ai(live.session_id).refocus_nudges:
+            return
         threshold = self._settings().attention_prompt_after_missed_questions
         due = live.attention.count_missed(closed.present, closed.answered, threshold)
         for user_id, missed in due.items():
@@ -981,6 +1020,8 @@ class Classroom:
         last is dropped quietly, and still returns True."""
         live = self._live.get(session_id)
         if live is None or user_id not in self._hub.student_ids(session_id):
+            return False
+        if not self.ai(session_id).engagement_estimates:
             return False
         kept = permitted_signal(signal, self.consents.granted(user_id))
         if kept is None:
@@ -1137,6 +1178,9 @@ class Classroom:
         answer, one at a time, and no more than the cap. The prompt goes to
         the student alone; staff are not told.
         """
+        ai = self.ai(live.session_id)
+        if not ai.engagement_estimates:
+            return
         settings = self._settings()
         connected = self._hub.student_ids(live.session_id)
         needed = settings.refocus_min_signal_seconds
@@ -1151,7 +1195,8 @@ class Classroom:
             scored = live.attention.rescore(user_id, now, user_id in accommodated)
             signal = live.attention.signal(user_id, now)
             if (
-                needed > 0
+                ai.refocus_nudges
+                and needed > 0
                 and signal is not None
                 and signal.window_seconds >= needed
                 and signals_low(signal)
@@ -1238,11 +1283,14 @@ class Classroom:
         """Rescore everyone who was shown the question that just closed, and
         nudge those engagement scoring says need it. prompt_student's limits
         (cap, pause, one at a time, connected) still apply."""
+        ai = self.ai(live.session_id)
+        if not ai.engagement_estimates:
+            return
         shown, answered = self._monitored_in(closed)
         for scored in live.attention.score(
             shown, answered, closed.timing, _now(), self.accommodations.members()
         ):
-            if should_send_dynamic_prompt(scored.engagement):
+            if ai.refocus_nudges and should_send_dynamic_prompt(scored.engagement):
                 await self._prompt_locked(live, scored.user_id, ENGAGEMENT_PROMPT_MESSAGE)
 
     async def refresh_comprehension(self, session_id: UUID, question_id: UUID) -> None:
@@ -1318,7 +1366,7 @@ class Classroom:
         """The latest engagement score of each student scored in a session this
         process is running, by user id. The caller resolves the student id."""
         live = self._live.get(session_id)
-        if live is None:
+        if live is None or not self.ai(session_id).engagement_estimates:
             return []
         return [s for s in live.attention.scores() if self.consents.monitored(s.user_id)]
 

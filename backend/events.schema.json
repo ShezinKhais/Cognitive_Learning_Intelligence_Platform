@@ -840,6 +840,37 @@
     },
     "session.state": {
       "$defs": {
+        "AiControls": {
+          "description": "The lecturer's AI switches for one class. Each is on unless turned off.",
+          "properties": {
+            "auto_checkpoints": {
+              "default": true,
+              "description": "Checkpoints go out on C.L.I.P's own timer. Off: only the lecturer sends them.",
+              "title": "Auto Checkpoints",
+              "type": "boolean"
+            },
+            "engagement_estimates": {
+              "default": true,
+              "description": "Camera and microphone indicators, and engagement scoring, for the class.",
+              "title": "Engagement Estimates",
+              "type": "boolean"
+            },
+            "learning_assistant": {
+              "default": true,
+              "description": "Students may ask the learning assistant (tutor chat).",
+              "title": "Learning Assistant",
+              "type": "boolean"
+            },
+            "refocus_nudges": {
+              "default": true,
+              "description": "Students may get private prompts when they seem to have drifted off.",
+              "title": "Refocus Nudges",
+              "type": "boolean"
+            }
+          },
+          "title": "AiControls",
+          "type": "object"
+        },
         "SessionStatus": {
           "enum": [
             "prepared",
@@ -866,6 +897,10 @@
           ],
           "default": null,
           "title": "Active Question Id"
+        },
+        "ai": {
+          "$ref": "#/$defs/AiControls",
+          "description": "The lecturer's AI switches for the class, so students' pages hide what is off."
         },
         "participant_count": {
           "description": "Students connected now, each counted once.",

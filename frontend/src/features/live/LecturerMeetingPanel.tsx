@@ -10,6 +10,7 @@ import { useDocumentTitle } from '../../components/ui/useDocumentTitle'
 import { lecturerLiveSessionPath } from '../../teams/lecturerMeeting'
 import { statusLabel, statusTone } from '../sessions/format'
 import { getSession, listAllResponses, type SessionSummary } from '../sessions/sessionsApi'
+import AiControlsPanel from './AiControlsPanel'
 import ManualQuestionTrigger from './ManualQuestionTrigger'
 import { initialLifecycle, lifecycleReducer } from './panelLifecycle'
 import {
@@ -324,6 +325,10 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
             <p className="mt-3 text-sm text-muted-foreground">This session is no longer running.</p>
           )}
         </section>
+
+        {(live || status === 'prepared') && (
+          <AiControlsPanel sessionId={sessionId} courseCode={details?.course_code} compact />
+        )}
 
         <section aria-labelledby="panel-alerts" className="rounded-lg border border-border bg-card p-3">
           <h2 id="panel-alerts" className="font-bold">

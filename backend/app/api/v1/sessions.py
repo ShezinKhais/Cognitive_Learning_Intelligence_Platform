@@ -30,6 +30,7 @@ from app.realtime.classroom import classroom
 from app.repositories.session_repository import SessionRepository
 from app.repositories.student_repository import StudentRepository
 from app.repositories.topic_difficulty_repository import DatabaseTopicAnswers
+from app.schemas.ai_controls import AiControlsOut, AiControlsUpdate
 from app.schemas.breakout import RoomPlanIn, RoomPlanOut
 from app.schemas.common import Page
 from app.schemas.identity import ConsentType, Role
@@ -45,7 +46,7 @@ from app.schemas.session import (
     StudentSessionSummary,
     TopicDifficultyOut,
 )
-from app.services import alert_store, breakout, session_lifecycle, session_reads
+from app.services import ai_controls, alert_store, breakout, session_lifecycle, session_reads
 from app.services.engagement_view import staff_confidence, staff_score, staff_signals
 from app.services.session_access import may_view_session_analytics
 from app.services.student_report import build_student_summary, record_staff_view
@@ -147,6 +148,29 @@ async def start_session(
 ) -> SessionOut:
     """Blocked until the session is ready. GET /readiness says why it is not."""
     return await session_lifecycle.start_session(db, principal, session_id)
+
+
+@router.get("/{session_id}/ai-controls", response_model=AiControlsOut, dependencies=_staff)
+async def read_ai_controls(
+    session_id: UUID, principal: CurrentUser, db: DbSession
+) -> AiControlsOut:
+    """The lecturer's AI switches for this class, and the course's defaults."""
+    return await ai_controls.read(db, principal, session_id)
+
+
+@router.put("/{session_id}/ai-controls", response_model=AiControlsOut, dependencies=_staff)
+@audit_action("SESSION_AI_CONTROLS_CHANGED")
+async def update_ai_controls(
+    session_id: UUID,
+    payload: AiControlsUpdate,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> AiControlsOut:
+    """Turn the class's AI features on or off. Applied at once, and the class is
+    told. With apply_to_course, every new class of the course starts this way."""
+    return await ai_controls.update(db, principal, session_id, payload)
 
 
 @router.post("/{session_id}/pause", response_model=SessionOut, dependencies=_staff)

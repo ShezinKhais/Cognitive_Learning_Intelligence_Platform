@@ -1,4 +1,5 @@
 import type {
+  AiControls,
   AnswerReceipt,
   AttentionPrompt,
   FeedbackResult,
@@ -88,6 +89,20 @@ export function parseSessionState(value: unknown): SessionStateEvent | null {
     active_question_id: value.active_question_id,
     questions_delivered: value.questions_delivered,
     paused: value.paused ?? false,
+    ai: parseAiControls(value.ai),
+  }
+}
+
+/** The class's AI switches. A server that sends none, or anything that is
+ * not a boolean, leaves that switch on, as the server does. */
+export function parseAiControls(value: unknown): AiControls {
+  const given = isRecord(value) ? value : {}
+  const flag = (key: keyof AiControls) => (typeof given[key] === 'boolean' ? (given[key] as boolean) : true)
+  return {
+    auto_checkpoints: flag('auto_checkpoints'),
+    learning_assistant: flag('learning_assistant'),
+    refocus_nudges: flag('refocus_nudges'),
+    engagement_estimates: flag('engagement_estimates'),
   }
 }
 

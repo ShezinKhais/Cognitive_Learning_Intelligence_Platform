@@ -16,6 +16,14 @@ export type QuestionCloseReason =
   | 'lecturer_closed'
   | 'session_ended'
 
+/** The lecturer's AI switches for the class. Each is on unless turned off. */
+export interface AiControls {
+  auto_checkpoints: boolean
+  learning_assistant: boolean
+  refocus_nudges: boolean
+  engagement_estimates: boolean
+}
+
 export interface SessionStateEvent {
   session_id: string
   status: SessionStatus
@@ -23,6 +31,7 @@ export interface SessionStateEvent {
   active_question_id: string | null
   questions_delivered: number
   paused: boolean
+  ai: AiControls
 }
 
 export interface LiveQuestion {
