@@ -54,3 +54,6 @@ backend/var/
 
 # Database backups hold personal data
 backend/backups/
+
+# Demo backups from deploy/backup.sh. They hold personal data.
+backups/

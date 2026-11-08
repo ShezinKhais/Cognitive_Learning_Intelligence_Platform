@@ -32,6 +32,7 @@ services:
       context: ./backend
       args:
         ENABLE_LIVE_TRANSCRIPTION: ${LIVE_TRANSCRIPTION_ENABLED:-false}
+        ENABLE_OCR: ${OCR_IN_IMAGE:-false}
     image: clip-demo-backend:latest
     restart: unless-stopped
     depends_on:
@@ -49,6 +50,7 @@ services:
       # No model is needed to log in and run a class. Point this at an Ollama
       # on the host to get generated questions and the tutor.
       AI_WARMUP_ENABLED: ${AI_WARMUP_ENABLED:-false}
+      OCR_ENABLED: ${OCR_IN_IMAGE:-false}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}

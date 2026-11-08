@@ -167,6 +167,30 @@ volume the backend can write to. The same run purges the database tables (see [g
 Migrations run each time the backend container starts. Running them again when the
 database is current changes nothing.
 
+### Backups
+
+`deploy/backup.sh` writes the database and the uploaded material to `./backups` (git
+ignores it) while the stack runs:
+
+```bash
+sh deploy/backup.sh
+```
+
+`deploy/restore.sh` puts them back, after asking. Run it with no class in progress, since a
+running class is held in the backend's memory and is not in the dump:
+
+```bash
+sh deploy/restore.sh backups/clip-<timestamp>.sql.gz backups/clip-<timestamp>-uploads.tar.gz
+```
+
+The files hold personal data. Keep them where only the people running the demo can read
+them, and delete old ones on the same schedule as `DATA_RETENTION_DAYS`. To take one every
+night, a cron line on the host is enough:
+
+```bash
+0 2 * * * cd /path/to/repo && sh deploy/backup.sh >> backups/backup.log 2>&1
+```
+
 To start from nothing:
 
 ```bash
@@ -241,6 +265,6 @@ Also, the things the backend does not check:
 | TLS | The stack serves plain HTTP. Teams requires HTTPS for tab pages. Terminate TLS in front of `web` (a reverse proxy, a load balancer, or a tunnel) and keep the `Upgrade` headers on `/ws/`. It must send `X-Forwarded-For`. nginx believes it from loopback and the Docker network only; a proxy anywhere else needs a `set_real_ip_from` line in `frontend/nginx.conf`, or every user shares its address for the sign-in limit. |
 | Teams app registration and tunnel | See `teams-app/README.md`. The manifest needs the public HTTPS host that serves this stack. |
 | More than one host | The backend is one process and its live state is in memory. |
-| Backups | The database volume is not backed up. Use `pg_dump` against the `db` container. |
+| Off-site backups | `deploy/backup.sh` writes to the host only. Copying the files elsewhere is left to the operator. |
 | Content security policy beyond `frame-ancestors` | A deployment decision. |
 | Model hosting | Ollama is expected on the host, not in the stack. |
