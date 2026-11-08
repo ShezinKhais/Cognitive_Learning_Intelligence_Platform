@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from app.core.config import get_settings
 from app.core.security import hash_password, verify_password
@@ -56,6 +56,13 @@ async def test_a_user_changes_their_password_with_the_current_one(db, app) -> No
             stored = await look.get(User, user_id)
             assert verify_password(NEW, stored.password_hash)
             assert not verify_password(OLD, stored.password_hash)
+            changes = await look.scalars(
+                select(AuditLog.action_type).where(
+                    AuditLog.user_id == user_id, AuditLog.action_type == "PASSWORD_CHANGED"
+                )
+            )
+            # One change, and nothing recorded for the refused attempts.
+            assert list(changes) == ["PASSWORD_CHANGED"]
     finally:
         # The failed attempt and the change are audited against this user.
         async with factory() as cleanup:

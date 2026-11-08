@@ -30,6 +30,10 @@ NOT_AUDITED = {
     # Nobody is signed in yet. Failed attempts and lockouts are logged and
     # counted by the login itself.
     ("POST", "/api/v1/auth/login"),
+    # Writes its own PASSWORD_CHANGED record on success only. A wrong current
+    # password commits a failed attempt, which the decorator would record as
+    # a change.
+    ("POST", "/api/v1/auth/password"),
     # Teams single sign-on, the same as a login. Nobody is signed in yet, each
     # attempt is in the security log, and linking the Teams identity is logged.
     ("POST", "/api/v1/auth/teams"),
