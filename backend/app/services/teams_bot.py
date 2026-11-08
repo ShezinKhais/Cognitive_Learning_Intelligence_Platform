@@ -51,7 +51,12 @@ from app.core.errors import (
     ServiceUnavailableError,
 )
 from app.core.security import TokenValidationError, extract_bearer_token
-from app.schemas.meetings import MeetingEventIn, MeetingEventKind, TeamsActivity
+from app.schemas.meetings import (
+    MeetingEventIn,
+    MeetingEventKind,
+    TeamsActivity,
+    activity_meeting_id,
+)
 from app.services import session_lifecycle
 
 log = logging.getLogger("clip.teams")
@@ -270,8 +275,7 @@ def meeting_event(activity: TeamsActivity) -> MeetingEventIn | None:
     kind = MEETING_EVENTS.get(activity.name or "") if activity.type == "event" else None
     if kind is None:
         return None
-    meeting = (activity.channel_data or {}).get("meeting") or {}
-    meeting_id = meeting.get("id") if isinstance(meeting, dict) else None
+    meeting_id = activity_meeting_id(activity)
     if not isinstance(meeting_id, str) or not meeting_id:
         log.warning("a meeting %s arrived without a meeting id", kind.value)
         return None

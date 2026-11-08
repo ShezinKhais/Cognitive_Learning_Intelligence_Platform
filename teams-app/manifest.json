@@ -1,7 +1,7 @@
 {
   "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
   "manifestVersion": "1.17",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "id": "${{TEAMS_APP_ID}}",
   "developer": {
     "name": "CSIT321 Team 4, UOWD",
@@ -39,7 +39,7 @@
     {
       "configurationUrl": "${{BASE_URL}}/config",
       "scopes": ["groupChat"],
-      "context": ["meetingSidePanel"],
+      "context": ["meetingChatTab", "meetingDetailsTab", "meetingSidePanel"],
       "supportedSharePointHosts": []
     }
   ],
