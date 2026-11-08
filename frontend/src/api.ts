@@ -53,6 +53,9 @@ export interface TimetableImportResult {
   conflicts: string[]
   unmatched_lecturers: string[]
   unmatched_students: string[]
+  courses_created: string[]
+  lecturers_assigned: number
+  students_enrolled: number
 }
 
 export function apiUrl(path: string): string {

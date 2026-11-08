@@ -7,10 +7,10 @@ import { EmptyState, MetaLine, PageBody, PageHeader, Panel, SkeletonRows, Tag } 
 import { ProblemState } from '../components/ui/ProblemState'
 import { problemArt, problemOf, type Problem } from '../components/ui/problem'
 import SegmentedTabs from '../components/ui/SegmentedTabs'
+import { AddCourseForm } from '../features/governance/AddCourseForm'
 import { useToast } from '../components/ui/toast'
 import {
   createAccount,
-  createCourse,
   listAccounts,
   listCourses,
   resetPassword,
@@ -95,7 +95,7 @@ export default function AdminAccountsPage() {
             />
           )}
           {adding === 'course' && (
-            <AddCourse
+            <AddCourseForm
               onCancel={() => setAdding(null)}
               onAdded={(course) => {
                 setAdding(null)
@@ -520,73 +520,6 @@ function AddPerson({
             className={buttonStyles()}
             disabled={sending || (role === 'student' && !courseId)}
           >
-            {sending ? 'Adding…' : 'Add'}
-          </button>
-          <button type="button" className={buttonStyles({ intent: 'secondary' })} onClick={onCancel}>
-            Cancel
-          </button>
-        </div>
-      </form>
-    </Panel>
-  )
-}
-
-function AddCourse({ onCancel, onAdded }: { onCancel: () => void; onAdded: (course: Course) => void }) {
-  const notify = useToast()
-  const [code, setCode] = useState('')
-  const [name, setName] = useState('')
-  const [sending, setSending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const codeId = useId()
-  const nameId = useId()
-
-  function submit(event: FormEvent) {
-    event.preventDefault()
-    setSending(true)
-    setError(null)
-    createCourse({ code: code.trim(), name: name.trim() }).then(
-      (course) => {
-        notify(`Added ${course.code}`)
-        onAdded(course)
-      },
-      (caught: unknown) => {
-        setSending(false)
-        setError(message(caught, 'The course could not be added. Try again.'))
-      },
-    )
-  }
-
-  return (
-    <Panel title="Add a course">
-      <form onSubmit={submit} className="grid gap-3 sm:grid-cols-[10rem_1fr]">
-        <div>
-          <label htmlFor={codeId} className="text-sm font-semibold">
-            Code
-          </label>
-          <input
-            id={codeId}
-            required
-            minLength={2}
-            maxLength={20}
-            pattern="[A-Za-z0-9_\-]+"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            className={FIELD}
-          />
-        </div>
-        <div>
-          <label htmlFor={nameId} className="text-sm font-semibold">
-            Name
-          </label>
-          <input id={nameId} required maxLength={255} value={name} onChange={(e) => setName(e.target.value)} className={FIELD} />
-        </div>
-        {error && (
-          <p role="alert" className="text-sm text-critical sm:col-span-2">
-            {error}
-          </p>
-        )}
-        <div className="flex gap-2 sm:col-span-2">
-          <button type="submit" className={buttonStyles()} disabled={sending}>
             {sending ? 'Adding…' : 'Add'}
           </button>
           <button type="button" className={buttonStyles({ intent: 'secondary' })} onClick={onCancel}>

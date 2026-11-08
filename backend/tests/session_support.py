@@ -207,3 +207,10 @@ def token_for(
         get_consent_repository(settings).record(user.id, consent, True)
     response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
     return response.json()["access_token"]
+
+
+async def track_courses(factory, created, *codes: str) -> None:
+    """Hand courses an import created to the db fixture's cleanup."""
+    async with factory() as look:
+        found = await look.scalars(select(Course.id).where(Course.code.in_(codes)))
+        created["course"].extend(found)

@@ -18,12 +18,12 @@ const KIND_CONFIG: Record<UploadKind, { title: string; path: string; hint: strin
   timetable: {
     title: 'Timetable',
     path: '/admin/timetable',
-    hint: 'CSV or XLSX with course_code, lecturer, day, start_time, end_time, room',
+    hint: 'CSV or XLSX with course_code, lecturer, day, start_time, end_time, room. Each lecturer is made a lecturer of the course.',
   },
   roster: {
     title: 'Roster',
     path: '/admin/roster',
-    hint: 'CSV or XLSX with student_email, student_name, course_code',
+    hint: 'CSV or XLSX with student_email, student_name, course_code. Each student is added to the course by email.',
   },
 }
 
@@ -32,7 +32,7 @@ export default function AdminConsole() {
     <>
       <PageHeader
         title="Imports"
-        description="Bring in the term's timetable and each course's students from a spreadsheet. Every row is read as data and checked; nothing is guessed."
+        description="Bring in the term's timetable and each course's students from a spreadsheet. A course that does not exist yet is added. Imports only add: nobody is taken off a course, and people without an account are listed for you to add on the Accounts page."
       />
       <PageBody>
         <div className="grid max-w-3xl gap-6">
@@ -122,12 +122,12 @@ function UploadPanel({ kind }: { kind: UploadKind }) {
         </div>
       )}
 
-      {state.status === 'success' && state.result && <ImportResultView result={state.result} />}
+      {state.status === 'success' && state.result && <ImportResultView kind={kind} result={state.result} />}
     </section>
   )
 }
 
-function ImportResultView({ result }: { result: TimetableImportResult }) {
+function ImportResultView({ kind, result }: { kind: UploadKind; result: TimetableImportResult }) {
   const hasConflicts = result.conflicts.length > 0
   const hasUnmatchedLecturers = result.unmatched_lecturers.length > 0
   const hasUnmatchedStudents = result.unmatched_students.length > 0
@@ -137,7 +137,11 @@ function ImportResultView({ result }: { result: TimetableImportResult }) {
     <div className="mt-4 space-y-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Rows read" value={result.rows_read} />
-        <Stat label="Sessions created" value={result.sessions_created} />
+        {kind === 'timetable' ? (
+          <Stat label="Lecturers assigned" value={result.lecturers_assigned} />
+        ) : (
+          <Stat label="Students added" value={result.students_enrolled} />
+        )}
         <Stat
           label="Conflicts"
           value={result.conflicts.length}
@@ -154,6 +158,17 @@ function ImportResultView({ result }: { result: TimetableImportResult }) {
         <p className="rounded-lg bg-success/10 p-3 text-sm text-success">
           No conflicts and every name matched.
         </p>
+      )}
+
+      {result.courses_created.length > 0 && (
+        <div className="rounded-lg bg-muted p-3">
+          <p className="text-xs font-medium text-card-foreground">
+            New courses ({result.courses_created.length})
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Named after their code. {result.courses_created.join(', ')}
+          </p>
+        </div>
       )}
 
       {hasConflicts && (

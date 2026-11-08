@@ -1,8 +1,11 @@
 """Real-token RBAC checks across the Cyber 2 administrator routes."""
 
+from uuid import uuid4
+
 from fastapi.testclient import TestClient
 
 from tests.dev_credentials import ADMIN_PASSWORD, LECTURER_PASSWORD, STUDENT_PASSWORD
+from tests.session_support import track_courses
 
 TIMETABLE = (
     b"course_code,lecturer,day,start_time,end_time,room\n"
@@ -80,17 +83,20 @@ async def test_admin_can_reach_timetable_and_roster_handlers(db) -> None:  # noq
     client = db[0]
     token = _login(client, "admin@clip.example.com", ADMIN_PASSWORD)
     _accept_terms(client, token)
+    # Imports save to the courses, so use a code no real course has.
+    code = f"ZT{uuid4().hex[:8].upper()}".encode()
 
     timetable = client.post(
         "/api/v1/admin/timetable",
         headers=_headers(token),
-        files={"file": ("timetable.csv", TIMETABLE, "text/csv")},
+        files={"file": ("timetable.csv", TIMETABLE.replace(b"CSIT321", code), "text/csv")},
     )
     roster = client.post(
         "/api/v1/admin/roster",
         headers=_headers(token),
-        files={"file": ("roster.csv", ROSTER, "text/csv")},
+        files={"file": ("roster.csv", ROSTER.replace(b"CSIT321", code), "text/csv")},
     )
+    await track_courses(db[1], db[2], code.decode())
 
     assert timetable.status_code == 200
     assert timetable.json()["rows_read"] == 1

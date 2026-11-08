@@ -11,7 +11,7 @@ import logging
 from collections.abc import Callable
 
 from fastapi import APIRouter, Depends, Request, Response, UploadFile, status
-from sqlalchemy import event, select
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -45,7 +45,6 @@ from app.core.security import (
     decode_access_token,
     verify_password,
 )
-from app.models.user import User
 from app.realtime.classroom import classroom
 from app.repositories.consent_repository import ConsentRepository
 from app.repositories.teams_user_mapping_repository import TeamsUserMappingRepository
@@ -61,10 +60,10 @@ from app.schemas.identity import (
     TokenResponse,
     UserOut,
 )
+from app.services import course_imports
 from app.services.teams_sso import EntraIdentity, verify_entra_token
 from app.services.timetable_import import (
     detect_timetable_conflicts,
-    match_names,
     parse_roster,
     parse_timetable,
 )
@@ -667,21 +666,19 @@ async def import_timetable(
 
     conflicts = detect_timetable_conflicts(rows)
 
-    # Matched against the lecturers who have accounts. Nothing is stored yet:
-    # turning a weekly slot into dated sessions is still to be decided.
-    known_lecturers = await _names_of(db, Role.LECTURER)
-
-    unmatched_lecturers, _ = match_names(
-        [row.lecturer for row in rows],
-        known_lecturers,
-    )
+    # Each row's lecturer teaches its course. Turning a weekly slot into
+    # dated sessions is still to be decided, so no session is created.
+    outcome = await course_imports.apply_timetable(db, rows)
+    await db.commit()
 
     return TimetableImportResult(
         rows_read=rows_read,
         sessions_created=0,
         conflicts=conflicts,
-        unmatched_lecturers=unmatched_lecturers,
+        unmatched_lecturers=outcome.unmatched_lecturers,
         unmatched_students=[],
+        courses_created=outcome.courses_created,
+        lecturers_assigned=outcome.lecturers_assigned,
     )
 
 
@@ -706,28 +703,20 @@ async def import_roster(
         raw,
     )
 
-    # Matched against the students who have accounts. Nothing is stored yet:
-    # a student holds one enrolment (student.user_id is unique), so enrolling
-    # from a roster would move students between courses.
-    known_students = await _names_of(db, Role.STUDENT)
-
-    unmatched_students, _ = match_names(
-        [row.student_name for row in rows],
-        known_students,
-    )
+    # Each row puts the student on the course, found by email. A student
+    # can be on several courses, so nobody is moved off another one.
+    outcome = await course_imports.apply_roster(db, rows)
+    await db.commit()
 
     return TimetableImportResult(
         rows_read=rows_read,
         sessions_created=0,
         conflicts=[],
         unmatched_lecturers=[],
-        unmatched_students=unmatched_students,
+        unmatched_students=outcome.unmatched_students,
+        courses_created=outcome.courses_created,
+        students_enrolled=outcome.students_enrolled,
     )
-
-
-async def _names_of(db: AsyncSession, role: Role) -> list[str]:
-    """The names of every account with this role, for matching an import."""
-    return list(await db.scalars(select(User.name).where(User.role == role.value)))
 
 
 router.include_router(auth)

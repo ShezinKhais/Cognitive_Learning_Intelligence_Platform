@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useState, type FormEvent } from 'react'
-import { UserMinus, UserPlus } from 'lucide-react'
+import { Plus, UserMinus, UserPlus } from 'lucide-react'
 
 import { ApiError, getCurrentUser, type Role } from '../api'
 import { buttonStyles } from '../components/ui/button'
@@ -15,6 +15,7 @@ import {
   setLecturers,
   type CourseRoster,
 } from '../features/courses/coursesApi'
+import { AddCourseForm } from '../features/governance/AddCourseForm'
 import { listAccounts, type Account, type Course } from '../features/governance/accountsApi'
 
 const FIELD = 'w-full rounded-md border border-input bg-background px-3 py-2 text-sm'
@@ -34,6 +35,7 @@ export default function CourseRostersPage() {
   const [problem, setProblem] = useState<Problem | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [addingCourse, setAddingCourse] = useState(false)
   const [email, setEmail] = useState('')
   const [lecturers, setLecturerAccounts] = useState<Account[]>([])
   const [students, setStudentAccounts] = useState<Account[]>([])
@@ -111,14 +113,34 @@ export default function CourseRostersPage() {
       <PageHeader
         title={isAdmin ? 'Courses' : 'My courses'}
         description="Students see only the classes of the courses they are on."
+        actions={
+          isAdmin && !addingCourse ? (
+            <button type="button" className={buttonStyles()} onClick={() => setAddingCourse(true)}>
+              <Plus size={16} aria-hidden />
+              Add a course
+            </button>
+          ) : undefined
+        }
       />
       <PageBody>
+        {addingCourse && (
+          <div className="mb-6">
+            <AddCourseForm
+              onCancel={() => setAddingCourse(false)}
+              onAdded={(course) => {
+                setAddingCourse(false)
+                setCourses((current) => [...(current ?? []), course].sort((a, b) => a.code.localeCompare(b.code)))
+                setCode(course.code)
+              }}
+            />
+          </div>
+        )}
         {courses === null ? (
           <SkeletonRows label="Loading courses" rows={3} />
         ) : courses.length === 0 ? (
           <EmptyState title={isAdmin ? 'No courses yet' : 'You do not teach a course yet'}>
             {isAdmin
-              ? 'Add a course on the Accounts page, then assign its lecturers and students here.'
+              ? 'Add a course, or import a timetable or roster, then assign its lecturers and students here.'
               : 'An admin assigns lecturers to courses. Ask them to add you to yours.'}
           </EmptyState>
         ) : (

@@ -4331,12 +4331,29 @@
             "title": "Conflicts",
             "type": "array"
           },
+          "courses_created": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Courses Created",
+            "type": "array"
+          },
+          "lecturers_assigned": {
+            "default": 0,
+            "title": "Lecturers Assigned",
+            "type": "integer"
+          },
           "rows_read": {
             "title": "Rows Read",
             "type": "integer"
           },
           "sessions_created": {
             "title": "Sessions Created",
+            "type": "integer"
+          },
+          "students_enrolled": {
+            "default": 0,
+            "title": "Students Enrolled",
             "type": "integer"
           },
           "unmatched_lecturers": {

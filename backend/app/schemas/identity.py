@@ -81,3 +81,6 @@ class TimetableImportResult(BaseModel):
     conflicts: list[str] = Field(default_factory=list)
     unmatched_lecturers: list[str] = Field(default_factory=list)
     unmatched_students: list[str] = Field(default_factory=list)
+    courses_created: list[str] = Field(default_factory=list)
+    lecturers_assigned: int = 0
+    students_enrolled: int = 0
