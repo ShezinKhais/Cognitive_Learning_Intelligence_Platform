@@ -11,6 +11,7 @@ from collections.abc import Awaitable, Callable
 from functools import wraps
 from inspect import signature
 from typing import Any, ParamSpec, TypeVar
+from uuid import UUID
 
 from sqlalchemy import event
 
@@ -20,6 +21,47 @@ P = ParamSpec("P")
 R = TypeVar("R")
 
 log = logging.getLogger("clip.audit")
+
+
+# Path values that name what was acted on without being an id.
+_NAMED_TARGETS = {"code": "course", "course_code": "course", "meeting_id": "meeting"}
+
+
+def _target(arguments: dict[str, Any]) -> tuple[str | None, UUID | None, dict[str, str]]:
+    """What the request acted on, from the endpoint's own arguments.
+
+    The last id in the signature is the most specific (a question within a
+    material), so it is the target and the others go in details. A course is
+    named by its code, which goes in details with the target type. Bodies
+    are never read: they can hold personal data, and the target is in the
+    path for every audited route that has one.
+    """
+    ids = [
+        (name, value)
+        for name, value in arguments.items()
+        if name.endswith("_id") and isinstance(value, UUID)
+    ]
+    details = {name: str(value) for name, value in ids[:-1]}
+    target_type: str | None = None
+    target_id: UUID | None = None
+    if ids:
+        name, target_id = ids[-1]
+        target_type = name.removesuffix("_id")
+    for name, kind in _NAMED_TARGETS.items():
+        value = arguments.get(name)
+        if isinstance(value, str) and value:
+            details[name] = value[:100]
+            target_type = target_type or kind
+    return target_type, target_id, details
+
+
+def _created_id(result: Any) -> UUID | None:
+    """The id of what a create endpoint returned, when it has one."""
+    for attr in ("id", "session_id", "material_id", "user_id"):
+        value = getattr(result, attr, None)
+        if isinstance(value, UUID):
+            return value
+    return None
 
 
 def audit_action(
@@ -59,6 +101,7 @@ def audit_action(
                 raise RuntimeError("Audited endpoints must receive a principal parameter.")
 
             user_id = getattr(principal, "user_id", None)
+            target_type, target_id, details = _target(dict(bound.arguments))
 
             if user_id is None:
                 raise RuntimeError("Audited endpoints require a principal with user_id.")
@@ -80,6 +123,9 @@ def audit_action(
                         AuditLog(
                             user_id=user_id,
                             action_type=action_type,
+                            target_type=target_type,
+                            target_id=target_id,
+                            details=details or None,
                         )
                     )
                     recorded = True
@@ -91,6 +137,11 @@ def audit_action(
                     event.listen(sync, "before_commit", record)
                 try:
                     result = await func(*args, **kwargs)
+                    if target_id is None and not recorded:
+                        # A create names its target only in what it returns.
+                        target_id = _created_id(result)
+                        if target_id is not None:
+                            target_type = target_type or action_type.split("_")[0].lower()
                     record(db)
                     await db.flush()
                     if commit:
@@ -101,9 +152,11 @@ def audit_action(
             else:
                 result = await func(*args, **kwargs)
                 log.info(
-                    "audit_event=%s user_id=%s",
+                    "audit_event=%s user_id=%s target=%s:%s",
                     action_type,
                     user_id,
+                    target_type,
+                    target_id,
                 )
 
             return result

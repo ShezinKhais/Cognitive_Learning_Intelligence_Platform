@@ -229,3 +229,55 @@ async def test_audit_action_does_not_commit_a_failed_change() -> None:
         )
 
     assert db.added == [] and db.committed_after_flush is False
+
+
+@pytest.mark.asyncio
+async def test_the_record_names_what_was_acted_on() -> None:
+    """The last id in the path is the target; any earlier ones are details."""
+    settings = SimpleNamespace(is_production=True)
+    db = FakeSession()
+    material_id, question_id = uuid4(), uuid4()
+
+    @audit_action("QUESTION_REVIEWED")
+    async def endpoint(material_id, question_id, *, principal, settings, db):
+        return "done"
+
+    await endpoint(
+        material_id,
+        question_id,
+        principal=SimpleNamespace(user_id=uuid4()),
+        settings=settings,
+        db=db,
+    )
+
+    [record] = db.added
+    assert (record.target_type, record.target_id) == ("question", question_id)
+    assert record.details == {"material_id": str(material_id)}
+
+
+@pytest.mark.asyncio
+async def test_a_course_is_named_by_its_code_and_a_create_by_what_it_returns() -> None:
+    settings = SimpleNamespace(is_production=True)
+    principal = SimpleNamespace(user_id=uuid4())
+    renamed, created = FakeSession(), FakeSession()
+    made = uuid4()
+
+    @audit_action("COURSE_RENAMED")
+    async def rename(code, *, principal, settings, db):
+        return "done"
+
+    @audit_action("SESSION_CREATED")
+    async def create(*, principal, settings, db):
+        return SimpleNamespace(id=made)
+
+    await rename("CSIT321", principal=principal, settings=settings, db=renamed)
+    await create(principal=principal, settings=settings, db=created)
+
+    [course] = renamed.added
+    assert (course.target_type, course.target_id, course.details) == (
+        "course",
+        None,
+        {"code": "CSIT321"},
+    )
+    [session] = created.added
+    assert (session.target_type, session.target_id, session.details) == ("session", made, None)
