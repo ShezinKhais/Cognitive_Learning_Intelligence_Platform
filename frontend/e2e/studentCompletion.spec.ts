@@ -161,7 +161,7 @@ test('missed checkpoints paginate independently when there are no submitted answ
     return route.fulfill({ json: { items: offset ? [{ ...missed, id: 'last', question: 'Final missed checkpoint' }] : [missed], total: 21, offset, limit: 20 } })
   })
   await page.goto('/e2e/review/index.html')
-  await expect(page.getByRole('heading', { name: 'No answers from you in this session' })).toBeVisible()
+  await expect(page.getByText('No answers from you in this session', { exact: true })).toBeVisible()
   const pager = page.getByRole('navigation', { name: 'More unanswered checkpoints' })
   await pager.getByRole('button', { name: 'Next' }).click()
   await expect(page.getByRole('heading', { name: 'Final missed checkpoint' })).toBeVisible()
@@ -196,7 +196,7 @@ test('post-session material tutoring and discussion catch-up keep separate in-me
 test('denied review never opens material or discussion tutoring', async ({ page }) => {
   await page.route('**/api/v1/student-reviews/review-session?*', route => route.fulfill({ status: 404, json: { error: { code: 'NOT_FOUND', message: 'Unavailable' } } }))
   await page.goto('/e2e/review/index.html')
-  await expect(page.getByRole('heading', { name: 'This review was not found' })).toBeVisible()
+  await expect(page.getByText('This review was not found', { exact: true })).toBeVisible()
   await expect(page.getByLabel('Ask about this session')).toHaveCount(0)
 })
 

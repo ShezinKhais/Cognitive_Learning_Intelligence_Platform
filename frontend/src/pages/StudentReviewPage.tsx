@@ -316,7 +316,7 @@ function Sources({ path }: { path: string }) {
     )
   }
   return (
-    <section aria-label="Where this question came from" className="space-y-2">
+    <div role="group" aria-label="Where this question came from" className="space-y-2">
       {data.items.map((source) => (
         <blockquote key={source.chunk_id} className="rounded-md border-l-2 border-primary bg-muted/40 px-4 py-3">
           <MetaLine
@@ -332,7 +332,7 @@ function Sources({ path }: { path: string }) {
       {data.has_more && (
         <p className="text-sm text-muted-foreground">These are the first five matches. Your lecturer has the whole page.</p>
       )}
-    </section>
+    </div>
   )
 }
 
