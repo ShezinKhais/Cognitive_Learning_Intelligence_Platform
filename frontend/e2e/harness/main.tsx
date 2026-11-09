@@ -1,3 +1,5 @@
+import StudentReviewPage from '../../src/pages/StudentReviewPage'
+import { Routes, Route } from 'react-router'
 import StudentMyDataPage from '../../src/pages/StudentMyDataPage'
 import { BrowserRouter, MemoryRouter } from 'react-router'
 import DiscussionPanel from '../../src/features/discussion/DiscussionPanel'
@@ -50,6 +52,7 @@ function ProgressSocket() {
 }
 const socket = new URLSearchParams(window.location.search).get('socket')
 createRoot(document.getElementById('root')!).render(
+  socket === 'review' ? <MemoryRouter initialEntries={['/student/reviews/review-session']}><Routes><Route path="/student/reviews/:sessionId" element={<StudentReviewPage />} /></Routes></MemoryRouter> :
   socket === 'student-panel' ? <MemoryRouter><TeamsProvider><LiveSessionPanel session={{
     id: 'completion-session', course_code: 'SYNTHETIC', title: 'Student completion regression',
     lecturer_id: 'lecturer', status: 'active',

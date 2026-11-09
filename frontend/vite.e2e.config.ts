@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 // Separate entry/output: test controls never enter the application build.
 export default defineConfig({
+  define: { 'import.meta.env.VITE_SOCRATIC_CHAT_ENABLED': JSON.stringify('true') },
   plugins: [react(), tailwindcss(), {
     name: 'test-only-stream',
     configurePreviewServer(server) {

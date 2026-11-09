@@ -13,6 +13,8 @@ export interface ReviewAnswer {
   is_correct: boolean | null
   label: 'mastered' | 'partial' | 'struggling' | null
   confidence: number | null
+  correct_answer?: string | null
+  key_points?: string[]
   submitted_at: string
 }
 
@@ -41,4 +43,12 @@ export interface ReviewSources {
     match: 'excerpt' | 'page'
   }[]
   has_more: boolean
+}
+
+export interface MissedQuestion {
+  id: string
+  question: string
+  topic: string | null
+  correct_answer: string | null
+  key_points: string[]
 }

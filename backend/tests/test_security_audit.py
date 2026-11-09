@@ -84,6 +84,8 @@ AUDIENCE = {
     ("DELETE", "/api/v1/sessions/{session_id}/discussion/{note_id}"): STAFF,
     ("GET", "/api/v1/student-reviews"): STUDENT_ONLY,
     ("GET", "/api/v1/student-reviews/{session_id}"): STUDENT_ONLY,
+    ("GET", "/api/v1/student-reviews/{session_id}/missed"): STUDENT_ONLY,
+    ("GET", "/api/v1/student-reviews/{session_id}/missed/{missed_id}/sources"): STUDENT_ONLY,
     ("GET", "/api/v1/student-reviews/{session_id}/responses/{response_id}/sources"): STUDENT_ONLY,
     ("POST", "/api/v1/auth/consent"): ANY_USER,
     ("GET", "/api/v1/auth/me"): ANY_USER,

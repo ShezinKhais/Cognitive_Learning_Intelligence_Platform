@@ -30,6 +30,8 @@ EXPECTED_PATHS = {
     "/api/v1/me/deletion-request",
     "/api/v1/student-reviews",
     "/api/v1/student-reviews/{session_id}",
+    "/api/v1/student-reviews/{session_id}/missed",
+    "/api/v1/student-reviews/{session_id}/missed/{missed_id}/sources",
     "/api/v1/student-reviews/{session_id}/responses/{response_id}/sources",
     "/api/v1/health",
     "/api/v1/ready",

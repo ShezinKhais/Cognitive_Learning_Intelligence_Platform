@@ -2224,6 +2224,56 @@
         "title": "MeetingLinkRequest",
         "type": "object"
       },
+      "MissedQuestion": {
+        "properties": {
+          "correct_answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correct Answer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "key_points": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Key Points",
+            "type": "array"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic"
+          }
+        },
+        "required": [
+          "id",
+          "question",
+          "topic",
+          "correct_answer"
+        ],
+        "title": "MissedQuestion",
+        "type": "object"
+      },
       "MyConsiderationOut": {
         "description": "The student's most recent request, if any.",
         "properties": {
@@ -2507,6 +2557,37 @@
           "offset"
         ],
         "title": "Page[MaterialOut]",
+        "type": "object"
+      },
+      "Page_MissedQuestion_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MissedQuestion"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[MissedQuestion]",
         "type": "object"
       },
       "Page_QuestionOut_": {
@@ -3355,6 +3436,17 @@
             ],
             "title": "Confidence"
           },
+          "correct_answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correct Answer"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -3370,6 +3462,13 @@
               }
             ],
             "title": "Is Correct"
+          },
+          "key_points": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Key Points",
+            "type": "array"
           },
           "label": {
             "anyOf": [
@@ -9147,6 +9246,126 @@
           }
         },
         "summary": "Review",
+        "tags": [
+          "student-review"
+        ]
+      }
+    },
+    "/api/v1/student-reviews/{session_id}/missed": {
+      "get": {
+        "operationId": "missed_api_v1_student_reviews__session_id__missed_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_MissedQuestion_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Missed",
+        "tags": [
+          "student-review"
+        ]
+      }
+    },
+    "/api/v1/student-reviews/{session_id}/missed/{missed_id}/sources": {
+      "get": {
+        "operationId": "missed_sources_api_v1_student_reviews__session_id__missed__missed_id__sources_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "missed_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Missed Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewSources"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Missed Sources",
         "tags": [
           "student-review"
         ]
