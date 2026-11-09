@@ -1,6 +1,6 @@
 import { Camera, Crosshair, Info, Mic, Power, ShieldCheck } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { recordConsent } from '../../api'
+import { getCurrentUser, recordConsent } from '../../api'
 import { calibrateCamera, startCamera, startMicrophone, type CalibrationResult } from './localSensors'
 import { awayDurationSeconds, nextAwayStart } from './awayDuration'
 import { readCaptureConsent } from './captureConsent'
@@ -132,7 +132,8 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
   const autoStarted = useRef(false)
   useEffect(() => {
     let cancelled = false
-    Promise.all([readCaptureConsent(), checkCameraPolicy()]).then(
+    // Cached identity only pre-fills choices; enable() verifies fresh consent before capture.
+    Promise.all([getCurrentUser(), checkCameraPolicy()]).then(
       ([user, cameraAllowed]) => {
         if (cancelled) return
         const consents = {
