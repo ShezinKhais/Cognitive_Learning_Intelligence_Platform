@@ -645,6 +645,17 @@ function QuestionCard({
         </div>
       )}
 
+      {!isMcq && (
+        <div className="mt-3 rounded-md bg-muted/40 p-3 text-sm">
+          <p className="font-semibold">Reference answer</p>
+          <p className="mt-1 whitespace-pre-wrap">{question.reference_answer || 'No reference answer is available. Review before using this question.'}</p>
+          {question.key_points?.length ? <>
+            <p className="mt-2 font-semibold">Marking key points</p>
+            <ul className="list-disc pl-5">{question.key_points.map((point, index) => <li key={index}>{point}</li>)}</ul>
+          </> : <p className="mt-1 text-muted-foreground">No marking key points are available.</p>}
+        </div>
+      )}
+
       {isMcq && (
         <ul className="mt-3 space-y-1.5">
           {(editing ? options : question.options ?? []).map((opt, i) => (
