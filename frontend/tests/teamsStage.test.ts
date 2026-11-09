@@ -3,9 +3,11 @@ import test from 'node:test'
 
 import {
   shareSessionToStage,
+  simulatedStageHost,
   stageContentUrl,
   type StageHost,
 } from '../src/teams/stage.ts'
+import { simulatedTeamsContext } from '../src/teams/teamsContext.ts'
 
 const SESSION = '11111111-1111-1111-1111-111111111111'
 
@@ -77,4 +79,32 @@ test('an error from Teams is reported as a failure', async () => {
     },
   })
   assert.equal(await shareSessionToStage(teams, 'https://clip.example', SESSION), 'failed')
+})
+
+test('the simulation can show the stage frame, and nothing else is accepted as a frame', () => {
+  assert.equal(simulatedTeamsContext('?teamsMock=1&frame=content').frameContext, 'content')
+  assert.equal(simulatedTeamsContext('?teamsMock=1&frame=task').frameContext, 'task')
+  assert.equal(simulatedTeamsContext('?teamsMock=1').frameContext, 'sidePanel')
+  assert.equal(simulatedTeamsContext('?teamsMock=1&frame=evil').frameContext, 'sidePanel')
+})
+
+test('the simulated stage opens the stage frame for the same meeting and session', async () => {
+  const opened: string[] = []
+  const stage = simulatedStageHost((url) => opened.push(url), 'meeting-1')
+
+  const result = await shareSessionToStage(stage, 'http://localhost:5173', SESSION, true)
+
+  assert.equal(result, 'shared')
+  const url = new URL(opened[0])
+  assert.equal(url.origin, 'http://localhost:5173')
+  assert.equal(url.pathname, '/teams/meeting')
+  assert.equal(url.searchParams.get('sessionId'), SESSION)
+  assert.equal(url.searchParams.get('frame'), 'content')
+  assert.equal(url.searchParams.get('teamsMock'), '1')
+  assert.equal(url.searchParams.get('meetingId'), 'meeting-1')
+})
+
+test('plain HTTP is still refused unless the simulation asks for it', async () => {
+  const stage = simulatedStageHost(() => undefined, null)
+  assert.equal(await shareSessionToStage(stage, 'http://localhost:5173', SESSION), 'unavailable')
 })

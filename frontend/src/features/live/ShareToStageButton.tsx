@@ -2,7 +2,12 @@ import { useState } from 'react'
 import { MonitorUp } from 'lucide-react'
 
 import { buttonStyles } from '../../components/ui/button'
-import { STAGE_MESSAGES, shareSessionToStage, type StageShareResult } from '../../teams/stage'
+import {
+  STAGE_MESSAGES,
+  shareSessionToStage,
+  simulatedStageHost,
+  type StageShareResult,
+} from '../../teams/stage'
 import { teamsStageHost } from '../../teams/stageHost'
 import { useTeams } from '../../teams/TeamsProvider'
 
@@ -15,14 +20,20 @@ export default function ShareToStageButton({ sessionId }: { sessionId: string })
   const [working, setWorking] = useState(false)
   const [result, setResult] = useState<StageShareResult | null>(null)
 
-  if (teams.host !== 'teams') {
+  // In real Teams the stage is Teams'. In a simulated meeting (local
+  // development) "sharing" opens the stage frame in a new window instead.
+  if (teams.host !== 'teams' && teams.host !== 'simulated') {
     return null
   }
+  const simulated = teams.host === 'simulated'
 
   async function share(): Promise<void> {
     setWorking(true)
     setResult(null)
-    setResult(await shareSessionToStage(teamsStageHost, window.location.origin, sessionId))
+    const host = simulated
+      ? simulatedStageHost((url) => window.open(url, '_blank', 'noopener'), teams.context?.meetingId ?? null)
+      : teamsStageHost
+    setResult(await shareSessionToStage(host, window.location.origin, sessionId, simulated))
     setWorking(false)
   }
 
