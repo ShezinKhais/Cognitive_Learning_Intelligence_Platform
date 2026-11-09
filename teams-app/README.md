@@ -40,6 +40,20 @@ Which meeting holds which session is stored in the database
 (`teams_meeting_link`, through BBIS's `DatabaseMeetingDirectory`), so links
 survive a restart.
 
+## Sharing the class to the meeting stage
+
+In a meeting, the lecturer's panel has a **Share to the meeting stage**
+button while the class is live. It asks Teams to open the same meeting page
+the side panel uses, large, for everyone. The link carries only the session
+id. Teams opens it in each person's own client, so each person reaches C.L.I.P
+signed in as themselves and sees only what their own role and enrolment
+allow. Nothing about a student is shared with the others.
+
+It needs the manifest's `meetingStage` context and the delegated
+`MeetingStage.Write.Chat` permission, both added here. The button is hidden
+outside Teams, and says so when a meeting does not allow sharing. Only a real
+Teams meeting can show it working: the mock adapter has no stage.
+
 ## Running it without Teams
 
 With the backend and frontend running:

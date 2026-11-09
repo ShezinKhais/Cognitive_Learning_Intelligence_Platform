@@ -39,7 +39,7 @@
     {
       "configurationUrl": "${{BASE_URL}}/config",
       "scopes": ["groupChat"],
-      "context": ["meetingChatTab", "meetingDetailsTab", "meetingSidePanel"],
+      "context": ["meetingChatTab", "meetingDetailsTab", "meetingSidePanel", "meetingStage"],
       "supportedSharePointHosts": []
     }
   ],
@@ -76,6 +76,10 @@
         {
           "name": "OnlineMeetingNotification.Send.Chat",
           "type": "Application"
+        },
+        {
+          "name": "MeetingStage.Write.Chat",
+          "type": "Delegated"
         }
       ]
     }

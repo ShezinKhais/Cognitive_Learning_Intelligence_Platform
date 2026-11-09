@@ -9,6 +9,10 @@ import { LiveSessionPanel } from './StudentLiveSessionPage'
 // meeting to a session. Also checked when the panel regains focus.
 const LINK_RECHECK_MS = 10_000
 
+// Where Teams shows C.L.I.P in a meeting: the side panel, a notification's
+// dialog ('task'), and the meeting stage a lecturer shared it to ('content').
+const MEETING_FRAMES = ['sidePanel', 'task', 'content']
+
 export default function TeamsMeetingPage() {
   const teams = useTeams()
   const { sessions, refreshSessions } = useStudentApp()
@@ -73,11 +77,11 @@ export default function TeamsMeetingPage() {
     )
   }
 
-  if (teams.context && !['sidePanel', 'task'].includes(teams.context.frameContext)) {
+  if (teams.context && !MEETING_FRAMES.includes(teams.context.frameContext)) {
     return (
       <PanelStatus
         title="Open the in-meeting panel"
-        message="Open C.L.I.P from the meeting side panel or a checkpoint notification."
+        message="Open C.L.I.P from the meeting side panel, the meeting stage or a checkpoint notification."
       />
     )
   }
@@ -105,7 +109,7 @@ export default function TeamsMeetingPage() {
     )
   }
 
-  return <LiveSessionPanel session={session} compact />
+  return <LiveSessionPanel session={session} compact={teams.context?.frameContext !== 'content'} />
 }
 
 /**
