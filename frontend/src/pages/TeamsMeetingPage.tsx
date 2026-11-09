@@ -109,7 +109,10 @@ export default function TeamsMeetingPage() {
     )
   }
 
-  return <LiveSessionPanel session={session} compact={teams.context?.frameContext !== 'content'} />
+  const frame = teams.context?.frameContext
+  // The side panel rests as a small paperclip that opens to the score and
+  // questions. The stage and a notification's dialog show the class straight away.
+  return <LiveSessionPanel session={session} compact={frame !== 'content'} clip={frame === 'sidePanel'} />
 }
 
 /**

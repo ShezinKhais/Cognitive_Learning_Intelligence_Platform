@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Clock3,
   MessagesSquare,
+  Paperclip,
   RefreshCw,
   Users,
   XCircle,
@@ -32,6 +33,8 @@ import type {
 } from '../features/student/liveSessionTypes'
 import type { StudentSession } from '../features/student/types'
 import ParticipationGauge from '../features/student/ParticipationGauge'
+import PaperclipLauncher from '../features/student/PaperclipLauncher'
+import { opensForQuestion } from '../features/student/paperclip'
 import AssignedRoom from '../features/student/AssignedRoom'
 import RoomConfirm from '../features/student/RoomConfirm'
 import { useLiveSession } from '../features/student/useLiveSession'
@@ -74,11 +77,16 @@ export default function StudentLiveSessionPage() {
 export function LiveSessionPanel({
   session,
   compact = false,
+  clip = false,
 }: {
   session: StudentSession
   compact?: boolean
+  /** Rest as a small paperclip that opens to the score and questions (the Teams side panel). */
+  clip?: boolean
 }) {
   const [activeView, setActiveView] = useState<'class' | 'chat'>('class')
+  const [clipOpen, setClipOpen] = useState(false)
+  const [seenQuestionId, setSeenQuestionId] = useState<string | null>(null)
   const teams = useTeams()
   const {
     state,
@@ -109,9 +117,41 @@ export function LiveSessionPanel({
       )
     : 0
 
+  // The clip opens by itself for a new question, once, and stays as the
+  // student leaves it.
+  const questionId = state.checkpoint?.question.question_id ?? null
+  if (clip && opensForQuestion(seenQuestionId, questionId)) {
+    setSeenQuestionId(questionId)
+    setClipOpen(true)
+  }
+
+  if (clip && !clipOpen) {
+    return (
+      <PaperclipLauncher
+        answered={state.answeredIds.length}
+        delivered={state.questionsDelivered}
+        questionOpen={questionId !== null}
+        onOpen={() => setClipOpen(true)}
+      />
+    )
+  }
+
   return (
     <div className={`bg-background px-4 py-5 ${compact ? '' : 'sm:px-6 sm:py-8'}`}>
       <div className={`mx-auto ${compact ? 'max-w-xl' : 'max-w-4xl'}`}>
+        {clip && (
+          <div className="mb-3 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setClipOpen(false)}
+              aria-expanded
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-sm font-medium hover:bg-muted"
+            >
+              <Paperclip size={15} aria-hidden />
+              Minimise
+            </button>
+          </div>
+        )}
         <header className="rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)] sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
