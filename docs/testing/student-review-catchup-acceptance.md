@@ -67,7 +67,7 @@ execution. Leave #239 open until its real-meeting acceptance criteria are met.
   current membership revocation, and existing live-answer restrictions.
 - `backend/tests/test_discussion.py` and existing transcription/Graph suites:
   published/private data boundaries and transcript lifecycle under test doubles.
-- `frontend/e2e/studentReview.spec.ts`: wrong versus unanswered, source expansion,
+- `frontend/e2e/studentCompletion.spec.ts`: wrong versus unanswered, source expansion,
   independent pagination, reload, separate material/discussion conversations,
   access denial and accessibility checks in branded Chrome/Edge CI.
 
