@@ -107,6 +107,8 @@ class QuestionOut(BaseModel):
         description="Never sent to students. Lecturer and admin views only.",
     )
     topic: str | None = None
+    reference_answer: str | None = None
+    key_points: list[str] | None = None
     source_slide: int | None = Field(
         default=None,
         description="Drives the 'see slide 3' reference in student feedback.",
@@ -139,6 +141,8 @@ class QuestionReviewRequest(BaseModel):
 class QuestionCreateRequest(BaseModel):
     """A question the lecturer writes themselves. It is ready to send at once."""
 
+    source_slide: int | None = Field(default=None, ge=1)
+    source_excerpt: str | None = Field(default=None, max_length=MAX_PROMPT_CHARS)
     type: QuestionType = QuestionType.MCQ
     prompt: str = Field(min_length=1, max_length=MAX_PROMPT_CHARS)
     options: list[Annotated[str, Field(max_length=MAX_OPTION_CHARS)]] | None = Field(

@@ -69,6 +69,8 @@ EXPECTED_PATHS = {
     "/api/v1/materials/{material_id}/questions:bulk",
     "/api/v1/sessions",
     "/api/v1/sessions/{session_id}",
+    "/api/v1/sessions/{session_id}/question-plan",
+    "/api/v1/sessions/{session_id}/question-plan/candidates",
     "/api/v1/sessions/{session_id}/questions",
     "/api/v1/sessions/{session_id}/start",
     "/api/v1/sessions/{session_id}/end",

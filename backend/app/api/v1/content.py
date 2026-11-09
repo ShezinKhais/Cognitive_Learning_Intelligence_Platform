@@ -82,6 +82,8 @@ def _to_question_out(question) -> QuestionOut:  # noqa: ANN001 - app.models.Ques
         options=question.options,
         correct_option=question.correct_option,
         topic=question.topic,
+        reference_answer=question.reference_answer,
+        key_points=question.key_points,
         source_slide=question.source_slide,
         source_excerpt=question.source_excerpt,
     )

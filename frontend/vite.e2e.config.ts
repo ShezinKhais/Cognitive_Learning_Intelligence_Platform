@@ -26,6 +26,6 @@ export default defineConfig({
       })
     },
   }],
-  build: { outDir: 'dist-e2e', rollupOptions: { input: ['e2e/harness/index.html', 'eval/attention-recorder.html', 'eval/gaze-demo.html'] } },
+  build: { outDir: 'dist-e2e', rollupOptions: { input: ['e2e/question-bank/index.html', 'e2e/harness/index.html', 'eval/attention-recorder.html', 'eval/gaze-demo.html'] } },
   preview: { host: '127.0.0.1', port: 4174, strictPort: true },
 })

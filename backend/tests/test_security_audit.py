@@ -131,6 +131,9 @@ AUDIENCE = {
     ("POST", "/api/v1/sessions/{session_id}/end"): STAFF,
     ("GET", "/api/v1/sessions/{session_id}/engagement"): STAFF,
     ("POST", "/api/v1/sessions/{session_id}/pause"): STAFF,
+    ("GET", "/api/v1/sessions/{session_id}/question-plan"): STAFF,
+    ("GET", "/api/v1/sessions/{session_id}/question-plan/candidates"): STAFF,
+    ("PUT", "/api/v1/sessions/{session_id}/question-plan"): STAFF,
     ("GET", "/api/v1/sessions/{session_id}/questions"): STAFF,
     ("POST", "/api/v1/sessions/{session_id}/questions/{question_id}:deliver"): STAFF,
     ("GET", "/api/v1/sessions/{session_id}/readiness"): STAFF,
@@ -185,6 +188,8 @@ def filled(path: str, **ids: UUID) -> str:
 
 def call(client: TestClient, method: str, path: str, **ids: UUID):  # noqa: ANN201
     body = {} if method != "GET" else None
+    if method == "PUT" and path.endswith("/question-plan"):
+        body = {"selected_only": False, "reviewed_confirmed": True}
     return client.request(method, filled(path, **ids), json=body)
 
 

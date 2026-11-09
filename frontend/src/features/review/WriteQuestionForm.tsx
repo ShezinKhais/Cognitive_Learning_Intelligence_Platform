@@ -24,6 +24,9 @@ export default function WriteQuestionForm({
   const [difficulty, setDifficulty] = useState<Difficulty>('medium')
   const [model, setModel] = useState('')
   const [points, setPoints] = useState('')
+  const [topic, setTopic] = useState('')
+  const [sourcePage, setSourcePage] = useState('')
+  const [sourceExcerpt, setSourceExcerpt] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -44,6 +47,9 @@ export default function WriteQuestionForm({
       type,
       prompt: prompt.trim(),
       difficulty,
+      topic: topic.trim() || undefined,
+      source_slide: sourcePage ? Number(sourcePage) : undefined,
+      source_excerpt: sourceExcerpt.trim() || undefined,
       ...(type === 'mcq'
         ? { options: filled, correct_option: correct }
         : { reference_answer: model.trim(), key_points: keyPoints }),
@@ -171,6 +177,14 @@ export default function WriteQuestionForm({
         <option value="hard">Hard</option>
       </select>
 
+      <label htmlFor={`${id}-topic`} className="mt-3 block text-sm font-semibold">Topic</label>
+      <input id={`${id}-topic`} value={topic} maxLength={255} onChange={event => setTopic(event.target.value)} className={FIELD} />
+      <label htmlFor={`${id}-source-page`} className="mt-3 block text-sm font-semibold">Source page or slide (optional)</label>
+      <input id={`${id}-source-page`} type="number" min={1} step={1} value={sourcePage} onChange={event => setSourcePage(event.target.value)} className={FIELD} />
+      <label htmlFor={`${id}-source-excerpt`} className="mt-3 block text-sm font-semibold">Exact source passage (optional)</label>
+      <textarea id={`${id}-source-excerpt`} rows={2} maxLength={2000} value={sourceExcerpt} onChange={event => setSourceExcerpt(event.target.value)} className={FIELD} />
+      <p className="mt-1 text-xs text-muted-foreground">A supplied source must match this material's indexed content. Without one, students will see that the source is unavailable.</p>
+      <p className="mt-3 text-sm">Saving confirms that you reviewed the wording, answer and source for use in class.</p>
       {error && (
         <p role="alert" className="mt-3 text-sm text-critical">
           {error}
@@ -180,7 +194,7 @@ export default function WriteQuestionForm({
         <button type="submit" className={buttonStyles()} disabled={saving}>
           {saving ? 'Saving…' : 'Save, ready to send'}
         </button>
-        <button type="button" className={buttonStyles({ intent: 'quiet' })} onClick={onCancel}>
+        <button type="button" className={buttonStyles({ intent: 'quiet' })} onClick={onCancel} disabled={saving}>
           Cancel
         </button>
       </div>

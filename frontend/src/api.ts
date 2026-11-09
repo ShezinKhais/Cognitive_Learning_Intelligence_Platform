@@ -493,6 +493,8 @@ export interface Question {
   options: string[] | null
   correct_option: number | null
   topic: string | null
+  reference_answer?: string | null
+  key_points?: string[] | null
   source_slide: number | null
   source_excerpt: string | null
 }
@@ -550,6 +552,9 @@ export function regenerateQuestion(materialId: string, questionId: string): Prom
 }
 
 export interface WriteQuestionPayload {
+  source_slide?: number
+  source_excerpt?: string
+  topic?: string
   type: QuestionType
   prompt: string
   options?: string[]
