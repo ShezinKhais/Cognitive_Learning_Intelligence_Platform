@@ -1,7 +1,9 @@
 import StudentMyDataPage from '../../src/pages/StudentMyDataPage'
-import { BrowserRouter } from 'react-router'
+import { BrowserRouter, MemoryRouter } from 'react-router'
 import DiscussionPanel from '../../src/features/discussion/DiscussionPanel'
 import { useState } from 'react'
+import { LiveSessionPanel } from '../../src/pages/StudentLiveSessionPage'
+import { TeamsProvider } from '../../src/teams/TeamsProvider'
 import { createRoot } from 'react-dom/client'
 import { AttentionControls } from '../../src/features/attention/AttentionControls'
 import { SocraticChatPanel } from '../../src/features/chat/SocraticChatPanel'
@@ -48,6 +50,10 @@ function ProgressSocket() {
 }
 const socket = new URLSearchParams(window.location.search).get('socket')
 createRoot(document.getElementById('root')!).render(
+  socket === 'student-panel' ? <MemoryRouter><TeamsProvider><LiveSessionPanel session={{
+    id: 'completion-session', course_code: 'SYNTHETIC', title: 'Student completion regression',
+    lecturer_id: 'lecturer', status: 'active',
+  }} compact={new URLSearchParams(window.location.search).get('compact') === '1'} /></TeamsProvider></MemoryRouter> :
   socket === 'mydata' ? <BrowserRouter><StudentMyDataPage /></BrowserRouter> :
   socket === 'discussion' ? <DiscussionPanel sessionId="discussion-session" chatEnabled publisher={new URLSearchParams(window.location.search).has('publisher')} /> :
   socket === 'student' ? <StudentSocket /> :
