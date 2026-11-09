@@ -26,6 +26,7 @@ test.beforeEach(async ({ page }) => {
   // Consents start empty and change as the page records them, as on the
   // server, so the panel's remembered choices can be tested.
   granted.clear()
+  await page.route('**/api/v1/me/consideration/policy', route => route.fulfill({ json: { camera_allowed: true } }))
   await page.route('**/api/v1/auth/**', route => {
     const request = route.request()
     if (request.method() === 'POST' && request.url().endsWith('/auth/consent')) {
@@ -45,6 +46,89 @@ test.beforeEach(async ({ page }) => {
     access_token: 'test-only', token_type: 'bearer', expires_in: 3600, role: 'student',
   } }))
   await page.goto('/e2e/harness/index.html')
+})
+
+test.describe('Approved camera-off capture policy', () => {
+  for (const monitoring of [true, false]) {
+    test(`camera-off approval wins over saved device consent (monitoring=${monitoring})`, async ({ page }) => {
+      granted.add('camera')
+      if (monitoring) granted.add('engagement_monitoring')
+      await page.route('**/api/v1/me/consideration/policy', route => route.fulfill({ json: { camera_allowed: false } }))
+      await page.reload()
+      await expect(page.getByText('Your approved camera-off accommodation is active.', { exact: false })).toBeVisible()
+      await expect(page.getByLabel('I opt in to camera indicators')).toBeDisabled()
+      expect(await page.evaluate(() => (window as any).probe.requests)).toBe(0)
+    })
+  }
+
+  test('a changed policy cancels pending camera permission and releases a late stream', async ({ page }) => {
+    let allowed = true
+    await page.route('**/api/v1/me/consideration/policy', route => route.fulfill({ json: { camera_allowed: allowed } }))
+    await page.evaluate(() => {
+      const original = navigator.mediaDevices.getUserMedia
+      navigator.mediaDevices.getUserMedia = async constraints => {
+        const stream = await original(constraints)
+        await new Promise<void>(resolve => { Object.assign(window, { releasePolicyStream: resolve }) })
+        return stream
+      }
+    })
+    await optIn(page, 'camera')
+    await page.getByRole('button', { name: 'Turn on', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => typeof (window as any).releasePolicyStream)).toBe('function')
+    allowed = false
+    await expect(page.getByText('Your approved camera-off accommodation is active.', { exact: false })).toBeVisible({ timeout: 12_000 })
+    await page.evaluate(() => (window as any).releasePolicyStream())
+    await expect.poll(() => page.evaluate(() => (window as any).probe.tracks.map((track: MediaStreamTrack) => track.readyState))).toEqual(['ended'])
+    await expect(page.getByText('Camera: off. Microphone: off.')).toBeVisible()
+    allowed = true
+    await expect(page.getByLabel('I opt in to camera indicators')).toBeEnabled({ timeout: 12_000 })
+    expect(await page.evaluate(() => (window as any).probe.requests)).toBe(1)
+    await expect(page.getByLabel('I opt in to camera indicators')).not.toBeChecked()
+  })
+
+  test('policy failure blocks remembered camera consent and recovery never silently restarts', async ({ page }) => {
+    let available = false
+    granted.add('camera'); granted.add('engagement_monitoring')
+    await page.route('**/api/v1/me/consideration/policy', route => route.fulfill({ status: available ? 200 : 503, json: available ? { camera_allowed: true } : {} }))
+    await page.reload()
+    await expect(page.getByText('Camera policy could not be verified.', { exact: false })).toBeVisible()
+    await expect(page.getByLabel('I opt in to camera indicators')).toBeDisabled()
+    expect(await page.evaluate(() => (window as any).probe.requests)).toBe(0)
+    available = true
+    await expect(page.getByLabel('I opt in to camera indicators')).toBeEnabled({ timeout: 12_000 })
+    expect(await page.evaluate(() => (window as any).probe.requests)).toBe(0)
+    await expect(page.getByLabel('I opt in to camera indicators')).not.toBeChecked()
+  })
+
+  for (const action of ['Turn everything off', 'Toggle sensor mount', 'Toggle session connection']) {
+    test(`late consent verification cannot start hardware after ${action}`, async ({ page }) => {
+      await optIn(page, 'camera')
+      let release: (() => void) | undefined
+      await page.route('**/api/v1/auth/me', async route => {
+        await new Promise<void>(resolve => { release = resolve })
+        return route.fulfill({ json: { id: 'student', role: 'student', consents: [...granted] } })
+      })
+      await page.getByRole('button', { name: 'Turn on', exact: true }).click()
+      await expect.poll(() => Boolean(release)).toBe(true)
+      await page.getByRole('button', { name: action, exact: true }).click()
+      const finished = page.waitForResponse('**/api/v1/auth/me')
+      release!()
+      await finished
+      // Give the already-resolved authorization continuation a turn to run.
+      await page.waitForTimeout(150)
+      expect(await page.evaluate(() => (window as any).probe.requests)).toBe(0)
+    })
+  }
+
+  test('manual start rechecks a newly approved restriction before opening the camera', async ({ page }) => {
+    let allowed = true
+    await page.route('**/api/v1/me/consideration/policy', route => route.fulfill({ json: { camera_allowed: allowed } }))
+    await optIn(page, 'camera')
+    allowed = false
+    await page.getByRole('button', { name: 'Turn on', exact: true }).click()
+    await expect(page.getByText('Your approved camera-off accommodation is active.', { exact: false })).toBeVisible()
+    expect(await page.evaluate(() => (window as any).probe.requests)).toBe(0)
+  })
 })
 
 test('student room selection uses only the existing event and respects live session state', async ({ page }) => {

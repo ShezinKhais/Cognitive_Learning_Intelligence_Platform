@@ -235,3 +235,66 @@ async def test_the_database_holds_one_waiting_request_per_student(db, app) -> No
         session.add(ConsiderationRequest(student_id=student, needs=["gaze"], status="pending"))
         with pytest.raises(IntegrityError):
             await session.flush()
+
+
+async def test_capture_policy_uses_every_current_approval_not_the_latest_request(
+    db, app, monkeypatch
+):
+    client, factory, _ = await _enrolled(db, app)
+    today = date(2026, 11, 9)
+    _advance_to(monkeypatch, today)
+    student = await _student_row(factory)
+    async with factory() as session:
+        session.add_all(
+            [
+                ConsiderationRequest(
+                    student_id=student.student_id, needs=["camera"], status="approved", until=today
+                ),
+                ConsiderationRequest(
+                    student_id=student.student_id, needs=["pace"], status="approved", until=None
+                ),
+                ConsiderationRequest(
+                    student_id=student.student_id,
+                    needs=["prompts"],
+                    status="pending",
+                    until=None,
+                    note="Private details",
+                ),
+            ]
+        )
+        await session.commit()
+    response = client.get(MINE + "/policy")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json() == {"camera_allowed": False}
+    assert "Private details" not in response.text
+    # Last day is inclusive; the longer non-camera need must not mask it.
+    _advance_to(monkeypatch, today + timedelta(days=1))
+    assert client.get(MINE + "/policy").json() == {"camera_allowed": True}
+    async with factory() as session:
+        assert await consideration_service.in_force(session, STUDENT_ID) is not None
+
+
+@pytest.mark.parametrize("status", ["pending", "rejected", "withdrawn"])
+async def test_unapproved_camera_requests_do_not_disable_capture(db, app, status):
+    client, factory, _ = await _enrolled(db, app)
+    student = await _student_row(factory)
+    async with factory() as session:
+        session.add(
+            ConsiderationRequest(student_id=student.student_id, needs=["camera"], status=status)
+        )
+        await session.commit()
+    assert client.get(MINE + "/policy").json() == {"camera_allowed": True}
+
+
+async def test_capture_policy_is_own_student_only_and_does_not_infer_a_diagnosis(db, app):
+    client, factory, _ = await _enrolled(db, app)
+    async with factory() as session:
+        student = await session.get(Student, (await _student_row(factory)).student_id)
+        student.accessibility_need = "A private legacy note, not a camera instruction"
+        await session.commit()
+    assert client.get(MINE + "/policy").json() == {"camera_allowed": True}
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    assert client.get(MINE + "/policy").status_code == 403
+    sign_in_as(app, ADMIN_ID, Role.ADMIN)
+    assert client.get(MINE + "/policy").status_code == 403

@@ -572,6 +572,20 @@
         "title": "Body_upload_material_api_v1_materials_post",
         "type": "object"
       },
+      "CapturePolicyOut": {
+        "description": "Minimal own-student capture policy, without request notes or diagnoses.",
+        "properties": {
+          "camera_allowed": {
+            "title": "Camera Allowed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "camera_allowed"
+        ],
+        "title": "CapturePolicyOut",
+        "type": "object"
+      },
       "ChatRequest": {
         "properties": {
           "discussion_since": {
@@ -6862,6 +6876,27 @@
           }
         },
         "summary": "Submit Request",
+        "tags": [
+          "consideration"
+        ]
+      }
+    },
+    "/api/v1/me/consideration/policy": {
+      "get": {
+        "operationId": "capture_policy_api_v1_me_consideration_policy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapturePolicyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Capture Policy",
         "tags": [
           "consideration"
         ]

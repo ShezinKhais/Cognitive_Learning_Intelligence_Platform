@@ -56,6 +56,7 @@ EXPECTED_PATHS = {
     "/api/v1/admin/errors",
     # Phase 8 General CS: special consideration, asked by a student, decided by an admin.
     "/api/v1/me/consideration",
+    "/api/v1/me/consideration/policy",
     "/api/v1/me/consideration/withdraw",
     "/api/v1/admin/consideration-requests",
     "/api/v1/admin/consideration-requests/{request_id}/approve",
