@@ -7,7 +7,7 @@ const missed = { id: 'own-miss', question: 'What does normalization reduce?', to
 const source = { items: [{ chunk_id: 'source', material_title: 'Verified lecture.pdf', source_page: 3, text: 'Normalization reduces duplicate values.', match: 'excerpt' }], has_more: false }
 
 test.beforeEach(async ({ page }) => {
-  await page.route('**/api/v1/sessions/review-session/discussion', route => route.fulfill({ json: { notes: [], latest_recorded_at: null, session_status: 'ended' } }))
+  await page.route('**/api/v1/sessions/review-session/discussion', route => route.fulfill({ json: { notes: [{ note_id: 'published-note', occurred_at: session.ended_at, updated_at: session.ended_at, text: 'Published synthetic teaching point.' }], latest_recorded_at: session.ended_at, session_status: 'ended' } }))
   await page.route('**/api/v1/student-reviews/review-session**', route => {
     const url = new URL(route.request().url())
     if (url.pathname.endsWith('/sources')) return route.fulfill({ json: source })
@@ -77,7 +77,7 @@ test('post-session material tutoring and discussion catch-up keep separate in-me
   await expect(discussion.getByText('Published notes help you catch up.', { exact: true })).toBeVisible()
   expect(requests[0].source).not.toBe('discussion')
   expect(requests[1].source).toBe('discussion')
-  expect(requests[1].history).toEqual([])
+  expect(requests[1].history ?? []).toEqual([])
   await page.reload()
   await expect(page.getByText('Which feature would you compare?', { exact: true })).toHaveCount(0)
 })
