@@ -58,8 +58,20 @@ stage sharing only works in a real Teams meeting.
 
 The mock adapter can stand in for the stage, so the student's stage view can
 be checked locally. With the backend running (the Docker demo on port 8088
-will do), in `frontend/.env.local` set `VITE_TEAMS_MOCK_ENABLED=true` and
-`CLIP_BACKEND_URL=http://localhost:8088`, then `npm run dev`.
+will do), in `frontend/.env.local` set the switches below (the live class is
+off by default in the dev server, and the student panel stays on "Waiting for
+your lecturer" without it) and run `npm run dev`:
+
+```
+VITE_TEAMS_MOCK_ENABLED=true
+VITE_LIVE_SESSIONS_ENABLED=true
+VITE_SOCRATIC_CHAT_ENABLED=true
+VITE_MATERIAL_PIPELINE_ENABLED=true
+CLIP_BACKEND_URL=http://127.0.0.1:8088
+```
+
+The student's side panel then rests as a small paperclip with their checkpoint
+count, and opens by itself when the lecturer sends a checkpoint.
 
 1. Lecturer window, a simulated meeting: open
    `http://localhost:5173/teams/meeting?teamsMock=1&meetingId=test-meeting`,
