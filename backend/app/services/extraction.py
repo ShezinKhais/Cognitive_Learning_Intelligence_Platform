@@ -29,6 +29,7 @@ import io
 import logging
 import re
 import time
+import unicodedata
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -285,8 +286,47 @@ def looks_letter_spaced(text: str) -> bool:
     return singles / len(words) > 0.4
 
 
+# A line is undecodable when at least this share of its visible characters,
+# and at least two of them, are control characters other than line breaks and
+# tabs. Real text has none; the text of a font with no character map has one
+# in every few, such as \x03 for each space.
+UNDECODED_SHARE = 0.1
+_LAYOUT = frozenset("\n\r\t \u00a0")
+
+
+def looks_undecoded(text: str) -> bool:
+    """Whether text came from a font with no character map (#266).
+
+    Such a PDF's text layer decodes to control characters and shifted letters,
+    e.g. "Images" as ",PDJHV" with \x03 between the words. Only control
+    characters count: letters of any script, digits, punctuation and maths
+    symbols never do, nor do the private-use characters old Symbol fonts use
+    for maths (σ, big brackets), which are odd but not junk.
+    """
+    visible = [c for c in text if c not in _LAYOUT]
+    bad = sum(1 for c in visible if unicodedata.category(c) == "Cc")
+    return bad >= 2 and bad >= UNDECODED_SHARE * len(visible)
+
+
+def readable_lines(text: str) -> tuple[str, int]:
+    """A page's text without its undecodable lines, and how many were dropped.
+
+    Once one line of a page is undecodable, the page's font is known to be
+    broken, so every line on it with a control character goes too: short
+    lines such as a footer can hold only one, too few to judge on their own.
+    """
+    lines = text.splitlines()
+    if not any(looks_undecoded(line) for line in lines):
+        return text, 0
+    kept = [line for line in lines if not any(unicodedata.category(c) == "Cc" for c in line)]
+    return "\n".join(kept), len(lines) - len(kept)
+
+
 def read_pdf_pypdf(
-    path: str, with_images: bool = False, ocr: Callable[[bytes], str] | None = None
+    path: str,
+    with_images: bool = False,
+    ocr: Callable[[bytes], str] | None = None,
+    undecoded: list[int] | None = None,
 ) -> list[ExtractedElement]:
     """Default PDF reader (Option B). Lightweight, installs everywhere.
 
@@ -299,6 +339,11 @@ def read_pdf_pypdf(
 
     With `ocr`, a page with no text layer, such as a scanned one, is read from
     its largest image instead, and kept as text when that finds some.
+
+    Lines that decode to junk are dropped (looks_undecoded), and a page left
+    with none is treated as having no text layer. The numbers of the pages
+    that lost text that way are appended to `undecoded`, so the lecturer can
+    be told.
     """
     from pypdf import PdfReader
 
@@ -306,7 +351,9 @@ def read_pdf_pypdf(
 
     els = []
     for i, page in enumerate(PdfReader(path).pages):
-        txt = page.extract_text() or ""
+        txt, dropped = readable_lines(page.extract_text() or "")
+        if dropped and undecoded is not None:
+            undecoded.append(i + 1)
         scanned = not txt.strip()
         images = _pypdf_images(page) if with_images or (scanned and ocr) else []
         if scanned and ocr and images:
@@ -831,6 +878,15 @@ class OcrBudget:
         return notes
 
 
+def undecoded_pages_warning(pages: list[int]) -> str:
+    shown = ", ".join(str(p) for p in pages[:10]) + (", …" if len(pages) > 10 else "")
+    return (
+        f"{len(pages)} page(s) store some of their text in a form that cannot be "
+        f"decoded (page {shown}), so that text was left out. Exporting the PDF "
+        "again, or uploading the original slides, usually fixes this."
+    )
+
+
 NO_OCR_NOTE = (
     "Scanned pages have no text to read. Installing Tesseract on the server "
     "lets them be read with OCR."
@@ -856,7 +912,10 @@ def extract(
         # Option B: pypdf is the default (light, installs everywhere).
         budget = OcrBudget(ocr) if ocr else None
         scans = {"ocr": budget} if budget else {}
-        elements = _run_reader(read_pdf_pypdf, path, **images, **scans)
+        undecoded: list[int] = []
+        elements = _run_reader(read_pdf_pypdf, path, **images, **scans, undecoded=undecoded)
+        if undecoded:
+            warnings.append(undecoded_pages_warning(undecoded))
         joined = " ".join(e.content for e in elements if e.el_type != "image")
 
         # quality guard: if pypdf produced letter-spaced garbage, try to
