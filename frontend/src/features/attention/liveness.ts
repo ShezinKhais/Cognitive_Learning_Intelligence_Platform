@@ -129,6 +129,12 @@ export async function livenessFrame(
 export const mayLearn = (spoof: boolean, calibrating: boolean, timestamp: number, learnUntil: number) =>
   !spoof && !calibrating && timestamp < learnUntil
 
+/**
+ * Calibration keeps only frames of a face not judged spoofed. Too few left,
+ * and calibrate() refuses, so the student is told to try again.
+ */
+export const forCalibration = <T>(frames: T[], frame: T, spoof: boolean): T[] => spoof ? frames : [...frames, frame]
+
 /** A face judged not live counts as no face, with no gaze reading (#165). */
 export function applyLiveness(observation: FaceObservation, spoof: boolean): FaceObservation {
   return spoof ? { face: false, forward: null, head: 'unavailable' } : observation

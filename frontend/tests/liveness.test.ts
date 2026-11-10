@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import {
-  LIVENESS, MODEL_INPUT, SUGGESTED_LIVENESS, applyLiveness, cropBox, dueForCheck, faceBox, isSpoof, livenessFrame,
+  LIVENESS, MODEL_INPUT, SUGGESTED_LIVENESS, applyLiveness, cropBox, dueForCheck, faceBox, forCalibration, isSpoof, livenessFrame,
   loadInBackground, mayLearn, noteFrame, recordCheck, startLiveness, wantsLivenessModel,
   type LiveCheck, type LivenessSettings, type LivenessState,
 } from '../src/features/attention/liveness.ts'
@@ -161,6 +161,27 @@ test('a check that throws gives no score and never counts towards rejecting', as
     assert.equal(step.spoof, false)
     assert.deepEqual(applyLiveness(seen, step.spoof), seen)
   }
+})
+
+test('a face judged spoofed is kept out of calibration (and so out of the adaptation it seeds)', async () => {
+  let state = startLiveness()
+  let spoof = false
+  let frames: string[] = []
+  // A photo already rejected when calibration starts: none of its frames count.
+  for (const ms of [0, 1000, 2000]) ({ state, spoof } = await livenessFrame(state, 1, ms, s, lowCheck))
+  for (let ms = 2250; ms < 5250; ms += 250) {
+    ;({ state, spoof } = await livenessFrame(state, 1, ms, s, lowCheck))
+    frames = forCalibration(frames, `photo@${ms}`, spoof)
+  }
+  assert.deepEqual(frames, [])
+  // A live face calibrates as before.
+  frames = []
+  state = startLiveness()
+  for (let ms = 0; ms < 3000; ms += 250) {
+    ;({ state, spoof } = await livenessFrame(state, 1, ms, s, async () => ({ live: 0.95, ms: 3 })))
+    frames = forCalibration(frames, `face@${ms}`, spoof)
+  }
+  assert.equal(frames.length, 12)
 })
 
 test('with LIVENESS on, the same steps reject a photo, and adaptation learns nothing from it', async () => {

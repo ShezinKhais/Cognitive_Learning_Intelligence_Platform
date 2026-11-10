@@ -4,7 +4,7 @@ import {
   type AdaptiveState, type Calibration, type FaceFeatures,
 } from './signals'
 import {
-  LIVENESS, applyLiveness, livenessFrame, loadInBackground, mayLearn, startLiveness, wantsLivenessModel, type LivenessState,
+  LIVENESS, applyLiveness, forCalibration, livenessFrame, loadInBackground, mayLearn, startLiveness, wantsLivenessModel, type LivenessState,
 } from './liveness'
 import type { LivenessModel } from './livenessModel'
 
@@ -66,9 +66,20 @@ self.onmessage = async (event: MessageEvent) => {
         result.faceLandmarks,
         result.facialTransformationMatrixes?.map(matrix => matrix.data),
       )
+      // #165: check now and then that the one face in view is a live person,
+      // first, so a face judged not live is kept out of calibration too.
+      const model = livenessModel
+      const step = await livenessFrame(
+        liveness, result.faceLandmarks.length, timestamp, LIVENESS,
+        model ? () => model.check(frame, result.faceLandmarks[0]) : null, withLiveScores,
+      )
+      liveness = step.state
+      const { live, spoof } = step
       if (calibrating) {
         const until = (calibrating.until ??= timestamp + CALIBRATION_MS)
-        calibrating.frames.push(features)
+        // A face judged not live is not this student's centre, and calibration
+        // frames also seed adaptation (#166), so neither learns from a photo.
+        calibrating.frames = forCalibration(calibrating.frames, features, spoof)
         if (timestamp >= until) {
           // Only the offsets are kept, here in the browser; nothing new is sent.
           calibration = calibrate(calibrating.frames)
@@ -81,14 +92,6 @@ self.onmessage = async (event: MessageEvent) => {
           self.postMessage({ type: 'calibrated', ok: calibration !== null })
         }
       }
-      // #165: check now and then that the one face in view is a live person.
-      const model = livenessModel
-      const step = await livenessFrame(
-        liveness, result.faceLandmarks.length, timestamp, LIVENESS,
-        model ? () => model.check(frame, result.faceLandmarks[0]) : null, withLiveScores,
-      )
-      liveness = step.state
-      const { live, spoof } = step
       const base = thresholdsFor(calibration)
       // A photo is not this student's normal, so nothing is learned from it.
       if (ADAPTATION && adaptive && mayLearn(spoof, calibrating !== null, timestamp, learnUntil)) adaptive = learn(adaptive, features, base, ADAPTATION, GAZE_MODEL)
