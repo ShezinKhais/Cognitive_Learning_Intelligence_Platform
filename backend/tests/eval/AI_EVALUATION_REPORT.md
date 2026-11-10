@@ -145,6 +145,11 @@ supported. `--check-accepted` tests it on the 9 judged questions.
 The verifier costs no good questions, so it stays on, but it shares the
 writer's blind spots: the lecturer's approval remains the real check.
 
+These numbers are one lecture and one judge. #235 repeats the measurement on
+real course material with independent judges and thresholds agreed beforehand:
+`python -m scripts.evaluate_question_yield`, explained in `yield/README.md`.
+No results from it are recorded yet.
+
 ## 5. Marking free-text answers
 
 Does the marker give an answer the same label as a teacher? 40 student answers
