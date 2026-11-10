@@ -161,10 +161,12 @@ def load_tags(path: Path | None, names: Sequence[str]) -> dict[str, dict[str, li
     if path is None:
         return {}
     tags = json.loads(path.read_text())
-    unknown = sorted(set(tags) - set(names))
-    if unknown:
-        raise SystemExit(f"{path} tags files that are not being run: {', '.join(unknown)}")
-    return tags
+    # One tags file can cover more lectures than a run uses. A lecture run
+    # without tags is the likelier mistake (a renamed download), so say so.
+    untagged = sorted(set(names) - set(tags))
+    if untagged:
+        print(f"No tags in {path} for: {', '.join(untagged)}. Their pages count as text only.")
+    return {name: tags[name] for name in names if name in tags}
 
 
 async def run(args: argparse.Namespace) -> None:

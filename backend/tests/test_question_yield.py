@@ -29,7 +29,12 @@ from app.services.question_yield import (
     write_rows,
 )
 from app.services.retrieval import RetrievedChunk
-from scripts.evaluate_question_yield import RecordingGenerator, collect, load_thresholds
+from scripts.evaluate_question_yield import (
+    RecordingGenerator,
+    collect,
+    load_tags,
+    load_thresholds,
+)
 
 THRESHOLDS = Path(__file__).parent / "eval" / "yield" / "thresholds.json"
 AGREED = {
@@ -355,3 +360,18 @@ async def test_a_reply_that_cannot_be_read_counts_as_an_empty_call():
     passed, rejected, counts = await collect(generator, chunks, "week3.pptx", "m1", {})
     assert (passed, rejected) == ([], [])
     assert (counts["calls"], counts["empty_calls"], counts["drafts"]) == (1, 1, 0)
+
+
+def test_a_tags_file_may_cover_more_lectures_than_are_run(tmp_path, capsys):
+    path = tmp_path / "tags.json"
+    path.write_text(json.dumps({"week3.pptx": {"diagram": [4]}, "week9.pdf": {"formula": [2]}}))
+    assert load_tags(path, ["week3.pptx", "renamed.pdf"]) == {"week3.pptx": {"diagram": [4]}}
+    printed = capsys.readouterr().out
+    assert "No tags" in printed and "renamed.pdf" in printed
+
+
+def test_the_committed_practice_tags_name_real_pages():
+    tags = json.loads((THRESHOLDS.parent / "pilot1_tags.json").read_text())
+    for lecture, kinds in tags.items():
+        for kind, pages in kinds.items():
+            assert pages == sorted(set(pages)) and pages[0] >= 1, (lecture, kind)
