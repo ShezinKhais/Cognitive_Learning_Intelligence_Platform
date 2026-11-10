@@ -599,6 +599,18 @@ def build_prompt(
     return template.format(excerpts=excerpts, count=count)
 
 
+# A JSON escape, which is kept, or a lone backslash, which is doubled. Read
+# left to right, so "\\(" is an escaped backslash and then "(", not a
+# backslash before a stray "\(".
+_ESCAPE = re.compile(r'\\(["\\/bfnrt]|u[0-9a-fA-F]{4})|\\')
+
+
+def escape_stray_backslashes(text: str) -> str:
+    """Text with each backslash that does not start a JSON escape doubled, so
+    it reads as the backslash the model wrote."""
+    return _ESCAPE.sub(lambda m: m.group(0) if m.group(1) else "\\\\", text)
+
+
 def parse_drafts(raw: str, question_type: QuestionType = QuestionType.MCQ) -> list[DraftQuestion]:
     """Turn the model's reply into drafts, tolerating markdown fences."""
     text = raw.strip()
@@ -612,7 +624,17 @@ def parse_drafts(raw: str, question_type: QuestionType = QuestionType.MCQ) -> li
     try:
         payload = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise ValueError(f"model did not return valid JSON: {exc}") from exc
+        # A maths lecture's reply often holds LaTeX, "\(\hat{a}\)", whose
+        # backslashes are not JSON escapes. One of them used to cost every
+        # draft in the reply (#267), so they are kept as written and the
+        # reply read again; anything else wrong with it still fails.
+        repaired = escape_stray_backslashes(text)
+        try:
+            payload = json.loads(repaired) if repaired != text else None
+        except json.JSONDecodeError:
+            payload = None
+        if payload is None:
+            raise ValueError(f"model did not return valid JSON: {exc}") from exc
 
     if not isinstance(payload, list):
         raise ValueError("expected a JSON array of questions")
