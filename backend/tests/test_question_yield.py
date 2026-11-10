@@ -360,6 +360,25 @@ async def test_a_reply_that_cannot_be_read_counts_as_an_empty_call():
     passed, rejected, counts = await collect(generator, chunks, "week3.pptx", "m1", {})
     assert (passed, rejected) == ([], [])
     assert (counts["calls"], counts["empty_calls"], counts["drafts"]) == (1, 1, 0)
+    # Kept, so the reason nothing came back can be seen.
+    assert counts["unreadable_replies"] == ["not json at all"]
+
+
+async def test_only_replies_that_gave_nothing_are_kept():
+    chunks = [
+        chunk(
+            0,
+            3,
+            "Transfer learning reuses a network trained on a large dataset. "
+            "The base layers are frozen so their weights do not change during training.",
+        ),
+        chunk(1, 4, "Fine-tuning then unfreezes the top layers and trains them slowly."),
+    ]
+    generator = RecordingGenerator(
+        FakeChatClient(f"[{GOOD}]", '{"questions": []}'), "test-model", count=10
+    )
+    _, _, counts = await collect(generator, chunks, "week3.pptx", "m1", {})
+    assert counts["unreadable_replies"] == ['{"questions": []}']
 
 
 def test_a_tags_file_may_cover_more_lectures_than_are_run(tmp_path, capsys):

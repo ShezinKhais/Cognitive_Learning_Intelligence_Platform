@@ -40,6 +40,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 
 from app.core.config import get_settings
 from app.services import generation
@@ -81,17 +82,47 @@ YIELD_DIR = BACKEND / "tests" / "eval" / "yield"
 RUN, SHEET, REJECTED, REPORT = "run.json", "sheet.csv", "rejected.csv", "QUESTION_YIELD.md"
 
 
+# How much of a reply that could not be read is kept in run.json, and how
+# many such replies, enough to see what the model wrote instead.
+KEPT_REPLY_CHARACTERS = 1500
+KEPT_REPLIES = 3
+
+
+class _ReplyRecorder:
+    """A chat client that remembers the text of every reply it passes on."""
+
+    def __init__(self, client) -> None:
+        self.replies: list[str] = []
+        recorder = self
+
+        async def create(**kwargs):
+            response = await client.chat.completions.create(**kwargs)
+            recorder.replies.append(response.choices[0].message.content or "")
+            return response
+
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=create))
+
+
 class RecordingGenerator(QuestionGenerator):
     """The upload's generator, remembering what each model call produced, so
-    the drafts it throws away can be counted and kept."""
+    the drafts it throws away can be counted and kept, and a reply that could
+    not be read at all is kept to show why."""
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
+        self._client = _ReplyRecorder(self._client)
         self.outcomes: list[GenerationOutcome] = []
+        self.unreadable: list[str] = []
 
     async def _draft(self, *args, **kwargs) -> GenerationOutcome:
+        # The first reply in a call is the questions; any after it are the
+        # option verifier's, one per draft that passed the other checks.
+        first = len(self._client.replies)
         outcome = await super()._draft(*args, **kwargs)
         self.outcomes.append(outcome)
+        if not outcome.accepted and not outcome.rejected:
+            replies = self._client.replies[first:]
+            self.unreadable.append(replies[0] if replies else "")
         return outcome
 
 
@@ -105,6 +136,7 @@ async def collect(
     """One material's questions: the rows that passed, the rows that did not,
     and the counts for run.json."""
     generator.outcomes = []
+    generator.unreadable = []
     kept = await generator.generate(uuid.uuid4(), chunks)
     outcomes = generator.outcomes
     passed = [
@@ -125,6 +157,9 @@ async def collect(
         "passed": len(kept),
         "duplicates": passed_before_duplicates - len(kept),
         "rejected_kinds": dict(kinds.most_common()),
+        "unreadable_replies": [
+            reply[:KEPT_REPLY_CHARACTERS] for reply in generator.unreadable[:KEPT_REPLIES]
+        ],
     }
     return passed, rejected, counts
 
@@ -248,6 +283,11 @@ async def run(args: argparse.Namespace) -> None:
                 }
             )
             print(f"{path.name}: {counts['drafts']} drafts, {counts['passed']} passed the checks")
+            if counts["calls"] and counts["empty_calls"] == counts["calls"]:
+                print(
+                    f"  None of the model's {counts['calls']} replies could be read as questions. "
+                    f"The first is saved in run.json under unreadable_replies."
+                )
     except AiUnavailableError:
         raise SystemExit(
             f"The model server at {settings.ollama_base_url} did not answer. Is Ollama "
