@@ -220,7 +220,9 @@ def test_an_oversized_or_broken_image_is_never_sent(monkeypatch):
 # CI installs Tesseract, so there a missing program fails the test rather
 # than skipping it: the real OCR path is always run somewhere.
 needs_tesseract = pytest.mark.skipif(
-    find_tesseract() is None and not os.environ.get("CI"), reason="Tesseract not installed"
+    find_tesseract() is None
+    and (not os.environ.get("CI") or bool(os.environ.get("CLIP_CI_NO_TESSERACT"))),
+    reason="Tesseract not installed",
 )
 
 

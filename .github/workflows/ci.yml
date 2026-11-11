@@ -49,21 +49,20 @@ jobs:
             -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" \
             -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
 
-      - name: Use the main Ubuntu archive for apt
-        # The runner's apt reads mirror+file:/etc/apt/apt-mirrors.txt, which
-        # names only azure.archive.ubuntu.com. When that name does not resolve,
-        # every package fails, security updates included. The main archive is
-        # listed first instead, and each download is retried.
-        run: |
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            echo "http://archive.ubuntu.com/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
-            echo "http://azure.archive.ubuntu.com/ubuntu/" | sudo tee -a /etc/apt/apt-mirrors.txt >/dev/null
-          fi
-          echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries >/dev/null
       - name: Install Tesseract
         # So test_real_tesseract_reads_a_scanned_page runs the real OCR path
-        # here instead of skipping it.
+        # here instead of skipping it. The Ubuntu archive is sometimes
+        # unreachable from the runners; that must not stop every other test,
+        # so a failed install is reported and only the OCR test is skipped.
+        id: tesseract
+        continue-on-error: true
+        timeout-minutes: 6
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr
+      - name: Note a missing Tesseract
+        if: steps.tesseract.outcome != 'success'
+        run: |
+          echo "CLIP_CI_NO_TESSERACT=1" >> "$GITHUB_ENV"
+          echo "::warning::Tesseract could not be installed (Ubuntu archive unreachable). The real OCR test is skipped in this run."
       - run: pip install -e ".[dev]"
       - name: Apply database migrations
         run: alembic upgrade head
@@ -112,19 +111,16 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
-      - name: Use the main Ubuntu archive for apt
-        # The runner's apt reads mirror+file:/etc/apt/apt-mirrors.txt, which
-        # names only azure.archive.ubuntu.com. When that name does not resolve,
-        # every package fails, security updates included. The main archive is
-        # listed first instead, and each download is retried.
-        run: |
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            echo "http://archive.ubuntu.com/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
-            echo "http://azure.archive.ubuntu.com/ubuntu/" | sudo tee -a /etc/apt/apt-mirrors.txt >/dev/null
-          fi
-          echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries >/dev/null
       - name: Install browser
-        run: npx playwright install --with-deps ${{ matrix.browser == 'edge' && 'msedge' || 'chrome' }}
+        # The runner image already has the browsers' system libraries. When the
+        # Ubuntu archive cannot be reached, install the browser without them
+        # rather than failing the job.
+        run: |
+          browser=${{ matrix.browser == 'edge' && 'msedge' || 'chrome' }}
+          timeout 360 npx playwright install --with-deps "$browser" || {
+            echo "::warning::Browser system dependencies could not be installed; using the runner image's."
+            npx playwright install "$browser"
+          }
       - run: npm run check:browser
       - run: npm run test:browser -- --project=${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
@@ -164,22 +160,14 @@ jobs:
         run: |
           pip install httpx websockets
           python backend/scripts/smoke_test.py --base http://localhost:8088 --idle 2
-      - name: Use the main Ubuntu archive for apt
-        # The runner's apt reads mirror+file:/etc/apt/apt-mirrors.txt, which
-        # names only azure.archive.ubuntu.com. When that name does not resolve,
-        # every package fails, security updates included. The main archive is
-        # listed first instead, and each download is retried.
-        run: |
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            echo "http://archive.ubuntu.com/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
-            echo "http://azure.archive.ubuntu.com/ubuntu/" | sudo tee -a /etc/apt/apt-mirrors.txt >/dev/null
-          fi
-          echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries >/dev/null
       - name: Install deployed-browser test dependencies
         working-directory: frontend
         run: |
           npm ci
-          npx playwright install --with-deps chromium
+          timeout 360 npx playwright install --with-deps chromium || {
+            echo "::warning::Browser system dependencies could not be installed; using the runner image's."
+            npx playwright install chromium
+          }
       - name: Exercise real student, lecturer and admin shell
         working-directory: frontend
         run: npm run test:deployment
