@@ -158,6 +158,9 @@ async def test_plan_replacement_preserves_original_and_rejects_invalid_scopes(le
     url = f"/api/v1/sessions/{sid}/question-plan"
     created = client.put(url, json=plan_body([question])).json()
     copy_id = UUID(created["items"][0]["id"])
+    assert created["items"][0]["source_question_id"] == str(question)
+    assert client.put(url, json=plan_body([copy_id, question])).status_code == 422
+    assert client.get(url).json()["items"] == created["items"]
     assert client.put(url, json=plan_body([copy_id])).json()["items"][0]["id"] == str(copy_id)
     # Invalid source ids fail atomically and leave the existing selection intact.
     assert client.put(url, json=plan_body([uuid4()])).status_code == 404

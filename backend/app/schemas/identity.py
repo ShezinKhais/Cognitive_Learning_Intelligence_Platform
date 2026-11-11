@@ -93,6 +93,7 @@ class TimetableImportResult(BaseModel):
     unmatched_students: list[str] = Field(default_factory=list)
     sessions_to_create: int = 0
     courses_changed: int = 0
+    new_course_codes: list[str] = Field(default_factory=list)
     memberships_changed: int = 0
     applied: bool = False
     preview_token: str | None = None

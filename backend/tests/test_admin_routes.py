@@ -146,6 +146,7 @@ async def test_confirmed_imports_persist_dated_sessions_and_additional_courses(d
     assert preview["sessions_created"] == 0
     assert preview["sessions_to_create"] == 1
     assert preview["memberships_changed"] == preview["courses_changed"] == 1
+    assert preview["new_course_codes"] == [code]
     assert "Duplicate" in preview["rows"][1]["detail"]
     async with factory() as read:
         assert await read.scalar(select(Course.id).where(Course.code == code)) is None

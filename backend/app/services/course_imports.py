@@ -299,6 +299,9 @@ async def finish_import(
 ) -> TimetableImportResult:
     result = plan.result
     token = plan.token(secret, actor, raw, week_start)
+    result.new_course_codes = sorted(
+        code for code, course_id in plan.courses.items() if course_id is None
+    )
     if confirmation is None:
         result.sessions_to_create = len(plan.sessions)
         result.courses_changed = sum(value is None for value in plan.courses.values())

@@ -33,12 +33,12 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
   const {
     status: cameraStatus, latest: face, start: enableCamera, stop: stopCamera,
     drain: drainCamera, isActive: cameraActive,
-    startedAt: cameraStartedAt,
+    startedAt: cameraStartedAt, isStartingOrActive: cameraStartingOrActive,
   } = useLocalSensor('Camera', startCamera, unknownFace, 40, setMessage)
   const {
     status: microphoneStatus, latest: speaking, start: enableMicrophone, stop: stopMicrophone,
     drain: drainMicrophone, isActive: microphoneActive,
-    startedAt: microphoneStartedAt,
+    startedAt: microphoneStartedAt, isStartingOrActive: microphoneStartingOrActive,
   } = useLocalSensor<boolean | null>('Microphone', startMicrophone, null, 200, setMessage)
   // Local-only timer. Missing or stale observations never count as away.
   useEffect(() => {
@@ -122,6 +122,7 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
       if (sensor === 'camera') await enableCamera()
       else await enableMicrophone()
     } catch {
+      if (!enabledNow.current || document.hidden || attempt !== stopped.current) return
       stopAll()
       setMessage('Consent could not be verified. Sensors remain off.')
     }
@@ -185,12 +186,15 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
     if (!enabled) return
     let disposed = false
     let checking = false
+    const capturing = () => cameraStartingOrActive() || microphoneStartingOrActive()
     const timer = setInterval(async () => {
-      if (checking) return
+      void checkCameraPolicy()
+      if (checking || !capturing()) return
       checking = true
+      const attempt = stopped.current
       try {
-        const [user] = await Promise.all([readCaptureConsent(), checkCameraPolicy()])
-        if (disposed) return
+        const user = await readCaptureConsent()
+        if (disposed || attempt !== stopped.current || !capturing()) return
         if (!user.consents.includes('engagement_monitoring')) {
           autoStarted.current = true
           setSavedConsent(previous => ({ ...previous, monitoring: false }))
@@ -204,7 +208,7 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
           }
         }
       } catch {
-        if (!disposed) {
+        if (!disposed && attempt === stopped.current && capturing()) {
           autoStarted.current = true
           stopAll()
           setSavedConsent(previous => ({ ...previous, monitoring: false }))
@@ -213,7 +217,7 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
       } finally { checking = false }
     }, 5000)
     return () => { disposed = true; clearInterval(timer) }
-  }, [enabled, stopCamera, stopMicrophone, stopAll, checkCameraPolicy])
+  }, [enabled, stopCamera, stopMicrophone, stopAll, checkCameraPolicy, cameraStartingOrActive, microphoneStartingOrActive])
 
   useEffect(() => {
     if (cameraPolicy === 'allowed' || cameraPolicy === 'checking') return
@@ -293,6 +297,11 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
           </button>
         </div>
       </div>
+      {cameraPolicy !== 'allowed' && <p role="status" className="mt-2 text-sm text-muted-foreground">
+        {cameraPolicy === 'blocked' ? 'Your approved camera-off accommodation is active. The camera stays off.'
+          : cameraPolicy === 'checking' ? 'Checking camera permission policy before using the camera…'
+          : 'Camera policy could not be verified. The camera stays off until a fresh check succeeds.'}
+      </p>}
       {message && (
         <p role="alert" className="mt-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm">
           <Info aria-hidden="true" size={16} className="mt-0.5 shrink-0 text-warning" />
@@ -306,11 +315,6 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
         five seconds. Neither device is required. Saved choices may start automatically when the class is live.
       </p>
 
-      {cameraPolicy !== 'allowed' && <p role="status" className="mt-4 text-sm text-muted-foreground">
-        {cameraPolicy === 'blocked' ? 'Your approved camera-off accommodation is active. The camera stays off.'
-          : cameraPolicy === 'checking' ? 'Checking camera permission policy before using the camera…'
-          : 'Camera policy could not be verified. The camera stays off until a fresh check succeeds.'}
-      </p>}
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {(['camera', 'microphone'] as const).map(sensor => {
           const Icon = sensor === 'camera' ? Camera : Mic

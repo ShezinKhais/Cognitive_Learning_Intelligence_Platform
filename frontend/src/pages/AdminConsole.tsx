@@ -190,7 +190,7 @@ function ImportResultView({ result }: { result: TimetableImportResult }) {
           ? 'Import saved.'
           : hasConflicts
             ? 'Resolve conflicts to confirm this import.'
-            : 'Review these changes before confirming. Unmatched rows will be skipped.'}
+            : 'Review these changes before confirming.'}
       </p>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Rows read" value={result.rows_read} />
@@ -201,6 +201,20 @@ function ImportResultView({ result }: { result: TimetableImportResult }) {
         />
         <Stat label={result.applied ? 'Memberships added' : 'Memberships to add'} value={result.memberships_changed} />
       </div>
+      {!!result.new_course_codes?.length && (
+        <IssueList
+          title={result.applied ? 'New courses created' : 'This import creates new courses. Check these codes for typos.'}
+          tone="warning"
+          items={result.new_course_codes}
+        />
+      )}
+      {(hasUnmatchedLecturers || hasUnmatchedStudents) && (
+        <p className="rounded-lg bg-warning/10 p-3 text-sm font-medium text-warning">
+          {result.applied
+            ? 'Rows with unmatched accounts were skipped.'
+            : 'Rows with unmatched accounts will be skipped if you confirm.'}
+        </p>
+      )}
       <details>
         <summary className="cursor-pointer text-sm font-medium">Row details ({result.rows.length})</summary>
         <ul className="mt-2 max-h-80 space-y-2 overflow-auto rounded-lg bg-muted p-3 text-sm">

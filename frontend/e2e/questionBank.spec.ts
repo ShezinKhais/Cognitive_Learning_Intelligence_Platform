@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
 test.describe('Lecturer question bank and lesson selection', () => {
-  const question = { id: 'bank-question', material_id: 'material-test', type: 'mcq', status: 'staged', difficulty: 'medium', prompt: 'Which planet is largest?', options: ['Mars', 'Jupiter'], correct_option: 1, topic: 'Planets', source_slide: 3, source_excerpt: 'Jupiter is the largest planet.', material_title: 'Planets.pdf' }
+  const question = { id: 'bank-question', material_id: 'material-test', type: 'mcq', status: 'staged', difficulty: 'medium', prompt: 'Which planet is largest?', options: ['Mars', 'Jupiter'], correct_option: 1, topic: 'Planets', source_slide: 3, source_excerpt: 'Jupiter is the largest planet.', material_title: 'Planets.pdf', source_question_id: null as string | null }
   const emptyPlan = { session_id: 'lesson-test', selected_only: false, editable: true, items: [] as typeof question[] }
 
   test('manual MCQ source errors retain input, and retry sends the reviewed answer and exact source', async ({ page }) => {
@@ -56,7 +56,7 @@ test.describe('Lecturer question bank and lesson selection', () => {
       if (route.request().url().includes('/candidates?')) return route.fulfill({ json: { items: [question], total: 1, limit: 10, offset: 0 } })
       if (route.request().method() === 'PUT') {
         sent = route.request().postDataJSON()
-        plan = { ...emptyPlan, selected_only: true, items: [{ ...question, id: 'lesson-copy' }] }
+        plan = { ...emptyPlan, selected_only: true, items: [{ ...question, id: 'lesson-copy', source_question_id: question.id }] }
       }
       return route.fulfill({ json: plan })
     })
@@ -76,6 +76,12 @@ test.describe('Lecturer question bank and lesson selection', () => {
     const a11y = await new AxeBuilder({ page }).analyze()
     expect(a11y.violations).toEqual([])
     await page.reload()
+    await expect(page.getByRole('heading', { name: 'Selected (1/100)' })).toBeVisible()
+    const source = page.getByRole('checkbox', { name: question.prompt, exact: true })
+    await expect(source).toBeChecked()
+    await source.uncheck()
+    await expect(page.getByRole('heading', { name: 'Selected (0/100)' })).toBeVisible()
+    await source.check()
     await expect(page.getByRole('heading', { name: 'Selected (1/100)' })).toBeVisible()
     await expect(page.getByRole('button', { name: `Remove ${question.prompt}`, exact: true })).toBeVisible()
   })

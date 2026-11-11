@@ -7,35 +7,40 @@ type Policy = 'checking' | 'allowed' | 'blocked' | 'unavailable'
 export function useCameraPolicy(stopCamera: () => void) {
   const [policy, setPolicy] = useState<Policy>('checking')
   const current = useRef<Policy>('checking')
-  const sequence = useRef(0)
-  const pending = useRef<AbortController | null>(null)
-  const check = useCallback(async () => {
-    const request = ++sequence.current
-    pending.current?.abort()
+  const pending = useRef<{ controller: AbortController; result: Promise<boolean> } | null>(null)
+  const check = useCallback(() => {
+    if (pending.current) return pending.current.result
     const controller = new AbortController()
-    pending.current = controller
     const timeout = window.setTimeout(() => controller.abort(), 5000)
-    try {
-      const result = await apiAuthenticatedRequest<{ camera_allowed: boolean }>('/me/consideration/policy', { cache: 'no-store', signal: controller.signal })
-      if (request !== sequence.current) return false
-      // A malformed or unavailable policy never grants camera access.
-      const allowed = result.camera_allowed === true
+    const isCurrent = () => pending.current?.controller === controller
+    const result = apiAuthenticatedRequest<{ camera_allowed: boolean }>(
+      '/me/consideration/policy', { cache: 'no-store', signal: controller.signal },
+    ).then(response => {
+      if (!isCurrent()) return false
+      controller.signal.throwIfAborted()
+      const allowed = response.camera_allowed === true
       current.current = allowed ? 'allowed' : 'blocked'
       setPolicy(current.current)
       if (!allowed) stopCamera()
       return allowed
-    } catch {
-      if (request === sequence.current) {
+    }).catch(() => {
+      if (isCurrent()) {
         current.current = 'unavailable'
         setPolicy('unavailable')
         stopCamera()
       }
       return false
-    } finally {
+    }).finally(() => {
       window.clearTimeout(timeout)
-      if (pending.current === controller) pending.current = null
-    }
+      if (isCurrent()) pending.current = null
+    })
+    pending.current = { controller, result }
+    return result
   }, [stopCamera])
-  useEffect(() => () => { ++sequence.current; pending.current?.abort() }, [])
+  useEffect(() => () => {
+    const request = pending.current
+    pending.current = null
+    request?.controller.abort()
+  }, [])
   return { policy, current, check }
 }

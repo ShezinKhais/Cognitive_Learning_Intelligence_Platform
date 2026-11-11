@@ -124,6 +124,7 @@ def copy_question(question: Question, reviewer_id: UUID) -> Question:
     """No history or session binding is copied; the caller owns the transaction."""
     return Question(
         source_material_id=question.source_material_id,
+        source_question_id=question.source_question_id or question.question_id,
         session_id=None,
         question_text=question.question_text,
         question_type=question.question_type,

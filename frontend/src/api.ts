@@ -55,6 +55,7 @@ export interface TimetableImportResult {
   unmatched_students: string[]
   sessions_to_create: number
   courses_changed: number
+  new_course_codes?: string[]
   memberships_changed: number
   applied: boolean
   preview_token: string | null

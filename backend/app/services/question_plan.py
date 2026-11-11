@@ -38,6 +38,7 @@ def question_out(question: Question, title: str) -> LessonQuestionOut:
         source_slide=question.source_slide,
         source_excerpt=question.source_excerpt,
         material_title=title,
+        source_question_id=question.source_question_id,
     )
 
 
@@ -163,7 +164,11 @@ async def save_plan(
         ).all()
         if {q.question_id for q, _ in rows} != new_ids:
             raise NotFoundError("One or more selected questions are unavailable for this lesson.")
-    for q in [*keep.values(), *(q for q, _ in rows)]:
+    selected = [*keep.values(), *(q for q, _ in rows)]
+    origins = {q.source_question_id or q.question_id for q in selected}
+    if len(origins) != len(selected):
+        raise ValidationError("Select each source checkpoint only once per lesson.")
+    for q in selected:
         validate_reusable(q)
     # All validation precedes mutation. Copies leave the bank and historical answers intact.
     for q in existing:

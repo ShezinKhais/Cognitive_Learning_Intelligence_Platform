@@ -3,7 +3,11 @@ import { apiAuthenticatedRequest, type Page, type Question } from '../../api'
 import { buttonStyles } from '../../components/ui/button'
 import { useReviewResource } from '../review/useReviewResource'
 
-interface LessonQuestion extends Question { material_title: string }
+interface LessonQuestion extends Question {
+  material_title: string
+  source_question_id?: string | null
+}
+const sourceId = (question: LessonQuestion) => question.source_question_id ?? question.id
 interface Plan { session_id: string; selected_only: boolean; editable: boolean; items: LessonQuestion[] }
 const PAGE_SIZE = 10
 const MAX_QUESTIONS = 100
@@ -33,13 +37,13 @@ export default function LessonQuestionPlan({ sessionId, onSaved, onPendingChange
 
   function reset(plan: Plan) {
     setSaved(plan); setSelectedOnly(plan.selected_only)
-    setSelected(new Map(plan.items.map(question => [question.id, question])))
+    setSelected(new Map(plan.items.map(question => [sourceId(question), question])))
     setConfirmed(false)
   }
   useEffect(() => { if (resource.data) reset(resource.data) }, [resource.data])
-  const savedIds = new Set(saved?.items.map(question => question.id))
+  const savedIds = new Set(saved?.items.map(sourceId))
   const dirty = Boolean(saved) && (selectedOnly !== saved?.selected_only || (
-    selectedOnly && (selected.size !== savedIds.size || [...selected.keys()].some(key => !savedIds.has(key)))
+    selectedOnly && (selected.size !== saved?.items.length || [...selected.keys()].some(key => !savedIds.has(key)))
   ))
   useEffect(() => { onPendingChange(dirty || saving) }, [dirty, saving, onPendingChange])
   useEffect(() => () => onPendingChange(false), [onPendingChange])
@@ -48,8 +52,9 @@ export default function LessonQuestionPlan({ sessionId, onSaved, onPendingChange
     setConfirmed(false)
     setSelected(current => {
       const next = new Map(current)
-      if (next.has(question.id)) next.delete(question.id)
-      else if (next.size < MAX_QUESTIONS) next.set(question.id, question)
+      const key = sourceId(question)
+      if (next.has(key)) next.delete(key)
+      else if (next.size < MAX_QUESTIONS) next.set(key, question)
       return next
     })
   }
@@ -59,7 +64,7 @@ export default function LessonQuestionPlan({ sessionId, onSaved, onPendingChange
     try {
       const fresh = await apiAuthenticatedRequest<Plan>(path, {
         method: 'PUT', body: JSON.stringify({ selected_only: selectedOnly,
-          question_ids: selectedOnly ? [...selected.keys()] : [], reviewed_confirmed: confirmed }),
+          question_ids: selectedOnly ? [...selected.values()].map(question => question.id) : [], reviewed_confirmed: confirmed }),
       })
       reset(fresh)
       setMessage(fresh.selected_only ? `Saved ${fresh.items.length} checkpoints for this lesson.` : 'Saved: use the course question bank.')
@@ -92,7 +97,7 @@ export default function LessonQuestionPlan({ sessionId, onSaved, onPendingChange
           </form>
           {candidates.error ? <p role="alert" className="mt-3">Could not load approved questions. <button type="button" onClick={candidates.retry} className="underline">Try again</button></p> : !candidates.data ? <p role="status">Loading approved questions…</p> : <>
             {candidates.data.items.length === 0 ? <p className="mt-3 text-sm">No approved questions match. Review or write a question in Materials first.</p> : <ul className="mt-3 space-y-3">{candidates.data.items.map(question => <li key={question.id} className="rounded border border-border p-3">
-              <label className="flex items-start gap-2 text-sm font-semibold"><input type="checkbox" checked={selected.has(question.id)} disabled={!selected.has(question.id) && selected.size >= MAX_QUESTIONS} onChange={() => toggle(question)} />{question.prompt}</label>
+              <label className="flex items-start gap-2 text-sm font-semibold"><input type="checkbox" checked={selected.has(sourceId(question))} disabled={!selected.has(sourceId(question)) && selected.size >= MAX_QUESTIONS} onChange={() => toggle(question)} />{question.prompt}</label>
               <p className="mt-1 text-xs text-muted-foreground">{question.material_title} · {question.topic ?? 'No topic'}</p>
               <details className="mt-2 text-sm"><summary className="cursor-pointer font-semibold">Review answer and source</summary>
                 <p className="mt-2">Reference answer: {question.type === 'mcq' ? question.options?.[question.correct_option ?? -1] ?? 'Unavailable' : question.reference_answer ?? 'Unavailable'}</p>

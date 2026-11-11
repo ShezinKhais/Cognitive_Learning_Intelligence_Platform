@@ -2000,6 +2000,18 @@
             "description": "The text the question was generated from. Grounding evidence.",
             "title": "Source Excerpt"
           },
+          "source_question_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Question Id"
+          },
           "source_slide": {
             "anyOf": [
               {
@@ -4951,6 +4963,13 @@
             "default": 0,
             "title": "Memberships Changed",
             "type": "integer"
+          },
+          "new_course_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "New Course Codes",
+            "type": "array"
           },
           "preview_token": {
             "anyOf": [

@@ -11,6 +11,7 @@ MAX_LESSON_QUESTIONS = 100
 
 class LessonQuestionOut(QuestionOut):
     material_title: str
+    source_question_id: UUID | None = None
 
 
 class QuestionPlanIn(BaseModel):

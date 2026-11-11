@@ -62,12 +62,47 @@ test.describe('Approved camera-off capture policy', () => {
       if (monitoring) granted.add('engagement_monitoring')
       await page.route('**/api/v1/me/consideration/policy', route => route.fulfill({ json: { camera_allowed: false } }))
       await page.reload()
-      await page.getByRole('button', { name: 'Show options' }).click()
       await expect(page.getByText('Your approved camera-off accommodation is active.', { exact: false })).toBeVisible()
+      await page.getByRole('button', { name: 'Show options' }).click()
       await expect(page.getByLabel('I opt in to camera indicators')).toBeDisabled()
       expect(await page.evaluate(() => (window as any).probe.requests)).toBe(0)
     })
   }
+
+  test('policy refresh shares an in-flight camera start check and skips idle consent', async ({ page }) => {
+    await page.clock.install()
+    await optIn(page, 'camera')
+    let checks = 0
+    let releasePolicy!: () => void
+    let consentRequests = 0
+    let allowConsent = false
+    await page.route('**/api/v1/auth/me', route => {
+      consentRequests++
+      return route.fulfill(allowConsent
+        ? { json: { id: 'student', role: 'student', consents: [...granted] } }
+        : { status: 503, json: {} })
+    })
+    await page.route('**/api/v1/me/consideration/policy', async route => {
+      checks++
+      if (checks === 2) await new Promise<void>(resolve => { releasePolicy = resolve })
+      return route.fulfill({ json: { camera_allowed: true } })
+    })
+
+    await page.clock.fastForward(5000)
+    await expect.poll(() => checks).toBe(1)
+    expect(consentRequests).toBe(0)
+    await expect(page.getByText('Consent could not be verified.', { exact: false })).toHaveCount(0)
+    allowConsent = true
+    await page.clock.fastForward(1000)
+    await page.getByRole('button', { name: 'Turn on', exact: true }).click()
+    await expect.poll(() => Boolean(releasePolicy)).toBe(true)
+    // Cross the next poll without reaching the request's own five-second timeout.
+    await page.clock.fastForward(4500)
+    await expect.poll(() => consentRequests).toBe(1)
+    expect(checks).toBe(2)
+    releasePolicy()
+    await expect.poll(() => page.evaluate(() => (window as any).probe.requests)).toBe(1)
+  })
 
   test('a changed policy cancels pending camera permission and releases a late stream', async ({ page }) => {
     let allowed = true
