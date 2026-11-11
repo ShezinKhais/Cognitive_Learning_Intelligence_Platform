@@ -44,3 +44,21 @@ fails CI.
 Deleted data persists in backups, so keep as few as recovery needs. The default is
 30 daily backups, so erased and purged data leaves them within a month, well inside the
 120-day retention period. Do not raise `--keep` past what the retention promise allows.
+
+## Operations (demo deployment)
+
+Owner: BBIS (Nour), backup operator Shezin. Proposed targets: lose at most one day of data (RPO 24 h) and recover within an hour (RTO 1 h).
+
+- **Nightly:** `deploy/nightly_backup.sh` runs `deploy/backup.sh`, encrypts the new files to `.enc` with the key in `~/.clip-backup-key`, and deletes backups older than 30 days. Cron: `0 2 * * *`.
+- **Key:** generated with `openssl rand -base64 32`, mode 600, never committed. Both operators hold a copy in a password manager. Without it the off-site copies cannot be restored.
+- **Off-site:** upload only the `.enc` files to the operators' storage. Decrypt with
+  `openssl enc -d -aes-256-cbc -pbkdf2 -pass file:$HOME/.clip-backup-key -in <file>.enc -out <file>`.
+- **Alert:** `deploy/check_backup_age.sh` exits 1 and raises a notification when no database backup is newer than 26 hours. Cron: `0 8 * * *`.
+
+### Replaying erasures after a restore
+
+A restore brings back every student erased after the backup, and their deletion request and audit entries with it. So:
+
+1. When an erasure is executed, the operator adds a line to an erasure log kept with the off-site backups, not in the database: date, deletion request ID and student ID.
+2. After any restore, look up the backup's timestamp. Every erasure in the log dated after it must be run again: file a new deletion request for that student, have a second administrator approve it, and execute it.
+3. Record the replay in the log. Never test this against the live database.
