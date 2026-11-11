@@ -181,3 +181,17 @@ async def decide(
         raise NotFoundError("That student was not found.", {"request_id": str(request_id)})
     await db.flush()
     return _out(row), student_user
+
+
+async def capture_policy(db: AsyncSession, user_id: UUID) -> bool:
+    """All applicable approvals count; a later pending/longer different need
+    must not hide an active camera-off approval. Never infer needs from notes."""
+    student = await _student(db, user_id)
+    rows = await db.scalars(
+        select(ConsiderationRequest.needs).where(
+            ConsiderationRequest.student_id == student.student_id,
+            ConsiderationRequest.status == "approved",
+            ConsiderationRequest.until.is_(None) | (ConsiderationRequest.until >= _today()),
+        )
+    )
+    return not any("camera" in needs for needs in rows)

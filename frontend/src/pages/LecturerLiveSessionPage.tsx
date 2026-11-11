@@ -13,6 +13,7 @@ import { PageHeader, Panel, Tag } from '../components/ui/primitives'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import LiveResults from '../features/live/LiveResults'
 import LiveStatusBar from '../features/live/LiveStatusBar'
+import LessonQuestionPlan from '../features/live/LessonQuestionPlan'
 import ReadinessChecklist from '../features/live/ReadinessChecklist'
 import RoomsPanel from '../features/live/RoomsPanel'
 import { statusLabel, statusTone } from '../features/sessions/format'
@@ -144,6 +145,7 @@ export default function LecturerLiveSessionPage() {
 
   // The session's title and course, for the header. The socket carries its
   // live state; this is only what it is called.
+  const [lessonPlanPending, setLessonPlanPending] = useState(false)
   const [details, setDetails] = useState<SessionSummary | null>(null)
   const [confirmingEnd, setConfirmingEnd] = useState(false)
   useEffect(() => {
@@ -569,6 +571,7 @@ export default function LecturerLiveSessionPage() {
       'prepared' &&
     readiness?.ready !== false &&
     !readinessLoading &&
+    !lessonPlanPending &&
     !isBusy
 
   const canPause =
@@ -713,6 +716,8 @@ export default function LecturerLiveSessionPage() {
                 onRefresh={() => void refreshReadiness()}
               />
             )}
+
+            {sessionState?.status === 'prepared' && sessionId && <LessonQuestionPlan key={sessionId} sessionId={sessionId} onSaved={() => void refreshReadiness()} onPendingChange={setLessonPlanPending} />}
 
             {actionError && (
               <div

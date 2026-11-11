@@ -69,3 +69,9 @@ class ConsiderationAdminOut(ConsiderationOut):
 
 class ConsiderationDecision(BaseModel):
     note: str | None = Field(default=None, max_length=MAX_DECISION_NOTE)
+
+
+class CapturePolicyOut(BaseModel):
+    """Minimal own-student capture policy, without request notes or diagnoses."""
+
+    camera_allowed: bool

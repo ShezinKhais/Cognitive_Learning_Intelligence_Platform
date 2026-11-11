@@ -25,6 +25,16 @@ class ReviewAnswer(BaseModel):
     label: ComprehensionLabel | None
     confidence: float | None = Field(ge=0, le=1)
     submitted_at: datetime
+    correct_answer: str | None = None
+    key_points: list[str] = Field(default_factory=list)
+
+
+class MissedQuestion(BaseModel):
+    id: UUID
+    question: str
+    topic: str | None
+    correct_answer: str | None
+    key_points: list[str] = Field(default_factory=list)
 
 
 class ReviewEngagement(BaseModel):

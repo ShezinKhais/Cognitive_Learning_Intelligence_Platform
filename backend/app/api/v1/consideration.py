@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from app.api.deps import (
     AppSettings,
@@ -22,6 +22,7 @@ from app.core.audit import audit_action
 from app.realtime.classroom import classroom
 from app.schemas.common import Page
 from app.schemas.consideration import (
+    CapturePolicyOut,
     ConsiderationAdminOut,
     ConsiderationCreate,
     ConsiderationDecision,
@@ -55,6 +56,16 @@ admin = APIRouter(
 async def my_request(principal: CurrentUser, db: DbSession) -> MyConsiderationOut:
     """The student's most recent request and where it stands."""
     return MyConsiderationOut(current=await consideration.my_request(db, principal.user_id))
+
+
+@mine.get("/policy", response_model=CapturePolicyOut)
+async def capture_policy(
+    principal: CurrentUser, db: DbSession, response: Response
+) -> CapturePolicyOut:
+    response.headers["Cache-Control"] = "no-store"
+    return CapturePolicyOut(
+        camera_allowed=await consideration.capture_policy(db, principal.user_id)
+    )
 
 
 @mine.post("", response_model=ConsiderationOut, status_code=status.HTTP_201_CREATED)

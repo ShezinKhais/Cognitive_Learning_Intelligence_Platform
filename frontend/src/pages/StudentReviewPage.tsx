@@ -1,3 +1,4 @@
+import { SocraticChatPanel } from '../features/chat/SocraticChatPanel'
 import DiscussionPanel from '../features/discussion/DiscussionPanel'
 import { useId, useState } from 'react'
 import { ChevronDown, FileText } from 'lucide-react'
@@ -11,7 +12,7 @@ import { problemArt } from '../components/ui/problem'
 import SegmentedTabs from '../components/ui/SegmentedTabs'
 import { formatRelative, sinceVerb } from '../features/format/relativeTime'
 import { comprehensionText, comprehensionTone, needsReview, reviewError } from '../features/review/reviewDisplay'
-import type { ReviewAnswer, ReviewPage, ReviewSession, ReviewSources, StudentReview } from '../features/review/reviewTypes'
+import type { MissedQuestion, ReviewAnswer, ReviewPage, ReviewSession, ReviewSources, StudentReview } from '../features/review/reviewTypes'
 import { useReviewResource } from '../features/review/useReviewResource'
 
 const PAGE_SIZE = 20
@@ -192,6 +193,13 @@ function Review({ sessionId }: { sessionId: string }) {
           )}
           <Pager offset={offset} total={data.total} onChange={setOffset} noun="answers" />
         </section>
+        <MissedQuestions sessionId={sessionId} />
+        {import.meta.env.VITE_SOCRATIC_CHAT_ENABLED === 'true' && (
+          <section aria-label="Study the session material" className="mt-10">
+            <p className="mb-3 text-sm text-muted-foreground">Ask for guided help with the session material. For what was said in class, use the discussion catch-up above.</p>
+            <SocraticChatPanel key={`material-${sessionId}`} sessionId={sessionId} />
+          </section>
+        )}
       </PageBody>
     </>
   )
@@ -212,6 +220,7 @@ function Answer({ answer, sessionId }: { answer: ReviewAnswer; sessionId: string
       <h3 className="mt-2 whitespace-pre-wrap font-semibold">{answer.question}</h3>
       <p className="mt-3 text-sm font-semibold text-muted-foreground">Your answer</p>
       <p className="mt-0.5 whitespace-pre-wrap break-words">{answer.answer}</p>
+      <ReferenceAnswer correctAnswer={answer.correct_answer} keyPoints={answer.key_points} />
       {answer.label && answer.confidence !== null && !uncertain && (
         <p className="mt-2 text-sm text-muted-foreground">
           {Math.round(answer.confidence * 100)}% sure of this reading. It is an estimate, not a grade.
@@ -233,17 +242,60 @@ function Answer({ answer, sessionId }: { answer: ReviewAnswer; sessionId: string
       </button>
       {open && (
         <div id={sourcesId} className="mt-3">
-          <Sources sessionId={sessionId} responseId={answer.id} />
+          <Sources path={`/student-reviews/${encodeURIComponent(sessionId)}/responses/${encodeURIComponent(answer.id)}/sources`} />
         </div>
       )}
     </article>
   )
 }
 
-function Sources({ sessionId, responseId }: { sessionId: string; responseId: string }) {
-  const { data, error, retry } = useReviewResource<ReviewSources>(
-    `/student-reviews/${encodeURIComponent(sessionId)}/responses/${encodeURIComponent(responseId)}/sources`,
+function ReferenceAnswer({ correctAnswer, keyPoints = [] }: { correctAnswer?: string | null; keyPoints?: string[] }) {
+  return (
+    <div className="mt-3 rounded-md bg-muted/40 p-3">
+      <p className="text-sm font-semibold">Reference answer</p>
+      <p className="mt-1 whitespace-pre-wrap break-words text-sm">{correctAnswer || 'A reference answer is unavailable. Check the source or ask your lecturer.'}</p>
+      {keyPoints.length > 0 && <><p className="mt-2 text-sm font-semibold">Key points to understand</p><ul className="list-disc space-y-1 pl-5 text-sm">{keyPoints.map((point, index) => <li key={index}>{point}</li>)}</ul></>}
+    </div>
   )
+}
+
+function MissedQuestions({ sessionId }: { sessionId: string }) {
+  const [offset, setOffset] = useState(0)
+  const { data, error, status, retry } = useReviewResource<ReviewPage<MissedQuestion>>(
+    `/student-reviews/${encodeURIComponent(sessionId)}/missed?limit=${PAGE_SIZE}&offset=${offset}`,
+  )
+  return (
+    <section aria-labelledby="missed-heading" className="mt-10">
+      <h2 id="missed-heading" className="mb-3 text-lg font-bold">Unanswered checkpoints</h2>
+      <p className="mb-4 text-sm text-muted-foreground">Questions recorded as missed when they were delivered to you. Unanswered does not mean wrong.</p>
+      {error ? <LoadError message={error} status={status} retry={retry} /> : !data ? <SkeletonRows label="Loading unanswered checkpoints" /> : data.items.length === 0 ? (
+        <EmptyState title="No unanswered checkpoints recorded" />
+      ) : <>
+        <ol className="space-y-3">{data.items.map((question) => <li key={question.id}>
+          <article className="rounded-lg border border-border bg-card px-5 py-4">
+            <MetaLine items={[question.topic ?? 'No topic', 'Unanswered']} />
+            <h3 className="mt-2 whitespace-pre-wrap font-semibold">{question.question}</h3>
+            <ReferenceAnswer correctAnswer={question.correct_answer} keyPoints={question.key_points} />
+            <MissedSources sessionId={sessionId} missedId={question.id} />
+          </article>
+        </li>)}</ol>
+        <Pager offset={offset} total={data.total} onChange={setOffset} noun="unanswered checkpoints" />
+      </>}
+    </section>
+  )
+}
+
+function MissedSources({ sessionId, missedId }: { sessionId: string; missedId: string }) {
+  const [open, setOpen] = useState(false)
+  // Load on expansion; do not fetch twenty source pages while reading the list.
+  return <details className="mt-3" onToggle={event => setOpen(event.currentTarget.open)}>
+    <summary className="cursor-pointer text-sm font-semibold text-primary">Show source for this unanswered checkpoint</summary>
+    {open && <div className="mt-3"><Sources path={`/student-reviews/${encodeURIComponent(sessionId)}/missed/${encodeURIComponent(missedId)}/sources`} /></div>}
+  </details>
+}
+
+function Sources({ path }: { path: string }) {
+  const { data, error, retry } = useReviewResource<ReviewSources>(path)
   // Inside one answer, so a line rather than a full panel.
   if (error) {
     return (
@@ -264,7 +316,7 @@ function Sources({ sessionId, responseId }: { sessionId: string; responseId: str
     )
   }
   return (
-    <section aria-label="Where this question came from" className="space-y-2">
+    <div role="group" aria-label="Where this question came from" className="space-y-2">
       {data.items.map((source) => (
         <blockquote key={source.chunk_id} className="rounded-md border-l-2 border-primary bg-muted/40 px-4 py-3">
           <MetaLine
@@ -280,7 +332,7 @@ function Sources({ sessionId, responseId }: { sessionId: string; responseId: str
       {data.has_more && (
         <p className="text-sm text-muted-foreground">These are the first five matches. Your lecturer has the whole page.</p>
       )}
-    </section>
+    </div>
   )
 }
 
