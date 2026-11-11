@@ -143,6 +143,7 @@ AUDIENCE = {
     ("GET", "/api/v1/reports/{report_id}"): STAFF,
     ("GET", "/api/v1/reports/{report_id}/pdf"): STAFF,
     ("GET", "/api/v1/me/consideration"): STUDENT_ONLY,
+    ("GET", "/api/v1/me/engagement-history"): STUDENT_ONLY,
     ("POST", "/api/v1/me/consideration"): STUDENT_ONLY,
     ("POST", "/api/v1/me/consideration/withdraw"): STUDENT_ONLY,
     ("GET", "/api/v1/admin/consideration-requests"): ADMIN_ONLY,
