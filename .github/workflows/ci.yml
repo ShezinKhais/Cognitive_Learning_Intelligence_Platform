@@ -112,15 +112,17 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - name: Install browser
-        # The runner image already has the browsers' system libraries. When the
-        # Ubuntu archive cannot be reached, install the browser without them
-        # rather than failing the job.
+        # GitHub's Ubuntu runners come with Google Chrome and Microsoft Edge, and
+        # their libraries. Use those when present, so the job does not depend on
+        # the Ubuntu archive, which installing a branded browser always goes
+        # through. Install it only on a runner without one.
         run: |
-          browser=${{ matrix.browser == 'edge' && 'msedge' || 'chrome' }}
-          timeout 360 npx playwright install --with-deps "$browser" || {
-            echo "::warning::Browser system dependencies could not be installed; using the runner image's."
-            npx playwright install "$browser"
-          }
+          if [ "${{ matrix.browser }}" = edge ]; then browser=msedge; program=microsoft-edge; else browser=chrome; program=google-chrome; fi
+          if command -v "$program" >/dev/null 2>&1; then
+            echo "Using the runner's $("$program" --version)"
+          else
+            npx playwright install --with-deps "$browser"
+          fi
       - run: npm run check:browser
       - run: npm run test:browser -- --project=${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
