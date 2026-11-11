@@ -231,37 +231,59 @@ export function LiveSessionPanel({
           aria-live="polite"
           hidden={assistant && activeView !== 'class' && !state.checkpoint}
         >
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={state.checkpoint ? `ask-${state.checkpoint.question.question_id}` : state.completedCheckpoint ? 'done' : 'wait'}
-              initial={{ opacity: 0, y: -14, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, transition: { duration: 0.15 } }}
-              transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-            >
-              {state.checkpoint ? (
-                <CheckpointCard
-                  checkpoint={state.checkpoint}
-                  secondsRemaining={secondsRemaining}
-                  connected={state.connection === 'connected'}
-                  onSelectOption={selectOption}
-                  onSetFreeText={setFreeText}
-                  onSubmit={submitAnswer}
-                />
-              ) : state.completedCheckpoint ? (
+          {/* Terminal session state must remain visible even when feedback is
+              retained. Otherwise the last checkpoint hides the review link. */}
+          {finished && (
+            <WaitingCard
+              sessionId={session.id}
+              sessionStatus={state.sessionStatus}
+              paused={state.paused}
+            />
+          )}
+          {finished ? (
+            state.completedCheckpoint && (
+              <div className="mt-5">
                 <CompletedCheckpointCard
                   checkpoint={state.completedCheckpoint}
+                  awaitingNext={false}
+                  reviewAvailable={state.sessionStatus === 'ended'}
                 />
-              ) : (
-                <WaitingCard
-                  sessionId={session.id}
-                  sessionStatus={state.sessionStatus}
-                  paused={state.paused}
-                  compact={compact}
-                />
-              )}
-            </motion.div>
-          </AnimatePresence>
+              </div>
+            )
+          ) : (
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={state.checkpoint ? `ask-${state.checkpoint.question.question_id}` : state.completedCheckpoint ? 'done' : 'wait'}
+                initial={{ opacity: 0, y: -14, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, transition: { duration: 0.15 } }}
+                transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+              >
+                {state.checkpoint ? (
+                  <CheckpointCard
+                    checkpoint={state.checkpoint}
+                    secondsRemaining={secondsRemaining}
+                    connected={state.connection === 'connected'}
+                    onSelectOption={selectOption}
+                    onSetFreeText={setFreeText}
+                    onSubmit={submitAnswer}
+                  />
+                ) : state.completedCheckpoint ? (
+                  <CompletedCheckpointCard
+                    checkpoint={state.completedCheckpoint}
+                    awaitingNext
+                    reviewAvailable={false}
+                  />
+                ) : (
+                  <WaitingCard
+                    sessionId={session.id}
+                    sessionStatus={state.sessionStatus}
+                    paused={state.paused}
+                  />
+                )}
+              </motion.div>
+            </AnimatePresence>
+          )}
         </section>
 
         <DiscussionPanel key={`discussion-${session.id}`} sessionId={session.id} />
@@ -332,17 +354,23 @@ export function LiveSessionPanel({
 
 function CompletedCheckpointCard({
   checkpoint,
+  awaitingNext,
+  reviewAvailable,
 }: {
   checkpoint: CheckpointState
+  awaitingNext: boolean
+  reviewAvailable: boolean
 }) {
   return (
     <article className="rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)] sm:p-7">
-      <CheckpointOutcome checkpoint={checkpoint} />
+      <CheckpointOutcome checkpoint={checkpoint} finished={!awaitingNext} reviewAvailable={reviewAvailable} />
 
-      <p className="mt-4 text-sm text-muted-foreground">
-        Stay on this page. The lecturer’s next question will appear
-        automatically.
-      </p>
+      {awaitingNext && (
+        <p className="mt-4 text-sm text-muted-foreground">
+          Stay on this page. The lecturer’s next question will appear
+          automatically.
+        </p>
+      )}
     </article>
   )
 }
@@ -541,25 +569,6 @@ function CheckpointCard({
             Saving your answer…
           </p>
         )}
-
-        {/* NEW: Show a message instead of loading forever. */}
-        {checkpoint.phase === 'unconfirmed' && (
-          <div
-            role="status"
-            className="mt-6 rounded-xl border border-warning/30 bg-warning/5 p-4"
-          >
-            <p className="font-semibold text-warning">
-              Answer confirmation unavailable
-            </p>
-
-            <p className="mt-2 text-sm text-muted-foreground">
-              Your answer was sent, but we could not
-              confirm whether it was saved.
-              Please stay on this page while
-              your connection recovers.
-            </p>
-          </div>
-        )}
       </div>
     </article>
   )
@@ -567,9 +576,29 @@ function CheckpointCard({
 
 function CheckpointOutcome({
   checkpoint,
+  finished = false,
+  reviewAvailable = false,
 }: {
   checkpoint: CheckpointState
+  finished?: boolean
+  reviewAvailable?: boolean
 }) {
+  if (checkpoint.phase === 'unconfirmed') {
+    return (
+      <div role="status" className="mt-6 rounded-xl border border-warning/30 bg-warning/5 p-4">
+        <p className="font-semibold text-warning">Answer confirmation unavailable</p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Your answer was sent, but we could not confirm whether it was saved.{' '}
+          {finished
+            ? reviewAvailable
+              ? 'The session is over. Check the session review for your saved answers.'
+              : 'The session was cancelled. Ask your lecturer to confirm the answer status.'
+            : 'Please stay on this page while your connection recovers.'}
+        </p>
+      </div>
+    )
+  }
+
   if (checkpoint.phase === 'missed') {
     return (
       <div
@@ -583,7 +612,7 @@ function CheckpointOutcome({
 
         <p className="mt-1 text-sm text-muted-foreground">
           No answer was recorded for this checkpoint.
-          You can continue participating in the session.
+          {!finished && ' You can continue participating in the session.'}
         </p>
       </div>
     )
@@ -601,7 +630,7 @@ function CheckpointOutcome({
 
         <p className="mt-1 text-muted-foreground">
           {checkpoint.receipt?.reason ??
-            'Please check your answer and try again.'}
+            (finished ? 'This answer was not accepted before the session ended.' : 'Please check your answer and try again.')}
         </p>
       </div>
     )
@@ -675,12 +704,10 @@ function WaitingCard({
   sessionId,
   sessionStatus,
   paused,
-  compact,
 }: {
   sessionId: string
   sessionStatus: StudentSession['status']
   paused: boolean
-  compact: boolean
 }) {
   const ended =
     sessionStatus === 'ended' ||
@@ -712,13 +739,13 @@ function WaitingCard({
 
       <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted-foreground">
         {ended
-          ? sessionStatus === 'cancelled' ? 'There is no post-session review for a cancelled session.' : 'Your answers are saved. See how you did, and what to revisit before the next class.'
+          ? sessionStatus === 'cancelled' ? 'There is no post-session review for a cancelled session.' : 'Review your saved answers, see how you did, and what to revisit before the next class.'
           : paused
             ? 'The lecturer has paused the session. Checkpoints will resume automatically when the session continues.'
             : 'Stay on this page. The lecturer’s next question will appear automatically.'}
       </p>
 
-      {sessionStatus === 'ended' && !compact && (
+      {sessionStatus === 'ended' && (
         <Link
           to={`/student/session/${sessionId}/summary`}
           className={`${buttonStyles()} mt-5`}
