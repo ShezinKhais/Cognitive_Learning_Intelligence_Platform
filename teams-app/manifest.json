@@ -22,52 +22,46 @@
     "outline": "outline.png"
   },
   "accentColor": "#6264A7",
+
   "showLoadingIndicator": true,
+
   "staticTabs": [
     {
       "entityId": "clip.home",
       "name": "C.L.I.P",
       "contentUrl": "${{BASE_URL}}/open",
       "websiteUrl": "${{BASE_URL}}/login",
-      "scopes": [
-        "personal"
-      ]
+      "scopes": ["personal"]
     }
   ],
+
   "configurableTabs": [
     {
       "configurationUrl": "${{BASE_URL}}/config",
-      "scopes": [
-        "groupChat"
-      ],
-      "context": [
-        "meetingChatTab",
-        "meetingDetailsTab",
-        "meetingSidePanel"
-      ],
+      "scopes": ["groupChat"],
+      "context": ["meetingChatTab", "meetingDetailsTab", "meetingSidePanel"],
       "supportedSharePointHosts": []
     }
   ],
+
   "bots": [
     {
       "botId": "${{BOT_ID}}",
-      "scopes": [
-        "groupChat"
-      ],
+      "scopes": ["groupChat"],
       "supportsFiles": false,
       "isNotificationOnly": false
     }
   ],
-  "permissions": [
-    "identity"
-  ],
-  "devicePermissions": [
-    "media"
-  ],
+
+  "permissions": ["identity"],
+
+  "devicePermissions": ["media"],
+
   "webApplicationInfo": {
     "id": "${{BOT_ID}}",
     "resource": "api://${{BASE_DOMAIN}}/${{BOT_ID}}"
   },
+
   "authorization": {
     "permissions": {
       "resourceSpecific": [
@@ -86,7 +80,6 @@
       ]
     }
   },
-  "validDomains": [
-    "${{BASE_DOMAIN}}"
-  ]
+
+  "validDomains": ["${{BASE_DOMAIN}}"]
 }
