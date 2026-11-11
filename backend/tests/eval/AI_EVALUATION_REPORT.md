@@ -229,6 +229,16 @@ The seen and hold-out attempts caught are unchanged, but the two keyword-list
 attempts (x04, x18) are no longer stopped before the model; the table above
 is v5 and is to be rerun on v6.
 
+Refreshing these results (#251): the scripts now take `--questions`,
+`--answers` and `--new`, so v6 can be rerun on the original sets and on a
+fresh held-out set from a different lecture (`fresh/README.md`, never to be
+tuned on); the cheating table now separates attempts refused before the model
+from ones the model marked struggling and ones that worked. `THRESHOLDS.md`
+lists every confidence threshold in the code and what each would do on the v5
+results: at today's 0.6, 9 of the 11 labels hidden as uncertain were right
+and 6 of the 8 mistakes are still shown, so the review threshold is a team
+decision once the v6 and fresh results are in.
+
 ## 6. Summaries
 
 Are the lecturer and student summaries true to the data? Code counts the

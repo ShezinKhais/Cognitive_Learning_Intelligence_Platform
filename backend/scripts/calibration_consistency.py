@@ -6,6 +6,13 @@ already wrote. Run from backend/:
 
     python -m scripts.calibration_consistency
     python -m scripts.calibration_consistency --out tests/eval/CALIBRATION.md
+    python -m scripts.calibration_consistency \
+        --run tests/eval/results_qwen3b_v6.csv "qwen2.5:3b v6 run 1" \
+        --run tests/eval/results_qwen3b_v6_run2.csv "qwen2.5:3b v6 run 2" \
+        --repeat tests/eval/results_qwen3b_v6.csv tests/eval/results_qwen3b_v6_run2.csv
+
+With --run, only the runs named are read (a file and a name for it); without
+it, the older runs listed in RUNS below.
 
 Calibration: when the classifier says it is 90% sure, is it right about 90%
 of the time? Measured by expected calibration error (ECE) and the Brier
@@ -14,6 +21,9 @@ labels above wrong ones (1 perfect, 0.5 a coin toss).
 
 Consistency: two runs of the same model and prompt on the same answers, and
 how often they give the same label (Cohen's kappa between the runs).
+
+Thresholds: for 0.35, 0.6 and 0.85, how many labels would be hidden as
+"Uncertain, ask your lecturer" and how many wrong labels would still be shown.
 """
 
 from __future__ import annotations
@@ -29,7 +39,9 @@ from app.services.classifier_evaluation import (
     confidence_buckets,
     confidence_separation,
     expected_calibration_error,
+    threshold_cuts,
 )
+from scripts.evaluate_classifier import REVIEW_THRESHOLDS
 
 EVAL_DIR = Path(__file__).resolve().parent.parent / "tests" / "eval"
 RUNS = {
@@ -51,7 +63,27 @@ def read(path: Path) -> dict[str, dict[str, str]]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, help="also write the results to this Markdown file")
+    parser.add_argument(
+        "--run", nargs=2, action="append", metavar=("FILE", "NAME"), help="a results file to read"
+    )
+    parser.add_argument(
+        "--repeat",
+        nargs=2,
+        action="append",
+        metavar=("FIRST", "SECOND"),
+        help="two results files of the same model and prompt, to compare",
+    )
     args = parser.parse_args()
+    runs = (
+        {Path(file): name for file, name in args.run}
+        if args.run
+        else {EVAL_DIR / file: name for file, name in RUNS.items()}
+    )
+    repeats = (
+        [(Path(a), Path(b)) for a, b in args.repeat]
+        if args.repeat
+        else [(EVAL_DIR / a, EVAL_DIR / b) for a, b in REPEATS]
+    )
 
     calibration = [
         "| Run | Labels | Mean confidence | Accuracy | ECE | Brier | AUROC |",
@@ -61,9 +93,15 @@ def main() -> None:
         "| Run | Below 0.6 | 0.6 to 0.85 | 0.85 and up |",
         "|---|---|---|---|",
     ]
-    for file, name in RUNS.items():
-        path = EVAL_DIR / file
+    cuts = [
+        "| Run | "
+        + " | ".join(f"Below {t:.2f}: hidden (wrong) / shown (wrong)" for t in REVIEW_THRESHOLDS)
+        + " |",
+        "|---|" + "---|" * len(REVIEW_THRESHOLDS),
+    ]
+    for path, name in runs.items():
         if not path.exists():
+            print(f"skipped {path}: not found")
             continue
         rows = [r for r in read(path).values() if r["predicted"] in LABELS]
         confidences = [float(r["confidence"]) for r in rows]
@@ -81,13 +119,21 @@ def main() -> None:
             for b in confidence_buckets(confidences, correct)
         ]
         buckets.append(f"| {name} | " + " | ".join(cells) + " |")
+        cuts.append(
+            f"| {name} | "
+            + " | ".join(
+                f"{c.flagged} ({c.flagged_wrong}) / {c.shown} ({c.shown_wrong})"
+                for c in threshold_cuts(confidences, correct, REVIEW_THRESHOLDS)
+            )
+            + " |"
+        )
 
     consistency = [
         "| Runs compared | Answers both read | Same label | Cohen's kappa |",
         "|---|---|---|---|",
     ]
-    for first, second in REPEATS:
-        a, b = read(EVAL_DIR / first), read(EVAL_DIR / second)
+    for first, second in repeats:
+        a, b = read(first), read(second)
         shared = [
             i for i in a if i in b and a[i]["predicted"] in LABELS and b[i]["predicted"] in LABELS
         ]
@@ -95,7 +141,7 @@ def main() -> None:
         y = [b[i]["predicted"] for i in shared]
         same = sum(p == q for p, q in zip(x, y, strict=True))
         consistency.append(
-            f"| {RUNS[first]} vs {RUNS[second]} | {len(shared)} | "
+            f"| {runs.get(first, first.name)} vs {runs.get(second, second.name)} | {len(shared)} | "
             f"{same} ({same / len(shared):.0%}) | {cohen_kappa(x, y):.2f} |"
         )
 
@@ -108,6 +154,12 @@ def main() -> None:
             "How often labels were right at each confidence level:",
             "",
             *buckets,
+            "",
+            "What each review threshold would do: labels below it are shown as "
+            '"Uncertain, ask your lecturer" (hidden), the rest with their label (shown); '
+            "wrong counts in brackets:",
+            "",
+            *cuts,
             "",
             "## Consistency",
             "",
