@@ -1,0 +1,2172 @@
+{
+ "courses": {
+  "6.0002 data science": [
+   "MIT6_0002F16_lec3.pdf",
+   "MIT6_0002F16_lec6.pdf"
+  ],
+  "18.650 statistics": [
+   "MIT18_650F16_Regression.pdf",
+   "MIT18_650F16_Maximum_LE.pdf"
+  ],
+  "6.007 electromagnetics": [
+   "MIT6_007S11_lec01.pptx",
+   "MIT6_007S11_lec02.pptx",
+   "MIT6_007S11_lec04.pptx",
+   "MIT6_007S11_lec08.pptx"
+  ],
+  "6.033 systems": [
+   "MIT6_033S18lec8.pdf"
+  ],
+  "18.404 theory of computation": [
+   "MIT18_404f20_lec6.pptx"
+  ]
+ },
+ "queries": [
+  {
+   "id": "c001",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "What are the two things every graph is made of?",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec3.pdf",
+     "pages": [
+      4,
+      5
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c002",
+   "course": "6.0002 data science",
+   "split": "heldout",
+   "kinds": [
+    "diagram"
+   ],
+   "query": "Drawing of a directed graph whose edges carry weights like 10, 3 and 12",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec3.pdf",
+     "pages": [
+      5
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c003",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "text",
+    "student-wording"
+   ],
+   "query": "Why is a tree just a special kind of graph?",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec3.pdf",
+     "pages": [
+      7
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c004",
+   "course": "6.0002 data science",
+   "split": "heldout",
+   "kinds": [
+    "image-only"
+   ],
+   "query": "Street map of Boston traffic used to show why graphs are useful",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec3.pdf",
+     "pages": [
+      10
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c005",
+   "course": "6.0002 data science",
+   "split": "heldout",
+   "kinds": [
+    "text"
+   ],
+   "query": "The bridges of Konigsberg problem from 1735",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec3.pdf",
+     "pages": [
+      12,
+      13
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c006",
+   "course": "6.0002 data science",
+   "split": "heldout",
+   "kinds": [
+    "text",
+    "student-wording"
+   ],
+   "query": "How did Euler turn the Konigsberg bridges into a graph, and could you cross every bridge once?",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec3.pdf",
+     "pages": [
+      13
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c007",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "code"
+   ],
+   "query": "Python class for an edge with a source node and a destination node",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec3.pdf",
+     "pages": [
+      16
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c008",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "code"
+   ],
+   "query": "How does the Digraph class store its edges? A dictionary from each node to a list of children",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec3.pdf",
+     "pages": [
+      18
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c009",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "Adjacency matrix versus adjacency list for representing a digraph",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec3.pdf",
+     "pages": [
+      17
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c010",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "Why is Graph a subclass of Digraph and not the other way round?",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec3.pdf",
+     "pages": [
+      20
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c011",
+   "course": "6.0002 data science",
+   "split": "heldout",
+   "kinds": [
+    "diagram"
+   ],
+   "query": "Example graph of cities: Boston, Providence, New York, Chicago, Denver, Phoenix and Los Angeles",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec3.pdf",
+     "pages": [
+      23,
+      29
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c012",
+   "course": "6.0002 data science",
+   "split": "heldout",
+   "kinds": [
+    "text"
+   ],
+   "query": "How does depth-first search avoid going round in cycles?",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec3.pdf",
+     "pages": [
+      25,
+      26,
+      27
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c013",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "code"
+   ],
+   "query": "Recursive DFS function with a shortestPath wrapper that starts the recursion",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec3.pdf",
+     "pages": [
+      27
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c014",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "How is breadth-first search different from depth-first search?",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec3.pdf",
+     "pages": [
+      32,
+      33
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c015",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "code"
+   ],
+   "query": "Printed output of breadth-first search finding the path from Boston to Phoenix",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec3.pdf",
+     "pages": [
+      34,
+      35
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c016",
+   "course": "6.0002 data science",
+   "split": "heldout",
+   "kinds": [
+    "text",
+    "student-wording"
+   ],
+   "query": "Why can't BFS find the cheapest path when edges have weights?",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec3.pdf",
+     "pages": [
+      36
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c017",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "text",
+    "student-wording"
+   ],
+   "query": "Who came up with Monte Carlo simulation and what game was he playing?",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec6.pdf",
+     "pages": [
+      3
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c018",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "Difference between a population and a sample in inferential statistics",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec6.pdf",
+     "pages": [
+      4
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c019",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "image-only"
+   ],
+   "query": "Picture of a hundred coins that were flipped",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec6.pdf",
+     "pages": [
+      7,
+      8
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c020",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "text",
+    "student-wording"
+   ],
+   "query": "Why should I trust 100 coin flips more than 2?",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec6.pdf",
+     "pages": [
+      9
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c021",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "code"
+   ],
+   "query": "FairRoulette class with 36 pockets and a spin method",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec6.pdf",
+     "pages": [
+      11
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c022",
+   "course": "6.0002 data science",
+   "split": "heldout",
+   "kinds": [
+    "code"
+   ],
+   "query": "Expected return after 100 spins compared with a million spins of fair roulette",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec6.pdf",
+     "pages": [
+      13
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c023",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "Definition of the law of large numbers",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec6.pdf",
+     "pages": [
+      14
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c024",
+   "course": "6.0002 data science",
+   "split": "heldout",
+   "kinds": [
+    "text",
+    "student-wording"
+   ],
+   "query": "If black came up 26 times in a row, is red now more likely?",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec6.pdf",
+     "pages": [
+      15
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c025",
+   "course": "6.0002 data science",
+   "split": "heldout",
+   "kinds": [
+    "text"
+   ],
+   "query": "Regression to the mean after ten red spins in a row",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec6.pdf",
+     "pages": [
+      16
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c026",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "code"
+   ],
+   "query": "European and American roulette subclasses that add pockets 0 and 00",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec6.pdf",
+     "pages": [
+      18
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c027",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "formula"
+   ],
+   "query": "Formula for the variance and the standard deviation of a set of values",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec6.pdf",
+     "pages": [
+      21,
+      22
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c028",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "text",
+    "student-wording"
+   ],
+   "query": "What does it actually mean to say plus or minus 3.5% with 95% confidence?",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec6.pdf",
+     "pages": [
+      23
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c029",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "Empirical rule: 68%, 95% and 99.7% of data within one, two and three standard deviations",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec6.pdf",
+     "pages": [
+      24,
+      30
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c030",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "image-only"
+   ],
+   "query": "Bell-shaped plot of the normal distribution with mean 0 and standard deviation 1",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec6.pdf",
+     "pages": [
+      27,
+      30
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c031",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "formula"
+   ],
+   "query": "Probability density function of the normal distribution",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec6.pdf",
+     "pages": [
+      29,
+      30
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c032",
+   "course": "6.0002 data science",
+   "split": "heldout",
+   "kinds": [
+    "arabic"
+   ],
+   "query": "ما هو قانون الأعداد الكبيرة؟",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec6.pdf",
+     "pages": [
+      14
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c033",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "arabic"
+   ],
+   "query": "ما الفرق بين البحث بالعمق أولاً والبحث بالعرض أولاً في الرسوم البيانية؟",
+   "answers": [
+    {
+     "material": "MIT6_0002F16_lec3.pdf",
+     "pages": [
+      25,
+      26,
+      32,
+      33
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c034",
+   "course": "18.650 statistics",
+   "split": "dev",
+   "kinds": [
+    "image-only"
+   ],
+   "query": "Scatter plot of random points (Xi, Yi) used to introduce linear regression",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Regression.pdf",
+     "pages": [
+      2,
+      8
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c035",
+   "course": "18.650 statistics",
+   "split": "heldout",
+   "kinds": [
+    "text"
+   ],
+   "query": "Linear regression shows correlation, not causality",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Regression.pdf",
+     "pages": [
+      23
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c036",
+   "course": "18.650 statistics",
+   "split": "heldout",
+   "kinds": [
+    "formula"
+   ],
+   "query": "Least squares estimator of the intercept a and slope b",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Regression.pdf",
+     "pages": [
+      12
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c037",
+   "course": "18.650 statistics",
+   "split": "dev",
+   "kinds": [
+    "formula"
+   ],
+   "query": "beta hat equals (X transpose X) inverse times X transpose Y",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Regression.pdf",
+     "pages": [
+      15,
+      16
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c038",
+   "course": "18.650 statistics",
+   "split": "heldout",
+   "kinds": [
+    "text"
+   ],
+   "query": "What does homoscedastic noise mean in the Gaussian regression model?",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Regression.pdf",
+     "pages": [
+      17
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c039",
+   "course": "18.650 statistics",
+   "split": "dev",
+   "kinds": [
+    "text",
+    "student-wording"
+   ],
+   "query": "How do I test whether one explanatory variable actually matters?",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Regression.pdf",
+     "pages": [
+      19
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c040",
+   "course": "18.650 statistics",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "Bonferroni test for whether a group of explanatory variables is significant",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Regression.pdf",
+     "pages": [
+      20
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c041",
+   "course": "18.650 statistics",
+   "split": "heldout",
+   "kinds": [
+    "formula"
+   ],
+   "query": "Fisher distribution with p and q degrees of freedom",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Regression.pdf",
+     "pages": [
+      22
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c042",
+   "course": "18.650 statistics",
+   "split": "dev",
+   "kinds": [
+    "text",
+    "student-wording"
+   ],
+   "query": "What goes wrong when there are more variables than observations?",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Regression.pdf",
+     "pages": [
+      24,
+      27
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c043",
+   "course": "18.650 statistics",
+   "split": "dev",
+   "kinds": [
+    "formula"
+   ],
+   "query": "Lasso estimator with an L1 penalty",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Regression.pdf",
+     "pages": [
+      30
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c044",
+   "course": "18.650 statistics",
+   "split": "dev",
+   "kinds": [
+    "image-only"
+   ],
+   "query": "Plot of the coefficient paths as lambda changes",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Regression.pdf",
+     "pages": [
+      32
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c045",
+   "course": "18.650 statistics",
+   "split": "heldout",
+   "kinds": [
+    "text"
+   ],
+   "query": "Mallow's Cp, AIC and BIC as choices of the penalty lambda",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Regression.pdf",
+     "pages": [
+      29
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c046",
+   "course": "18.650 statistics",
+   "split": "heldout",
+   "kinds": [
+    "text"
+   ],
+   "query": "How to choose the bandwidth h in nonparametric regression",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Regression.pdf",
+     "pages": [
+      39,
+      43
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c047",
+   "course": "18.650 statistics",
+   "split": "dev",
+   "kinds": [
+    "image-only"
+   ],
+   "query": "Local average estimate that is a flat line because h is too big",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Regression.pdf",
+     "pages": [
+      41
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c048",
+   "course": "18.650 statistics",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "Estimate f(x) by averaging the Yi whose Xi are close to x",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Regression.pdf",
+     "pages": [
+      35,
+      36
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c049",
+   "course": "18.650 statistics",
+   "split": "dev",
+   "kinds": [
+    "formula"
+   ],
+   "query": "Definition of the total variation distance between two probability distributions",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Maximum_LE.pdf",
+     "pages": [
+      2,
+      3,
+      4
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c050",
+   "course": "18.650 statistics",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "Properties of total variation: symmetric, positive, definite, triangle inequality",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Maximum_LE.pdf",
+     "pages": [
+      5
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c051",
+   "course": "18.650 statistics",
+   "split": "dev",
+   "kinds": [
+    "text",
+    "student-wording"
+   ],
+   "query": "Is the KL divergence a real distance?",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Maximum_LE.pdf",
+     "pages": [
+      9
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c052",
+   "course": "18.650 statistics",
+   "split": "dev",
+   "kinds": [
+    "formula"
+   ],
+   "query": "Kullback-Leibler divergence formula with the log of the ratio of densities",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Maximum_LE.pdf",
+     "pages": [
+      8
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c053",
+   "course": "18.650 statistics",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "Minimising the estimated KL divergence gives the maximum likelihood principle",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Maximum_LE.pdf",
+     "pages": [
+      11
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c054",
+   "course": "18.650 statistics",
+   "split": "dev",
+   "kinds": [
+    "formula"
+   ],
+   "query": "Hessian matrix and when a multivariate function is concave",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Maximum_LE.pdf",
+     "pages": [
+      14
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c055",
+   "course": "18.650 statistics",
+   "split": "heldout",
+   "kinds": [
+    "formula"
+   ],
+   "query": "Likelihood of Bernoulli trials",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Maximum_LE.pdf",
+     "pages": [
+      17
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c056",
+   "course": "18.650 statistics",
+   "split": "heldout",
+   "kinds": [
+    "formula"
+   ],
+   "query": "Likelihood of the Poisson model",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Maximum_LE.pdf",
+     "pages": [
+      18
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c057",
+   "course": "18.650 statistics",
+   "split": "heldout",
+   "kinds": [
+    "text"
+   ],
+   "query": "Maximum likelihood estimators for the Gaussian model are the sample mean and sample variance",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Maximum_LE.pdf",
+     "pages": [
+      20,
+      22
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c058",
+   "course": "18.650 statistics",
+   "split": "dev",
+   "kinds": [
+    "formula"
+   ],
+   "query": "Definition of the Fisher information",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Maximum_LE.pdf",
+     "pages": [
+      23
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c059",
+   "course": "18.650 statistics",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "Conditions under which the MLE is consistent and asymptotically normal",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Maximum_LE.pdf",
+     "pages": [
+      24
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c060",
+   "course": "18.650 statistics",
+   "split": "dev",
+   "kinds": [
+    "arabic"
+   ],
+   "query": "ما هو مقدّر الإمكان الأعظم؟",
+   "answers": [
+    {
+     "material": "MIT18_650F16_Maximum_LE.pdf",
+     "pages": [
+      21
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c061",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "table"
+   ],
+   "query": "iPhone technical specifications: memory, processor and battery",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec01.pptx",
+     "pages": [
+      2
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c062",
+   "course": "6.007 electromagnetics",
+   "split": "heldout",
+   "kinds": [
+    "diagram",
+    "student-wording"
+   ],
+   "query": "How does a touch screen know where my finger is?",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec01.pptx",
+     "pages": [
+      5,
+      10
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c063",
+   "course": "6.007 electromagnetics",
+   "split": "heldout",
+   "kinds": [
+    "diagram"
+   ],
+   "query": "Accelerometer made of a mass on springs between fixed plates",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec01.pptx",
+     "pages": [
+      7,
+      8,
+      10
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c064",
+   "course": "6.007 electromagnetics",
+   "split": "heldout",
+   "kinds": [
+    "diagram"
+   ],
+   "query": "Layers of a liquid crystal display: polarizer, glass, color filter, backlight",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec01.pptx",
+     "pages": [
+      11,
+      12
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c065",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "diagram"
+   ],
+   "query": "CMOS image sensor pixel with microlens, color filter and photodiode",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec01.pptx",
+     "pages": [
+      14,
+      15,
+      16
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c066",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "diagram"
+   ],
+   "query": "MOSFET transistor with source, drain and control gate",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec01.pptx",
+     "pages": [
+      18
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c067",
+   "course": "6.007 electromagnetics",
+   "split": "heldout",
+   "kinds": [
+    "formula"
+   ],
+   "query": "Capacitance C equals epsilon times A over d",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec01.pptx",
+     "pages": [
+      3,
+      5
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c068",
+   "course": "6.007 electromagnetics",
+   "split": "heldout",
+   "kinds": [
+    "table"
+   ],
+   "query": "How is 6.007 graded: labs, problem sets, midterms and final?",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec01.pptx",
+     "pages": [
+      27
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c069",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "table"
+   ],
+   "query": "Table matching each iPhone component to a 6.007 concept",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec01.pptx",
+     "pages": [
+      23,
+      24
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c070",
+   "course": "6.007 electromagnetics",
+   "split": "heldout",
+   "kinds": [
+    "text",
+    "student-wording"
+   ],
+   "query": "How many hours of video can the iPhone battery play?",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec01.pptx",
+     "pages": [
+      29
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c071",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "text",
+    "student-wording"
+   ],
+   "query": "What does one joule feel like in everyday life?",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec02.pptx",
+     "pages": [
+      4
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c072",
+   "course": "6.007 electromagnetics",
+   "split": "heldout",
+   "kinds": [
+    "text"
+   ],
+   "query": "First law of thermodynamics: energy is conserved",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec02.pptx",
+     "pages": [
+      6,
+      7
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c073",
+   "course": "6.007 electromagnetics",
+   "split": "heldout",
+   "kinds": [
+    "text"
+   ],
+   "query": "Where friction comes from at the atomic level",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec02.pptx",
+     "pages": [
+      10,
+      11,
+      12
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c074",
+   "course": "6.007 electromagnetics",
+   "split": "heldout",
+   "kinds": [
+    "text"
+   ],
+   "query": "Who was James Prescott Joule?",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec02.pptx",
+     "pages": [
+      13
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c075",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "How many watts is one horsepower?",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec02.pptx",
+     "pages": [
+      17
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c076",
+   "course": "6.007 electromagnetics",
+   "split": "heldout",
+   "kinds": [
+    "text"
+   ],
+   "query": "Across and through variables, and power as their product",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec02.pptx",
+     "pages": [
+      18,
+      19
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c077",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "image-only"
+   ],
+   "query": "Chart of non-hydro renewable electricity generation in the USA over time",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec02.pptx",
+     "pages": [
+      21
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c078",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "image-only"
+   ],
+   "query": "Pie chart of solar PV capacity by country",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec02.pptx",
+     "pages": [
+      24
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c079",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "Electric go-cart that converts the battery's energy into motion",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec02.pptx",
+     "pages": [
+      25
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c080",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "text",
+    "student-wording"
+   ],
+   "query": "Why does gasoline pack so much more energy than a battery?",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec04.pptx",
+     "pages": [
+      6,
+      21
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c081",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "Regenerative brakes in hybrid cars",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec04.pptx",
+     "pages": [
+      9
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c082",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "text",
+    "formula"
+   ],
+   "query": "Kirchhoff's current law as conservation of charge at a node",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec04.pptx",
+     "pages": [
+      11
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c083",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "formula"
+   ],
+   "query": "Energy stored in a capacitor is one half C v squared",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec04.pptx",
+     "pages": [
+      12,
+      15
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c084",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "image-only"
+   ],
+   "query": "Plot of energy density against power density for fuel cells, batteries and capacitors",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec04.pptx",
+     "pages": [
+      13,
+      18,
+      21
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c085",
+   "course": "6.007 electromagnetics",
+   "split": "heldout",
+   "kinds": [
+    "text"
+   ],
+   "query": "Galvani, zinc and copper, and how a battery works",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec04.pptx",
+     "pages": [
+      20
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c086",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "formula"
+   ],
+   "query": "Gauss's law: flux through a closed surface equals the charge inside",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec04.pptx",
+     "pages": [
+      16
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c087",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "formula"
+   ],
+   "query": "Magnetic field inside a long solenoid, H = N I / h",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec08.pptx",
+     "pages": [
+      6
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c088",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "image-only"
+   ],
+   "query": "Iron filings showing the magnetic field lines of a bar magnet",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec08.pptx",
+     "pages": [
+      8
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c089",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "Uses of solenoids: transformer, speaker, Helmholtz coil",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec08.pptx",
+     "pages": [
+      9
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c090",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "How a doorbell uses a solenoid",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec08.pptx",
+     "pages": [
+      11
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c091",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "Magnetic field of a toroid and a tape recorder head",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec08.pptx",
+     "pages": [
+      12,
+      13
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c092",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "Neodymium iron boron permanent magnets",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec08.pptx",
+     "pages": [
+      14
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c093",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "formula"
+   ],
+   "query": "Maxwell's equations in differential and integral form",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec08.pptx",
+     "pages": [
+      4,
+      23
+     ]
+    },
+    {
+     "material": "MIT6_007S11_lec01.pptx",
+     "pages": [
+      3
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c094",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "text",
+    "student-wording"
+   ],
+   "query": "What stops us building an infinitely strong electromagnet?",
+   "answers": [
+    {
+     "material": "MIT6_007S11_lec08.pptx",
+     "pages": [
+      22
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c095",
+   "course": "6.033 systems",
+   "split": "heldout",
+   "kinds": [
+    "diagram"
+   ],
+   "query": "Network of end points connected through switches and links",
+   "answers": [
+    {
+     "material": "MIT6_033S18lec8.pdf",
+     "pages": [
+      3,
+      4,
+      5,
+      6,
+      7
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c096",
+   "course": "6.033 systems",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "What is routing in a network?",
+   "answers": [
+    {
+     "material": "MIT6_033S18lec8.pdf",
+     "pages": [
+      4,
+      5,
+      6
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c097",
+   "course": "6.033 systems",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "Naming and addressing: giving nodes unique addresses",
+   "answers": [
+    {
+     "material": "MIT6_033S18lec8.pdf",
+     "pages": [
+      3
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c098",
+   "course": "6.033 systems",
+   "split": "heldout",
+   "kinds": [
+    "image-only"
+   ],
+   "query": "ARPANET logical map from March 1977",
+   "answers": [
+    {
+     "material": "MIT6_033S18lec8.pdf",
+     "pages": [
+      9
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c099",
+   "course": "6.033 systems",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "Transport: sharing the network efficiently and fairly and dealing with reliability",
+   "answers": [
+    {
+     "material": "MIT6_033S18lec8.pdf",
+     "pages": [
+      7
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c100",
+   "course": "6.033 systems",
+   "split": "dev",
+   "kinds": [
+    "text",
+    "student-wording"
+   ],
+   "query": "When did the Internet become commercial?",
+   "answers": [
+    {
+     "material": "MIT6_033S18lec8.pdf",
+     "pages": [
+      13
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c101",
+   "course": "6.033 systems",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "The Internet was designed to be flexible and robust to failure",
+   "answers": [
+    {
+     "material": "MIT6_033S18lec8.pdf",
+     "pages": [
+      15
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c102",
+   "course": "18.404 theory of computation",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "Church-Turing thesis: intuitive algorithms equal Turing machines",
+   "answers": [
+    {
+     "material": "MIT18_404f20_lec6.pptx",
+     "pages": [
+      6
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c103",
+   "course": "18.404 theory of computation",
+   "split": "dev",
+   "kinds": [
+    "diagram"
+   ],
+   "query": "Simulating a multi-tape Turing machine on a single tape",
+   "answers": [
+    {
+     "material": "MIT18_404f20_lec6.pptx",
+     "pages": [
+      3
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c104",
+   "course": "18.404 theory of computation",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "Nondeterministic Turing machines are no more powerful than deterministic ones",
+   "answers": [
+    {
+     "material": "MIT18_404f20_lec6.pptx",
+     "pages": [
+      4
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c105",
+   "course": "18.404 theory of computation",
+   "split": "dev",
+   "kinds": [
+    "text"
+   ],
+   "query": "Turing enumerator: a Turing machine with a printer",
+   "answers": [
+    {
+     "material": "MIT18_404f20_lec6.pptx",
+     "pages": [
+      5
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c106",
+   "course": "18.404 theory of computation",
+   "split": "dev",
+   "kinds": [
+    "formula"
+   ],
+   "query": "Hilbert's tenth problem and Diophantine equations",
+   "answers": [
+    {
+     "material": "MIT18_404f20_lec6.pptx",
+     "pages": [
+      7
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c107",
+   "course": "18.404 theory of computation",
+   "split": "dev",
+   "kinds": [
+    "formula"
+   ],
+   "query": "Turing machine that recognizes a^k b^k c^k",
+   "answers": [
+    {
+     "material": "MIT18_404f20_lec6.pptx",
+     "pages": [
+      9
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c108",
+   "course": "18.404 theory of computation",
+   "split": "heldout",
+   "kinds": [
+    "text"
+   ],
+   "query": "Notation for encoding objects as strings, written in angle brackets",
+   "answers": [
+    {
+     "material": "MIT18_404f20_lec6.pptx",
+     "pages": [
+      8
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c109",
+   "course": "18.404 theory of computation",
+   "split": "heldout",
+   "kinds": [
+    "text",
+    "student-wording"
+   ],
+   "query": "Which of these is true about Alan Turing: codebreaker, banknote, imprisoned?",
+   "answers": [
+    {
+     "material": "MIT18_404f20_lec6.pptx",
+     "pages": [
+      6
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c110",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "off-topic"
+   ],
+   "query": "What time is the final exam?",
+   "answers": []
+  },
+  {
+   "id": "c111",
+   "course": "6.0002 data science",
+   "split": "heldout",
+   "kinds": [
+    "other-course"
+   ],
+   "query": "What do Maxwell's equations say about magnetic flux?",
+   "answers": []
+  },
+  {
+   "id": "c112",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "other-course"
+   ],
+   "query": "What is the Church-Turing thesis?",
+   "answers": []
+  },
+  {
+   "id": "c113",
+   "course": "6.0002 data science",
+   "split": "heldout",
+   "kinds": [
+    "off-topic"
+   ],
+   "query": "Who won the 2022 football World Cup?",
+   "answers": []
+  },
+  {
+   "id": "c114",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "off-topic",
+    "arabic"
+   ],
+   "query": "متى موعد الامتحان النهائي؟",
+   "answers": []
+  },
+  {
+   "id": "c115",
+   "course": "6.0002 data science",
+   "split": "dev",
+   "kinds": [
+    "other-course"
+   ],
+   "query": "How was the ARPANET connected in 1977?",
+   "answers": []
+  },
+  {
+   "id": "c116",
+   "course": "18.650 statistics",
+   "split": "dev",
+   "kinds": [
+    "other-course"
+   ],
+   "query": "How does depth-first search find a path between cities?",
+   "answers": []
+  },
+  {
+   "id": "c117",
+   "course": "18.650 statistics",
+   "split": "dev",
+   "kinds": [
+    "off-topic"
+   ],
+   "query": "Recipe for chocolate cake",
+   "answers": []
+  },
+  {
+   "id": "c118",
+   "course": "18.650 statistics",
+   "split": "heldout",
+   "kinds": [
+    "other-course"
+   ],
+   "query": "How does an iPhone accelerometer detect rotation?",
+   "answers": []
+  },
+  {
+   "id": "c119",
+   "course": "18.650 statistics",
+   "split": "dev",
+   "kinds": [
+    "other-course"
+   ],
+   "query": "How does a solenoid ring a doorbell?",
+   "answers": []
+  },
+  {
+   "id": "c120",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "other-course"
+   ],
+   "query": "What is the maximum likelihood estimator?",
+   "answers": []
+  },
+  {
+   "id": "c121",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "off-topic"
+   ],
+   "query": "How do I apply for a student visa?",
+   "answers": []
+  },
+  {
+   "id": "c122",
+   "course": "6.007 electromagnetics",
+   "split": "heldout",
+   "kinds": [
+    "other-course"
+   ],
+   "query": "What is a nondeterministic Turing machine?",
+   "answers": []
+  },
+  {
+   "id": "c123",
+   "course": "6.007 electromagnetics",
+   "split": "dev",
+   "kinds": [
+    "other-course"
+   ],
+   "query": "Simulating roulette with Python classes",
+   "answers": []
+  },
+  {
+   "id": "c124",
+   "course": "6.033 systems",
+   "split": "dev",
+   "kinds": [
+    "other-course"
+   ],
+   "query": "Energy stored in a capacitor",
+   "answers": []
+  },
+  {
+   "id": "c125",
+   "course": "6.033 systems",
+   "split": "dev",
+   "kinds": [
+    "off-topic"
+   ],
+   "query": "Best pizza near campus",
+   "answers": []
+  },
+  {
+   "id": "c126",
+   "course": "6.033 systems",
+   "split": "dev",
+   "kinds": [
+    "other-course"
+   ],
+   "query": "Lasso regression and the choice of lambda",
+   "answers": []
+  },
+  {
+   "id": "c127",
+   "course": "6.033 systems",
+   "split": "heldout",
+   "kinds": [
+    "off-topic",
+    "arabic"
+   ],
+   "query": "كيف أعيد تعيين كلمة مرور الجامعة؟",
+   "answers": []
+  },
+  {
+   "id": "c128",
+   "course": "18.404 theory of computation",
+   "split": "dev",
+   "kinds": [
+    "other-course"
+   ],
+   "query": "Breadth-first search for the shortest path between cities",
+   "answers": []
+  },
+  {
+   "id": "c129",
+   "course": "18.404 theory of computation",
+   "split": "dev",
+   "kinds": [
+    "off-topic"
+   ],
+   "query": "How do I reset my university password?",
+   "answers": []
+  },
+  {
+   "id": "c130",
+   "course": "18.404 theory of computation",
+   "split": "dev",
+   "kinds": [
+    "other-course"
+   ],
+   "query": "Magnetic field inside a solenoid",
+   "answers": []
+  },
+  {
+   "id": "c131",
+   "course": "18.404 theory of computation",
+   "split": "heldout",
+   "kinds": [
+    "other-course"
+   ],
+   "query": "Law of large numbers and the gambler's fallacy",
+   "answers": []
+  }
+ ]
+}
