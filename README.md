@@ -24,8 +24,10 @@ The AI suggests and the lecturer decides. Optional student camera and microphone
 attention indicators are processed locally in the student's browser, with only
 derived measurements sent to the server. Separately, lecturers may explicitly
 enable live microphone transcription, which temporarily sends audio chunks to
-C.L.I.P's backend for local speech recognition. Recognized transcript text can
-be stored and shared with enrolled students. Optional Teams transcript imports
+C.L.I.P's backend for local speech recognition. Recognized transcript text is
+stored and automatically shared with enrolled course students and the
+catch-up assistant as an unreviewed transcript. The lecturer microphone
+may also pick up nearby voices. Optional Teams transcript imports
 can also generate private draft teaching minutes for lecturer review. C.L.I.P
 does not store raw camera video or microphone recording files through these
 features.
@@ -532,8 +534,9 @@ the consent screen and the Teams manifest. Their wording awaits team and univers
   in the browser. Only derived attention signals are transmitted to the server.
 - Optional live lecturer transcription temporarily sends microphone audio chunks
   to C.L.I.P's backend for local speech recognition. Audio recording files are not
-  stored, but recognized text can be stored and shared with enrolled course students
-  as an unreviewed automatic transcript.
+  stored, but recognized text is stored and automatically shared with enrolled
+  course students and the catch-up assistant as an unreviewed transcript.
+  The lecturer microphone may also pick up nearby voices.
 - Optional Microsoft Teams transcript imports process available meeting transcript
   text to create private draft teaching minutes. The lecturer reviews and explicitly
   publishes these drafts before students can access the approved minutes.
