@@ -82,6 +82,8 @@ def main() -> None:
     repeats = (
         [(Path(a), Path(b)) for a, b in args.repeat]
         if args.repeat
+        else []
+        if args.run
         else [(EVAL_DIR / a, EVAL_DIR / b) for a, b in REPEATS]
     )
 
@@ -160,10 +162,7 @@ def main() -> None:
             "wrong counts in brackets:",
             "",
             *cuts,
-            "",
-            "## Consistency",
-            "",
-            *consistency,
+            *(["", "## Consistency", "", *consistency] if repeats else []),
         ]
     )
     print(report)
