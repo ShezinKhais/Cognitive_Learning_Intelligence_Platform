@@ -20,9 +20,15 @@ rather than understanding. C.L.I.P runs continuously in the background of the cl
   explanation for every alert, while there is still time to act.
 
 C.L.I.P is **not** a grading system, a proctoring tool or a replacement for the lecturer.
-The AI suggests and the lecturer decides. No raw video, audio or transcripts are ever
-stored, and every model runs on our own hardware, so no student data is sent to a
-third-party AI service.
+The AI suggests and the lecturer decides. Optional student camera and microphone
+attention indicators are processed locally in the student's browser, with only
+derived measurements sent to the server. Separately, lecturers may explicitly
+enable live microphone transcription, which temporarily sends audio chunks to
+C.L.I.P's backend for local speech recognition. Recognized transcript text can
+be stored and shared with enrolled students. Optional Teams transcript imports
+can also generate private draft teaching minutes for lecturer review. C.L.I.P
+does not store raw camera video or microphone recording files through these
+features.
 
 The platform serves three roles: **students**, who answer checkpoints and see their own
 progress; **lecturers**, who prepare material and run the live class; and
@@ -522,9 +528,19 @@ The [privacy notice](frontend/src/pages/PrivacyPage.tsx) and [terms of use](fron
 are served by the app at `/privacy` and `/terms`, open to anyone, and linked from sign-in,
 the consent screen and the Teams manifest. Their wording awaits team and university approval.
 
-- No raw video, audio, screenshots or transcripts are ever stored.
-- Camera and microphone processing happens on the student's own device. Only numeric
-  indicators leave it, and no event type can carry anything else.
+- Optional student camera and microphone attention indicators are processed locally
+  in the browser. Only derived attention signals are transmitted to the server.
+- Optional live lecturer transcription temporarily sends microphone audio chunks
+  to C.L.I.P's backend for local speech recognition. Audio recording files are not
+  stored, but recognized text can be stored and shared with enrolled course students
+  as an unreviewed automatic transcript.
+- Optional Microsoft Teams transcript imports process available meeting transcript
+  text to create private draft teaching minutes. The lecturer reviews and explicitly
+  publishes these drafts before students can access the approved minutes.
+- Stored transcript text, published minutes and private draft records follow the
+  applicable access, retention, deletion and backup rules.
+- Student attention consent is separate from lecturer microphone transcription
+  and institutional Microsoft Teams transcription permissions.
 - Every monitoring feature needs its own consent. Declining one never blocks another, and
   never lowers a student's score.
 - Engagement and comprehension are measured separately, and neither is an assessment.

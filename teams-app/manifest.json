@@ -15,53 +15,59 @@
   },
   "description": {
     "short": "AI engagement assistant for live online classes.",
-    "full": "C.L.I.P provides real-time engagement indicators, AI-generated comprehension checkpoints grounded in lecturer-approved material, and a Socratic learning assistant. Privacy-first: no raw video, audio, transcripts or biometric data is ever stored. Human-in-the-loop: the lecturer retains all teaching decisions."
+    "full": "C.L.I.P provides engagement indicators, lecturer-reviewed AI comprehension checkpoints and a Socratic learning assistant. Optional student camera and microphone indicators are processed locally, with only derived signals transmitted. Separately, optional lecturer microphone transcription temporarily processes audio on the C.L.I.P server and may store recognized text for course catch-up. Optional Teams transcript imports create private draft minutes for lecturer review before publication."
   },
   "icons": {
     "color": "color.png",
     "outline": "outline.png"
   },
   "accentColor": "#6264A7",
-
   "showLoadingIndicator": true,
-
   "staticTabs": [
     {
       "entityId": "clip.home",
       "name": "C.L.I.P",
       "contentUrl": "${{BASE_URL}}/open",
       "websiteUrl": "${{BASE_URL}}/login",
-      "scopes": ["personal"]
+      "scopes": [
+        "personal"
+      ]
     }
   ],
-
   "configurableTabs": [
     {
       "configurationUrl": "${{BASE_URL}}/config",
-      "scopes": ["groupChat"],
-      "context": ["meetingChatTab", "meetingDetailsTab", "meetingSidePanel"],
+      "scopes": [
+        "groupChat"
+      ],
+      "context": [
+        "meetingChatTab",
+        "meetingDetailsTab",
+        "meetingSidePanel"
+      ],
       "supportedSharePointHosts": []
     }
   ],
-
   "bots": [
     {
       "botId": "${{BOT_ID}}",
-      "scopes": ["groupChat"],
+      "scopes": [
+        "groupChat"
+      ],
       "supportsFiles": false,
       "isNotificationOnly": false
     }
   ],
-
-  "permissions": ["identity"],
-
-  "devicePermissions": ["media"],
-
+  "permissions": [
+    "identity"
+  ],
+  "devicePermissions": [
+    "media"
+  ],
   "webApplicationInfo": {
     "id": "${{BOT_ID}}",
     "resource": "api://${{BASE_DOMAIN}}/${{BOT_ID}}"
   },
-
   "authorization": {
     "permissions": {
       "resourceSpecific": [
@@ -80,6 +86,7 @@
       ]
     }
   },
-
-  "validDomains": ["${{BASE_DOMAIN}}"]
+  "validDomains": [
+    "${{BASE_DOMAIN}}"
+  ]
 }
