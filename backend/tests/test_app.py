@@ -10,6 +10,8 @@ def test_health(client: TestClient) -> None:
     body = response.json()
     assert body["status"] == "ok"
     assert body["version"]
+    assert "release_sha" in body
+    assert response.headers["cache-control"] == "no-store"
     assert isinstance(body["teams_configured"], bool)
 
 
