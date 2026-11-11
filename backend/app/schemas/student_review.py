@@ -38,8 +38,10 @@ class MissedQuestion(BaseModel):
 
 
 class ReviewEngagement(BaseModel):
-    status: Literal["unavailable"] = "unavailable"
+    status: Literal["unavailable", "readings_available"] = "unavailable"
     score: None = None
+    camera_windows: int | None = Field(default=None, ge=1)
+    microphone_windows: int | None = Field(default=None, ge=1)
     explanation: str = (
         "A verified post-session engagement record with confidence and signal availability "
         "is not available. Missing readings are not zero and do not indicate understanding."

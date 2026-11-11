@@ -394,3 +394,73 @@ async def test_database_missed_review_paginates_and_resolves_own_source(database
         with pytest.raises(NotFoundError):
             await service.read_missed(db, question.user, question.session, 20, 0)
         await db.rollback()
+
+
+async def test_review_readings_follow_latest_sensor_grants(database, question):  # noqa: F811
+    from datetime import timedelta
+
+    from app.models.attention_signal_summary import AttentionSignalSummary
+    from app.models.consent import Consent
+    from app.schemas.identity import ConsentType
+
+    async with database() as db:
+        session = await db.get(Session, question.session)
+        session.status = "ended"
+        student_id = await db.scalar(
+            select(Student.student_id).where(Student.user_id == question.user)
+        )
+        at = datetime.now(UTC)
+        monitoring = Consent(
+            user_id=question.user,
+            consent_type=ConsentType.ENGAGEMENT_MONITORING,
+            granted=True,
+            recorded_at=at - timedelta(minutes=2),
+        )
+        camera = Consent(
+            user_id=question.user,
+            consent_type=ConsentType.CAMERA,
+            granted=True,
+            recorded_at=at - timedelta(minutes=1),
+        )
+        db.add_all(
+            [
+                monitoring,
+                camera,
+                AttentionSignalSummary(
+                    session_id=question.session,
+                    student_id=student_id,
+                    window_start=at,
+                    window_seconds=60,
+                    sample_count=3,
+                    gaze_on_screen_ratio=0,
+                    speaking_ratio=1,
+                ),
+                AttentionSignalSummary(
+                    session_id=question.session,
+                    student_id=student_id,
+                    window_start=at - timedelta(minutes=2),
+                    window_seconds=60,
+                    sample_count=3,
+                    gaze_on_screen_ratio=1,
+                ),
+            ]
+        )
+        await db.flush()
+        review = await service.read_review(db, question.user, question.session, 20, 0)
+        assert review.engagement.status == "readings_available"
+        assert review.engagement.camera_windows == 1
+        assert review.engagement.microphone_windows is None
+        assert review.engagement.score is None
+
+        camera.granted = False
+        await db.flush()
+        assert (
+            await service.read_review(db, question.user, question.session, 20, 0)
+        ).engagement.status == "unavailable"
+
+        camera.granted = True
+        camera.recorded_at = at + timedelta(minutes=1)
+        await db.flush()
+        assert (
+            await service.read_review(db, question.user, question.session, 20, 0)
+        ).engagement.status == "unavailable"

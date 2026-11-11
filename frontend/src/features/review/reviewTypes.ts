@@ -28,7 +28,13 @@ export interface StudentReview {
   session: ReviewSession
   questions_attempted: number
   questions_missed: number
-  engagement: { status: 'unavailable'; score: null; explanation: string }
+  engagement: {
+    status: 'unavailable' | 'readings_available'
+    score: null
+    camera_windows?: number | null
+    microphone_windows?: number | null
+    explanation: string
+  }
   answers: ReviewAnswer[]
   total: number
   limit: number

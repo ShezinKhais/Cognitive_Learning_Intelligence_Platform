@@ -4007,18 +4007,45 @@
       },
       "ReviewEngagement": {
         "properties": {
+          "camera_windows": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera Windows"
+          },
           "explanation": {
             "default": "A verified post-session engagement record with confidence and signal availability is not available. Missing readings are not zero and do not indicate understanding.",
             "title": "Explanation",
             "type": "string"
+          },
+          "microphone_windows": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Microphone Windows"
           },
           "score": {
             "title": "Score",
             "type": "null"
           },
           "status": {
-            "const": "unavailable",
             "default": "unavailable",
+            "enum": [
+              "unavailable",
+              "readings_available"
+            ],
             "title": "Status",
             "type": "string"
           }

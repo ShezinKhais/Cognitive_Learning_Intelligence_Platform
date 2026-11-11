@@ -150,7 +150,20 @@ function Review({ sessionId }: { sessionId: string }) {
             </p>
           </Panel>
           <Panel title="Engagement" description="Kept apart from how well you understood.">
-            <p className="font-semibold">Not recorded for this session</p>
+            {data.engagement.status === 'readings_available' ? (
+              <dl className="grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <dt>Camera windows</dt>
+                  <dd className="font-semibold">{data.engagement.camera_windows ?? 'Unavailable'}</dd>
+                </div>
+                <div>
+                  <dt>Microphone windows</dt>
+                  <dd className="font-semibold">{data.engagement.microphone_windows ?? 'Unavailable'}</dd>
+                </div>
+              </dl>
+            ) : (
+              <p className="font-semibold">Not recorded for this session</p>
+            )}
             <p className="mt-1 text-sm text-muted-foreground">{data.engagement.explanation}</p>
           </Panel>
         </div>
