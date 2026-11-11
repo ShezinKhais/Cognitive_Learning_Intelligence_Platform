@@ -1691,6 +1691,11 @@
             "title": "Env",
             "type": "string"
           },
+          "release_sha": {
+            "default": "unknown",
+            "title": "Release Sha",
+            "type": "string"
+          },
           "status": {
             "default": "ok",
             "title": "Status",

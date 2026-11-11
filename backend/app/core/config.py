@@ -78,6 +78,7 @@ class Settings(BaseSettings):
 
     # Application
     clip_env: str = "development"
+    clip_release_sha: str = Field(default="unknown", pattern=r"^(unknown|[a-f0-9]{40})$")
     clip_secret_key: str = "change-me-in-production"
     clip_log_level: str = "INFO"
     access_token_expire_minutes: int = 60

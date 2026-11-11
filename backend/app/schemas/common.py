@@ -52,6 +52,7 @@ class HealthResponse(BaseModel):
     env: str
     version: str
     teams_configured: bool
+    release_sha: str = "unknown"
 
 
 class ReadinessResponse(BaseModel):
