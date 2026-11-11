@@ -319,6 +319,21 @@ class TestContext:
         assert len(verdict.chunks) == MAX_CONTEXT_CHUNKS
         assert [c.chunk_text for c in verdict.chunks] == [f"Note number {i}." for i in range(5)]
 
+    def test_an_excerpt_about_something_else_is_not_shown(self) -> None:
+        """#274: off-topic questions sat 0.44 to 0.61 from the nearest
+        excerpt, all under the old 0.65, so the tutor never said the
+        material did not cover them."""
+        assert screen_context([chunk(distance=0.55)]).empty
+        assert not screen_context([chunk(distance=0.30)]).empty
+
+    def test_the_cutoff_was_measured_for_the_default_embedding_model(self) -> None:
+        """Distances change with the embedding model. Changing the default
+        model without measuring the cutoff again fails here, on purpose."""
+        from app.core.config import Settings
+        from app.services.tutor_guardrails import RETRIEVAL_MAX_DISTANCE_MODEL
+
+        assert Settings.model_fields["embedding_model"].default == RETRIEVAL_MAX_DISTANCE_MODEL
+
     def test_the_distance_limit_can_be_set(self) -> None:
         assert screen_context([chunk(distance=0.5)], max_distance=0.4).empty
         assert not screen_context([chunk(distance=0.5)], max_distance=0.6).empty
