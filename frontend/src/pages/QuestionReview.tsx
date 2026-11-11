@@ -21,7 +21,7 @@ import { ProblemState } from '../components/ui/ProblemState'
 import { problemArt } from '../components/ui/problem'
 import { getMaterial } from '../features/materials/materialApi'
 import type { Material } from '../features/materials/types'
-import { sourceName } from '../features/materials/upload'
+import { sourceName, type SourceName } from '../features/materials/upload'
 import {
   countByFilter,
   FILTERS,
@@ -428,7 +428,7 @@ function QuestionCard({
 }: {
   materialId: string
   question: Question
-  source: 'Page' | 'Slide'
+  source: SourceName
   selected: boolean
   onToggleSelected: () => void
   onUpdated: (q: Question) => void
