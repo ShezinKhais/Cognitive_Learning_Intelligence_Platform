@@ -1,6 +1,6 @@
 # Retrieval across whole courses (#252)
 
-Embedding model `nomic-embed-text`, captions by `qwen2.5vl:3b` (prompt `caption-v2`), commit `0a80e16`, run on 2026-11-11. Each question searches every chunk of its course, as the tutor does. The tutor's cutoff is now 0.65.
+Embedding model `nomic-embed-text`, captions by `qwen2.5vl:3b` (prompt `caption-v2`), commit `4419d94`, run on 2026-11-11. Each question searches every chunk of its course, as the tutor does. The tutor's cutoff is now 0.65.
 
 | Course | Material | SHA-256 (first 12) | Read with | Chunks |
 |---|---|---|---|---|
@@ -14,6 +14,7 @@ Embedding model `nomic-embed-text`, captions by `qwen2.5vl:3b` (prompt `caption-
 | 6.007 electromagnetics | MIT6_007S11_lec08.pptx | `e1f782f80fcc` | python-pptx | 51 |
 | 6.033 systems | MIT6_033S18lec8.pdf | `3560f658785d` | pypdf | 16 |
 | 18.404 theory of computation | MIT18_404f20_lec6.pptx | `7109395e12e4` | python-pptx | 15 |
+| logistic regression (scanned) | lecture_pptx_as_pdf_scanned.pdf | `640dbbb89c6d` | pypdf+ocr | 31 |
 
 ## Finding the right page
 
@@ -21,22 +22,24 @@ Answerable questions only. A share is followed by its 95% interval; with few que
 
 | Questions | n | Right page on top | Right page in top 5 | MRR | precision@5 | Right lecture on top |
 |---|---|---|---|---|---|---|
-| text: answered by the page's text | 57 | 42 of 57 (74%, 61% to 83%) | 50 of 57 (88%, 77% to 94%) | 0.81 | 0.29 | 54 of 57 (95%, 86% to 98%) |
+| text: answered by the page's text | 63 | 47 of 63 (75%, 63% to 84%) | 56 of 63 (89%, 79% to 95%) | 0.82 | 0.29 | 60 of 63 (95%, 87% to 98%) |
 | diagram: answered by a diagram | 9 | 6 of 9 (67%, 35% to 88%) | 7 of 9 (78%, 45% to 94%) | 0.73 | 0.42 | 9 of 9 (100%, 70% to 100%) |
 | table: answered by a table | 3 | 2 of 3 (67%, 21% to 94%) | 2 of 3 (67%, 21% to 94%) | 0.67 | 0.27 | 3 of 3 (100%, 44% to 100%) |
-| image-only: answered only by a picture, photo or plot | 11 | 5 of 11 (45%, 21% to 72%) | 7 of 11 (64%, 35% to 85%) | 0.54 | 0.16 | 11 of 11 (100%, 74% to 100%) |
+| image-only: answered only by a picture, photo or plot | 16 | 6 of 16 (38%, 18% to 61%) | 9 of 16 (56%, 33% to 77%) | 0.48 | 0.14 | 16 of 16 (100%, 81% to 100%) |
 | formula: about a formula or its symbols | 20 | 15 of 20 (75%, 53% to 89%) | 18 of 20 (90%, 70% to 97%) | 0.81 | 0.31 | 20 of 20 (100%, 84% to 100%) |
 | code: about code or program output | 7 | 6 of 7 (86%, 49% to 97%) | 6 of 7 (86%, 49% to 97%) | 0.88 | 0.20 | 7 of 7 (100%, 65% to 100%) |
 | student-wording: worded as a student would, not as the slide is | 17 | 8 of 17 (47%, 26% to 69%) | 13 of 17 (76%, 53% to 90%) | 0.60 | 0.21 | 16 of 17 (94%, 73% to 99%) |
 | arabic: asked in Arabic | 3 | 0 of 3 (0%, 0% to 56%) | 1 of 3 (33%, 6% to 79%) | 0.12 | 0.07 | 2 of 3 (67%, 21% to 94%) |
+| scanned: answered by a scanned page, read with OCR | 11 | 6 of 11 (55%, 28% to 79%) | 8 of 11 (73%, 43% to 90%) | 0.65 | 0.22 | 11 of 11 (100%, 74% to 100%) |
 | course: 6.0002 data science | 33 | 18 of 33 (55%, 38% to 70%) | 23 of 33 (70%, 53% to 83%) | 0.62 | 0.18 | 30 of 33 (91%, 76% to 97%) |
 | course: 18.650 statistics | 27 | 18 of 27 (67%, 48% to 81%) | 22 of 27 (81%, 63% to 92%) | 0.75 | 0.21 | 26 of 27 (96%, 82% to 99%) |
 | course: 6.007 electromagnetics | 34 | 26 of 34 (76%, 60% to 88%) | 31 of 34 (91%, 77% to 97%) | 0.82 | 0.40 | 34 of 34 (100%, 90% to 100%) |
 | course: 6.033 systems | 7 | 6 of 7 (86%, 49% to 97%) | 7 of 7 (100%, 65% to 100%) | 0.93 | 0.37 | 7 of 7 (100%, 65% to 100%) |
 | course: 18.404 theory of computation | 8 | 7 of 8 (88%, 53% to 98%) | 7 of 8 (88%, 53% to 98%) | 0.88 | 0.33 | 8 of 8 (100%, 68% to 100%) |
-| split: dev | 74 | 49 of 74 (66%, 55% to 76%) | 61 of 74 (82%, 72% to 89%) | 0.74 | 0.25 | 72 of 74 (97%, 91% to 99%) |
-| split: heldout | 35 | 26 of 35 (74%, 58% to 86%) | 29 of 35 (83%, 67% to 92%) | 0.79 | 0.34 | 33 of 35 (94%, 81% to 98%) |
-| all | 109 | 75 of 109 (69%, 60% to 77%) | 90 of 109 (83%, 74% to 89%) | 0.75 | 0.28 | 105 of 109 (96%, 91% to 99%) |
+| course: logistic regression (scanned) | 11 | 6 of 11 (55%, 28% to 79%) | 8 of 11 (73%, 43% to 90%) | 0.65 | 0.22 | 11 of 11 (100%, 74% to 100%) |
+| split: dev | 82 | 53 of 82 (65%, 54% to 74%) | 67 of 82 (82%, 72% to 89%) | 0.73 | 0.25 | 80 of 82 (98%, 92% to 99%) |
+| split: heldout | 38 | 28 of 38 (74%, 58% to 85%) | 31 of 38 (82%, 67% to 91%) | 0.78 | 0.33 | 36 of 38 (95%, 83% to 99%) |
+| all | 120 | 81 of 120 (68%, 59% to 75%) | 98 of 120 (82%, 74% to 88%) | 0.75 | 0.27 | 116 of 120 (97%, 92% to 99%) |
 
 ## Saying "not in the material"
 
@@ -44,11 +47,11 @@ The tutor drops every excerpt further than the cutoff from the question. When al
 
 | Questions | Cutoff | Abstained when nothing answers | Wrongly abstained when a page answers | Balanced accuracy |
 |---|---|---|---|---|
-| all, current setting | 0.65 | 0 of 22 (0%, 0% to 15%) | 0 of 109 (0%, 0% to 3%) | 0.50 |
-| dev, current setting | 0.65 | 0 of 16 (0%, 0% to 19%) | 0 of 74 (0%, 0% to 5%) | 0.50 |
-| dev, best cutoff on dev | 0.43 | 16 of 16 (100%, 81% to 100%) | 3 of 74 (4%, 1% to 11%) | 0.98 |
-| **held-out, current setting** | 0.65 | 0 of 6 (0%, 0% to 39%) | 0 of 35 (0%, 0% to 10%) | 0.50 |
-| **held-out, cutoff chosen on dev** | 0.43 | 6 of 6 (100%, 61% to 100%) | 2 of 35 (6%, 2% to 19%) | 0.97 |
+| all, current setting | 0.65 | 0 of 24 (0%, 0% to 14%) | 0 of 120 (0%, 0% to 3%) | 0.50 |
+| dev, current setting | 0.65 | 0 of 18 (0%, 0% to 18%) | 0 of 82 (0%, 0% to 4%) | 0.50 |
+| dev, best cutoff on dev | 0.43 | 18 of 18 (100%, 82% to 100%) | 3 of 82 (4%, 1% to 10%) | 0.98 |
+| **held-out, current setting** | 0.65 | 0 of 6 (0%, 0% to 39%) | 0 of 38 (0%, 0% to 9%) | 0.50 |
+| **held-out, cutoff chosen on dev** | 0.43 | 6 of 6 (100%, 61% to 100%) | 2 of 38 (5%, 1% to 17%) | 0.97 |
 
 The cutoff chosen on the dev questions is **0.43** (now 0.65). Only the held-out rows say how it would do on questions nobody tuned on.
 
@@ -189,3 +192,16 @@ Rank of the first excerpt from an answering page (`-`: none in the course); the 
 | c129 | dev | off-topic | How do I reset my university password? | nothing | - | MIT18_404f20_lec6.pptx p.6, 0.522 |
 | c130 | dev | other-course | Magnetic field inside a solenoid | nothing | - | MIT18_404f20_lec6.pptx p.8, 0.580 |
 | c131 | heldout | other-course | Law of large numbers and the gambler's fallacy | nothing | - | MIT18_404f20_lec6.pptx p.7, 0.478 |
+| c132 | dev | scanned, image-only | What goes wrong when a straight regression line is fitted to 0/1 gender data against height? | lecture_pptx_as_pdf_scanned.pdf p.9 | 22 | lecture_pptx_as_pdf_scanned.pdf p.8, 0.224 |
+| c133 | heldout | scanned, image-only | Plot of the logit function y = exp(b0 + b1 x) / (1 + exp(b0 + b1 x)) | lecture_pptx_as_pdf_scanned.pdf p.12 | 1 | lecture_pptx_as_pdf_scanned.pdf p.12, 0.255 |
+| c134 | dev | scanned, image-only | Fitted probabilities from the logistic model plotted against height | lecture_pptx_as_pdf_scanned.pdf p.15, 16 | 17 | lecture_pptx_as_pdf_scanned.pdf p.2, 0.319 |
+| c135 | dev | scanned, image-only | S-shaped logistic curve drawn over the jittered gender points | lecture_pptx_as_pdf_scanned.pdf p.16 | 2 | lecture_pptx_as_pdf_scanned.pdf p.13, 0.345 |
+| c136 | heldout | scanned, image-only | At around what height does the predicted probability of being female fall to one half? | lecture_pptx_as_pdf_scanned.pdf p.15, 16 | 10 | lecture_pptx_as_pdf_scanned.pdf p.4, 0.302 |
+| c137 | heldout | scanned, text | What are the three types of logistic regression? | lecture_pptx_as_pdf_scanned.pdf p.5 | 1 | lecture_pptx_as_pdf_scanned.pdf p.5, 0.151 |
+| c138 | dev | scanned, text | Why are the beta estimates exponentiated into odds ratios? | lecture_pptx_as_pdf_scanned.pdf p.4 | 1 | lecture_pptx_as_pdf_scanned.pdf p.4, 0.185 |
+| c139 | dev | scanned, text | Is logistic regression a discriminative or a generative model? | lecture_pptx_as_pdf_scanned.pdf p.6 | 1 | lecture_pptx_as_pdf_scanned.pdf p.6, 0.107 |
+| c140 | dev | scanned, text | Examples of categorical response variables | lecture_pptx_as_pdf_scanned.pdf p.7 | 2 | lecture_pptx_as_pdf_scanned.pdf p.5, 0.284 |
+| c141 | dev | scanned, text | What is the mean of a 0/1 indicator variable? | lecture_pptx_as_pdf_scanned.pdf p.10 | 1 | lecture_pptx_as_pdf_scanned.pdf p.10, 0.260 |
+| c142 | dev | scanned, text | R output of glm(Gender ~ Hgt, family = binomial) with its coefficients | lecture_pptx_as_pdf_scanned.pdf p.13, 14 | 1 | lecture_pptx_as_pdf_scanned.pdf p.13, 0.202 |
+| c143 | dev | off-topic | When is the library open on Fridays? | nothing | - | lecture_pptx_as_pdf_scanned.pdf p.1, 0.570 |
+| c144 | dev | other-course | How does a capacitive touch screen detect a finger? | nothing | - | lecture_pptx_as_pdf_scanned.pdf p.18, 0.548 |
