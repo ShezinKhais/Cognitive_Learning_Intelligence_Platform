@@ -181,8 +181,13 @@ async def plan_timetable(
                     or_(
                         Session.instructor_id.in_(user_ids), Session.course_id.in_(courses.values())
                     ),
+                    Session.status != SessionStatus.CANCELLED,
                     Session.start_time < start + timedelta(days=7),
-                    or_(Session.start_time >= start, Session.end_time > start),
+                    or_(
+                        Session.start_time >= start,
+                        Session.end_time > start,
+                        Session.ended_at > start,
+                    ),
                 )
             )
         )
@@ -214,30 +219,28 @@ async def plan_timetable(
             user_id = matches[0].user_id
             plan.matched_accounts[row.row_number] = user_id
             course_id = courses.get(code)
-            same_slot = any(
-                session.instructor_id == user_id
-                and session.course_id == course_id
-                and session.start_time == start_time
-                and session.end_time == end_time
-                for session in existing
-            )
-            overlaps = any(
-                (session.instructor_id == user_id or session.course_id == course_id)
-                and session.status != SessionStatus.CANCELLED
-                and session.start_time < end_time
-                and (
-                    session.end_time > start_time
-                    if session.end_time
-                    else session.start_time >= start_time
-                )
-                and not (
+            same_slot = overlaps = False
+            for session in existing:
+                if session.instructor_id != user_id and session.course_id != course_id:
+                    continue
+                if (
                     session.instructor_id == user_id
                     and session.course_id == course_id
                     and session.start_time == start_time
                     and session.end_time == end_time
+                ):
+                    same_slot = True
+                    continue
+                occupied_until = max(
+                    session.start_time,
+                    session.end_time or session.start_time,
+                    session.ended_at or session.start_time,
                 )
-                for session in existing
-            )
+                if session.start_time < end_time and (
+                    occupied_until > start_time or session.start_time >= start_time
+                ):
+                    overlaps = True
+                    break
             if overlaps:
                 detail = "Overlaps an existing lecturer or course session."
                 plan.result.conflicts.append(f"Row {row.row_number} ({code}): {detail}")

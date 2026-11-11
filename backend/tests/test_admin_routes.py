@@ -209,3 +209,66 @@ async def test_confirmed_imports_persist_dated_sessions_and_additional_courses(d
     assert client.get(session_url).status_code == 200
     sign_in_as(app, lecturer.user_id, Role.LECTURER)
     assert client.get(session_url).status_code == 200
+
+
+async def test_timetable_reuses_cancelled_slot_and_respects_actual_end_time(db, app):
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    from app.auth.store import ADMIN_ID
+    from app.models.session import Session
+    from app.models.user import User
+    from app.schemas.identity import Role
+
+    from .session_support import add_course, sign_in_as
+
+    client, factory, created = db
+    course = await add_course(factory, created)
+    tag = uuid4().hex[:8]
+    name = f"Lecturer {tag}"
+    async with factory() as seed:
+        lecturer = User(email=f"{tag}@uni.test", name=name, role="lecturer")
+        seed.add(lecturer)
+        await seed.flush()
+        created["user"].append(lecturer.user_id)
+        seed.add(
+            Session(
+                course_id=course.id,
+                instructor_id=lecturer.user_id,
+                start_time=datetime(2026, 11, 9, 5, tzinfo=UTC),
+                end_time=datetime(2026, 11, 9, 7, tzinfo=UTC),
+                status="cancelled",
+                mode="in_person",
+            )
+        )
+        await seed.commit()
+
+    sign_in_as(app, ADMIN_ID, Role.ADMIN)
+    csv = f"{course.code},{name},Monday,09:00,11:00,Room 12\n".encode()
+    files = {"file": ("t.csv", TIMETABLE_CSV.splitlines(keepends=True)[0] + csv)}
+    url = "/api/v1/admin/timetable"
+    week = {"week_start": "2026-11-09"}
+    preview = client.post(url, files=files, data=week)
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["sessions_to_create"] == 1
+
+    async with factory() as seed:
+        seed.add(
+            Session(
+                course_id=course.id,
+                instructor_id=lecturer.user_id,
+                start_time=datetime(2026, 11, 8, 19, tzinfo=UTC),
+                ended_at=datetime(2026, 11, 9, 5, 30, tzinfo=UTC),
+                status="ended",
+                mode="in_person",
+            )
+        )
+        await seed.commit()
+
+    confirm = client.post(
+        url, files=files, data={**week, "preview_token": preview.json()["preview_token"]}
+    )
+    assert confirm.status_code == 409
+    blocked = client.post(url, files=files, data=week).json()
+    assert blocked["conflicts"]
+    assert blocked["preview_token"] is None
