@@ -167,7 +167,9 @@ async def read_engagement(
                     ),
                 )
             )
-        ).tuples()
+        )
+        .tuples()
+        .all()
     )
     monitoring = grants.get(ConsentType.ENGAGEMENT_MONITORING)
     if monitoring is None:
