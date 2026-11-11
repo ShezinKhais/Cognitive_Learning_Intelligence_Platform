@@ -959,10 +959,65 @@ async def test_the_breakdown_and_csv_show_each_question_and_student(db, app) -> 
     exported = client.get(f"/api/v1/sessions/{session['id']}/results.csv")
     assert exported.status_code == 200
     assert exported.headers["content-type"].startswith("text/csv")
-    header, row = exported.text.strip().splitlines()
+    assert exported.content.startswith(b"\xef\xbb\xbf")
+    header, row = exported.text.removeprefix("\ufeff").strip().splitlines()
     assert header.startswith("student,question_number,question,answer,correct")
     assert ",1," in row and ",Jupiter,yes," in row
 
     sign_in_as(app, await add_lecturer(factory, created), Role.LECTURER)
     assert client.get(f"/api/v1/sessions/{session['id']}/breakdown").status_code == 404
     assert client.get(f"/api/v1/sessions/{session['id']}/results.csv").status_code == 404
+
+
+async def test_free_text_formula_is_escaped_in_downloaded_csv(db, app) -> None:
+    """A submitted student formula must stay inert in the actual CSV export."""
+    import csv
+    import io
+
+    client, factory, created = db
+    course = await add_course(factory, created)
+    await enrol(factory, course)
+    question_id = await add_question(
+        db, course, LECTURER_ID, question_type="free_text", options=None
+    )
+
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    session = create_session(client, course)
+    base = f"/api/v1/sessions/{session['id']}"
+    assert client.post(f"{base}/start").status_code == 200
+
+    token = token_for(client, "student@clip.example.com", STUDENT_PASSWORD)
+
+    with client.websocket_connect("/ws/session") as ws:
+        ws.send_json({
+            "type": "auth",
+            "data": {"token": token, "session_id": session["id"]},
+        })
+        ws.receive_json()
+        ws.receive_json()
+
+        assert client.post(
+            f"{base}/questions/{question_id}:deliver"
+        ).status_code == 202
+        ws.receive_json()
+
+        ws.send_json({
+            "type": "answer.submit",
+            "data": {
+                "question_id": str(question_id),
+                "free_text": "=1+1",
+                "client_elapsed_ms": 3000,
+            },
+        })
+        receipt = ws.receive_json()
+        assert receipt["data"]["accepted"] is True
+
+    exported = client.get(f"{base}/results.csv")
+    assert exported.status_code == 200, exported.text
+    assert exported.content.startswith(b"\xef\xbb\xbf")
+
+    rows = list(csv.DictReader(
+        io.StringIO(exported.content.decode("utf-8-sig"))
+    ))
+    assert len(rows) == 1
+    assert rows[0]["answer"] == "'=1+1"

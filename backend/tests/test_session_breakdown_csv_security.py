@@ -1,4 +1,4 @@
-﻿"""Cyber 2 regression tests for spreadsheet-safe session CSV values."""
+"""Cyber 2 regression tests for spreadsheet-safe session CSV values."""
 
 import pytest
 
@@ -13,6 +13,10 @@ from app.services.session_breakdown import _safe
         "-1+2",
         "@SUM(A1:A2)",
         "  =1+1",
+        "\x0b=1+1",
+        "\x0c=1+1",
+        "\u00a0=1+1",
+        " \u00a0@SUM(A1:A2)",
         "\n=1+1",
         "\t=1+1",
         "\r=1+1",

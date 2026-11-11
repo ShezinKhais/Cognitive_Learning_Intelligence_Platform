@@ -346,7 +346,7 @@ async def session_results_csv(
     await require_analytics_access(db, principal, session_id)
     body = await session_breakdown.csv_rows(db, session_id)
     return Response(
-        content=body,
+        content="\ufeff" + body,
         media_type="text/csv; charset=utf-8",
         headers={
             "Content-Disposition": f'attachment; filename="session-{session_id}.csv"',

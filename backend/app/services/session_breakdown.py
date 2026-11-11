@@ -154,6 +154,6 @@ def _safe(text: str) -> str:
     """A cell a spreadsheet will not run as a formula. A student's written
     answer starting with = could otherwise execute when the lecturer opens
     the file."""
-    dangerous_prefix = text.lstrip(" \t\r\n").startswith(("=", "+", "-", "@"))
+    dangerous_prefix = text.lstrip().startswith(("=", "+", "-", "@"))
     leading_control = text.startswith(("\t", "\r", "\n"))
     return "'" + text if dangerous_prefix or leading_control else text
