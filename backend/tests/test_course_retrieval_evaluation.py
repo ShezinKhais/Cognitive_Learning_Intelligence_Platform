@@ -184,14 +184,22 @@ def test_an_id_used_twice_is_refused(tmp_path):
 
 def test_the_committed_question_set_is_valid_and_balanced():
     courses, queries = load_query_set(QUERIES)
-    assert len(courses) == 5
+    assert len(courses) == 6
     assert len(queries) >= 100
     for split in ("dev", "heldout"):
         members = [q for q in queries if q.split == split]
         assert any(q.answerable for q in members)
         assert any(not q.answerable for q in members)
     kinds = {k for q in queries for k in q.kinds}
-    assert {"diagram", "table", "formula", "image-only", "arabic", "student-wording"} <= kinds
+    assert {
+        "diagram",
+        "table",
+        "formula",
+        "image-only",
+        "arabic",
+        "student-wording",
+        "scanned",
+    } <= kinds
 
 
 def test_the_report_scores_by_kind_and_chooses_a_cutoff_on_dev_only():

@@ -31,6 +31,7 @@ from datetime import date
 from pathlib import Path
 
 from app.core.config import get_settings
+from app.core.errors import ValidationError
 from app.services.ai_gateway import (
     AiUnavailableError,
     GatewayEmbeddingClient,
@@ -107,12 +108,20 @@ async def main(args: argparse.Namespace) -> None:
             for name in courses[course]:
                 path = args.materials / name
                 material_id = uuid.uuid4()
-                extraction = extract_material(
-                    str(path),
-                    settings.max_upload_bytes,
-                    with_images=captioner is not None,
-                    ocr=reader.read if reader is not None else None,
-                )
+                try:
+                    extraction = extract_material(
+                        str(path),
+                        settings.max_upload_bytes,
+                        with_images=captioner is not None,
+                        ocr=reader.read if reader is not None else None,
+                    )
+                except ValidationError as exc:
+                    # A scan with neither OCR nor captioning has no text: the
+                    # rest of the course is still searched, and its questions
+                    # count as misses, which is what a student would get.
+                    print(f"{course}: {name} could not be read ({exc}); its pages give nothing")
+                    material_rows.append(f"| {course} | {name} | - | unreadable: {exc} | 0 |")
+                    continue
                 validate_extraction(extraction.elements, settings)
                 if captioner is not None and any(e.image for e in extraction.elements):
                     elements, _ = await add_captions(extraction.elements, captioner, material_id)

@@ -39,6 +39,14 @@ not as the slide is), `arabic`, `scanned` (the page is a scan read with OCR),
 `off-topic` (nothing in any course), `other-course` (only another course's
 lecture answers it).
 
+A sixth course, "logistic regression (scanned)", is the repository's own
+`tests/eval/ocr/lecture_pptx_as_pdf_scanned.pdf`: the sample slides saved as
+image-only scans. Its 11 answerable questions are the ones the #127 test asked
+of the same slides (page for page), written by another person, so the
+`scanned` rows show what OCR costs. Copy the file into the materials folder
+before running, and install Tesseract (`brew install tesseract` on a Mac);
+without it the scan has no text and its questions count as misses.
+
 The first 131 questions cover 10 MIT OpenCourseWare lectures in 5 courses,
 written from what each page **shows**, not from what the app reads from it,
 so a page the app reads badly shows up as a miss. A fixed random third of them

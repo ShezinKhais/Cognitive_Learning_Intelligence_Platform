@@ -19,6 +19,9 @@
   ],
   "18.404 theory of computation": [
    "MIT18_404f20_lec6.pptx"
+  ],
+  "logistic regression (scanned)": [
+   "lecture_pptx_as_pdf_scanned.pdf"
   ]
  },
  "queries": [
@@ -2166,6 +2169,227 @@
     "other-course"
    ],
    "query": "Law of large numbers and the gambler's fallacy",
+   "answers": []
+  },
+  {
+   "id": "c132",
+   "course": "logistic regression (scanned)",
+   "split": "dev",
+   "kinds": [
+    "scanned",
+    "image-only"
+   ],
+   "query": "What goes wrong when a straight regression line is fitted to 0/1 gender data against height?",
+   "answers": [
+    {
+     "material": "lecture_pptx_as_pdf_scanned.pdf",
+     "pages": [
+      9
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c133",
+   "course": "logistic regression (scanned)",
+   "split": "heldout",
+   "kinds": [
+    "scanned",
+    "image-only"
+   ],
+   "query": "Plot of the logit function y = exp(b0 + b1 x) / (1 + exp(b0 + b1 x))",
+   "answers": [
+    {
+     "material": "lecture_pptx_as_pdf_scanned.pdf",
+     "pages": [
+      12
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c134",
+   "course": "logistic regression (scanned)",
+   "split": "dev",
+   "kinds": [
+    "scanned",
+    "image-only"
+   ],
+   "query": "Fitted probabilities from the logistic model plotted against height",
+   "answers": [
+    {
+     "material": "lecture_pptx_as_pdf_scanned.pdf",
+     "pages": [
+      15,
+      16
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c135",
+   "course": "logistic regression (scanned)",
+   "split": "dev",
+   "kinds": [
+    "scanned",
+    "image-only"
+   ],
+   "query": "S-shaped logistic curve drawn over the jittered gender points",
+   "answers": [
+    {
+     "material": "lecture_pptx_as_pdf_scanned.pdf",
+     "pages": [
+      16
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c136",
+   "course": "logistic regression (scanned)",
+   "split": "heldout",
+   "kinds": [
+    "scanned",
+    "image-only"
+   ],
+   "query": "At around what height does the predicted probability of being female fall to one half?",
+   "answers": [
+    {
+     "material": "lecture_pptx_as_pdf_scanned.pdf",
+     "pages": [
+      15,
+      16
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c137",
+   "course": "logistic regression (scanned)",
+   "split": "heldout",
+   "kinds": [
+    "scanned",
+    "text"
+   ],
+   "query": "What are the three types of logistic regression?",
+   "answers": [
+    {
+     "material": "lecture_pptx_as_pdf_scanned.pdf",
+     "pages": [
+      5
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c138",
+   "course": "logistic regression (scanned)",
+   "split": "dev",
+   "kinds": [
+    "scanned",
+    "text"
+   ],
+   "query": "Why are the beta estimates exponentiated into odds ratios?",
+   "answers": [
+    {
+     "material": "lecture_pptx_as_pdf_scanned.pdf",
+     "pages": [
+      4
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c139",
+   "course": "logistic regression (scanned)",
+   "split": "dev",
+   "kinds": [
+    "scanned",
+    "text"
+   ],
+   "query": "Is logistic regression a discriminative or a generative model?",
+   "answers": [
+    {
+     "material": "lecture_pptx_as_pdf_scanned.pdf",
+     "pages": [
+      6
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c140",
+   "course": "logistic regression (scanned)",
+   "split": "dev",
+   "kinds": [
+    "scanned",
+    "text"
+   ],
+   "query": "Examples of categorical response variables",
+   "answers": [
+    {
+     "material": "lecture_pptx_as_pdf_scanned.pdf",
+     "pages": [
+      7
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c141",
+   "course": "logistic regression (scanned)",
+   "split": "dev",
+   "kinds": [
+    "scanned",
+    "text"
+   ],
+   "query": "What is the mean of a 0/1 indicator variable?",
+   "answers": [
+    {
+     "material": "lecture_pptx_as_pdf_scanned.pdf",
+     "pages": [
+      10
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c142",
+   "course": "logistic regression (scanned)",
+   "split": "dev",
+   "kinds": [
+    "scanned",
+    "text"
+   ],
+   "query": "R output of glm(Gender ~ Hgt, family = binomial) with its coefficients",
+   "answers": [
+    {
+     "material": "lecture_pptx_as_pdf_scanned.pdf",
+     "pages": [
+      13,
+      14
+     ]
+    }
+   ]
+  },
+  {
+   "id": "c143",
+   "course": "logistic regression (scanned)",
+   "split": "dev",
+   "kinds": [
+    "off-topic"
+   ],
+   "query": "When is the library open on Fridays?",
+   "answers": []
+  },
+  {
+   "id": "c144",
+   "course": "logistic regression (scanned)",
+   "split": "dev",
+   "kinds": [
+    "other-course"
+   ],
+   "query": "How does a capacitive touch screen detect a finger?",
    "answers": []
   }
  ]
