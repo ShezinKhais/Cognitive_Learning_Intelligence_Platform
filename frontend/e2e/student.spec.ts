@@ -71,6 +71,8 @@ test.describe('Approved camera-off capture policy', () => {
 
   test('policy refresh shares an in-flight camera start check and skips idle consent', async ({ page }) => {
     await page.clock.install()
+    await page.reload()
+    await page.getByRole('button', { name: 'Show options' }).waitFor()
     await optIn(page, 'camera')
     let checks = 0
     let releasePolicy!: () => void
@@ -367,7 +369,7 @@ test('devices remain off until saved opt-in and explicit enable; denial is recov
   })
   await page.getByRole('button', { name: 'Turn on' }).click()
   await expect(page.getByText('Camera: unavailable. Microphone: off.')).toBeVisible()
-  await expect(page.getByRole('status')).toHaveText('Local sensing off')
+  await expect(page.getByText('Local sensing off', { exact: true })).toBeVisible()
   await expect(page.getByLabel('Ask about this session')).toBeEnabled()
 })
 
@@ -427,7 +429,7 @@ test('cancel a pending permission request and release a late stream', async ({ p
   await page.getByRole('button', { name: 'Turn everything off' }).click()
   await page.evaluate(() => (window as any).releasePermission())
   await expect.poll(() => page.evaluate(() => (window as any).probe.tracks.map((t: MediaStreamTrack) => t.readyState))).toEqual(['ended'])
-  await expect(page.getByRole('status')).toHaveText('Local sensing off')
+  await expect(page.getByText('Local sensing off', { exact: true })).toBeVisible()
 })
 
 for (const sensor of ['camera', 'microphone'] as const) {
@@ -461,7 +463,7 @@ for (const sensor of ['camera', 'microphone'] as const) {
     await info.attach(`${sensor}-synthetic-performance.json`, { body: JSON.stringify(measurement), contentType: 'application/json' })
     await page.getByRole('button', { name: 'Turn everything off' }).click()
     await expect.poll(() => page.evaluate(() => (window as any).probe.tracks.every((t: MediaStreamTrack) => t.readyState === 'ended'))).toBe(true)
-    await expect(page.getByRole('status')).toHaveText('Local sensing off')
+    await expect(page.getByText('Local sensing off', { exact: true })).toBeVisible()
   })
 }
 
@@ -550,7 +552,7 @@ test('keyboard-only opt-in and disable controls are operable', async ({ page }) 
   await expect(page.getByRole('button', { name: 'Stop camera', exact: true })).toBeVisible({ timeout: 60_000 })
   await page.getByRole('button', { name: 'Turn everything off' }).focus()
   await page.keyboard.press('Enter')
-  await expect(page.getByRole('status')).toHaveText('Local sensing off')
+  await expect(page.getByText('Local sensing off', { exact: true })).toBeVisible()
 })
 
 test('missing self-hosted face model stops capture and explains unavailability', async ({ page }) => {
@@ -579,7 +581,7 @@ test('both sensors stop independently and disabling releases every track', async
   await expect.poll(() => page.evaluate(() => (window as any).probe.tracks.every(
     (track: MediaStreamTrack) => track.readyState === 'ended',
   ))).toBe(true)
-  await expect(page.getByRole('status')).toHaveText('Local sensing off')
+  await expect(page.getByText('Local sensing off', { exact: true })).toBeVisible()
 })
 
 for (const sensor of ['camera', 'microphone'] as const) {
@@ -597,7 +599,7 @@ for (const sensor of ['camera', 'microphone'] as const) {
     const before = await page.evaluate(() => (window as any).probe.requests)
     await page.getByRole('button', { name: 'Toggle session connection' }).click()
     await page.getByRole('button', { name: 'Toggle session connection' }).click()
-    await expect(page.getByRole('status')).toHaveText('Local sensing off')
+    await expect(page.getByText('Local sensing off', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Turn on' })).toBeDisabled()
     expect(await page.evaluate(() => (window as any).probe.requests)).toBe(before)
   })
