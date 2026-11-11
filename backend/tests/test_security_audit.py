@@ -99,6 +99,7 @@ AUDIENCE = {
     ("GET", "/api/v1/courses/mine"): STAFF,
     ("GET", "/api/v1/courses/{code}/roster"): STAFF,
     ("POST", "/api/v1/courses/{code}/students"): STAFF,
+    ("POST", "/api/v1/courses/{code}/students:bulk"): STAFF,
     ("DELETE", "/api/v1/courses/{code}/students/{user_id}"): STAFF,
     ("PUT", "/api/v1/courses/{code}/lecturers"): STAFF,
     ("POST", "/api/v1/admin/timetable"): ADMIN_ONLY,

@@ -48,6 +48,7 @@ EXPECTED_PATHS = {
     "/api/v1/courses/mine",
     "/api/v1/courses/{code}/roster",
     "/api/v1/courses/{code}/students",
+    "/api/v1/courses/{code}/students:bulk",
     "/api/v1/courses/{code}/students/{user_id}",
     "/api/v1/courses/{code}/lecturers",
     "/api/v1/engagement-history",

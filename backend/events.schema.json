@@ -140,8 +140,7 @@
       "type": "object"
     },
     "signal.attention": {
-      "additionalProperties": false,
-      "description": "Derived indicators only. Computed on the student's device.\n\nClosed to anything else: a client that sends a field this does not name\n(a frame, a landmark list, an identifier) is refused, not quietly ignored,\nso nothing outside the allowlist can ride in on a valid event.",
+      "description": "Derived indicators only. Computed on the student's device.",
       "properties": {
         "face_present": {
           "anyOf": [
@@ -246,7 +245,6 @@
             "alert.raised",
             "material.progress",
             "room.status",
-            "room.assigned",
             "error"
           ],
           "title": "ServerEventType",
@@ -764,26 +762,6 @@
         "user_id"
       ],
       "title": "ReadyPayload",
-      "type": "object"
-    },
-    "room.assigned": {
-      "description": "The breakout room the lecturer put this student in, sent only to that\nstudent. room_label null means the rooms are closed: back to the main\nmeeting. C.L.I.P cannot move anyone in Teams; this says where to go.",
-      "properties": {
-        "room_label": {
-          "anyOf": [
-            {
-              "maxLength": 100,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Room Label"
-        }
-      },
-      "title": "RoomAssignedPayload",
       "type": "object"
     },
     "room.status": {
