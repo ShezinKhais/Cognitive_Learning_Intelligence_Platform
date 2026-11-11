@@ -23,6 +23,14 @@ WORKDIR /srv/clip
 # files Alembic needs are kept in the working directory.
 COPY pyproject.toml ./
 COPY app ./app
+# OCR for scanned PDF pages. Off by default: Tesseract adds about 30 MB, and
+# without it a scanned page is simply read as having no text.
+ARG ENABLE_OCR=false
+RUN if [ "$ENABLE_OCR" = "true" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends tesseract-ocr \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
+
 ARG ENABLE_LIVE_TRANSCRIPTION=false
 RUN if [ "$ENABLE_LIVE_TRANSCRIPTION" = "true" ]; then pip install ".[transcription]"; else pip install .; fi \
     && rm -rf ./app
@@ -52,7 +60,10 @@ VOLUME ["/data"]
 
 EXPOSE 8000
 
+# Readiness, not liveness: a backend that cannot reach its database cannot
+# sign anyone in, so it should not report healthy. Ollama is reported there
+# but does not gate it.
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=5 \
-    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=4).status == 200 else 1)"
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/ready', timeout=4).status == 200 else 1)"
 
 ENTRYPOINT ["/usr/local/bin/clip-entrypoint"]
