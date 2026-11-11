@@ -81,7 +81,7 @@ Each judge marks every question in `sheet.csv`, alone, without seeing anyone
 else's marks. At least two judges, and at least one of them a lecturer on the
 course rather than a team member. With the lecture open beside the terminal:
 
-    python -m scripts.evaluate_question_yield judge --name farhad --dir tests/eval/yield/run1
+    python -m scripts.evaluate_question_yield judge --name judge1 --dir tests/eval/yield/run1
 
 It shows one question at a time, with the answer the AI marked as right and
 the sentence it quoted, and times each one. Ctrl+C stops it; running it again

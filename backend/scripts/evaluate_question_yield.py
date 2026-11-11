@@ -14,7 +14,7 @@ with the models in .env; the other two need nothing.
 
 2. Each judge marks every question that passed the checks, on their own:
 
-    python -m scripts.evaluate_question_yield judge --name farhad --dir tests/eval/yield/run1
+    python -m scripts.evaluate_question_yield judge --name judge1 --dir tests/eval/yield/run1
 
    One question at a time, timed. It can be stopped and picked up again.
    A judge who prefers a spreadsheet copies sheet.csv to judged_<name>.csv
@@ -338,7 +338,7 @@ async def run(args: argparse.Namespace) -> None:
 
 def judged_path(folder: Path, name: str) -> Path:
     if not name.isalnum():
-        raise SystemExit("--name must be letters and digits only, such as farhad or judge2.")
+        raise SystemExit("--name must be letters and digits only, such as judge1 or judge2.")
     return folder / f"judged_{name.lower()}.csv"
 
 
