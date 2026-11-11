@@ -4,6 +4,7 @@
 // situation being acted out. No audio is stored. Served by `npm run dev` at
 // /eval/mic-recorder.html; not part of the built app, so it lives outside src/.
 import '../src/index.css'
+import { saveFile } from './saveFile.ts'
 import type { MicVAD } from '@ricky0123/vad-web'
 import { MICROPHONE_AUDIO } from '../src/features/attention/localSensors.ts'
 import { MIC_CONDITIONS, MIC_LABELS, SPEECH_THRESHOLD, micFramesToCsv, type MicCondition, type MicFrame, type MicLabel } from './micEvaluation.ts'
@@ -175,11 +176,7 @@ stop.onclick = () => stopMicrophone('Microphone off.')
 
 download.onclick = () => {
   const name = `mic_${participant.value.trim() || 'P'}_${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.csv`
-  const link = document.createElement('a')
-  link.href = URL.createObjectURL(new Blob([micFramesToCsv(frames)], { type: 'text/csv' }))
-  link.download = name
-  link.click()
-  URL.revokeObjectURL(link.href)
+  saveFile(name, micFramesToCsv(frames))
 }
 
 discard.onclick = () => {
