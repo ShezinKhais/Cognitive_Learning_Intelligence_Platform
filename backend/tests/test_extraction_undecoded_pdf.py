@@ -53,6 +53,14 @@ def test_a_broken_page_keeps_its_readable_lines_and_loses_the_rest():
     assert dropped == 2
 
 
+def test_a_broken_page_keeps_a_good_tab_separated_row():
+    # Tabs are layout, not junk: a table row on a broken page is not dropped.
+    text = "\n".join(["Name\tScore", JUNK, "Ada\t91"])
+    kept, dropped = readable_lines(text)
+    assert kept == "Name\tScore\nAda\t91"
+    assert dropped == 1
+
+
 def test_a_clean_page_is_left_exactly_as_it_was():
     text = "Line one\n\nLine two with a\ttab"
     assert readable_lines(text) == (text, 0)
@@ -99,3 +107,21 @@ def test_a_long_list_of_pages_is_shortened():
     text = undecoded_pages_warning(list(range(1, 37)))
     assert text.startswith("36 page(s)")
     assert "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, …" in text
+
+
+def test_no_lost_text_warning_when_docling_rereads_the_file(monkeypatch):
+    # docling replaces pypdf's text, so nothing it returns was left out.
+    import sys
+    import types
+
+    monkeypatch.setattr(extraction, "validate_file", lambda path, max_bytes: "pdf")
+    pdf(monkeypatch, "Good page one", f"Title\n{JUNK}")
+    monkeypatch.setattr(extraction, "looks_letter_spaced", lambda text: True)
+    docling = types.ModuleType("docling.document_converter")
+    docling.DocumentConverter = object
+    monkeypatch.setitem(sys.modules, "docling", types.ModuleType("docling"))
+    monkeypatch.setitem(sys.modules, "docling.document_converter", docling)
+    monkeypatch.setattr(extraction, "read_pdf_docling", lambda path, **kw: [])
+    _, parser, warnings = extraction.extract("fake.pdf", "pdf")
+    assert parser == "docling"
+    assert warnings == []

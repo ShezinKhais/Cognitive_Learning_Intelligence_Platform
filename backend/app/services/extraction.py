@@ -318,7 +318,13 @@ def readable_lines(text: str) -> tuple[str, int]:
     lines = text.splitlines()
     if not any(looks_undecoded(line) for line in lines):
         return text, 0
-    kept = [line for line in lines if not any(unicodedata.category(c) == "Cc" for c in line)]
+    # Tabs and line breaks are layout, as in looks_undecoded: a good
+    # tab-separated row on a broken page is kept.
+    kept = [
+        line
+        for line in lines
+        if not any(c not in _LAYOUT and unicodedata.category(c) == "Cc" for c in line)
+    ]
     return "\n".join(kept), len(lines) - len(kept)
 
 
@@ -914,8 +920,9 @@ def extract(
         scans = {"ocr": budget} if budget else {}
         undecoded: list[int] = []
         elements = _run_reader(read_pdf_pypdf, path, **images, **scans, undecoded=undecoded)
-        if undecoded:
-            warnings.append(undecoded_pages_warning(undecoded))
+        # Added only where pypdf's text is kept: docling below re-reads the
+        # whole file, so nothing it returns was left out this way.
+        undecoded_note = [undecoded_pages_warning(undecoded)] if undecoded else []
         joined = " ".join(e.content for e in elements if e.el_type != "image")
 
         # quality guard: if pypdf produced letter-spaced garbage, try to
@@ -931,12 +938,14 @@ def extract(
                     warnings,
                 )
             except ImportError:
+                warnings.extend(undecoded_note)
                 warnings.append(
                     "This PDF uses styled text that the default parser reads poorly. "
                     "Install the 'extraction' extra (docling) for better results."
                 )
                 return elements, "pypdf-low-quality", warnings
 
+        warnings.extend(undecoded_note)
         if budget:
             warnings.extend(budget.notes())
             if budget.read_pages:
