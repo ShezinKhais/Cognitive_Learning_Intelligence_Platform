@@ -49,6 +49,17 @@ jobs:
             -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" \
             -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
 
+      - name: Use the main Ubuntu archive for apt
+        # The runner's apt reads mirror+file:/etc/apt/apt-mirrors.txt, which
+        # names only azure.archive.ubuntu.com. When that name does not resolve,
+        # every package fails, security updates included. The main archive is
+        # listed first instead, and each download is retried.
+        run: |
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            echo "http://archive.ubuntu.com/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+            echo "http://azure.archive.ubuntu.com/ubuntu/" | sudo tee -a /etc/apt/apt-mirrors.txt >/dev/null
+          fi
+          echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries >/dev/null
       - name: Install Tesseract
         # So test_real_tesseract_reads_a_scanned_page runs the real OCR path
         # here instead of skipping it.
@@ -101,6 +112,17 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - name: Use the main Ubuntu archive for apt
+        # The runner's apt reads mirror+file:/etc/apt/apt-mirrors.txt, which
+        # names only azure.archive.ubuntu.com. When that name does not resolve,
+        # every package fails, security updates included. The main archive is
+        # listed first instead, and each download is retried.
+        run: |
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            echo "http://archive.ubuntu.com/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+            echo "http://azure.archive.ubuntu.com/ubuntu/" | sudo tee -a /etc/apt/apt-mirrors.txt >/dev/null
+          fi
+          echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries >/dev/null
       - name: Install browser
         run: npx playwright install --with-deps ${{ matrix.browser == 'edge' && 'msedge' || 'chrome' }}
       - run: npm run check:browser
@@ -142,6 +164,17 @@ jobs:
         run: |
           pip install httpx websockets
           python backend/scripts/smoke_test.py --base http://localhost:8088 --idle 2
+      - name: Use the main Ubuntu archive for apt
+        # The runner's apt reads mirror+file:/etc/apt/apt-mirrors.txt, which
+        # names only azure.archive.ubuntu.com. When that name does not resolve,
+        # every package fails, security updates included. The main archive is
+        # listed first instead, and each download is retried.
+        run: |
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            echo "http://archive.ubuntu.com/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+            echo "http://azure.archive.ubuntu.com/ubuntu/" | sudo tee -a /etc/apt/apt-mirrors.txt >/dev/null
+          fi
+          echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-retries >/dev/null
       - name: Install deployed-browser test dependencies
         working-directory: frontend
         run: |
