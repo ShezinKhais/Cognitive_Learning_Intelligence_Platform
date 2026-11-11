@@ -12,6 +12,7 @@
     "lint": "oxlint",
     "test": "node --test --experimental-strip-types tests/*.test.ts",
     "eval:attention": "node --experimental-strip-types scripts/evaluate-attention.ts ../backend/tests/eval/cv --out ../backend/tests/eval/cv/RESULTS.md",
+    "eval:mic": "node --experimental-strip-types scripts/evaluate-mic.ts ../backend/tests/eval/mic --out ../backend/tests/eval/mic/RESULTS.md",
     "build:e2e": "npm run prepare:attention && vite build --config vite.e2e.config.ts",
     "test:browser": "playwright test",
     "test:deployment": "playwright test --config playwright.deployment.config.ts",
