@@ -536,6 +536,18 @@
             "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
+          },
+          "preview_token": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Token"
           }
         },
         "required": [
@@ -550,6 +562,30 @@
             "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
+          },
+          "preview_token": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Token"
+          },
+          "week_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Week Start"
           }
         },
         "required": [
@@ -1813,6 +1849,69 @@
           "gaze_average"
         ],
         "title": "HistorySummaryOut",
+        "type": "object"
+      },
+      "ImportRow": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "course_code": {
+            "title": "Course Code",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "end_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Time"
+          },
+          "room": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room"
+          },
+          "row": {
+            "title": "Row",
+            "type": "integer"
+          },
+          "start_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Time"
+          }
+        },
+        "required": [
+          "row",
+          "course_code",
+          "account",
+          "detail"
+        ],
+        "title": "ImportRow",
         "type": "object"
       },
       "LessonQuestionOut": {
@@ -4804,11 +4903,44 @@
       "TimetableImportResult": {
         "description": "Result of an administrator uploading a timetable CSV or XLSX.\n\nCSV and XLSX are parsed as structured data. There is no OCR path, because a\nmisread digit would silently assign a student to the wrong session.",
         "properties": {
+          "applied": {
+            "default": false,
+            "title": "Applied",
+            "type": "boolean"
+          },
           "conflicts": {
             "items": {
               "type": "string"
             },
             "title": "Conflicts",
+            "type": "array"
+          },
+          "courses_changed": {
+            "default": 0,
+            "title": "Courses Changed",
+            "type": "integer"
+          },
+          "memberships_changed": {
+            "default": 0,
+            "title": "Memberships Changed",
+            "type": "integer"
+          },
+          "preview_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Token"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ImportRow"
+            },
+            "title": "Rows",
             "type": "array"
           },
           "rows_read": {
@@ -4817,6 +4949,11 @@
           },
           "sessions_created": {
             "title": "Sessions Created",
+            "type": "integer"
+          },
+          "sessions_to_create": {
+            "default": 0,
+            "title": "Sessions To Create",
             "type": "integer"
           },
           "unmatched_lecturers": {
@@ -5643,7 +5780,7 @@
     },
     "/api/v1/admin/roster": {
       "post": {
-        "description": "CSV or XLSX only, same reasoning as /timetable: no OCR path.",
+        "description": "Preview or confirm additional enrolments by student account email.",
         "operationId": "import_roster_api_v1_admin_roster_post",
         "requestBody": {
           "content": {
@@ -5685,7 +5822,7 @@
     },
     "/api/v1/admin/timetable": {
       "post": {
-        "description": "CSV or XLSX only. Structured data is parsed, never OCR'd.",
+        "description": "Preview or confirm one Dubai-local week of dated sessions.",
         "operationId": "import_timetable_api_v1_admin_timetable_post",
         "requestBody": {
           "content": {

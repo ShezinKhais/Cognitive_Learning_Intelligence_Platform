@@ -53,6 +53,20 @@ export interface TimetableImportResult {
   conflicts: string[]
   unmatched_lecturers: string[]
   unmatched_students: string[]
+  sessions_to_create: number
+  courses_changed: number
+  memberships_changed: number
+  applied: boolean
+  preview_token: string | null
+  rows: {
+    row: number
+    course_code: string
+    account: string
+    detail: string
+    start_time: string | null
+    end_time: string | null
+    room: string | null
+  }[]
 }
 
 export function apiUrl(path: string): string {
@@ -458,10 +472,12 @@ export function recordConsent(
 export function apiUploadFile<T = TimetableImportResult>(
   path: string,
   file: File,
+  fields: Record<string, string> = {},
 ): Promise<T> {
   const formData = new FormData()
 
   formData.append('file', file)
+  for (const [name, value] of Object.entries(fields)) formData.append(name, value)
 
   return request<T>(
     path,
