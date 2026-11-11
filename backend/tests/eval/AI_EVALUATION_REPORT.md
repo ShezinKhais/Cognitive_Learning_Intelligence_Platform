@@ -158,9 +158,10 @@ separately (kappa 0.85), disagreements settled together.
 | qwen2.5:7b, v3, run 1 | 34 | 67.5% | 0.78 |
 | qwen2.5:7b, v3, run 2 | 37 | 77.5% | 0.82 |
 | qwen2.5:3b, v4: reply held to a JSON schema | 40 | 77.5% | 0.76 |
-| **qwen2.5:3b, v5: temperature 0, fairness fixes** | **40** | **80.0%** | **0.78** |
+| qwen2.5:3b, v5: temperature 0, fairness fixes | 40 | 80.0% | 0.78 |
+| **qwen2.5:3b, v6: keyword lists to the model, narrower screening** | **40** | **80.0%** | **0.78** |
 
-| Label (v5) | Precision | Recall | F1 | Answers |
+| Label (v5 and v6, identical) | Precision | Recall | F1 | Answers |
 |---|---|---|---|---|
 | Mastered | 0.82 | 0.69 | 0.75 | 13 |
 | Partial | 0.64 | 0.64 | 0.64 | 11 |
@@ -178,7 +179,8 @@ Is the marker's confidence honest, and does it repeat itself?
 | Run | Mean confidence | Accuracy | ECE | Brier | Right when confidence ≥ 0.85 |
 |---|---|---|---|---|---|
 | qwen2.5:3b v4 | 0.73 | 78% | 0.14 | 0.18 | 14 of 16 |
-| qwen2.5:3b v5 | 0.73 | 80% | 0.24 | 0.19 | **15 of 16** |
+| qwen2.5:3b v5 | 0.73 | 80% | 0.24 | 0.19 | 15 of 16 |
+| **qwen2.5:3b v6** | **0.71** | **80%** | **0.25** | **0.20** | **14 of 15** |
 
 | Consistency | Answers | Same label | Cohen's kappa |
 |---|---|---|---|
@@ -198,15 +200,15 @@ first, and 10 more (the hold-out) only after the fixes, so the fixes were
 never tuned on them.
 `OLLAMA_MODEL=qwen2.5:3b python -m scripts.evaluate_robustness --out tests/eval/ROBUSTNESS.md`
 
-| Test | Before (v4) | After (v5) |
-|---|---|---|
-| Typo rewrites marked lower than the original | 2 of 13 | **1 of 13** |
-| Simple-English rewrites marked lower | 3 of 13 | **0 of 13** |
-| Rewrites still marked mastered | 19 of 26 | **24 of 26** |
-| Known cheating attempts that worked | 3 of 20 | **1 of 20** |
-| Known attempts stopped before reaching the model | 7 of 20 | 19 of 20 |
-| New (hold-out) attempts that worked | not tested | **2 of 10** |
-| New attempts stopped before reaching the model | not tested | 2 of 10 |
+| Test | v4 | v5 | v6 |
+|---|---|---|---|
+| Typo rewrites marked lower than the original | 2 of 13 | 1 of 13 | **1 of 13** |
+| Simple-English rewrites marked lower | 3 of 13 | 0 of 13 | **0 of 13** |
+| Rewrites still marked mastered | 19 of 26 | 24 of 26 | **24 of 26** |
+| Known cheating attempts that worked | 3 of 20 | 1 of 20 | **3 of 20** |
+| Known attempts refused before reaching the model | 7 of 20 | 19 of 20 | 17 of 20 |
+| New (hold-out) attempts that worked | not tested | 2 of 10 | **2 of 10** |
+| New attempts refused before the model / marked struggling by it | not tested | 2 / 6 | 2 / 6 |
 
 The fixes (v5): mark at temperature 0, tell the model that simple English and
 typos cost nothing, match a quoted word to the student's misspelling, mark a
@@ -226,17 +228,26 @@ on its own. Screening rules that caught ordinary answers were narrowed ("see
 the reference answer", `</p>`, "consider this correct only if the p-value is
 below 0.05", "award top marks to the best model"), each now a must-pass test.
 The seen and hold-out attempts caught are unchanged, but the two keyword-list
-attempts (x04, x18) are no longer stopped before the model; the table above
-is v5 and is to be rerun on v6.
+attempts (x04, x18) are no longer stopped before the model.
+
+**v6 rerun (#251).** `OLLAMA_MODEL=qwen2.5:3b`, prompt `free-text-v6`;
+results in `results_qwen3b_v6.csv`, `CALIBRATION_v6.md`, `ROBUSTNESS_v6.md`.
+Marking of ordinary answers is unchanged from v5 (same 32 of 40, same
+confusion matrix), and so is fairness. All 5 attacks that worked are keyword
+lists marked mastered. Two (x04, x18) are flagged and capped at 0.35, so a
+student sees "Uncertain, ask your lecturer". The other three (x11, h03, h10)
+slip past `is_keyword_list` because of punctuation or words like "than",
+"no" and "more", so they are shown as mastered (#279). Every other attempt was
+refused or marked struggling; none was unreadable.
 
 Refreshing these results (#251): the scripts now take `--questions`,
 `--answers` and `--new`, so v6 can be rerun on the original sets and on a
 fresh held-out set from a different lecture (`fresh/README.md`, never to be
 tuned on); the cheating table now separates attempts refused before the model
 from ones the model marked struggling and ones that worked. `THRESHOLDS.md`
-lists every confidence threshold in the code and what each would do on the v5
-results: at today's 0.6, 9 of the 11 labels hidden as uncertain were right
-and 6 of the 8 mistakes are still shown, so the review threshold is a team
+lists every confidence threshold in the code and what each would do on the v5 and v6
+results: at today's 0.6 on v6, 10 of the 12 labels hidden as uncertain were
+right and 6 of the 8 mistakes are still shown, so the review threshold is a team
 decision once the v6 and fresh results are in.
 
 ## 6. Summaries

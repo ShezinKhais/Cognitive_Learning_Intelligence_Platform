@@ -17,31 +17,36 @@ results say about them, and what the team still has to agree.
 The backend and the frontend agree on 0.6. A label at exactly 0.6 (no
 similarity to check against) is shown with its label, not as uncertain.
 
-## What the results say (v5, 40 answers)
+## What the results say (40 answers, v5 and v6)
 
-From `CALIBRATION.md`:
+From `CALIBRATION.md` and `CALIBRATION_v6.md`:
 
-| Confidence | Labels right |
-|---|---|
-| Below 0.6 | 9 of 11 (82%) |
-| 0.6 to 0.85 | 8 of 13 (62%) |
-| 0.85 and up | 15 of 16 (94%) |
+| Confidence | Labels right, v5 | Labels right, v6 |
+|---|---|---|
+| Below 0.6 | 9 of 11 (82%) | 10 of 12 (83%) |
+| 0.6 to 0.85 | 8 of 13 (62%) | 8 of 13 (62%) |
+| 0.85 and up | 15 of 16 (94%) | 14 of 15 (93%) |
 
-| If "uncertain" started below | Labels hidden as uncertain (how many wrong) | Labels shown (how many wrong) |
+| If "uncertain" started below | v6: labels hidden as uncertain (how many wrong) | v6: labels shown (how many wrong) |
 |---|---|---|
 | 0.35 | 0 (0) | 40 (8) |
-| 0.6 (today) | 11 (2) | 29 (6) |
-| 0.85 | 24 (7) | 16 (1) |
+| 0.6 (today) | 12 (2) | 28 (6) |
+| 0.85 | 25 (7) | 15 (1) |
+
+v6 AUROC is 0.59 (v5 0.62): confidence is only a little better than a coin
+toss at telling right labels from wrong ones, except above 0.85.
 
 In plain words:
 
-- The 0.6 threshold hides 11 labels, but 9 of them were right; it still shows
-  6 of the 8 mistakes. On this set, labels between 0.6 and 0.85 were wrong
-  more often than labels below 0.6.
-- 0.85 would show only 1 mistake, but would hide 24 of 40 labels (60%), so
+- The 0.6 threshold hides 12 labels, but 10 of them were right; it still
+  shows 6 of the 8 mistakes. Labels between 0.6 and 0.85 were wrong more
+  often than labels below 0.6, in both runs.
+- 0.85 would show only 1 mistake, but would hide 25 of 40 labels (63%), so
   most answers would say "ask your lecturer".
 - A student seeing "75% sure of this reading" is in the band that was right
   62% of the time, so the percentage overstates it there.
+- Keyword lists that `is_keyword_list` catches get 0.35 and so show as
+  uncertain; the ones it misses are shown as mastered (#279).
 - The set is small (40 answers, one lecture, one topic): moving one or two
   answers changes these counts a lot. These must be checked on the fresh
   held-out set (`fresh/`) and on v6 before anything is changed.
