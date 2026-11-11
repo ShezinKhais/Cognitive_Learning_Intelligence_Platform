@@ -89,6 +89,7 @@ AUDIENCE = {
     ("GET", "/api/v1/auth/me"): ANY_USER,
     ("POST", "/api/v1/client-errors"): ANY_USER,
     ("GET", "/api/v1/admin/errors"): ADMIN_ONLY,
+    ("POST", "/api/v1/admin/errors/synthetic"): ADMIN_ONLY,
     ("POST", "/api/v1/admin/roster"): ADMIN_ONLY,
     ("GET", "/api/v1/admin/accounts"): ADMIN_ONLY,
     ("POST", "/api/v1/admin/accounts"): ADMIN_ONLY,
