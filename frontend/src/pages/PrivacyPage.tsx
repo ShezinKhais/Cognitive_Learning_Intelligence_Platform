@@ -171,9 +171,10 @@ export default function PrivacyPage() {
 
       <PolicySection title="How long it is kept">
         <p>
-          Information is held on the C.L.I.P server and travels over encrypted connections. By default, a
-          session's records, including discussion minutes, are deleted {RETENTION_DAYS} days after it ends: your answers, engagement and camera and
-          microphone summaries, prompts and alerts. Your university can set a different period.
+          Information is held on the C.L.I.P server and travels over encrypted connections. A session's records
+          become eligible for automatic deletion {RETENTION_DAYS} days after it ends, including your answers,
+          discussion minutes, engagement and attention summaries, prompts and alerts. Your university can set
+          a shorter period. The purge may wait until the current class ends.
         </p>
         <p>
           Two things are kept after that:

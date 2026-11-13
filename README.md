@@ -204,7 +204,7 @@ and the correct answer is revealed when the window closes.
 
 ### Phase 7 - Retention, deletion requests and the audit log
 
-- **Retention.** A session is purged 120 days (a semester) after it ended. The purge
+- **Retention.** A session becomes eligible for automatic purge 90 days after it ends. The purge
   removes everything the session holds: answers and their labels, engagement, prompts,
   alerts and attention summaries. Lecturer questions and uploaded material stay. Teams
   roster syncs hold participant names, so they are purged on their own received date.
@@ -548,8 +548,7 @@ the consent screen and the Teams manifest. Their wording awaits team and univers
   never lowers a student's score.
 - Engagement and comprehension are measured separately, and neither is an assessment.
 - Every role is checked on the server; Teams context is never trusted for authorisation.
-- Session data is deleted after a semester (120 days), in line with UAE Federal Decree-Law No. 45 of
-  2021 on the Protection of Personal Data.
+- The automatic retention purge removes expired session data under the project’s 90-day policy.
 
 ## Project Status
 

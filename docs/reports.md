@@ -79,7 +79,7 @@ next turn. Stopping cancels a run in progress. A job must await its I/O and
 move CPU-bound work to a thread.
 
 `expire-reports` first runs after 5 minutes. `retention-purge` first runs
-after 10 minutes, or after one interval if that is shorter. The scheduler puts
+after one minute, or after one interval if that is shorter. The scheduler puts
 no time limit on a job, so the purge keeps its own, described below.
 
 ## The retention purge
@@ -193,7 +193,7 @@ All are in `backend/app/core/config.py` and can be set in `backend/.env`.
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `DATA_RETENTION_DAYS` | 120 | Data older than this is deleted by the purge. At least 1. |
+| `DATA_RETENTION_DAYS` | 90 | Purge cutoff in days. Use a positive value to shorten it. Values above 90 are capped at 90, including on existing deployments. |
 | `RETENTION_PURGE_INTERVAL_HOURS` | 24.0 | How often the purge runs. |
 | `RETENTION_PURGE_TIMEOUT_MINUTES` | 30.0 | How long one run may take. A run cut short carries on at the next. |
 
