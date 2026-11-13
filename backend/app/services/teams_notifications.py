@@ -18,13 +18,12 @@ The bounded background tasks never hold the classroom's question lock.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 from uuid import UUID
 
 import httpx
@@ -119,8 +118,57 @@ def checkpoint_card(target: str, course: str, title: str, seconds: int | None = 
                 "wrap": True,
             },
         ],
-        "actions": [{"type": "Action.OpenUrl", "title": "Open C.L.I.P", "url": target}],
+        "actions": [
+            {
+                # A dialog over the meeting, from the bot's task/fetch answer.
+                # An OpenUrl deep link opened the app's tab instead, which
+                # takes the user out of the meeting view.
+                "type": "Action.Submit",
+                "title": "Answer now",
+                "data": {"msteams": {"type": "task/fetch"}, "clip": "checkpoint", "target": target},
+            }
+        ],
     }
+
+
+# The in-meeting dialog a checkpoint opens in, in pixels. Big enough for a
+# question and four options without scrolling, small enough to leave the
+# lecture in view around it.
+CHECKPOINT_DIALOG = {"width": 480, "height": 520}
+
+
+def checkpoint_dialog(target: str) -> dict:
+    """The answer to a checkpoint card's task/fetch: open the checkpoint in a
+    dialog over the meeting."""
+    return {
+        "task": {
+            "type": "continue",
+            "value": {
+                "title": "C.L.I.P checkpoint",
+                "url": target,
+                "fallbackUrl": target,
+                **CHECKPOINT_DIALOG,
+            },
+        }
+    }
+
+
+def checkpoint_dialog_for(activity_value: object, settings: Settings) -> dict | None:
+    """The dialog for a checkpoint card's "Answer now", or None when the press
+    is not one. The page opened is always our own checkpoint view for the
+    session named in the card, rebuilt here, never a URL taken from it."""
+    data = activity_value.get("data") if isinstance(activity_value, dict) else None
+    if not isinstance(data, dict) or data.get("clip") != "checkpoint":
+        return None
+    target = data.get("target")
+    if not isinstance(target, str):
+        return None
+    try:
+        session_id = UUID(parse_qs(urlsplit(target).query).get("sessionId", [""])[0])
+        own = panel_url(settings.teams_app_base_url, session_id) + "&view=dialog"
+    except ValueError:
+        return None
+    return checkpoint_dialog(own)
 
 
 def ended_card(target: str, course: str, title: str) -> dict:
@@ -144,22 +192,6 @@ def ended_card(target: str, course: str, title: str) -> dict:
         ],
         "actions": [{"type": "Action.OpenUrl", "title": "Review the class", "url": target}],
     }
-
-
-def meeting_deep_link(settings: Settings, conversation_id: str, target: str) -> str:
-    query = urlencode(
-        {
-            "webUrl": target,
-            "label": "C.L.I.P",
-            "context": json.dumps(
-                {
-                    "chatId": conversation_id,
-                    "contextType": "chat",
-                }
-            ),
-        }
-    )
-    return f"https://teams.microsoft.com/l/entity/{settings.teams_app_id}/clip.meeting?{query}"
 
 
 async def remember_reference(db, activity: TeamsActivity, settings: Settings) -> None:
@@ -474,7 +506,7 @@ class TeamsNotifications:
     async def send(self, notice: CheckpointNotice, settings: Settings) -> None:
         if not settings.teams_configured:
             return
-        target = panel_url(settings.teams_app_base_url, notice.session_id)
+        dialog_target = panel_url(settings.teams_app_base_url, notice.session_id) + "&view=dialog"
         async with get_session_factory()() as db:
             row = (
                 await db.execute(
@@ -525,17 +557,46 @@ class TeamsNotifications:
             recipients = await _meeting_members(client, base, headers, conversation_id, students)
             if not recipients or time.time() >= notice.closes_at:
                 return
+            # The pop-up is the notification: a dialog over the meeting that
+            # the student answers in and closes, with the lecture still on
+            # screen. A chat message as well made Teams announce it twice, and
+            # its link opened the app's full tab, minimising the meeting.
+            try:
+                await _targeted_popup(
+                    client,
+                    base,
+                    headers,
+                    meeting_id,
+                    recipients,
+                    title=(
+                        "New C.L.I.P checkpoint: about "
+                        f"{seconds_left(notice.closes_at)} seconds to answer"
+                    ),
+                    url=dialog_target,
+                    closes_at=notice.closes_at,
+                    **CHECKPOINT_DIALOG,
+                )
+                return
+            except httpx.HTTPStatusError as exc:
+                # Without the meeting notification permission the pop-up is
+                # refused. The chat card opens the same dialog instead.
+                log.warning(
+                    "Teams checkpoint pop-up refused (%s); posting the chat card",
+                    exc.response.status_code,
+                )
+            if time.time() >= notice.closes_at:
+                return
             response = await client.post(
                 base + f"v3/conversations/{quote(conversation_id, safe='')}/activities",
                 headers=headers,
                 json={
                     "type": "message",
-                    "text": "New checkpoint: open C.L.I.P to answer",
+                    "text": "New checkpoint: answer it without leaving the meeting",
                     "attachments": [
                         {
                             "contentType": "application/vnd.microsoft.card.adaptive",
                             "content": checkpoint_card(
-                                meeting_deep_link(settings, conversation_id, target),
+                                dialog_target,
                                 code,
                                 title,
                                 seconds_left(notice.closes_at),
@@ -545,19 +606,6 @@ class TeamsNotifications:
                 },
             )
             response.raise_for_status()
-            await _targeted_popup(
-                client,
-                base,
-                headers,
-                meeting_id,
-                recipients,
-                title=(
-                    "New C.L.I.P checkpoint: about "
-                    f"{seconds_left(notice.closes_at)} seconds to answer"
-                ),
-                url=target,
-                closes_at=notice.closes_at,
-            )
 
     async def send_alert(self, notice: AlertNotice, settings: Settings) -> None:
         """Pop the lecturer's panel up in the meeting. Only the session's own
@@ -772,8 +820,12 @@ async def _targeted_popup(
     title: str,
     url: str,
     closes_at: float,
+    width: int = 400,
+    height: int = 300,
 ) -> None:
-    """Open url in a pop-up for these meeting members only, fifty at a time."""
+    """Open url in a pop-up over the meeting for these members only, fifty
+    at a time. It is a dialog on top of the meeting, so the lecture stays in
+    view."""
     ordered = sorted(recipients)
     for offset in range(0, len(ordered), 50):
         if time.time() >= closes_at:
@@ -791,8 +843,8 @@ async def _targeted_popup(
                             "contentType": "task",
                             "content": {
                                 "value": {
-                                    "height": "300",
-                                    "width": "400",
+                                    "height": str(height),
+                                    "width": str(width),
                                     "title": title,
                                     "url": url,
                                 }

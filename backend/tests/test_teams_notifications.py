@@ -18,6 +18,7 @@ from app.services.teams_notifications import (
     CheckpointNotice,
     TeamsNotifications,
     checkpoint_card,
+    checkpoint_dialog_for,
     connector_url,
     panel_url,
     remember_reference,
@@ -57,7 +58,12 @@ def test_card_contains_only_session_context_and_panel_link() -> None:
     session = uuid4()
     target = panel_url("https://clip.example", session)
     card = checkpoint_card(target, "CS101", "Class")
-    assert card["actions"][0]["url"] == f"https://clip.example/teams/meeting?sessionId={session}"
+    # A dialog over the meeting, through task/fetch, never a link that opens
+    # the app's tab and takes the student out of the meeting view.
+    action = card["actions"][0]
+    assert action["type"] == "Action.Submit"
+    assert action["data"]["msteams"] == {"type": "task/fetch"}
+    assert action["data"]["target"] == f"https://clip.example/teams/meeting?sessionId={session}"
     assert card["type"] == "AdaptiveCard"
     assert "CS101 — Class" in json.dumps(card, ensure_ascii=False)
 
@@ -167,11 +173,18 @@ async def test_send_targets_only_mapped_students_and_batches_fifty(monkeypatch, 
     posts = [
         r for r in requests if r.method == "POST" and r.url.host != "login.microsoftonline.com"
     ]
-    assert len(posts) == 3
-    assert json.loads(posts[0].content)["attachments"][0]["content"]["type"] == "AdaptiveCard"
-    batches = [json.loads(r.content)["value"]["recipients"] for r in posts[1:]]
+    # Only the pop-up: no chat message beside it.
+    assert len(posts) == 2
+    assert all(r.url.path.endswith("/notification") for r in posts)
+    batches = [json.loads(r.content)["value"]["recipients"] for r in posts]
     assert [len(batch) for batch in batches] == [50, 1]
     assert set(sum(batches, [])) == {f"29:student-{i}" for i in range(51)}
+    surface = json.loads(posts[0].content)["value"]["surfaces"][0]
+    assert surface["content"]["value"]["url"].endswith("&view=dialog")
+    assert (surface["content"]["value"]["width"], surface["content"]["value"]["height"]) == (
+        "480",
+        "520",
+    )
     assert "%2F" in str(posts[0].url)
     assert "partially delivered" in caplog.text
 
@@ -754,3 +767,109 @@ async def test_the_end_of_class_card_links_to_the_review(monkeypatch) -> None:
 def test_the_checkpoint_card_says_how_long_is_left() -> None:
     card = checkpoint_card("https://clip.example/x", "CS101", "Class", 45)
     assert "closes in about 45 seconds" in json.dumps(card)
+
+
+def test_answer_now_opens_our_own_checkpoint_dialog() -> None:
+    session = uuid4()
+    settings = configured()
+    target = panel_url(settings.teams_app_base_url, session)
+
+    dialog = checkpoint_dialog_for({"data": {"clip": "checkpoint", "target": target}}, settings)
+
+    value = dialog["task"]["value"]
+    assert dialog["task"]["type"] == "continue"
+    assert value["url"] == f"{target}&view=dialog"
+    assert (value["width"], value["height"]) == (480, 520)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        {"data": {"clip": "something-else"}},
+        {"data": {"clip": "checkpoint"}},
+        {"data": {"clip": "checkpoint", "target": "https://evil.example/x?sessionId=nope"}},
+    ],
+)
+def test_other_presses_open_no_dialog(value) -> None:
+    assert checkpoint_dialog_for(value, configured()) is None
+
+
+def test_a_foreign_target_still_opens_our_own_page() -> None:
+    """The page is rebuilt from the session id, so a card naming another site
+    cannot send the student there."""
+    session = uuid4()
+    settings = configured()
+    dialog = checkpoint_dialog_for(
+        {"data": {"clip": "checkpoint", "target": f"https://evil.example/x?sessionId={session}"}},
+        settings,
+    )
+    assert dialog["task"]["value"]["url"].startswith(settings.teams_app_base_url)
+
+
+async def test_a_refused_pop_up_falls_back_to_the_answer_now_card(monkeypatch) -> None:
+    session_id = uuid4()
+    link = SimpleNamespace(meeting_id="meeting-1")
+    reference = SimpleNamespace(
+        service_url="https://smba.trafficmanager.net/emea/",
+        conversation_id="chat-1",
+        tenant_id="tenant",
+    )
+
+    class Db:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def execute(self, statement):
+            return SimpleNamespace(
+                first=lambda: (
+                    link,
+                    SimpleNamespace(title="Class", course_id=uuid4()),
+                    SimpleNamespace(code="CS101"),
+                    reference,
+                )
+            )
+
+        async def scalars(self, statement):
+            return SimpleNamespace(all=lambda: ["aad-1"])
+
+    async def members(*args, **kwargs):
+        return {"29:student-1"}
+
+    async def refused(*args, **kwargs):
+        request = httpx.Request("POST", "https://smba.trafficmanager.net/emea/v1/x")
+        raise httpx.HTTPStatusError(
+            "no", request=request, response=httpx.Response(403, request=request)
+        )
+
+    async def token(self, client, settings):
+        return "bot-token"
+
+    posted = []
+
+    def handler(request):
+        posted.append(json.loads(request.content))
+        return httpx.Response(201, json={"id": "message"})
+
+    client_type = httpx.AsyncClient
+    monkeypatch.setattr(module, "get_session_factory", lambda: Db)
+    monkeypatch.setattr(module, "_meeting_members", members)
+    monkeypatch.setattr(module, "_targeted_popup", refused)
+    monkeypatch.setattr(TeamsNotifications, "access_token", token)
+    monkeypatch.setattr(
+        module.httpx,
+        "AsyncClient",
+        lambda **kwargs: client_type(transport=httpx.MockTransport(handler), **kwargs),
+    )
+
+    await TeamsNotifications().send(
+        CheckpointNotice(session_id, time.time() + 30, uuid4()), configured()
+    )
+
+    [message] = posted
+    action = message["attachments"][0]["content"]["actions"][0]
+    assert action["type"] == "Action.Submit"
+    assert action["data"]["target"].endswith("&view=dialog")

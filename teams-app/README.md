@@ -118,7 +118,13 @@ linked class (`backend/app/services/teams_meeting_flow.py` and
   course content only, never a name, at most one a minute (engagement every
   five), and **Mute** on the update page (`/lecturer/teams/update`) stops them
   for the rest of the class.
-- **Students.** The checkpoint pop-up says how long is left. When the class
+- **Students.** A checkpoint arrives as a pop-up over the meeting
+  (480 by 520 pixels), never as a tab: it shows the question only, the student
+  answers in it, and **Back to the lecture** closes it. The meeting stays on
+  screen throughout. If the tenant has not granted the meeting notification
+  permission, the meeting chat gets a card instead, and its **Answer now**
+  opens the same pop-up rather than the app's tab, which would minimise the
+  meeting. The checkpoint pop-up says how long is left. When the class
   ends, the meeting chat gets a card linking to the review. The lecturer's
   update page shows how many of the course's students have opened C.L.I.P in
   Teams, since only they get checkpoint pop-ups.
