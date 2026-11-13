@@ -350,7 +350,22 @@ async def meeting_owner(db: AsyncSession, meeting_id: str, settings: Settings) -
     row = await SessionRepository(db).get(session_id) if session_id is not None else None
     if row is None:
         return None
-    user = await active_user(row.instructor_id, settings, db)
+    principal = await act_as_lecturer(db, row.instructor_id, meeting_id, settings)
+    if principal is None:
+        raise PermissionError_(
+            "The lecturer of this meeting's session cannot be acted for.",
+            {"meeting_id": meeting_id},
+        )
+    return principal
+
+
+async def act_as_lecturer(
+    db: AsyncSession, user_id: UUID, meeting_id: str, settings: Settings
+) -> Principal | None:
+    """The principal the Teams bot acts as for this member of staff, or None
+    when their own request would be refused: a disabled account, one that is
+    no longer staff, or one whose terms consent has been withdrawn."""
+    user = await active_user(user_id, settings, db)
     if user is None or user.role not in (Role.LECTURER, Role.ADMIN):
         reason = "account_unavailable" if user is None else "not_staff"
     elif ConsentType.TERMS not in await granted_consents(user.id, settings, db):
@@ -361,14 +376,11 @@ async def meeting_owner(db: AsyncSession, meeting_id: str, settings: Settings) -
         return Principal(user_id=user.id, role=Role.LECTURER, email=user.email)
     log.warning(
         "security_event=TEAMS_ACT_AS_REFUSED user_id=%s meeting_id=%r reason=%s",
-        row.instructor_id,
+        user_id,
         meeting_id,
         reason,
     )
-    raise PermissionError_(
-        "The lecturer of this meeting's session cannot be acted for.",
-        {"meeting_id": meeting_id, "reason": reason},
-    )
+    return None
 
 
 async def handle_meeting_event(

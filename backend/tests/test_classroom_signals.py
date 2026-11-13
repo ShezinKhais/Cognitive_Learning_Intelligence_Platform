@@ -917,3 +917,114 @@ async def test_a_pass_that_fails_does_not_stop_the_next() -> None:
 
     assert len(calls) >= 2
     await room.shutdown()
+
+
+# -- the lecturer told in Teams ---------------------------------------------------
+
+
+async def test_the_lecturer_is_told_how_many_are_low_when_enough_of_the_class_is() -> None:
+    room, events, row = await _class(refocus_after=10.0)
+    told: list[tuple] = []
+    room.lecturer_update_notifier = lambda *update: told.append(update)
+    students = []
+    for _ in range(3):
+        _, student = await join_as(events, row.session_id, Role.STUDENT)
+        _missed_two(room, row, student)
+        students.append(student)
+    await join_as(events, row.session_id, Role.STUDENT)
+    for student in students:
+        await _record(room, row, student, AWAY, AWAY)
+
+    await _watch(room, row)
+
+    assert told == [
+        (row.session_id, "attention", "Engagement looks low for 3 of 4 students right now.")
+    ]
+    await room.shutdown()
+
+
+async def test_one_student_low_is_never_reported_to_the_lecturer() -> None:
+    room, events, row = await _class(refocus_after=10.0)
+    told: list[tuple] = []
+    room.lecturer_update_notifier = lambda *update: told.append(update)
+    _, student = await join_as(events, row.session_id, Role.STUDENT)
+    _missed_two(room, row, student)
+    await _record(room, row, student, AWAY, AWAY)
+
+    await _watch(room, row)
+
+    assert told == []
+    await room.shutdown()
+
+
+async def test_a_closed_checkpoint_tells_the_lecturer_how_many_answered() -> None:
+    room, events, row = await _class(window=0.1)
+    told: list[tuple] = []
+    room.lecturer_update_notifier = lambda *update: told.append(update)
+    _, answering = await join_as(events, row.session_id, Role.STUDENT)
+    await join_as(events, row.session_id, Role.STUDENT)
+
+    await _close(room, row, answering)
+
+    assert (row.session_id, "checkpoint", "Checkpoint closed: 1 of 2 students answered.") in told
+    await room.shutdown()
+
+
+async def test_only_a_class_that_ended_is_announced_in_teams() -> None:
+    room, _, row = await _class()
+    ended: list = []
+    room.class_ended_notifier = ended.append
+    await room.end(row.session_id, SessionStatus.ENDED, 0)
+    await room.end(uuid4(), SessionStatus.CANCELLED, 0)
+    assert ended == [row.session_id]
+    await room.shutdown()
+
+
+async def test_the_lecturers_checkpoint_update_adds_what_the_answers_show() -> None:
+    room, events, row = await _class(window=0.1)
+    told: list[tuple] = []
+    room.lecturer_update_notifier = lambda *update: told.append(update)
+
+    async def detail(session_id, question_id):  # noqa: ANN001, ANN202
+        return "1 right."
+
+    room.checkpoint_detail = detail
+    _, answering = await join_as(events, row.session_id, Role.STUDENT)
+
+    await _close(room, row, answering)
+
+    assert (
+        row.session_id,
+        "checkpoint",
+        "Checkpoint closed: 1 of 1 students answered, 1 right.",
+    ) in told
+    await room.shutdown()
+
+
+async def test_a_last_call_goes_only_to_students_who_have_not_answered(monkeypatch) -> None:
+    monkeypatch.setattr(classroom_module, "LAST_CALL_MIN_WINDOW_SECONDS", 0.1)
+    monkeypatch.setattr(classroom_module, "LAST_CALL_SECONDS", 0.25)
+    room, events, row = await _class(window=0.3)
+    called: list[tuple] = []
+    room.last_call_notifier = lambda *call: called.append(call)
+    _, answering = await join_as(events, row.session_id, Role.STUDENT)
+    _, quiet = await join_as(events, row.session_id, Role.STUDENT)
+
+    await _close(room, row, answering)
+
+    [(session_id, _, waiting, _)] = called
+    assert session_id == row.session_id
+    assert waiting == {quiet}
+    await room.shutdown()
+
+
+async def test_no_last_call_for_a_short_window() -> None:
+    room, events, row = await _class(window=0.1)
+    called: list = []
+    room.last_call_notifier = lambda *call: called.append(call)
+    await join_as(events, row.session_id, Role.STUDENT)
+
+    await _close(room, row)
+
+    assert called == []
+    await room.shutdown()

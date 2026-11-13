@@ -1,4 +1,4 @@
-import { app } from '@microsoft/teams-js'
+import { app, dialog } from '@microsoft/teams-js'
 
 import {
   isTeamsMobileAgent,
@@ -84,4 +84,19 @@ export function createTeamsHost(
   }
 
   return new StandaloneHost()
+}
+
+/**
+ * Close the dialog this page is shown in, when it is one: the checkpoint
+ * pop-up over a meeting. Returns false outside a Teams dialog, where there is
+ * nothing to close.
+ */
+export function closeTeamsDialog(): boolean {
+  try {
+    if (!dialog.url.isSupported()) return false
+    dialog.url.submit()
+    return true
+  } catch {
+    return false
+  }
 }

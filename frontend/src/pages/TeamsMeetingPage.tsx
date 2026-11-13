@@ -105,7 +105,12 @@ export default function TeamsMeetingPage() {
     )
   }
 
-  return <LiveSessionPanel session={session} compact />
+  // The checkpoint pop-up over the meeting shows only the question, so the
+  // student answers and is back to the lecture in one step.
+  const inDialog =
+    teams.context?.frameContext === 'task' ||
+    new URLSearchParams(window.location.search).get('view') === 'dialog'
+  return <LiveSessionPanel session={session} compact dialog={inDialog} />
 }
 
 /**

@@ -49,6 +49,8 @@ EXPECTED_PATHS = {
     "/api/v1/admin/courses",
     "/api/v1/courses/mine",
     "/api/v1/courses/{code}/roster",
+    "/api/v1/courses/{code}/attendance",
+    "/api/v1/courses/{code}/attendance.csv",
     "/api/v1/courses/{code}/students",
     "/api/v1/courses/{code}/students/{user_id}",
     "/api/v1/courses/{code}/lecturers",
@@ -79,6 +81,7 @@ EXPECTED_PATHS = {
     "/api/v1/sessions/{session_id}/questions",
     "/api/v1/sessions/{session_id}/start",
     "/api/v1/sessions/{session_id}/end",
+    "/api/v1/sessions/{session_id}/attendance",
     # Added in Phase 3 for the pause deliverable. Additive: no existing route
     # or field changed.
     "/api/v1/sessions/{session_id}/pause",
@@ -98,6 +101,7 @@ EXPECTED_PATHS = {
     "/api/v1/meetings/{meeting_id}/class-suggestion",
     "/api/v1/meetings/{meeting_id}/class",
     "/api/v1/meetings/events",
+    "/api/v1/meetings/sessions/{session_id}/updates",
     "/api/v1/teams/messages",
     # Added in Phase 5 for the tutor (General CS). Additive. The reply is a
     # stream of NDJSON events, so it has no response model.

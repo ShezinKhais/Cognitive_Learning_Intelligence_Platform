@@ -23,10 +23,12 @@ The bot acts on a meeting starting or ending, which Teams sends to a bot
 installed in the meeting's chat with the OnlineMeeting.ReadBasic.Chat
 permission the manifest asks for. It starts or ends the linked session as
 the session's lecturer, through the same service the mock adapter's routes
-use, and only while that lecturer could still do so themselves. Messages
-and the bot being added to a chat get a short reply (teams_replies).
-Participant events are acknowledged and not acted on: who is in the class
-comes from C.L.I.P sign-in, not from the meeting roster.
+use, and only while that lecturer could still do so themselves. A meeting
+that starts with nothing linked, a press on one of the bot's cards, and
+people joining or leaving go to teams_meeting_flow. Messages and the bot
+being added to a chat get a short reply (teams_replies). Who is in the
+class for engagement still comes from C.L.I.P sign-in, not from the
+meeting roster.
 """
 
 from __future__ import annotations
@@ -57,7 +59,8 @@ from app.schemas.meetings import (
     TeamsActivity,
     activity_meeting_id,
 )
-from app.services import session_lifecycle
+from app.services import session_lifecycle, teams_meeting_flow
+from app.services.teams_notifications import notifications
 
 log = logging.getLogger("clip.teams")
 
@@ -297,13 +300,23 @@ async def handle_activity(db: AsyncSession, activity: TeamsActivity, settings: S
     """
     event = meeting_event(activity)
     if event is None:
+        if teams_meeting_flow.card_action(activity) is not None:
+            await teams_meeting_flow.answer_card(db, activity, settings)
+        else:
+            await teams_meeting_flow.participants_changed(db, activity, settings)
         return
     try:
         owner = await session_lifecycle.meeting_owner(db, event.meeting_id, settings)
         if owner is None:
             log.info("meeting %s %s, but no session is linked to it", event.meeting_id, event.kind)
+            if event.kind is MeetingEventKind.STARTED:
+                await teams_meeting_flow.meeting_started_unlinked(
+                    db, activity, event.meeting_id, settings
+                )
             return
-        await session_lifecycle.handle_meeting_event(db, owner, event)
+        started = await session_lifecycle.handle_meeting_event(db, owner, event)
+        if event.kind is MeetingEventKind.STARTED:
+            notifications.enqueue_welcome(started.id)
     except ClipError as exc:
         await db.rollback()
         log.warning("meeting %s %s was not applied: %s", event.meeting_id, event.kind, exc)
