@@ -5,6 +5,7 @@
 // /eval/attention-recorder.html; not part of the built app, so it lives
 // outside src/.
 import '../src/index.css'
+import { saveFile } from './saveFile.ts'
 import { CONDITIONS, LABELS, framesToCsv, type Condition, type Frame, type Label } from './evaluation.ts'
 import type { FaceFeatures } from '../src/features/attention/signals.ts'
 
@@ -216,11 +217,7 @@ stop.onclick = () => stopCamera('Camera off.')
 
 download.onclick = () => {
   const name = `attention_${participant.value.trim() || 'P'}_${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.csv`
-  const link = document.createElement('a')
-  link.href = URL.createObjectURL(new Blob([framesToCsv(frames)], { type: 'text/csv' }))
-  link.download = name
-  link.click()
-  URL.revokeObjectURL(link.href)
+  saveFile(name, framesToCsv(frames))
 }
 
 discard.onclick = () => {
