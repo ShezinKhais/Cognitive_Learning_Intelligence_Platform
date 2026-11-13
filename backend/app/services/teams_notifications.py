@@ -41,6 +41,7 @@ from app.models.teams_meeting_reference import TeamsMeetingReference
 from app.models.teams_user_mapping import TeamsUserMapping
 from app.models.user import User
 from app.schemas.meetings import TeamsActivity, activity_meeting_id
+from app.services import class_glance
 from app.services.course_membership import students_on
 
 log = logging.getLogger("clip.teams.notifications")
@@ -281,6 +282,16 @@ class EndedNotice:
     closes_at: float
 
 
+@dataclass(frozen=True)
+class LastCallNotice:
+    """A checkpoint about to close, for the students who have not answered."""
+
+    session_id: UUID
+    question_id: UUID
+    user_ids: frozenset[UUID]
+    closes_at: float
+
+
 @dataclass
 class LecturerUpdate:
     at: datetime
@@ -415,11 +426,22 @@ class TeamsNotifications:
                 self.welcomed[(session_id, aad)] = now
         self._start(WelcomeNotice(session_id, time.time() + ALERT_SEND_SECONDS, people))
 
+    def enqueue_last_call(
+        self, session_id: UUID, question_id: UUID, user_ids: set[UUID], closes_at: float
+    ) -> None:
+        """Remind the students who have not answered that a checkpoint closes
+        in a few seconds. Sent only while there is time for them to answer."""
+        if get_settings().teams_last_call_enabled and user_ids:
+            self._start(LastCallNotice(session_id, question_id, frozenset(user_ids), closes_at))
+
     def enqueue_class_ended(self, session_id: UUID) -> None:
         self.forget(session_id)
         self._start(EndedNotice(session_id, time.time() + ALERT_SEND_SECONDS))
 
-    def _start(self, notice: CheckpointNotice | AlertNotice | WelcomeNotice | EndedNotice) -> bool:
+    def _start(
+        self,
+        notice: CheckpointNotice | AlertNotice | WelcomeNotice | EndedNotice | LastCallNotice,
+    ) -> bool:
         settings = get_settings()
         if not settings.teams_notifications_enabled:
             return False
@@ -438,12 +460,14 @@ class TeamsNotifications:
         await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _run(
-        self, notice: CheckpointNotice | AlertNotice | WelcomeNotice | EndedNotice
+        self,
+        notice: CheckpointNotice | AlertNotice | WelcomeNotice | EndedNotice | LastCallNotice,
     ) -> None:
         what = {
             AlertNotice: "alert",
             WelcomeNotice: "welcome",
             EndedNotice: "class ended",
+            LastCallNotice: "last call",
         }.get(type(notice), "checkpoint")
         try:
             if isinstance(notice, AlertNotice) and notice.delay:
@@ -467,6 +491,8 @@ class TeamsNotifications:
                         await self.send_welcome(notice, get_settings())
                     elif isinstance(notice, EndedNotice):
                         await self.send_ended(notice, get_settings())
+                    elif isinstance(notice, LastCallNotice):
+                        await self.send_last_call(notice, get_settings())
                     else:
                         await self.send(notice, get_settings())
         except httpx.HTTPStatusError as exc:
@@ -683,6 +709,18 @@ class TeamsNotifications:
             link, reference, session = row
             if reference.tenant_id != settings.tenant_id:
                 return
+            # Someone joining a class already under way is told how much has
+            # happened, so they know to catch up in the panel.
+            asked = 0
+            if notice.people is not None:
+                asked = (
+                    await db.scalar(
+                        select(func.count())
+                        .select_from(DeliveredQuestion)
+                        .where(DeliveredQuestion.session_id == notice.session_id)
+                    )
+                    or 0
+                )
             lecturer = await db.scalar(
                 select(TeamsUserMapping.teams_user_id).where(
                     TeamsUserMapping.user_id == session.instructor_id,
@@ -712,9 +750,75 @@ class TeamsNotifications:
                 headers,
                 meeting_id,
                 recipients,
-                title="C.L.I.P is running in this class",
+                title=(
+                    f"You joined late: {asked} checkpoint{'s' if asked != 1 else ''} so far. "
+                    "Open C.L.I.P to catch up"
+                    if asked
+                    else "C.L.I.P is running in this class"
+                ),
                 url=target,
                 closes_at=notice.closes_at,
+            )
+
+    async def send_last_call(self, notice: LastCallNotice, settings: Settings) -> None:
+        """Pop the checkpoint up again for the students who have not answered,
+        a few seconds before it closes."""
+        if not settings.teams_configured:
+            return
+        async with get_session_factory()() as db:
+            row = (
+                await db.execute(
+                    select(TeamsMeetingLink, TeamsMeetingReference)
+                    .join(Session, Session.session_id == TeamsMeetingLink.session_id)
+                    .join(
+                        TeamsMeetingReference,
+                        TeamsMeetingReference.meeting_id == TeamsMeetingLink.meeting_id,
+                    )
+                    .join(DeliveredQuestion, DeliveredQuestion.session_id == Session.session_id)
+                    .where(
+                        Session.session_id == notice.session_id,
+                        Session.status == "active",
+                        Session.paused_at.is_(None),
+                        DeliveredQuestion.question_id == notice.question_id,
+                        DeliveredQuestion.closed_at.is_(None),
+                    )
+                )
+            ).first()
+            if row is None:
+                return
+            link, reference = row
+            if reference.tenant_id != settings.tenant_id:
+                return
+            entra = set(
+                (
+                    await db.scalars(
+                        select(TeamsUserMapping.teams_user_id).where(
+                            TeamsUserMapping.tenant_id == settings.tenant_id,
+                            TeamsUserMapping.user_id.in_(notice.user_ids),
+                        )
+                    )
+                ).all()
+            )
+            base = connector_url(reference.service_url)
+            meeting_id, conversation_id = link.meeting_id, reference.conversation_id
+        if not entra:
+            return
+        async with httpx.AsyncClient(timeout=4, follow_redirects=False) as client:
+            token = await self.access_token(client, settings)
+            headers = {"Authorization": f"Bearer {token}"}
+            recipients = await _meeting_members(client, base, headers, conversation_id, entra)
+            if not recipients or time.time() >= notice.closes_at:
+                return
+            await _targeted_popup(
+                client,
+                base,
+                headers,
+                meeting_id,
+                recipients,
+                title=f"Last call: {seconds_left(notice.closes_at)} seconds left on the checkpoint",
+                url=panel_url(settings.teams_app_base_url, notice.session_id) + "&view=dialog",
+                closes_at=notice.closes_at,
+                **CHECKPOINT_DIALOG,
             )
 
     async def send_ended(self, notice: EndedNotice, settings: Settings) -> None:
@@ -746,8 +850,50 @@ class TeamsNotifications:
                 course.code,
                 session.title,
             )
+            # The lecturer's summary is extra: if any of it cannot be read, the
+            # students' card still goes out.
+            summary = lecturer = meeting_id = None
+            try:
+                summary = _title(await class_glance.class_summary(db, session))
+                lecturer = await db.scalar(
+                    select(TeamsUserMapping.teams_user_id).where(
+                        TeamsUserMapping.user_id == session.instructor_id,
+                        TeamsUserMapping.tenant_id == settings.tenant_id,
+                    )
+                )
+                meeting_id = await db.scalar(
+                    select(TeamsMeetingLink.meeting_id).where(
+                        TeamsMeetingLink.session_id == notice.session_id
+                    )
+                )
+            except Exception:
+                log.warning("Could not build the class summary for the lecturer")
+        if summary:
+            # Kept on the update page as well, under the class's other updates.
+            self._held(notice.session_id).recent.appendleft(
+                LecturerUpdate(datetime.now(UTC), "summary", summary)
+            )
         async with httpx.AsyncClient(timeout=4, follow_redirects=False) as client:
             token = await self.access_token(client, settings)
+            if summary and lecturer and meeting_id:
+                headers = {"Authorization": f"Bearer {token}"}
+                try:
+                    present = await _meeting_members(
+                        client, base, headers, conversation_id, {lecturer}
+                    )
+                    if present:
+                        await _targeted_popup(
+                            client,
+                            base,
+                            headers,
+                            meeting_id,
+                            present,
+                            title=summary,
+                            url=update_url(settings.teams_app_base_url, notice.session_id),
+                            closes_at=notice.closes_at,
+                        )
+                except httpx.HTTPError:
+                    log.warning("Teams class summary pop-up was not delivered")
             response = await client.post(
                 base + f"v3/conversations/{quote(conversation_id, safe='')}/activities",
                 headers={"Authorization": f"Bearer {token}"},

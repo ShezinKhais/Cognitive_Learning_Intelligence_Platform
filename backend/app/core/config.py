@@ -204,6 +204,9 @@ class Settings(BaseSettings):
     teams_transcripts_automatic_enabled: bool = False
     teams_transcript_callback_url: str = ""
     teams_notifications_enabled: bool = False
+    # A pop-up a few seconds before a checkpoint closes, for students who
+    # have not answered. Needs teams_notifications_enabled.
+    teams_last_call_enabled: bool = True
     teams_app_base_url: str = ""
     teams_app_id: str = ""
     # Where the bot gets its token to post into Teams. A single-tenant bot

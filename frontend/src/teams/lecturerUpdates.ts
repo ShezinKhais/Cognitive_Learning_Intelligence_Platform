@@ -5,7 +5,7 @@
  * Teams. Updates carry counts and course content, never a student's name.
  */
 
-export type LecturerUpdateKind = 'alert' | 'checkpoint' | 'attention'
+export type LecturerUpdateKind = 'alert' | 'checkpoint' | 'attention' | 'summary'
 
 export interface LecturerUpdate {
   at: string
@@ -33,6 +33,7 @@ const KIND_LABEL: Record<LecturerUpdateKind, string> = {
   alert: 'Alert',
   checkpoint: 'Checkpoint',
   attention: 'Engagement',
+  summary: 'Class summary',
 }
 
 export function updateKindLabel(kind: string): string {

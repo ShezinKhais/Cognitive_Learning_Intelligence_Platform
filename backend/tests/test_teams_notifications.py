@@ -873,3 +873,54 @@ async def test_a_refused_pop_up_falls_back_to_the_answer_now_card(monkeypatch) -
     action = message["attachments"][0]["content"]["actions"][0]
     assert action["type"] == "Action.Submit"
     assert action["data"]["target"].endswith("&view=dialog")
+
+
+async def test_a_last_call_pops_the_checkpoint_up_for_those_still_to_answer(monkeypatch) -> None:
+    from app.services.teams_notifications import LastCallNotice
+
+    link = SimpleNamespace(meeting_id="meeting-1")
+    reference = SimpleNamespace(
+        service_url="https://smba.trafficmanager.net/emea/",
+        conversation_id="chat-1",
+        tenant_id="tenant",
+    )
+
+    class Db:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def execute(self, statement):
+            return SimpleNamespace(first=lambda: (link, reference))
+
+        async def scalars(self, statement):
+            return SimpleNamespace(all=lambda: ["aad-quiet"])
+
+    async def members(client, base, headers, conversation_id, wanted):
+        assert wanted == {"aad-quiet"}
+        return {"29:quiet"}
+
+    popped = []
+
+    async def popup(*args, **kwargs):
+        popped.append((args[4], kwargs))
+
+    async def token(self, client, settings):
+        return "bot-token"
+
+    monkeypatch.setattr(module, "get_session_factory", lambda: Db)
+    monkeypatch.setattr(module, "_meeting_members", members)
+    monkeypatch.setattr(module, "_targeted_popup", popup)
+    monkeypatch.setattr(TeamsNotifications, "access_token", token)
+
+    session_id = uuid4()
+    await TeamsNotifications().send_last_call(
+        LastCallNotice(session_id, uuid4(), frozenset({uuid4()}), time.time() + 10), configured()
+    )
+
+    [(recipients, kwargs)] = popped
+    assert recipients == {"29:quiet"}
+    assert kwargs["title"].startswith("Last call:")
+    assert kwargs["url"].endswith("&view=dialog")
