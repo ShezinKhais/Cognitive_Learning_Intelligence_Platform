@@ -17,6 +17,7 @@ import {
   type SessionSummary,
 } from '../features/sessions/sessionsApi'
 import { stripFromResponses } from '../features/sessions/strip'
+import { SessionAttendancePanel } from '../features/courses/Attendance'
 
 
 export default function SessionReportPage() {
@@ -110,6 +111,8 @@ export default function SessionReportPage() {
             </div>
           )}
         </Panel>
+
+        <SessionAttendancePanel sessionId={session.id} />
 
         <Panel title="Topics" description="Hardest first, from how each answer was marked.">
           <TopicTable topics={topics} />
