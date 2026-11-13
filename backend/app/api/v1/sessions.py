@@ -30,8 +30,8 @@ from app.realtime.classroom import classroom
 from app.repositories.session_repository import SessionRepository
 from app.repositories.student_repository import StudentRepository
 from app.repositories.topic_difficulty_repository import DatabaseTopicAnswers
-from app.schemas.attendance import SessionAttendanceOut
 from app.schemas.ai_controls import AiControlsOut, AiControlsUpdate
+from app.schemas.attendance import SessionAttendanceOut
 from app.schemas.breakout import RoomPlanIn, RoomPlanOut
 from app.schemas.common import Page
 from app.schemas.identity import ConsentType, Role

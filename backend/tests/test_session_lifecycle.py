@@ -1061,26 +1061,28 @@ async def test_free_text_formula_is_escaped_in_downloaded_csv(db, app) -> None:
     token = token_for(client, "student@clip.example.com", STUDENT_PASSWORD)
 
     with client.websocket_connect("/ws/session") as ws:
-        ws.send_json({
-            "type": "auth",
-            "data": {"token": token, "session_id": session["id"]},
-        })
+        ws.send_json(
+            {
+                "type": "auth",
+                "data": {"token": token, "session_id": session["id"]},
+            }
+        )
         ws.receive_json()
         ws.receive_json()
 
-        assert client.post(
-            f"{base}/questions/{question_id}:deliver"
-        ).status_code == 202
+        assert client.post(f"{base}/questions/{question_id}:deliver").status_code == 202
         ws.receive_json()
 
-        ws.send_json({
-            "type": "answer.submit",
-            "data": {
-                "question_id": str(question_id),
-                "free_text": "=1+1",
-                "client_elapsed_ms": 3000,
-            },
-        })
+        ws.send_json(
+            {
+                "type": "answer.submit",
+                "data": {
+                    "question_id": str(question_id),
+                    "free_text": "=1+1",
+                    "client_elapsed_ms": 3000,
+                },
+            }
+        )
         receipt = ws.receive_json()
         assert receipt["data"]["accepted"] is True
 
@@ -1088,8 +1090,6 @@ async def test_free_text_formula_is_escaped_in_downloaded_csv(db, app) -> None:
     assert exported.status_code == 200, exported.text
     assert exported.content.startswith(b"\xef\xbb\xbf")
 
-    rows = list(csv.DictReader(
-        io.StringIO(exported.content.decode("utf-8-sig"))
-    ))
+    rows = list(csv.DictReader(io.StringIO(exported.content.decode("utf-8-sig"))))
     assert len(rows) == 1
     assert rows[0]["answer"] == "'=1+1"
