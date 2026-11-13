@@ -150,6 +150,8 @@ AUDIENCE = {
     ("GET", "/api/v1/me/consideration"): STUDENT_ONLY,
     ("GET", "/api/v1/me/consideration/policy"): STUDENT_ONLY,
     ("POST", "/api/v1/me/consideration"): STUDENT_ONLY,
+    ("POST", "/api/v1/me/consideration/with-evidence"): STUDENT_ONLY,
+    ("GET", "/api/v1/admin/consideration-requests/{request_id}/evidence"): ADMIN_ONLY,
     ("POST", "/api/v1/me/consideration/withdraw"): STUDENT_ONLY,
     ("GET", "/api/v1/admin/consideration-requests"): ADMIN_ONLY,
     ("POST", "/api/v1/admin/consideration-requests/{request_id}/approve"): ADMIN_ONLY,

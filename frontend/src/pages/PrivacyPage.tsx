@@ -22,6 +22,14 @@ export default function PrivacyPage() {
         </ul>
       </PolicySection>
 
+      <PolicySection title="Special consideration evidence">
+        <p>
+          If you attach a supporting file, administrators can download it while your request is pending.
+          Share only information relevant to the request. C.L.I.P removes the attachment from the request
+          when it is decided or withdrawn. Earlier database backups may contain a copy until they expire.
+        </p>
+      </PolicySection>
+
       <PolicySection title="Camera and microphone">
         <p>
           The camera and microphone indicators are optional. Each needs its own consent, and both need engagement

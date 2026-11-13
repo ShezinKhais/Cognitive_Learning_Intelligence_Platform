@@ -9,6 +9,7 @@ import { ProblemState } from '../components/ui/ProblemState'
 import { problemArt, problemOf, type Problem } from '../components/ui/problem'
 import {
   getMyRequest,
+  MAX_EVIDENCE_BYTES,
   NEED_LABEL,
   NEEDS,
   sendRequest,
@@ -113,7 +114,7 @@ function CurrentRequest({
           </li>
         ))}
       </ul>
-      <MetaLine className="mt-3" items={[untilLabel(request.until), request.note ? 'With a note for the administrator' : null]} />
+      <MetaLine className="mt-3" items={[untilLabel(request.until), request.note ? 'With a note for the administrator' : null, request.has_evidence ? 'Supporting file attached' : null]} />
       {request.decision_note && (
         <p className="mt-4 rounded-md bg-muted px-4 py-3 text-sm">
           <span className="font-semibold">From the administrator: </span>
@@ -156,9 +157,12 @@ function RequestForm({ onSent, onCancel }: { onSent: (sent: ConsiderationRequest
   const [until, setUntil] = useState<Until>('term')
   const [date, setDate] = useState(isoDay(28))
   const [note, setNote] = useState('')
+  const [evidence, setEvidence] = useState<File | null>(null)
+  const [fileError, setFileError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const noteId = useId()
+  const evidenceId = useId()
 
   const chosen = NEEDS.filter((need) => needs.has(need.key))
   const lastDay = until === 'term' ? null : until === 'four-weeks' ? isoDay(28) : date
@@ -166,7 +170,7 @@ function RequestForm({ onSent, onCancel }: { onSent: (sent: ConsiderationRequest
   function send() {
     setSending(true)
     setError(null)
-    sendRequest({ needs: [...needs], until: lastDay, note: note.trim() || null }).then(onSent, (caught: unknown) => {
+    sendRequest({ needs: [...needs], until: lastDay, note: note.trim() || null }, evidence).then(onSent, (caught: unknown) => {
       setSending(false)
       setError(caught instanceof ApiError ? caught.message : 'The request could not be sent. Try again.')
     })
@@ -275,6 +279,40 @@ function RequestForm({ onSent, onCancel }: { onSent: (sent: ConsiderationRequest
                   placeholder="You do not have to say why."
                 />
                 <p className="mt-1 text-xs text-muted-foreground">Only administrators read this. Your lecturer never does.</p>
+                <label htmlFor={evidenceId} className="mt-5 block text-sm font-semibold">
+                  Supporting file <span className="font-normal text-muted-foreground">(optional)</span>
+                </label>
+                <input
+                  id={evidenceId}
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg"
+                  aria-describedby={`${evidenceId}-help`}
+                  className="mt-1 block w-full text-sm"
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0]
+                    if (!file) return
+                    if (!/\.(pdf|png|jpe?g)$/i.test(file.name) || !file.size || file.size > MAX_EVIDENCE_BYTES) {
+                      setFileError('Choose a non-empty PDF, PNG or JPEG up to 5 MB.')
+                    } else {
+                      setEvidence(file)
+                      setFileError(null)
+                    }
+                    event.currentTarget.value = ''
+                  }}
+                />
+                <p id={`${evidenceId}-help`} className="mt-1 text-xs text-muted-foreground">
+                  One PDF, PNG or JPEG up to 5 MB. Administrators can download it while the request is pending.
+                  C.L.I.P. removes the file from the request after a decision or withdrawal.
+                </p>
+                {fileError && <p role="alert" className="mt-2 text-sm text-critical">{fileError}</p>}
+                {evidence && (
+                  <div className="mt-2 flex flex-wrap gap-2 text-sm">
+                    <span className="break-all">{evidence.name}</span>
+                    <button type="button" className="underline" onClick={() => { setEvidence(null); setFileError(null) }}>
+                      Remove file
+                    </button>
+                  </div>
+                )}
               </fieldset>
             ) : (
               <div>
@@ -293,6 +331,7 @@ function RequestForm({ onSent, onCancel }: { onSent: (sent: ConsiderationRequest
                 <p className="mt-3 text-sm text-muted-foreground">
                   Your lecturer is told only that you have an accommodation, never what it is.
                 </p>
+                {evidence && <p className="mt-3 break-all text-sm">Supporting file: {evidence.name}</p>}
                 {error && <p role="alert" className="mt-3 text-sm text-critical">{error}</p>}
               </div>
             )}

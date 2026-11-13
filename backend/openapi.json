@@ -594,6 +594,26 @@
         "title": "Body_import_timetable_api_v1_admin_timetable_post",
         "type": "object"
       },
+      "Body_submit_with_evidence_api_v1_me_consideration_with_evidence_post": {
+        "properties": {
+          "evidence": {
+            "contentMediaType": "application/octet-stream",
+            "title": "Evidence",
+            "type": "string"
+          },
+          "payload": {
+            "maxLength": 4096,
+            "title": "Payload",
+            "type": "string"
+          }
+        },
+        "required": [
+          "payload",
+          "evidence"
+        ],
+        "title": "Body_submit_with_evidence_api_v1_me_consideration_with_evidence_post",
+        "type": "object"
+      },
       "Body_upload_material_api_v1_materials_post": {
         "properties": {
           "file": {
@@ -832,6 +852,11 @@
             ],
             "title": "Decision Note"
           },
+          "has_evidence": {
+            "default": false,
+            "title": "Has Evidence",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -920,7 +945,7 @@
             "items": {
               "$ref": "#/components/schemas/ConsiderationNeed"
             },
-            "maxItems": 4,
+            "maxItems": 5,
             "minItems": 1,
             "title": "Needs",
             "type": "array"
@@ -978,6 +1003,7 @@
       "ConsiderationNeed": {
         "enum": [
           "camera",
+          "microphone",
           "gaze",
           "pace",
           "prompts"
@@ -1002,6 +1028,11 @@
               }
             ],
             "title": "Decision Note"
+          },
+          "has_evidence": {
+            "default": false,
+            "title": "Has Evidence",
+            "type": "boolean"
           },
           "id": {
             "format": "uuid",
@@ -5682,6 +5713,46 @@
         ]
       }
     },
+    "/api/v1/admin/consideration-requests/{request_id}/evidence": {
+      "get": {
+        "description": "Download an attachment while the request is pending.",
+        "operationId": "download_evidence_api_v1_admin_consideration_requests__request_id__evidence_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Evidence",
+        "tags": [
+          "consideration"
+        ]
+      }
+    },
     "/api/v1/admin/consideration-requests/{request_id}/reject": {
       "post": {
         "description": "Refuse a waiting request. Nothing about the student changes.",
@@ -7652,6 +7723,48 @@
           }
         },
         "summary": "Capture Policy",
+        "tags": [
+          "consideration"
+        ]
+      }
+    },
+    "/api/v1/me/consideration/with-evidence": {
+      "post": {
+        "description": "Submit one request and its supporting document in the same transaction.",
+        "operationId": "submit_with_evidence_api_v1_me_consideration_with_evidence_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_submit_with_evidence_api_v1_me_consideration_with_evidence_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsiderationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit With Evidence",
         "tags": [
           "consideration"
         ]

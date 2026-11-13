@@ -298,3 +298,69 @@ async def test_capture_policy_is_own_student_only_and_does_not_infer_a_diagnosis
     assert client.get(MINE + "/policy").status_code == 403
     sign_in_as(app, ADMIN_ID, Role.ADMIN)
     assert client.get(MINE + "/policy").status_code == 403
+
+
+@pytest.mark.parametrize("outcome", ["approve", "reject", "withdraw"])
+async def test_evidence_is_private_and_removed_after_review(db, app, outcome) -> None:
+    client, factory, _ = await _enrolled(db, app)
+    file = b"%PDF-1.7\nSynthetic test evidence\n%%EOF"
+    sent = client.post(
+        MINE + "/with-evidence",
+        data={"payload": '{"needs":["camera","microphone"]}'},
+        files={"evidence": ("private.pdf", file, "application/pdf")},
+    )
+    assert sent.status_code == 201, sent.text
+    assert sent.json()["has_evidence"] is True
+    request_id = sent.json()["id"]
+    path = f"{ADMIN}/{request_id}/evidence"
+    assert client.get(path).status_code == 403
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    assert client.get(path).status_code == 403
+    sign_in_as(app, ADMIN_ID, Role.ADMIN)
+    entry = next(row for row in client.get(ADMIN).json()["items"] if row["id"] == request_id)
+    assert entry["has_evidence"] is True
+    assert "evidence" not in entry
+    download = client.get(path)
+    assert download.status_code == 200
+    assert download.content == file
+    assert download.headers["cache-control"] == "no-store"
+    assert (
+        download.headers["content-disposition"]
+        == 'attachment; filename="consideration-evidence.pdf"'
+    )
+    if outcome == "withdraw":
+        sign_in_as(app, STUDENT_ID, Role.STUDENT)
+        changed = client.post(MINE + "/withdraw")
+        sign_in_as(app, ADMIN_ID, Role.ADMIN)
+    else:
+        changed = client.post(f"{ADMIN}/{request_id}/{outcome}", json={})
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["has_evidence"] is False
+    assert client.get(path).status_code == 404
+    async with factory() as session:
+        from uuid import UUID
+
+        saved = (
+            await session.execute(
+                select(ConsiderationRequest.evidence, ConsiderationRequest.evidence_type).where(
+                    ConsiderationRequest.request_id == UUID(request_id)
+                )
+            )
+        ).one()
+        assert saved == (None, None)
+
+
+async def test_invalid_evidence_does_not_create_a_request(db, app) -> None:
+    client, _, _ = await _enrolled(db, app)
+    for name, content in [
+        ("invalid.pdf", b"<html>not a PDF</html>"),
+        ("invalid.svg", b"<svg/>"),
+        ("large.pdf", b"%PDF-" + b"x" * (5 * 1024 * 1024)),
+    ]:
+        invalid = client.post(
+            MINE + "/with-evidence",
+            data={"payload": '{"needs":["camera"]}'},
+            files={"evidence": (name, content)},
+        )
+        assert invalid.status_code == 422, invalid.text
+        assert client.get(MINE).json() == {"current": None}

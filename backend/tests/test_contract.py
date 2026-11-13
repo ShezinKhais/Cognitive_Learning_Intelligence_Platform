@@ -60,6 +60,8 @@ EXPECTED_PATHS = {
     "/api/v1/me/consideration",
     "/api/v1/me/consideration/policy",
     "/api/v1/me/consideration/withdraw",
+    "/api/v1/me/consideration/with-evidence",
+    "/api/v1/admin/consideration-requests/{request_id}/evidence",
     "/api/v1/admin/consideration-requests",
     "/api/v1/admin/consideration-requests/{request_id}/approve",
     "/api/v1/admin/consideration-requests/{request_id}/reject",

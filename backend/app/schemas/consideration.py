@@ -20,6 +20,7 @@ MAX_DECISION_NOTE = 300
 
 class ConsiderationNeed(StrEnum):
     CAMERA = "camera"  # cannot use a camera in class
+    MICROPHONE = "microphone"  # cannot use a microphone in class
     GAZE = "gaze"  # eye-tracking does not work for them
     PACE = "pace"  # needs more time to answer
     PROMPTS = "prompts"  # check-in prompts disrupt them
@@ -53,6 +54,7 @@ class ConsiderationOut(BaseModel):
     created_at: datetime
     reviewed_at: datetime | None
     decision_note: str | None
+    has_evidence: bool = False
 
 
 class MyConsiderationOut(BaseModel):
