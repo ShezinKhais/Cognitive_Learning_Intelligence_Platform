@@ -471,7 +471,6 @@ class Classroom:
         prompt still waiting on a student is recorded as expired.
         """
         self._finished[session_id] = status
-        self._ai.pop(session_id, None)
         self._finished.move_to_end(session_id)
         while len(self._finished) > MAX_FINISHED_SESSIONS:
             self._finished.popitem(last=False)
@@ -479,6 +478,8 @@ class Classroom:
         live = self._live.pop(session_id, None)
         if live is None:
             await self.announce(session_id, status, delivered)
+            # After the last announce, so it still carries this class's AI controls.
+            self._ai.pop(session_id, None)
             self._class_ended(session_id, status)
             self._hub.forget_session(session_id)
             return
@@ -496,6 +497,7 @@ class Classroom:
         for prompt in withdrawn:
             _cancel(prompt.expiry)
         await self.announce(session_id, status, delivered)
+        self._ai.pop(session_id, None)
         self._class_ended(session_id, status)
         # Before the session is forgotten, so the class can still be shown the
         # answer and the lecturer told. Independent of each other, and the
