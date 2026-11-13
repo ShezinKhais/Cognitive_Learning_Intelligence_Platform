@@ -582,8 +582,9 @@ async def test_persisted_reference_and_course_recipient_filter_against_database(
     sender = TeamsNotifications()
     notice = CheckpointNotice(session_id, time.time() + 30, question)
     await sender.send(notice, configured())
-    assert len(sent) == 2
-    assert sent[1]["value"]["recipients"] == ["29:eligible"]
+    # The pop-up alone: no chat message beside it.
+    assert len(sent) == 1
+    assert sent[0]["value"]["recipients"] == ["29:eligible"]
     async with factory() as session:
         from sqlalchemy import update
 
@@ -594,7 +595,7 @@ async def test_persisted_reference_and_course_recipient_filter_against_database(
         )
         await session.commit()
     await sender.send(notice, configured())
-    assert len(sent) == 2  # A queued notification cannot revive a closed checkpoint.
+    assert len(sent) == 1  # A queued notification cannot revive a closed checkpoint.
 
 
 # -- the lecturer updates, welcomes and the end of class ---------------------------
