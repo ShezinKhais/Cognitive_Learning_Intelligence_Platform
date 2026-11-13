@@ -1,5 +1,8 @@
 # Phase 8 AI2 — student interface and client-AI test report
 
+> **Historical snapshot.** Written on 16 October 2026. Features it lists as missing may have
+> been built since; the README and the code are current.
+
 ## Consolidated browser validation (2026-10-16)
 
 The additional tests and chat-notice contrast fix from validation branch

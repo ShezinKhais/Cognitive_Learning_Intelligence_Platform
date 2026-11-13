@@ -1,5 +1,8 @@
 # Post-merge integration audit — 2026-10-19
 
+> **Historical snapshot.** Written on 19 October 2026. Features it lists as missing may have
+> been built since; the README and the code are current.
+
 PR #161 integrates main through `297ee10`, including #162/#163 governance,
 #164's web shell and cookie sign-in, and #167's camera/calibration fixes.
 This supersedes the older audit's current-status statements. It is evidence

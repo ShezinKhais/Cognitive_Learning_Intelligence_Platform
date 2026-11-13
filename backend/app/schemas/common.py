@@ -65,3 +65,8 @@ class ReadinessResponse(BaseModel):
     ready: bool
     checked_at: datetime
     dependencies: list[DependencyStatus]
+    server_error_spike: bool = Field(
+        default=False,
+        description="At least ten server errors a minute for the last two minutes on this "
+        "process. Reported for an outside alert; it does not change readiness.",
+    )

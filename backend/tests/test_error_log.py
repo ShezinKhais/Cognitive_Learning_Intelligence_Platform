@@ -98,3 +98,19 @@ def test_legacy_report_cannot_expose_private_message_or_route_in_dashboard(as_ad
 
 def test_student_cannot_read_diagnostics(as_student) -> None:
     assert as_student.get("/api/v1/admin/errors").status_code == 403
+
+
+def test_an_admin_can_record_synthetic_errors_that_trip_the_spike(as_admin) -> None:
+    error_log.clear()
+    response = as_admin.post("/api/v1/admin/errors/synthetic?count=3")
+    assert response.status_code == 204
+    groups = as_admin.get("/api/v1/admin/errors").json()["groups"]
+    [synthetic] = [g for g in groups if "SyntheticMonitoringFailure" in g["message"]]
+    assert synthetic["count"] == 3
+    assert as_admin.post("/api/v1/admin/errors/synthetic?count=31").status_code == 422
+    # Readiness carries only a yes or no, for the outside watcher.
+    assert as_admin.get("/api/v1/ready").json()["server_error_spike"] in (True, False)
+
+
+def test_a_student_cannot_record_synthetic_errors(as_student) -> None:
+    assert as_student.post("/api/v1/admin/errors/synthetic").status_code == 403

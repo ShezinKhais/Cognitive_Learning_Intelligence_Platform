@@ -9,6 +9,7 @@ import { ProblemState } from '../components/ui/ProblemState'
 import { problemArt, problemOf, type Problem } from '../components/ui/problem'
 import SegmentedTabs from '../components/ui/SegmentedTabs'
 import { revisitFirst, topicProgress, type Mastery, type TopicProgress } from '../features/review/progress'
+import EngagementHistory from '../features/review/EngagementHistory'
 import { allReviews } from '../features/review/readAll'
 import type { StudentReview } from '../features/review/reviewTypes'
 
@@ -99,6 +100,7 @@ export default function StudentProgressPage() {
             </Link>
           </div>
         )}
+        <EngagementHistory />
       </PageBody>
     </>
   )

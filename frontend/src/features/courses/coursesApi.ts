@@ -43,3 +43,28 @@ export function removeStudent(code: string, userId: string): Promise<CourseRoste
 export function setLecturers(code: string, lecturerIds: string[]): Promise<CourseRoster> {
   return apiAuthenticatedRequest(`${path(code)}/lecturers`, send('PUT', { lecturer_ids: lecturerIds }))
 }
+
+export type BulkOutcome =
+  | 'add'
+  | 'create'
+  | 'already'
+  | 'no_account'
+  | 'not_student'
+  | 'inactive'
+  | 'invalid'
+  | 'duplicate'
+
+export interface BulkRosterResult {
+  applied: boolean
+  lines: { line: number; email: string; name: string | null; outcome: BulkOutcome }[]
+  counts: Partial<Record<BulkOutcome, number>>
+  roster: CourseRoster | null
+}
+
+/** Preview (confirm false) or apply a pasted class list for a course. */
+export function bulkAddStudents(
+  code: string,
+  body: { text: string; confirm: boolean; create_missing: boolean },
+): Promise<BulkRosterResult> {
+  return apiAuthenticatedRequest(`${path(code)}/students:bulk`, send('POST', body))
+}
