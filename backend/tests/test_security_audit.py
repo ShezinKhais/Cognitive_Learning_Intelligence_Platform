@@ -141,6 +141,8 @@ AUDIENCE = {
     ("POST", "/api/v1/sessions/{session_id}/copy"): STAFF,
     ("PATCH", "/api/v1/sessions/{session_id}"): STAFF,
     ("DELETE", "/api/v1/sessions/{session_id}"): STAFF,
+    ("GET", "/api/v1/sessions/{session_id}/breakdown"): STAFF,
+    ("GET", "/api/v1/sessions/{session_id}/results.csv"): STAFF,
     ("GET", "/api/v1/sessions/{session_id}/engagement"): STAFF,
     ("POST", "/api/v1/sessions/{session_id}/pause"): STAFF,
     ("GET", "/api/v1/sessions/{session_id}/question-plan"): STAFF,
