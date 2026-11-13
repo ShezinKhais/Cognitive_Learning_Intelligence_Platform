@@ -1114,6 +1114,33 @@ def extract_material(
     return Extraction(elements, parser, warnings)
 
 
+# A number as it appears in a table or an answer: -3.5, .25, 1e-3, 42%.
+NUMBER = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?%?"
+_NUMBER_TOKEN = re.compile(NUMBER)
+# Text is a table of numbers when at least this share of its words, among
+# at least DATA_MIN_WORDS, are numbers. Lecture prose with figures in it,
+# such as "Exp. return for Fair Roulette = 6.56%", stays well below it.
+DATA_NUMBER_SHARE = 0.6
+DATA_MIN_WORDS = 12
+
+
+def looks_like_data_table(text: str) -> bool:
+    """Whether text is mostly numbers: a data table rather than teaching (#270)."""
+    words = [w.strip(",;:()[]") for w in text.split()]
+    words = [w for w in words if w]
+    if len(words) < DATA_MIN_WORDS:
+        return False
+    numbers = sum(bool(_NUMBER_TOKEN.fullmatch(w)) for w in words)
+    return numbers >= DATA_NUMBER_SHARE * len(words)
+
+
+MOSTLY_NUMBERS_NOTE = (
+    "Most of this file is numbers with little explanation. A question that only "
+    "asks to look up a value in a table is not kept, so few questions may come "
+    "from it."
+)
+
+
 def finish_material(extraction: Extraction, material_id: uuid.UUID) -> ProcessingResult:
     """Chunk the elements, once any captions are in, and add the warnings
     that depend on them."""
@@ -1124,6 +1151,8 @@ def finish_material(extraction: Extraction, material_id: uuid.UUID) -> Processin
     skipped = skipped_pages_warning(elements)
     if skipped:
         warnings.append(skipped)
+    if looks_like_data_table(" ".join(c.chunk_text for c in chunks)):
+        warnings.append(MOSTLY_NUMBERS_NOTE)
 
     log.info(
         "material %s: %s elements, %s chunks, parser=%s",
