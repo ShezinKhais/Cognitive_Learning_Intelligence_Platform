@@ -375,6 +375,13 @@ test('protocol guards accept the frozen event shapes and reject malformed payloa
       active_question_id: null,
       questions_delivered: 2,
       paused: true,
+      // A state without the lecturer's AI switches has every one on.
+      ai: {
+        auto_checkpoints: true,
+        learning_assistant: true,
+        refocus_nudges: true,
+        engagement_estimates: true,
+      },
     },
   )
 
