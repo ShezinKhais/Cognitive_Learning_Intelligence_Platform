@@ -83,6 +83,9 @@ scheduled jobs (a purge in progress is cancelled, having deleted only whole batc
 the session timers, and waits for running material jobs and reports before exiting.
 Sessions stay active in the database and carry on when the backend is next used.
 
+What a restart keeps and what it loses, per piece of state, is in
+[restart-behaviour.md](restart-behaviour.md).
+
 ## The proxy
 
 `frontend/nginx.conf` does the following.
