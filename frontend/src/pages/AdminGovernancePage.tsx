@@ -1018,10 +1018,8 @@ export default function AdminGovernancePage() {
               </h2>
 
               <p className="mt-1 text-sm text-muted-foreground">
-                Preview data that is
-                beyond the configured
-                retention period before
-                permanently purging it.
+                C.L.I.P automatically purges expired data in the background and pauses during live classes.
+                Use the preview to see what is due, or run the purge manually between classes.
               </p>
             </div>
           </div>

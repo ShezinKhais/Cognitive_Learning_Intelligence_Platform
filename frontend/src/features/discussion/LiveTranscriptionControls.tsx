@@ -132,7 +132,7 @@ export default function LiveTranscriptionControls({ sessionId, onUpdate }: { ses
   }
 
   async function start() {
-    if (!confirmed || phase !== 'off' || !status?.configured || !status.session_running) return
+    if (isHidden() || !confirmed || phase !== 'off' || !status?.configured || !status.session_running) return
     const generation = ++attempt.current
     const pending = { abort: new AbortController() } as { stream?: MediaStream; context?: AudioContext; abort: AbortController }
     starting.current = pending

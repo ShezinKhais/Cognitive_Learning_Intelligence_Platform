@@ -53,6 +53,21 @@ export interface TimetableImportResult {
   conflicts: string[]
   unmatched_lecturers: string[]
   unmatched_students: string[]
+  sessions_to_create: number
+  courses_changed: number
+  new_course_codes?: string[]
+  memberships_changed: number
+  applied: boolean
+  preview_token: string | null
+  rows: {
+    row: number
+    course_code: string
+    account: string
+    detail: string
+    start_time: string | null
+    end_time: string | null
+    room: string | null
+  }[]
 }
 
 export function apiUrl(path: string): string {
@@ -377,6 +392,8 @@ async function request<T>(
     throw error
   }
 
+  // A delete answers 204 with no body to parse.
+  if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
 }
 
@@ -458,10 +475,12 @@ export function recordConsent(
 export function apiUploadFile<T = TimetableImportResult>(
   path: string,
   file: File,
+  fields: Record<string, string> = {},
 ): Promise<T> {
   const formData = new FormData()
 
   formData.append('file', file)
+  for (const [name, value] of Object.entries(fields)) formData.append(name, value)
 
   return request<T>(
     path,
@@ -493,6 +512,8 @@ export interface Question {
   options: string[] | null
   correct_option: number | null
   topic: string | null
+  reference_answer?: string | null
+  key_points?: string[] | null
   source_slide: number | null
   source_excerpt: string | null
 }
@@ -544,6 +565,37 @@ export function reviewQuestion(
 export function regenerateQuestion(materialId: string, questionId: string): Promise<Question> {
   return request<Question>(
     `/materials/${materialId}/questions/${questionId}:regenerate`,
+    { method: 'POST' },
+    true,
+  )
+}
+
+export interface WriteQuestionPayload {
+  source_slide?: number
+  source_excerpt?: string
+  topic?: string
+  type: QuestionType
+  prompt: string
+  options?: string[]
+  correct_option?: number
+  difficulty?: Difficulty
+  reference_answer?: string
+  key_points?: string[]
+}
+
+// A question the lecturer writes, ready to send once saved.
+export function writeQuestion(materialId: string, payload: WriteQuestionPayload): Promise<Question> {
+  return request<Question>(
+    `/materials/${materialId}/questions`,
+    { method: 'POST', body: JSON.stringify(payload) },
+    true,
+  )
+}
+
+// Stages a copy of a question that has been asked, for another class.
+export function reuseQuestion(materialId: string, questionId: string): Promise<Question> {
+  return request<Question>(
+    `/materials/${materialId}/questions/${questionId}:reuse`,
     { method: 'POST' },
     true,
   )

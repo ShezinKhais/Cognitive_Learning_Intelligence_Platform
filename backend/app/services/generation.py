@@ -599,6 +599,41 @@ def build_prompt(
     return template.format(excerpts=excerpts, count=count)
 
 
+# A JSON escape that never starts a LaTeX command, which is kept, or any other
+# backslash, which is doubled. Read left to right, so "\\(" is an escaped
+# backslash and then "(", not a backslash before a stray "\(". \b \f \n \r
+# and \t are JSON escapes too, but in a maths reply they are far more often
+# \beta, \frac, \nabla, \right and \theta, so they are doubled as well: in a
+# repaired reply a "\n" reads as the two characters, not a line break.
+_ESCAPE = re.compile(r'\\(["\\/]|u[0-9a-fA-F]{4})|\\')
+
+
+def escape_stray_backslashes(text: str) -> str:
+    """Text with each backslash that is not a quote, slash, backslash or \\u
+    escape doubled, so it reads as the backslash the model wrote."""
+    return _ESCAPE.sub(lambda m: m.group(0) if m.group(1) else "\\\\", text)
+
+
+def _decoded_latex(value: object) -> bool:
+    """Whether a parsed reply holds LaTeX that JSON decoded as escapes.
+
+    "\\frac" parses as a form feed and "rac", "\\theta" as a tab and "heta",
+    "\\nabla" as a line break and "abla". No draft needs a control character
+    other than a line break, and a line break straight before a lower-case
+    letter is a LaTeX command far more often than a new line of text.
+    """
+    if isinstance(value, str):
+        return bool(_DECODED_LATEX.search(value))
+    if isinstance(value, list):
+        return any(_decoded_latex(v) for v in value)
+    if isinstance(value, dict):
+        return any(_decoded_latex(v) for v in value.values())
+    return False
+
+
+_DECODED_LATEX = re.compile(r"[\x00-\x09\x0b-\x1f\x7f]|\n[a-z]")
+
+
 def parse_drafts(raw: str, question_type: QuestionType = QuestionType.MCQ) -> list[DraftQuestion]:
     """Turn the model's reply into drafts, tolerating markdown fences."""
     text = raw.strip()
@@ -611,8 +646,25 @@ def parse_drafts(raw: str, question_type: QuestionType = QuestionType.MCQ) -> li
     # not the whole material job.
     try:
         payload = json.loads(text)
+        if _decoded_latex(payload):
+            # It parsed, but LaTeX such as "\\frac" was read as JSON escapes.
+            # Read it again with the backslashes as written, if that works.
+            try:
+                payload = json.loads(escape_stray_backslashes(text))
+            except json.JSONDecodeError:
+                pass
     except json.JSONDecodeError as exc:
-        raise ValueError(f"model did not return valid JSON: {exc}") from exc
+        # A maths lecture's reply often holds LaTeX, "\(\hat{a}\)", whose
+        # backslashes are not JSON escapes. One of them used to cost every
+        # draft in the reply (#267), so they are kept as written and the
+        # reply read again; anything else wrong with it still fails.
+        repaired = escape_stray_backslashes(text)
+        try:
+            payload = json.loads(repaired) if repaired != text else None
+        except json.JSONDecodeError:
+            payload = None
+        if payload is None:
+            raise ValueError(f"model did not return valid JSON: {exc}") from exc
 
     if not isinstance(payload, list):
         raise ValueError("expected a JSON array of questions")

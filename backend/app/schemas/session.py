@@ -123,6 +123,22 @@ class SessionCreateRequest(BaseModel):
     starts_at: datetime | None = None
 
 
+class SessionUpdateRequest(BaseModel):
+    """Rename a session, or move one that has not started. Fields left out
+    stay as they are."""
+
+    title: str | None = Field(default=None, max_length=MAX_TITLE_LENGTH)
+    starts_at: datetime | None = None
+
+
+class SessionCopyRequest(BaseModel):
+    """Prepare a new session for the same course. The title defaults to the
+    original's, and the start to now."""
+
+    title: str | None = Field(default=None, max_length=MAX_TITLE_LENGTH)
+    starts_at: datetime | None = None
+
+
 class DeliverableQuestionOut(BaseModel):
     """A staged question the current live session may deliver."""
 

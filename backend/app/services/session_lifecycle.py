@@ -40,10 +40,12 @@ from app.schemas.meetings import MeetingEventIn, MeetingEventKind
 from app.schemas.session import (
     MAX_TITLE_LENGTH,
     DeliverableQuestionOut,
+    SessionCopyRequest,
     SessionCreateRequest,
     SessionOut,
     SessionReadinessOut,
     SessionStatus,
+    SessionUpdateRequest,
 )
 from app.services.meeting_directory import meetings
 from app.services.session_access import session_membership_allowed
@@ -64,12 +66,7 @@ FINISHED = {SessionStatus.ENDED.value, SessionStatus.CANCELLED.value}
 async def create_session(
     db: AsyncSession, principal: Principal, payload: SessionCreateRequest
 ) -> SessionOut:
-    title = payload.title.strip()
-    if not title or len(title) > MAX_TITLE_LENGTH:
-        raise ValidationError(
-            f"A session title must be 1 to {MAX_TITLE_LENGTH} characters.",
-            {"field": "title"},
-        )
+    title = _title(payload.title)
     course = await CourseRepository(db).get_by_code(payload.course_code.strip())
     if course is None:
         raise NotFoundError("No course has that code.", {"course_code": payload.course_code})
@@ -87,6 +84,69 @@ async def create_session(
         mode=MODE_IN_PERSON,
     )
     return await session_out(db, row)
+
+
+def _title(raw: str) -> str:
+    title = raw.strip()
+    if not title or len(title) > MAX_TITLE_LENGTH:
+        raise ValidationError(
+            f"A session title must be 1 to {MAX_TITLE_LENGTH} characters.",
+            {"field": "title"},
+        )
+    return title
+
+
+def _aware(when: datetime) -> datetime:
+    return when if when.tzinfo is not None else when.replace(tzinfo=UTC)
+
+
+async def update_session(
+    db: AsyncSession, principal: Principal, session_id: UUID, payload: SessionUpdateRequest
+) -> SessionOut:
+    """Rename a session at any time. Its start can move only before it starts,
+    since a class that ran has a real start."""
+    row = await owned_session(SessionRepository(db), principal, session_id)
+    if payload.title is not None:
+        row.title = _title(payload.title)
+    if payload.starts_at is not None:
+        _require(row, SessionStatus.PREPARED, "reschedule")
+        row.start_time = _aware(payload.starts_at)
+    await db.commit()
+    return await session_out(db, row)
+
+
+async def copy_session(
+    db: AsyncSession, principal: Principal, session_id: UUID, payload: SessionCopyRequest
+) -> SessionOut:
+    """Prepare the same class again: same course, a new prepared session.
+    Questions are not copied: a staged question is open to any of the
+    lecturer's sessions for the course until one delivers it."""
+    source = await owned_session(SessionRepository(db), principal, session_id, for_update=False)
+    row = await SessionRepository(db).create(
+        instructor_id=source.instructor_id,
+        course_id=source.course_id,
+        title=_title(payload.title if payload.title is not None else source.title),
+        start_time=_aware(payload.starts_at) if payload.starts_at else datetime.now(UTC),
+        status=SessionStatus.PREPARED.value,
+        mode=MODE_IN_PERSON,
+    )
+    await db.commit()
+    return await session_out(db, row)
+
+
+async def delete_session(db: AsyncSession, principal: Principal, session_id: UUID) -> None:
+    """Remove a cancelled session from the list. Only a cancelled one: it
+    never ran, so no answer or score is lost. Cancel a prepared one first."""
+    repo = SessionRepository(db)
+    row = await owned_session(repo, principal, session_id)
+    _require(row, SessionStatus.CANCELLED, "delete")
+    if await repo.count_delivered(row.session_id):
+        raise ConflictError(
+            "This session delivered questions, so it is kept.", {"session_id": str(session_id)}
+        )
+    await db.delete(row)
+    await db.commit()
+    log.info("session %s deleted by %s", session_id, principal.user_id)
 
 
 async def start_session(db: AsyncSession, principal: Principal, session_id: UUID) -> SessionOut:

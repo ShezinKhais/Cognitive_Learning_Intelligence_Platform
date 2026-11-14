@@ -374,6 +374,78 @@ async def test_ending_a_session_that_never_started_cancels_it(db, app) -> None:
     assert response.json()["status"] == "cancelled"
 
 
+# -- editing ----------------------------------------------------------------
+
+
+async def test_a_session_is_renamed_and_moved_before_it_starts(db, app) -> None:
+    client, factory, created = db
+    course = await add_course(factory, created)
+    await add_question(db, course, LECTURER_ID)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    session = create_session(client, course)
+    url = f"/api/v1/sessions/{session['id']}"
+
+    moved = client.patch(url, json={"title": "  Week 2  ", "starts_at": "2030-01-02T09:00:00Z"})
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["title"] == "Week 2"
+    assert moved.json()["starts_at"].startswith("2030-01-02T09:00:00")
+    assert client.patch(url, json={"title": " "}).status_code == 422
+
+    client.post(f"{url}/start")
+    assert client.patch(url, json={"starts_at": "2030-01-03T09:00:00Z"}).status_code == 409
+    assert client.patch(url, json={"title": "Week 2, revised"}).json()["title"] == "Week 2, revised"
+
+
+async def test_a_session_is_copied_for_the_same_course(db, app) -> None:
+    client, factory, created = db
+    course = await add_course(factory, created)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    session = create_session(client, course, "Week 3")
+    client.post(f"/api/v1/sessions/{session['id']}/end")
+
+    again = client.post(f"/api/v1/sessions/{session['id']}/copy")
+    renamed = client.post(f"/api/v1/sessions/{session['id']}/copy", json={"title": "Week 4"})
+
+    assert again.status_code == 201, again.text
+    assert again.json()["id"] != session["id"]
+    assert (again.json()["title"], again.json()["status"]) == ("Week 3", "prepared")
+    assert again.json()["course_code"] == course.code
+    assert renamed.json()["title"] == "Week 4"
+
+
+async def test_only_a_cancelled_session_is_deleted(db, app) -> None:
+    client, factory, created = db
+    course = await add_course(factory, created)
+    await add_question(db, course, LECTURER_ID)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    prepared = create_session(client, course)
+    ran = create_session(client, course)
+    client.post(f"/api/v1/sessions/{ran['id']}/start")
+    client.post(f"/api/v1/sessions/{ran['id']}/end")
+
+    assert client.delete(f"/api/v1/sessions/{prepared['id']}").status_code == 409
+    assert client.delete(f"/api/v1/sessions/{ran['id']}").status_code == 409
+
+    client.post(f"/api/v1/sessions/{prepared['id']}/end")
+    assert client.delete(f"/api/v1/sessions/{prepared['id']}").status_code == 204
+    assert client.get(f"/api/v1/sessions/{prepared['id']}").status_code == 404
+
+
+async def test_another_lecturer_cannot_edit_copy_or_delete_a_session(db, app) -> None:
+    client, factory, created = db
+    course = await add_course(factory, created)
+    other = await add_lecturer(factory, created)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    session = create_session(client, course)
+    client.post(f"/api/v1/sessions/{session['id']}/end")
+    url = f"/api/v1/sessions/{session['id']}"
+
+    sign_in_as(app, other, Role.LECTURER)
+    assert client.patch(url, json={"title": "Mine now"}).status_code == 404
+    assert client.post(f"{url}/copy").status_code == 404
+    assert client.delete(url).status_code == 404
+
+
 # -- delivering -------------------------------------------------------------
 
 

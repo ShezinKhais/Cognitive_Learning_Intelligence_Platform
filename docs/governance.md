@@ -10,8 +10,8 @@ the routes behave the same way.
 ## The retention purge
 
 A session ages from the day it ended (`ended_at`), or its scheduled end, or its start
-when it never formally ended. When it is older than `DATA_RETENTION_DAYS` (default 120,
-a semester),
+when it never formally ended. When it is older than `DATA_RETENTION_DAYS` (90 days by
+default and at most 90 days),
 the session row is deleted and the database removes everything it holds:
 
 | Removed with the session | Kept |
@@ -193,9 +193,9 @@ All under `/api/v1/governance`, admin role and accepted terms required.
 
 ## The scheduled purge
 
-The purge runner (`app/services/purge_runner.py`) runs once a day from the
-scheduler and deletes whatever has outlived `DATA_RETENTION_DAYS`, a batch at a
-time, oldest first, giving way to any class that is running. BBIS registers two
+The backend starts the purge runner (`app/services/purge_runner.py`) automatically.
+By default it first runs one minute after startup and then daily. It deletes expired
+data in batches, oldest first, and defers during a live class. BBIS registers two
 tasks with it (`app/services/retention_tasks.py`): `session-data` deletes
 sessions past the period, and with them everything they hold; `teams-roster-syncs`
 deletes Teams roster syncs on their own received date. Each batch writes one

@@ -6,13 +6,12 @@ import { PageBody, PageHeader } from '../components/ui/primitives'
 type UploadKind = 'timetable' | 'roster'
 
 interface UploadState {
-  status: 'idle' | 'uploading' | 'success' | 'error'
+  status: 'idle' | 'previewing' | 'confirming' | 'success' | 'error'
   result: TimetableImportResult | null
   error: string | null
-  filename: string | null
 }
 
-const IDLE_STATE: UploadState = { status: 'idle', result: null, error: null, filename: null }
+const IDLE_STATE: UploadState = { status: 'idle', result: null, error: null }
 
 const KIND_CONFIG: Record<UploadKind, { title: string; path: string; hint: string }> = {
   timetable: {
@@ -32,7 +31,7 @@ export default function AdminConsole() {
     <>
       <PageHeader
         title="Imports"
-        description="Bring in the term's timetable and each course's students from a spreadsheet. Every row is read as data and checked; nothing is guessed."
+        description="Preview a week of classes or add students to courses from a spreadsheet."
       />
       <PageBody>
         <div className="grid max-w-3xl gap-6">
@@ -46,37 +45,52 @@ export default function AdminConsole() {
 
 function UploadPanel({ kind }: { kind: UploadKind }) {
   const [state, setState] = useState<UploadState>(IDLE_STATE)
+  const [file, setFile] = useState<File | null>(null)
+  const [weekStart, setWeekStart] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const inFlight = useRef(false)
   const config = KIND_CONFIG[kind]
+  const isBusy = state.status === 'previewing' || state.status === 'confirming'
 
-  async function handleFile(file: File) {
-    setState({ status: 'uploading', result: null, error: null, filename: file.name })
+  function selectFile(nextFile: File) {
+    if (inFlight.current) return
+    setFile(nextFile)
+    setState(IDLE_STATE)
+  }
+
+  async function submit(previewToken?: string) {
+    if (!file || inFlight.current || (kind === 'timetable' && !weekStart)) return
+    inFlight.current = true
+    setState({ status: previewToken ? 'confirming' : 'previewing', result: null, error: null })
+    const fields: Record<string, string> = {}
+    if (kind === 'timetable') fields.week_start = weekStart
+    if (previewToken) fields.preview_token = previewToken
     try {
-      const result = await apiUploadFile(config.path, file)
-      setState({ status: 'success', result, error: null, filename: file.name })
+      const result = await apiUploadFile(config.path, file, fields)
+      setState({ status: 'success', result, error: null })
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         await signOutToLogin()
         return
       }
       const message = err instanceof ApiError ? err.message : 'Upload failed. Try again.'
-      setState({ status: 'error', result: null, error: message, filename: file.name })
+      setState({ status: 'error', result: null, error: message })
+    } finally {
+      inFlight.current = false
     }
   }
 
   function onInputChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (file) void handleFile(file)
-    e.target.value = '' // allow re-selecting the same file after a failed upload
+    const selected = e.target.files?.[0]
+    if (selected) selectFile(selected)
+    e.target.value = ''
   }
 
   function onDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault()
-    const file = e.dataTransfer.files?.[0]
-    if (file) void handleFile(file)
+    const dropped = e.dataTransfer.files?.[0]
+    if (dropped) selectFile(dropped)
   }
-
-  const isBusy = state.status === 'uploading'
 
   return (
     <section className="rounded-xl border border-border bg-card p-6">
@@ -91,7 +105,7 @@ function UploadPanel({ kind }: { kind: UploadKind }) {
           disabled={isBusy}
           className="shrink-0 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
         >
-          {isBusy ? 'Uploading...' : 'Choose file'}
+          Choose file
         </button>
         <input
           ref={inputRef}
@@ -110,14 +124,45 @@ function UploadPanel({ kind }: { kind: UploadKind }) {
         Drag a .csv or .xlsx file here, or use "Choose file" above.
       </div>
 
-      {state.filename && (
-        <p className="mt-3 text-xs text-muted-foreground">
-          {state.status === 'uploading' ? 'Uploading' : 'Last file'}: {state.filename}
-        </p>
+      {kind === 'timetable' && (
+        <label className="mt-4 block text-sm font-medium">
+          Week starting Monday (Dubai time)
+          <input
+            type="date"
+            className="mt-1 block rounded-lg border border-border bg-background p-2"
+            value={weekStart}
+            disabled={isBusy}
+            onChange={(event) => {
+              setWeekStart(event.target.value)
+              setState(IDLE_STATE)
+            }}
+          />
+        </label>
       )}
+      {file && <p className="mt-3 break-all text-sm text-muted-foreground">{file.name}</p>}
+      <div className="mt-4 flex flex-wrap gap-3">
+        <button
+          type="button"
+          disabled={isBusy || !file || (kind === 'timetable' && !weekStart)}
+          onClick={() => void submit()}
+          className="rounded-lg border border-border px-4 py-2 text-sm font-medium disabled:opacity-50"
+        >
+          Preview import
+        </button>
+        {state.result?.preview_token && (
+          <button
+            type="button"
+            onClick={() => void submit(state.result?.preview_token ?? undefined)}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+          >
+            Confirm import
+          </button>
+        )}
+      </div>
+      {isBusy && <p role="status" className="mt-3 text-sm">{state.status === 'confirming' ? 'Saving import…' : 'Checking file…'}</p>}
 
       {state.status === 'error' && (
-        <div className="mt-4 rounded-lg bg-critical/10 p-4 text-sm text-critical">
+        <div role="alert" className="mt-4 rounded-lg bg-critical/10 p-4 text-sm text-critical">
           {state.error}
         </div>
       )}
@@ -127,34 +172,63 @@ function UploadPanel({ kind }: { kind: UploadKind }) {
   )
 }
 
+const dubaiTime = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Dubai',
+  dateStyle: 'medium',
+  timeStyle: 'short',
+})
+
 function ImportResultView({ result }: { result: TimetableImportResult }) {
   const hasConflicts = result.conflicts.length > 0
   const hasUnmatchedLecturers = result.unmatched_lecturers.length > 0
   const hasUnmatchedStudents = result.unmatched_students.length > 0
-  const hasIssues = hasConflicts || hasUnmatchedLecturers || hasUnmatchedStudents
 
   return (
     <div className="mt-4 space-y-4">
+      <p role="status" className="text-sm font-medium">
+        {result.applied
+          ? 'Import saved.'
+          : hasConflicts
+            ? 'Resolve conflicts to confirm this import.'
+            : 'Review these changes before confirming.'}
+      </p>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Rows read" value={result.rows_read} />
-        <Stat label="Sessions created" value={result.sessions_created} />
+        <Stat label={result.applied ? 'Courses created' : 'Courses to create'} value={result.courses_changed} />
         <Stat
-          label="Conflicts"
-          value={result.conflicts.length}
-          tone={hasConflicts ? 'critical' : 'success'}
+          label={result.applied ? 'Sessions created' : 'Sessions to create'}
+          value={result.applied ? result.sessions_created : result.sessions_to_create}
         />
-        <Stat
-          label="Unmatched"
-          value={result.unmatched_lecturers.length + result.unmatched_students.length}
-          tone={hasUnmatchedLecturers || hasUnmatchedStudents ? 'warning' : 'success'}
-        />
+        <Stat label={result.applied ? 'Memberships added' : 'Memberships to add'} value={result.memberships_changed} />
       </div>
-
-      {!hasIssues && (
-        <p className="rounded-lg bg-success/10 p-3 text-sm text-success">
-          No conflicts and every name matched.
+      {!!result.new_course_codes?.length && (
+        <IssueList
+          title={result.applied ? 'New courses created' : 'This import creates new courses. Check these codes for typos.'}
+          tone="warning"
+          items={result.new_course_codes}
+        />
+      )}
+      {(hasUnmatchedLecturers || hasUnmatchedStudents) && (
+        <p className="rounded-lg bg-warning/10 p-3 text-sm font-medium text-warning">
+          {result.applied
+            ? 'Rows with unmatched accounts were skipped.'
+            : 'Rows with unmatched accounts will be skipped if you confirm.'}
         </p>
       )}
+      <details>
+        <summary className="cursor-pointer text-sm font-medium">Row details ({result.rows.length})</summary>
+        <ul className="mt-2 max-h-80 space-y-2 overflow-auto rounded-lg bg-muted p-3 text-sm">
+          {result.rows.map((row) => (
+            <li key={row.row}>
+              <p className="break-words">Row {row.row} · {row.course_code} · {row.account}</p>
+              {row.start_time && row.end_time && (
+                <p>{dubaiTime.formatRange(new Date(row.start_time), new Date(row.end_time))} (Dubai) · {row.room}</p>
+              )}
+              <p className="text-muted-foreground">{row.detail}</p>
+            </li>
+          ))}
+        </ul>
+      </details>
 
       {hasConflicts && (
         <IssueList title="Conflicts" tone="critical" items={result.conflicts} />
