@@ -23,13 +23,14 @@ import {
   useParams,
 } from 'react-router'
 
-import { useStudentApp } from '../features/student/StudentAppContext'
+import { useReviewResource } from '../features/review/useReviewResource'
 import { SocraticChatPanel } from '../features/chat/SocraticChatPanel'
 import { remainingResponseSeconds } from '../features/student/liveSessionState'
 import type {
   CheckpointState,
   LiveConnectionStatus,
 } from '../features/student/liveSessionTypes'
+import { sourcePlace } from '../features/student/liveSessionTypes'
 import type { StudentSession } from '../features/student/types'
 import ParticipationGauge from '../features/student/ParticipationGauge'
 import AssignedRoom from '../features/student/AssignedRoom'
@@ -46,29 +47,43 @@ const LOCAL_ATTENTION_ENABLED =
 
 export default function StudentLiveSessionPage() {
   const { sessionId } = useParams<{ sessionId: string }>()
-  const { sessions } = useStudentApp()
-  const session = sessions.find((candidate) => candidate.id === sessionId)
+  // The workspace list may predate this class or show only its first page.
+  // Revalidate the direct link with the existing membership-checked endpoint.
+  const { data: session, error, status, retry } = useReviewResource<StudentSession>(
+    `/sessions/${encodeURIComponent(sessionId ?? '')}`,
+  )
 
-  if (!sessionId || !session) {
+  if (!session && !error && sessionId) {
+    return (
+      <div className="grid place-items-center bg-background p-6" role="status">
+        <p className="text-sm text-muted-foreground">Finding your class…</p>
+      </div>
+    )
+  }
+
+  if (!sessionId || error || !session) {
+    const unavailable = !sessionId || status === 403 || status === 404
     return (
       <div className="grid place-items-center bg-background p-6">
-        <section className="w-full max-w-md rounded-xl border border-border bg-card p-6 text-center shadow-[var(--shadow-card)]">
-          <h1 className="text-xl font-semibold">Session unavailable</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            This session is not assigned to your student account.
+        <section className="w-full max-w-md rounded-xl border border-border bg-card p-6 text-center shadow-[var(--shadow-card)] sm:p-8">
+          <h1 className="text-xl font-semibold">
+            {unavailable ? 'Session unavailable' : 'Could not check this session'}
+          </h1>
+          <p role={unavailable ? undefined : 'alert'} className="mt-2 text-sm text-muted-foreground">
+            {unavailable
+              ? 'This session is unavailable to your student account. Return to sessions to choose a class.'
+              : 'C.L.I.P could not reach your class. Try again when your connection is available.'}
           </p>
-          <Link
-            to="/student"
-            className="mt-5 inline-flex rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-          >
-            Return to sessions
-          </Link>
+          <div className="mt-5 flex flex-wrap justify-center gap-3">
+            {!unavailable && <button type="button" className={buttonStyles()} onClick={retry}>Try again</button>}
+            <Link to="/student" className={buttonStyles({ intent: 'secondary' })}>Return to sessions</Link>
+          </div>
         </section>
       </div>
     )
   }
 
-  return <LiveSessionPanel session={session} />
+  return <LiveSessionPanel key={session.id} session={session} />
 }
 
 export function LiveSessionPanel({
@@ -101,6 +116,9 @@ export function LiveSessionPanel({
   const finished =
     state.sessionStatus === 'ended' ||
     state.sessionStatus === 'cancelled'
+  // The learning assistant is offered while the class runs, unless the
+  // lecturer has turned it off for this class.
+  const assistant = SOCRATIC_CHAT_ENABLED && !finished && state.ai.learning_assistant
 
   const secondsRemaining = state.checkpoint
     ? remainingResponseSeconds(
@@ -165,13 +183,18 @@ export function LiveSessionPanel({
             here. Checkpoints and the tutor work as usual. Join from Teams on a computer to use them.
           </p>
         )}
-        {LOCAL_ATTENTION_ENABLED && !teams.context?.mobile && (
-          <AttentionControls key={session.id} onSignal={sendAttention}
+        {LOCAL_ATTENTION_ENABLED && !teams.context?.mobile && (state.ai.engagement_estimates ? (
+          <AttentionControls key={`attention-${session.id}`} onSignal={sendAttention}
             consentRejected={attentionConsentRejected}
             enabled={state.connection === 'connected' && state.sessionStatus === 'active' && !state.paused} />
-        )}
+        ) : !finished && (
+          // Unmounting the controls stops the camera and microphone at once.
+          <p className="mt-5 rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+            Your lecturer has turned the camera and microphone indicators off for this class.
+          </p>
+        ))}
 
-        {SOCRATIC_CHAT_ENABLED && !finished && (
+        {assistant && (
           <SegmentedTabs
             label="Student session tools"
             value={activeView}
@@ -221,7 +244,7 @@ export function LiveSessionPanel({
         <section
           className="mt-5"
           aria-live="polite"
-          hidden={SOCRATIC_CHAT_ENABLED && !finished && activeView !== 'class' && !state.checkpoint}
+          hidden={assistant && activeView !== 'class' && !state.checkpoint}
         >
           {/* Terminal session state must remain visible even when feedback is
               retained. Otherwise the last checkpoint hides the review link. */}
@@ -278,9 +301,9 @@ export function LiveSessionPanel({
           )}
         </section>
 
-        <DiscussionPanel key={session.id} sessionId={session.id} />
+        <DiscussionPanel key={`discussion-${session.id}`} sessionId={session.id} />
 
-        {SOCRATIC_CHAT_ENABLED && !finished && (
+        {assistant && (
           <div className="mt-5" hidden={activeView !== 'chat'}>
             <SocraticChatPanel
               key={session.id}
@@ -288,6 +311,12 @@ export function LiveSessionPanel({
               compact={compact}
             />
           </div>
+        )}
+        {compact && (
+          <footer className="mt-6 flex justify-center gap-4 text-xs text-muted-foreground">
+            <Link to="/privacy" className="underline underline-offset-2">Privacy notice</Link>
+            <Link to="/terms" className="underline underline-offset-2">Terms of use</Link>
+          </footer>
         )}
       </div>
 
@@ -421,7 +450,7 @@ function CheckpointCard({
 
           {question.source_slide !== null && (
             <p className="mt-1 text-xs text-muted-foreground">
-              Based on slide {question.source_slide}
+              Based on {sourcePlace(question.source_label, question.source_slide).toLowerCase()}
             </p>
           )}
         </div>
@@ -432,11 +461,14 @@ function CheckpointCard({
               ? 'bg-critical/10 text-critical'
               : 'bg-secondary text-secondary-foreground'
           }`}
-          aria-label={`${secondsRemaining} seconds remaining`}
+          aria-hidden="true"
         >
           <Clock3 aria-hidden="true" size={16} />
           {secondsRemaining}s
         </div>
+        <span className="sr-only" role="timer" aria-live="polite" aria-atomic="true">
+          {secondsRemaining <= 0 ? 'Time is up.' : secondsRemaining <= 5 ? '5 seconds left.' : secondsRemaining <= 10 ? '10 seconds left.' : ''}
+        </span>
       </div>
 
       <div
@@ -672,7 +704,7 @@ function CheckpointOutcome({
       {feedback?.source_slide !== null &&
         feedback?.source_slide !== undefined && (
           <p className="mt-2 text-xs font-medium text-info">
-            Review slide {feedback.source_slide}
+            Review {sourcePlace(feedback.source_label, feedback.source_slide).toLowerCase()}
           </p>
         )}
     </div>

@@ -19,12 +19,23 @@ from pathlib import Path
 
 from app.services.material_seams import DraftQuestion
 
+TABLE_LOOKUP = "table lookup: a number from a table of numbers"
+# Said under the table whenever table lookups were rejected, so the count is
+# not read as a model fault (review of #277).
+TABLE_LOOKUP_NOTE = (
+    "A table lookup is a number taken from text that is mostly numbers (60% of "
+    "at least 12 words, extraction.looks_like_data_table). The rule cannot tell "
+    "a data table from a worked example that is mostly numbers, so a slide of "
+    "worked calculations is counted here too, and its questions are lost by design."
+)
+
 # A rejection reason's kind, matched on the words rejection_reasons writes.
 # Checked in order, most specific first; the first that matches names it.
 REASON_KINDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("verifier: not exactly one right option", ("verifier:",)),
     ("safety: instructions or links", ("instructions", "links to")),
     ("citation: missing or wrong page", ("citation", "cites page")),
+    (TABLE_LOOKUP, ("table of numbers",)),
     # The MCQ answer, or a free-text reference answer or key point.
     ("answer not supported by the excerpt", ("has little overlap with the cited excerpt",)),
     ("question off the cited page", ("question has little overlap",)),
@@ -107,6 +118,8 @@ def summary_markdown(tally: GroundingTally, model: str, material: str) -> str:
     ]
     for kind, count in tally.kinds.most_common():
         lines.append(f"| {kind} | {count} |")
+    if tally.kinds[TABLE_LOOKUP]:
+        lines += ["", TABLE_LOOKUP_NOTE]
     return "\n".join(lines) + "\n"
 
 

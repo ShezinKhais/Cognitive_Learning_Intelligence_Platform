@@ -18,6 +18,7 @@ from app.core.errors import ValidationError
 from app.models.question import Question
 from app.schemas.content import QuestionType
 from app.schemas.events import FeedbackResultPayload
+from app.services.source_labels import SourceLabel, question_source_label
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,16 @@ class MCQScoreResult:
     correct_answer: str
     source_slide: int | None
     source_excerpt: str | None
+    # What source_slide numbers: a slide, a page or a section. None when the
+    # material is not known, and the feedback says "slide/page".
+    source_label: SourceLabel | None = None
+
+
+def _source_place(result: MCQScoreResult) -> str:
+    """Where to look, such as "section 3" or "slide 3"; "slide/page 3" when
+    the material is not known."""
+    kind = result.source_label.lower() if result.source_label else "slide/page"
+    return f"{kind} {result.source_slide}"
 
 
 @dataclass(frozen=True)
@@ -40,6 +51,7 @@ class FeedbackResult:
     message: str
     source_slide: int | None
     source_excerpt: str | None
+    source_label: SourceLabel | None = None
 
 
 def score_mcq(question: Question, selected_option: int) -> MCQScoreResult:
@@ -95,6 +107,7 @@ def score_mcq(question: Question, selected_option: int) -> MCQScoreResult:
         correct_answer=question.options[question.correct_option],
         source_slide=question.source_slide,
         source_excerpt=question.source_excerpt,
+        source_label=question_source_label(question),
     )
 
 
@@ -109,7 +122,7 @@ def build_mcq_feedback(result: MCQScoreResult) -> FeedbackResult:
 
     status = "Correct" if result.is_correct else "Incorrect"
     if result.source_slide is not None:
-        message = f"{status}. See slide/page {result.source_slide} for the supporting material."
+        message = f"{status}. See {_source_place(result)} for the supporting material."
     else:
         message = f"{status}."
 
@@ -118,6 +131,7 @@ def build_mcq_feedback(result: MCQScoreResult) -> FeedbackResult:
         message=message,
         source_slide=result.source_slide,
         source_excerpt=result.source_excerpt,
+        source_label=result.source_label,
     )
 
 
@@ -127,7 +141,7 @@ def build_mcq_reveal(result: MCQScoreResult) -> FeedbackResult:
     if result.source_slide is not None:
         message = (
             f"The correct answer is '{result.correct_answer}'. "
-            f"See slide/page {result.source_slide} for the supporting material."
+            f"See {_source_place(result)} for the supporting material."
         )
     else:
         message = f"The correct answer is '{result.correct_answer}'."
@@ -137,6 +151,7 @@ def build_mcq_reveal(result: MCQScoreResult) -> FeedbackResult:
         message=message,
         source_slide=result.source_slide,
         source_excerpt=result.source_excerpt,
+        source_label=result.source_label,
     )
 
 
@@ -151,4 +166,5 @@ def feedback_payload(
         correct=feedback.is_correct,
         explanation=feedback.message,
         source_slide=feedback.source_slide,
+        source_label=feedback.source_label,
     )

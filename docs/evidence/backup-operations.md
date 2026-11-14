@@ -15,7 +15,7 @@ PostgreSQL 16. Demo accounts and one test upload only; no real student data.
 | Nightly job encrypts and removes plaintext | PASS | 14 Nov: only `.enc` files left; each copy decrypt-checked against the original before the plaintext is deleted |
 | Failed encryption keeps the plaintext | PASS | unreadable key: `FAILED ... (plaintext kept)`, exit 1, plain `.sql.gz` still present |
 | Off-machine copy can be restored | PASS | `.enc` downloaded back from Teams decrypts byte-identical to the original (`cmp`) |
-| Retention | PASS | nightly script deletes backups older than 30 days, inside the 120-day retention promise |
+| Retention | PASS | nightly script deletes backups older than 30 days, inside the 90-day retention promise |
 | Stale/missing/empty backup alert | PASS | `check_backup_age.sh`: fresh `.enc` → OK (exit 0); no backups → ALERT (exit 1); 0-byte `.enc` → ALERT (exit 1) |
 | Alert reaches an operator on Linux | CONFIGURED | alert on stderr, mailed by cron `MAILTO`; optional `ALERT_WEBHOOK_URL` POST. Mail delivery not observed |
 | Failed uploads restore leaves backend stopped | PASS | corrupt uploads archive: WARNING, exit 2, backend not running |

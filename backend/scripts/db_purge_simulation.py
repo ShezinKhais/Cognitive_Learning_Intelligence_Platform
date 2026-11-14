@@ -26,7 +26,7 @@ from uuid import uuid4
 from sqlalchemy import func, insert, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.core.config import get_settings
+from app.core.config import MAX_DATA_RETENTION_DAYS, get_settings
 from app.history.database import create_history_tables
 from app.history.models import ArchivedSession, StudentSemesterSummary
 from app.models.attention_signal_summary import AttentionSignalSummary
@@ -113,8 +113,10 @@ async def seed(factory: async_sessionmaker[AsyncSession], scale: int) -> dict[st
         student_ids = [student.student_id for student in students]
         await db.commit()
 
-    groups = [("expired", 125 + i % 300, "ended") for i in range(60 * scale)]
-    groups += [("kept", 1 + i % 110, "ended") for i in range(40 * scale)]
+    groups = [
+        ("expired", MAX_DATA_RETENTION_DAYS + 1 + i % 300, "ended") for i in range(60 * scale)
+    ]
+    groups += [("kept", 1 + i % (MAX_DATA_RETENTION_DAYS - 1), "ended") for i in range(40 * scale)]
     groups += [
         ("live", 200 + i, status)
         for i, status in enumerate(("active", "prepared", "ending", "active", "prepared"))
@@ -262,7 +264,10 @@ async def simulate(name: str, scale: int, batch: int) -> int:
 
     def make_runner(busy: Callable[[], bool]) -> PurgeRunner:
         runner = PurgeRunner(
-            retention=lambda: timedelta(days=120), busy=busy, batch_size=batch, pause=0.0
+            retention=lambda: timedelta(days=MAX_DATA_RETENTION_DAYS),
+            busy=busy,
+            batch_size=batch,
+            pause=0.0,
         )
         for task in (
             SessionDataPurge(lambda: main_factory, history=lambda: history_factory),
@@ -273,7 +278,7 @@ async def simulate(name: str, scale: int, batch: int) -> int:
         return runner
 
     async with main_factory() as db:
-        preview = await purge_expired(db, dry_run=True, retention_days=120)
+        preview = await purge_expired(db, dry_run=True, retention_days=MAX_DATA_RETENTION_DAYS)
 
     checks_made = {"n": 0}
 

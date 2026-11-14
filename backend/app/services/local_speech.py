@@ -22,12 +22,18 @@ class SpeechUnavailable(ServiceUnavailableError):
 
 
 def configured(settings: Settings) -> bool:
-    return bool(
-        settings.live_transcription_enabled
-        and settings.live_transcription_model_path
-        and Path(settings.live_transcription_model_path).is_dir()
-        and importlib.util.find_spec("faster_whisper") is not None
-    )
+    if not settings.live_transcription_enabled or not settings.live_transcription_model_path:
+        return False
+    if importlib.util.find_spec("faster_whisper") is None:
+        return False
+    directory = Path(settings.live_transcription_model_path)
+    try:
+        # Match the files prepared by prepare_live_speech.py. In particular,
+        # never let a missing tokenizer trigger a runtime fallback download.
+        files = [directory / name for name in ("config.json", "model.bin", "tokenizer.json")]
+        return all(path.is_file() and path.stat().st_size > 0 for path in files)
+    except OSError:
+        return False
 
 
 def validate_wav(raw: bytes) -> float:

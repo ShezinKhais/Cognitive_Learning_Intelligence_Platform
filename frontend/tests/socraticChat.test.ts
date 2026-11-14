@@ -177,3 +177,13 @@ test('a citation keeps its number, and one without stays valid', () => {
   const bad = parseChatStreamEvent({ type: 'citation', request_id: 'r', citation: { ...base, number: -1 } })
   assert.ok(bad?.type === 'citation' && bad.citation.number === undefined)
 })
+
+test('a Word or text file is cited by section, and an older server stays valid', () => {
+  const base = { id: 'c1', material_title: 'Notes.docx', source_page: null, source_slide: null, excerpt: null }
+  const section = parseChatStreamEvent({ type: 'citation', request_id: 'r', citation: { ...base, source_section: 4 } })
+  assert.equal(section?.type === 'citation' && section.citation.source_section, 4)
+  const older = parseChatStreamEvent({ type: 'citation', request_id: 'r', citation: base })
+  assert.equal(older?.type === 'citation' && older.citation.source_section, null)
+  const bad = parseChatStreamEvent({ type: 'citation', request_id: 'r', citation: { ...base, source_section: '4' } })
+  assert.equal(bad, null)
+})

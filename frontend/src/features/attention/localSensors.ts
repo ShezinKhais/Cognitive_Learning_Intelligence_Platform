@@ -1,4 +1,4 @@
-import type { FaceObservation } from './signals'
+import { SPEECH_THRESHOLD, type FaceObservation } from './signals'
 
 const assets = new URL(`${import.meta.env.BASE_URL}attention/`, location.origin).href
 // The camera's worker while it runs, so the page can ask it to calibrate.
@@ -123,6 +123,8 @@ export async function startCamera(signal: AbortSignal, report: (value: FaceObser
   } catch (error) { stop(); throw error }
 }
 
+/** How the classroom opens the microphone. The mic recorder (eval/mic-recorder.html) uses the same, so its recordings match. */
+export const MICROPHONE_AUDIO: MediaTrackConstraints = { channelCount: 1, echoCancellation: true, noiseSuppression: true }
 export async function startMicrophone(signal: AbortSignal, report: (speaking: boolean | null) => void, failed: () => void): Promise<void> {
   let stream: MediaStream | undefined
   let vad: import('@ricky0123/vad-web').MicVAD | undefined
@@ -135,7 +137,7 @@ export async function startMicrophone(signal: AbortSignal, report: (speaking: bo
   }
   signal.addEventListener('abort', stop, { once: true })
   try {
-    stream = await openStream(signal, { audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }, video: false }, () => { stop(); failed() })
+    stream = await openStream(signal, { audio: MICROPHONE_AUDIO, video: false }, () => { stop(); failed() })
     stream.getTracks().forEach(track => {
       track.onmute = () => report(null)
     })
@@ -149,7 +151,7 @@ export async function startMicrophone(signal: AbortSignal, report: (speaking: bo
       resumeStream: async () => { signal.throwIfAborted(); return stream! },
       pauseStream: async value => stopTracks(value),
       onFrameProcessed: ({ isSpeech }) => {
-        if (!signal.aborted) report(stream?.getAudioTracks()[0]?.muted ? null : isSpeech >= 0.6)
+        if (!signal.aborted) report(stream?.getAudioTracks()[0]?.muted ? null : isSpeech >= SPEECH_THRESHOLD)
       },
       submitUserSpeechOnPause: false,
     })

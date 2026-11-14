@@ -25,8 +25,10 @@ from app.services.free_text_classifier import (
     contains_grading_directive,
     coverage_score,
     evidence_in_answer,
+    is_enumeration,
     is_keyword_list,
     label_for,
+    list_is_expected,
     marking_schema,
     parse_marking,
     quick_check,
@@ -589,6 +591,11 @@ def test_more_ways_of_telling_the_marker_what_to_do_are_caught(answer):
         "overfitting predictors regularization penalty coefficients",
         "probability 0 1 event class bounded",
         "logistic regression logit model classification predictive analytics 0 and 1",
+        # Split by full stops or commas.
+        "Kernel. Stride. Padding. Pooling.",
+        "convolution, padding, stride, downsampling",
+        # Padded with comparison words that explain nothing.
+        "stride larger more skip fewer positions smaller output",
     ],
 )
 def test_a_bare_list_of_keywords_is_caught(answer):
@@ -604,6 +611,12 @@ def test_a_bare_list_of_keywords_is_caught(answer):
         "regularization adds a penalty to big coefficients",
         "my secret student wording about regularization",
         "too many predictors",
+        "Ordinal: rating 1-5 stars. Multinomial: choosing a movie genre.",
+        "It uses a cutoff of 0.5.",
+        "Pooling has no parameters, unlike convolution.",
+        "Greater than 1 means more likely, less than 1 means less likely.",
+        "Padding keeps the size. Stride shrinks it. Pooling downsamples.",
+        "more layers give more parameters than fewer layers",
     ],
 )
 def test_a_terse_answer_is_not_a_keyword_list(answer):
@@ -618,6 +631,45 @@ async def test_a_keyword_list_is_marked_by_the_model_with_its_confidence_capped(
     assert len(chat.prompts) == 1
     assert result.confidence <= KEYWORD_LIST_CONFIDENCE
     assert KEYWORD_LIST_NOTE in result.reasons
+
+
+NAME_THREE = FreeTextQuestion(
+    prompt="Name three metrics used to evaluate a classifier.",
+    reference_answer="Precision, recall and F1.",
+    key_points=("Precision", "Recall", "F1"),
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Precision, recall and F1.", True),
+        ("Stack, queue, heap.", True),
+        ("TCP, UDP or ICMP", True),
+        ("Bias and variance.", True),
+        (QUESTION.reference_answer, False),
+        ("Regularization penalizes large coefficients, so the model overfits less.", False),
+        ("", False),
+    ],
+)
+def test_a_short_list_of_items_is_an_enumeration(text, expected):
+    assert is_enumeration(text) is expected
+
+
+def test_a_list_is_expected_only_when_the_reference_answer_is_one():
+    assert list_is_expected(NAME_THREE)
+    assert not list_is_expected(QUESTION)
+
+
+@pytest.mark.parametrize("answer", ["Precision, recall, F1.", "Precision. Recall. F1."])
+async def test_a_list_answering_a_name_the_question_keeps_its_confidence(answer):
+    """Review of #281: a right answer in list form to a "name the..." question
+    is not keyword stuffing, so it is not capped or told to ask the lecturer."""
+    assert is_keyword_list(answer)
+    chat = FakeChat(marking(C, C, C, quote="Precision"))
+    result = await FreeTextClassifier(chat, FakeEmbed(), "m").classify(NAME_THREE, answer)
+    assert result.confidence > KEYWORD_LIST_CONFIDENCE
+    assert KEYWORD_LIST_NOTE not in result.reasons
 
 
 @pytest.mark.parametrize(

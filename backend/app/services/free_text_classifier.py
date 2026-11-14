@@ -490,7 +490,7 @@ GRAMMAR_WORDS = frozenset(
     means mean make makes made get gets become becomes give gives take takes
     use uses used""".split()
 )
-# At most this share of grammar words, with no punctuation at all, reads like
+# At most this share of grammar words, with no other punctuation, reads like
 # a list of keywords. It cannot tell a list from a short sentence whose verb
 # carries the explanation ("Pooling reduces spatial dimensions"), so it only
 # lowers confidence; the model still marks the answer.
@@ -498,18 +498,73 @@ KEYWORD_LIST_SHARE = 0.15
 KEYWORD_LIST_MIN_WORDS = 3
 KEYWORD_LIST_CONFIDENCE = REVIEW_CONFIDENCE
 KEYWORD_LIST_NOTE = "the answer reads like a list of keywords, so the marking is less certain"
-_PUNCTUATION = re.compile(r"[.,;:=!?()<>/+\-]")
+# Symbols that explain ("below .5 = class 0"): an answer with any is never a list.
+_EXPLAINING_SYMBOLS = re.compile(r"[:=!?()<>/+\-]")
+# Full stops, commas and semicolons between terms: "Penalty. Overfitting. Lambda."
+# Only when followed by a space or the end, so "0.5" is not split.
+_LIST_SEPARATOR = re.compile(r"[.,;](?=\s|$)")
+# Comparison and quantity words: they sit between terms ("greater less than 1
+# higher lower odds") without explaining them. An answer of at least
+# KEYWORD_LIST_LONG words whose only grammar words are these is a list; one
+# linking word ("give", "means") makes it a sentence, and shorter answers
+# ("too many predictors") are judged by the share alone.
+COMPARISON_WORDS = frozenset(
+    "than no more less most many much very too also only just same".split()
+)
+KEYWORD_LIST_LONG = 6
+# A list split by separators: at least this many pieces, none longer than
+# KEYWORD_LIST_PIECE_WORDS words.
+KEYWORD_LIST_MIN_PIECES = 3
+KEYWORD_LIST_PIECE_WORDS = 2
 
 
 def is_keyword_list(answer: str) -> bool:
     """Whether the answer reads like a list of terms with nothing explaining
-    them: "overfitting predictors regularization penalty coefficients". A
-    small model finds each key point's words in such a list and marks it
-    covered, so its marking is not trusted with high confidence."""
+    them: "overfitting predictors regularization penalty coefficients",
+    "Regularisation. Overfitting. Penalty." or "odds ratio greater less than 1
+    higher lower odds". A small model finds each key point's words in such a
+    list and marks it covered, so its marking is not trusted with high
+    confidence."""
     words = re.findall(r"[a-z]+", answer.lower())
-    if len(words) < KEYWORD_LIST_MIN_WORDS or _PUNCTUATION.search(answer):
+    if len(words) < KEYWORD_LIST_MIN_WORDS or _EXPLAINING_SYMBOLS.search(answer):
         return False
-    return sum(word in GRAMMAR_WORDS for word in words) / len(words) <= KEYWORD_LIST_SHARE
+    if _LIST_SEPARATOR.search(answer):
+        pieces = [p for p in _LIST_SEPARATOR.split(answer) if re.search(r"\w", p)]
+        return (
+            len(pieces) >= KEYWORD_LIST_MIN_PIECES
+            and all(len(p.split()) <= KEYWORD_LIST_PIECE_WORDS for p in pieces)
+            and not any(word in GRAMMAR_WORDS for word in words)
+        )
+    if sum(word in GRAMMAR_WORDS for word in words) / len(words) <= KEYWORD_LIST_SHARE:
+        return True
+    linking = [word for word in words if word in GRAMMAR_WORDS - COMPARISON_WORDS]
+    return len(words) >= KEYWORD_LIST_LONG and not linking
+
+
+# A reference answer that is itself a short list ("Precision, recall and F1."):
+# the question asks the student to name things, so a list is the right shape
+# of answer and is not held against them.
+_ENUMERATION_SPLIT = re.compile(r"\s*(?:[,;]|\band\b|\bor\b)\s*")
+ENUMERATION_ITEM_WORDS = 3
+ENUMERATION_MAX_WORDS = 20
+
+
+def is_enumeration(text: str) -> bool:
+    """Whether the text is only a short list of items: "Precision, recall
+    and F1.", "Stack, queue, heap." Each item is a few words, with nothing
+    explaining them."""
+    body = text.strip().rstrip(".")
+    if not body or len(body.split()) > ENUMERATION_MAX_WORDS or _EXPLAINING_SYMBOLS.search(body):
+        return False
+    items = [item for item in _ENUMERATION_SPLIT.split(body) if item.strip()]
+    return len(items) >= 2 and all(len(item.split()) <= ENUMERATION_ITEM_WORDS for item in items)
+
+
+def list_is_expected(question: FreeTextQuestion) -> bool:
+    """Whether the question's own reference answer is a list, so a student's
+    list is not marked down as keyword stuffing."""
+    reference = question.reference_answer or ""
+    return is_enumeration(reference) or is_keyword_list(reference)
 
 
 def contains_grading_directive(answer: str) -> bool:
@@ -651,7 +706,7 @@ class FreeTextClassifier:
         label = label_for(coverage, wrong_claim)
         score = coverage_score(coverage)
         confidence = confidence_for(score, similarity)
-        if is_keyword_list(answer):
+        if is_keyword_list(answer) and not list_is_expected(question):
             confidence = min(confidence, KEYWORD_LIST_CONFIDENCE)
             notes = (*notes, KEYWORD_LIST_NOTE)
         return Classification(

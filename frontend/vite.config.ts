@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
 import { backendProxy } from './backendProxy.ts'
+import { ortExternAlias } from './ortExternAlias.ts'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'CLIP_')
@@ -10,7 +11,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react(), tailwindcss()],
     resolve: {
-      alias: { '@': path.resolve(__dirname, './src') },
+      alias: { '@': path.resolve(__dirname, './src'), ...ortExternAlias },
     },
     server: {
       port: 5173,

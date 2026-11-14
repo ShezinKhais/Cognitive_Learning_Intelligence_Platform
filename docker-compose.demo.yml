@@ -31,9 +31,10 @@ services:
     build:
       context: ./backend
       args:
-        ENABLE_LIVE_TRANSCRIPTION: ${LIVE_TRANSCRIPTION_ENABLED:-false}
+        CLIP_RELEASE_SHA: ${CLIP_RELEASE_SHA:-unknown}
         ENABLE_OCR: ${OCR_IN_IMAGE:-false}
-    image: clip-demo-backend:latest
+        ENABLE_LIVE_TRANSCRIPTION: ${LIVE_TRANSCRIPTION_ENABLED:-false}
+    image: clip-demo-backend:${CLIP_IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       db:
@@ -49,8 +50,8 @@ services:
       FORWARDED_ALLOW_IPS: "*"
       # No model is needed to log in and run a class. Point this at an Ollama
       # on the host to get generated questions and the tutor.
-      AI_WARMUP_ENABLED: ${AI_WARMUP_ENABLED:-false}
       OCR_ENABLED: ${OCR_IN_IMAGE:-false}
+      AI_WARMUP_ENABLED: ${AI_WARMUP_ENABLED:-false}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
@@ -79,12 +80,13 @@ services:
     build:
       context: ./frontend
       args:
+        CLIP_RELEASE_SHA: ${CLIP_RELEASE_SHA:-unknown}
         VITE_MATERIAL_PIPELINE_ENABLED: ${VITE_MATERIAL_PIPELINE_ENABLED:-true}
         VITE_LIVE_SESSIONS_ENABLED: ${VITE_LIVE_SESSIONS_ENABLED:-true}
         VITE_SOCRATIC_CHAT_ENABLED: ${VITE_SOCRATIC_CHAT_ENABLED:-true}
         VITE_LOCAL_ATTENTION_ENABLED: ${VITE_LOCAL_ATTENTION_ENABLED:-false}
         VITE_TEAMS_MOCK_ENABLED: "false"
-    image: clip-demo-web:latest
+    image: clip-demo-web:${CLIP_IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       backend:

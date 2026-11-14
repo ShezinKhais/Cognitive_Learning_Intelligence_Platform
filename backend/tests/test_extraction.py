@@ -14,6 +14,7 @@ import pytest
 
 from app.core.errors import ValidationError
 from app.services.extraction import (
+    SECTION_WORDS,
     ContentChunk,
     ExtractedElement,
     _docling_elements,
@@ -21,6 +22,7 @@ from app.services.extraction import (
     chunk_elements,
     clean_text,
     looks_letter_spaced,
+    number_sections,
     process_material,
     read_docx,
     validate_file,
@@ -251,6 +253,59 @@ def test_docx_end_to_end():
     assert result.chunks
 
 
+def _sentences(count: int, words: int = 10) -> str:
+    return " ".join(f"Sentence {i} " + "word " * (words - 3) + "end." for i in range(count))
+
+
+def test_each_heading_starts_a_new_section():
+    elements = number_sections(
+        [
+            ExtractedElement("heading", "Chapter 1", 1, 1),
+            ExtractedElement("text", "About sampling.", 1),
+            ExtractedElement("heading", "Chapter 3", 1, 1),
+            ExtractedElement("heading", "3.1 Events", 1, 2),
+            ExtractedElement("text", "About events.", 1),
+        ]
+    )
+    # A heading right after another stays with it: no empty section between.
+    assert [e.page for e in elements] == [1, 1, 2, 2, 2]
+
+
+def test_a_long_stretch_without_headings_is_split_into_sections():
+    # 100 sentences of 10 words: 1,000 words, about 400 to a section.
+    elements = number_sections([ExtractedElement("text", _sentences(100), 1)])
+    assert [e.page for e in elements] == [1, 2, 3]
+    assert all(len(e.content.split()) <= SECTION_WORDS for e in elements)
+    assert " ".join(e.content for e in elements) == _sentences(100)
+
+
+def test_a_long_text_file_gets_several_citable_sections_but_page_count_stays_1(tmp_path):
+    f = tmp_path / "notes.txt"
+    f.write_text(_sentences(100))
+    result = process_material(str(f), material_id=uuid.uuid4())
+    assert {c.source_page for c in result.chunks} == {1, 2, 3}
+    # BBIS stores page_count; a page-less file still reports 1.
+    assert result.page_count == 1
+
+
+def test_docx_chunks_cite_their_section_and_keep_their_chapter(tmp_path):
+    from docx import Document
+
+    doc = Document()
+    doc.add_heading("Chapter 1: Sampling", level=1)
+    doc.add_paragraph(_sentences(50))
+    doc.add_heading("Chapter 3: Probability", level=1)
+    doc.add_paragraph("Two events are independent when one does not change the other.")
+    path = tmp_path / "statistics.docx"
+    doc.save(path)
+
+    result = process_material(str(path), material_id=uuid.uuid4())
+    probability = next(c for c in result.chunks if "independent" in c.chunk_text)
+    assert probability.source_page == 3
+    assert _first_line(probability) == "Chapter 3: Probability"
+    assert result.page_count == 1
+
+
 def test_a_docx_table_stays_under_the_heading_above_it(tmp_path):
     from docx import Document
 
@@ -291,7 +346,7 @@ def test_low_quality_pdf_warns_when_docling_missing(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", blocked)
 
     corrupt = [ExtractedElement("text", "T h e G l o b a l E d u c a t i o n C r i s i s " * 3, 1)]
-    monkeypatch.setattr(extraction, "read_pdf_pypdf", lambda path, with_images=False: corrupt)
+    monkeypatch.setattr(extraction, "read_pdf_pypdf", lambda path, with_images=False, **_: corrupt)
 
     elements, parser, warnings = extraction.extract("fake.pdf", "pdf")
     assert parser == "pypdf-low-quality"
@@ -315,7 +370,7 @@ def test_corrupt_pypdf_output_upgrades_to_docling(monkeypatch):
 
     corrupt = [ExtractedElement("text", "T h e G l o b a l E d u c a t i o n C r i s i s " * 3, 1)]
     clean = [ExtractedElement("text", "The Global Education Crisis", 1)]
-    monkeypatch.setattr(extraction, "read_pdf_pypdf", lambda path, with_images=False: corrupt)
+    monkeypatch.setattr(extraction, "read_pdf_pypdf", lambda path, with_images=False, **_: corrupt)
     monkeypatch.setattr(extraction, "read_pdf_docling", lambda path, with_images=False: clean)
 
     elements, parser, warnings = extraction.extract("fake.pdf", "pdf")

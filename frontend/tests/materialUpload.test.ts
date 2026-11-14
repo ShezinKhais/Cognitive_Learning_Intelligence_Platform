@@ -5,6 +5,7 @@ import type { Material } from '../src/features/materials/types.ts'
 import {
   materialWarnings,
   progressFromStatus,
+  sourceName,
   upsertMaterial,
   validateUpload,
 } from '../src/features/materials/upload.ts'
@@ -56,4 +57,11 @@ test('thin and image-heavy pages are named as warnings', () => {
     }),
   )
   assert.deepEqual(warnings.map((w) => w.source_page), [undefined, 2, 5])
+})
+
+test('Word and text files are numbered by section, slides and PDFs by slide and page', () => {
+  assert.equal(sourceName({ filename: 'notes.docx' }), 'Section')
+  assert.equal(sourceName({ filename: 'notes.TXT' }), 'Section')
+  assert.equal(sourceName({ filename: 'deck.pptx' }), 'Slide')
+  assert.equal(sourceName({ filename: 'reading.pdf' }), 'Page')
 })

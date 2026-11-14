@@ -10,7 +10,7 @@ restart does not quietly resume the question cycle.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, true
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -76,3 +76,31 @@ class Session(Base):
         String(30),
         nullable=False,
     )
+
+    # The lecturer's AI switches for this class, copied from the course when
+    # the class is created.
+    ai_auto_checkpoints: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=true()
+    )
+    ai_learning_assistant: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=true()
+    )
+    ai_refocus_nudges: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=true()
+    )
+    ai_engagement_estimates: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=true()
+    )
+
+    # Opt-in lesson plan. False preserves the existing course-bank workflow.
+    question_selection_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+
+    # The lecturer's pacing for this class: minutes between automatic
+    # checkpoints and seconds to answer. Empty means the deployment's own.
+    checkpoint_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    answer_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)

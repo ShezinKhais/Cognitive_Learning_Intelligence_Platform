@@ -3,6 +3,7 @@
 from app.schemas.content import Difficulty, QuestionType
 from app.services.grounding_evaluation import (
     OTHER,
+    TABLE_LOOKUP_NOTE,
     GroundingTally,
     grounding_precision,
     reason_kind,
@@ -102,3 +103,16 @@ def test_free_text_answer_reasons_count_as_unsupported_answers():
         "key point 2 has little overlap with the cited excerpt (score 0)",
     ):
         assert reason_kind(reason) == "answer not supported by the excerpt"
+
+
+def test_the_report_explains_table_lookups_only_when_there_are_some():
+    """Review of #277: the table rule also drops worked examples that are
+    mostly numbers, so a high count is not read as the model's fault."""
+    lookup = "answer is a value looked up in a table of numbers, which the checks cannot confirm"
+    with_lookups = GroundingTally()
+    with_lookups.add_reply([(draft(), [lookup])])
+    without = GroundingTally()
+    without.add_reply([(draft(), ["no page or slide citation"])])
+
+    assert TABLE_LOOKUP_NOTE in summary_markdown(with_lookups, "m", "lecture.pdf")
+    assert TABLE_LOOKUP_NOTE not in summary_markdown(without, "m", "lecture.pdf")

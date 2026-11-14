@@ -33,10 +33,12 @@ from app.schemas.content import (
     MaterialUpdateRequest,
     QuestionBulkReviewRequest,
     QuestionBulkReviewResult,
+    QuestionCreateRequest,
     QuestionOut,
     QuestionReviewRequest,
 )
 from app.schemas.identity import ConsentType, Role
+from app.services import question_bank
 from app.services.extraction import CONTENT_TYPES
 from app.services.material_edits import (
     course_codes,
@@ -47,6 +49,7 @@ from app.services.material_edits import (
 from app.services.material_pages import page_previews
 from app.services.question_ownership import filter_owned_questions, get_owned_question
 from app.services.regeneration import regenerate
+from app.services.source_labels import source_label
 from app.services.uploads import accept_upload, get_material_storage, get_question_generator
 
 # Every route here, the review actions included, is lecturer and admin work,
@@ -80,6 +83,8 @@ def _to_question_out(question) -> QuestionOut:  # noqa: ANN001 - app.models.Ques
         options=question.options,
         correct_option=question.correct_option,
         topic=question.topic,
+        reference_answer=question.reference_answer,
+        key_points=question.key_points,
         source_slide=question.source_slide,
         source_excerpt=question.source_excerpt,
     )
@@ -165,7 +170,10 @@ async def get_material(
 
     # The page preview is only on the single-material read. Built for every
     # row of a list it would load the full text of every upload a lecturer has.
-    pages = page_previews(await repository.list_elements(material.id))
+    pages = page_previews(
+        await repository.list_elements(material.id),
+        sections=source_label(material.filename) == "Section",
+    )
     codes = await course_codes(db, {material.course_id} if material.course_id else set())
     return _material_out(material, codes).model_copy(update={"pages": pages})
 
@@ -285,6 +293,46 @@ async def review_question(
     )
 
     return _to_question_out(updated)
+
+
+@router.post(
+    "/{material_id}/questions",
+    response_model=QuestionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+@audit_action("QUESTION_WRITTEN")
+async def write_question(
+    material_id: UUID,
+    payload: QuestionCreateRequest,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> QuestionOut:
+    """Add a question of the lecturer's own to one of their materials. It is
+    ready to send straight away."""
+    return _to_question_out(await question_bank.write_question(db, principal, material_id, payload))
+
+
+@router.post(
+    "/{material_id}/questions/{question_id}:reuse",
+    response_model=QuestionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+@audit_action("QUESTION_REUSED")
+async def reuse_question(
+    material_id: UUID,
+    question_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> QuestionOut:
+    """Stage a copy of a question that has been asked, for another class
+    (409 for one that has not been asked)."""
+    repo = QuestionRepository(db)
+    question = await get_owned_question(question_id, principal, repo, material_id=material_id)
+    return _to_question_out(await question_bank.reuse_question(db, principal, question))
 
 
 @router.post(

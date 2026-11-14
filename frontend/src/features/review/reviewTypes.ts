@@ -13,6 +13,8 @@ export interface ReviewAnswer {
   is_correct: boolean | null
   label: 'mastered' | 'partial' | 'struggling' | null
   confidence: number | null
+  correct_answer?: string | null
+  key_points?: string[]
   submitted_at: string
 }
 
@@ -26,7 +28,13 @@ export interface StudentReview {
   session: ReviewSession
   questions_attempted: number
   questions_missed: number
-  engagement: { status: 'unavailable'; score: null; explanation: string }
+  engagement: {
+    status: 'unavailable' | 'readings_available'
+    score: null
+    camera_windows?: number | null
+    microphone_windows?: number | null
+    explanation: string
+  }
   answers: ReviewAnswer[]
   total: number
   limit: number
@@ -37,8 +45,18 @@ export interface ReviewSources {
     chunk_id: string
     material_title: string
     source_page: number | null
+    /** What source_page numbers. Older servers leave it out. */
+    source_label?: 'Page' | 'Slide' | 'Section'
     text: string
     match: 'excerpt' | 'page'
   }[]
   has_more: boolean
+}
+
+export interface MissedQuestion {
+  id: string
+  question: string
+  topic: string | null
+  correct_answer: string | null
+  key_points: string[]
 }

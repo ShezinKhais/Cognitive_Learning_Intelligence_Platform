@@ -5,6 +5,7 @@
 // /eval/attention-recorder.html; not part of the built app, so it lives
 // outside src/.
 import '../src/index.css'
+import { saveFile } from './saveFile.ts'
 import { CONDITIONS, LABELS, framesToCsv, type Condition, type Frame, type Label } from './evaluation.ts'
 import type { FaceFeatures } from '../src/features/attention/signals.ts'
 
@@ -115,18 +116,21 @@ function record(label: Label) {
 }
 
 /** The numbers being recorded, live, so the tester can see the camera react. */
-function show(features: FaceFeatures) {
+type LiveCheck = { live: number; ms: number } | null
+function show(features: FaceFeatures, check: LiveCheck) {
   const value = (v: number | undefined) => v === undefined ? '–' : `${Math.round(v)}°`
   const cells: [string, string][] = [
     ['faces', String(features.faces)],
     ['yaw', value(features.pose?.yaw)],
     ['pitch', value(features.pose?.pitch)],
+    // #165: the anti-spoofing model's live probability for this frame.
+    ['live', check ? `${Math.round(check.live * 100)}%` : '–'],
   ]
   live.innerHTML = cells.map(([name, v]) =>
     `<div class="rounded-lg bg-muted p-2"><dt class="text-muted-foreground">${name}</dt><dd class="text-base font-semibold">${v}</dd></div>`).join('')
 }
 
-function keep(features: FaceFeatures) {
+function keep(features: FaceFeatures, check: LiveCheck) {
   if (!recording || performance.now() < recording.startedAt) return
   frames.push({
     participant: participant.value.trim(),
@@ -135,6 +139,8 @@ function keep(features: FaceFeatures) {
     conditions: recording.conditions,
     t: (performance.now() - recording.startedAt) / 1000,
     features,
+    live: check?.live ?? null,
+    liveMs: check?.ms ?? null,
   })
   refresh()
 }
@@ -161,11 +167,20 @@ start.onclick = async () => {
   starting = false
   worker = new Worker(new URL('../src/features/attention/face.worker.ts', import.meta.url), { type: 'module' })
   worker.onmessage = event => {
-    if (event.data.type === 'ready') { status.textContent = 'Camera ready. Pick a clip to record.'; sendFrames() }
-    else if (event.data.type === 'observation') { busy = false; if (event.data.features) { show(event.data.features); keep(event.data.features) } }
+    if (event.data.type === 'ready') {
+      // The anti-spoofing model loads after the camera; wait for it before recording.
+      status.textContent = 'Camera ready. Loading the anti-spoofing model…'
+      sendFrames()
+    } else if (event.data.type === 'liveness') {
+      status.textContent = event.data.ok
+        ? 'Camera ready. Pick a clip to record.'
+        : 'Camera ready, but the anti-spoofing model did not load: clips will have no live score.'
+    }
+    else if (event.data.type === 'observation') { busy = false; if (event.data.features) { show(event.data.features, event.data.live ?? null); keep(event.data.features, event.data.live ?? null) } }
     else if (event.data.type === 'error') { busy = false; status.textContent = 'A frame could not be read; recording continues.' }
   }
-  worker.postMessage({ type: 'init', base: assets, withFeatures: true })
+  // Live scores on every frame, so the evaluation can replay any check rate (#165).
+  worker.postMessage({ type: 'init', base: assets, withFeatures: true, withLiveScores: true })
   status.textContent = 'Loading the face model…'
   refresh()
 }
@@ -202,11 +217,7 @@ stop.onclick = () => stopCamera('Camera off.')
 
 download.onclick = () => {
   const name = `attention_${participant.value.trim() || 'P'}_${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.csv`
-  const link = document.createElement('a')
-  link.href = URL.createObjectURL(new Blob([framesToCsv(frames)], { type: 'text/csv' }))
-  link.download = name
-  link.click()
-  URL.revokeObjectURL(link.href)
+  saveFile(name, framesToCsv(frames))
 }
 
 discard.onclick = () => {

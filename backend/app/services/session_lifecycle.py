@@ -35,15 +35,18 @@ from app.realtime.hub import hub
 from app.repositories.course_repository import CourseRepository
 from app.repositories.session_repository import SessionRepository
 from app.schemas.common import Page
+from app.schemas.events import AiControls
 from app.schemas.identity import ConsentType, Role
 from app.schemas.meetings import MeetingEventIn, MeetingEventKind
 from app.schemas.session import (
     MAX_TITLE_LENGTH,
     DeliverableQuestionOut,
+    SessionCopyRequest,
     SessionCreateRequest,
     SessionOut,
     SessionReadinessOut,
     SessionStatus,
+    SessionUpdateRequest,
 )
 from app.services.meeting_directory import meetings
 from app.services.session_access import session_membership_allowed
@@ -64,12 +67,7 @@ FINISHED = {SessionStatus.ENDED.value, SessionStatus.CANCELLED.value}
 async def create_session(
     db: AsyncSession, principal: Principal, payload: SessionCreateRequest
 ) -> SessionOut:
-    title = payload.title.strip()
-    if not title or len(title) > MAX_TITLE_LENGTH:
-        raise ValidationError(
-            f"A session title must be 1 to {MAX_TITLE_LENGTH} characters.",
-            {"field": "title"},
-        )
+    title = _title(payload.title)
     course = await CourseRepository(db).get_by_code(payload.course_code.strip())
     if course is None:
         raise NotFoundError("No course has that code.", {"course_code": payload.course_code})
@@ -78,6 +76,7 @@ async def create_session(
     if starts_at.tzinfo is None:
         starts_at = starts_at.replace(tzinfo=UTC)
 
+    defaults = AiControls.of(course)
     row = await SessionRepository(db).create(
         instructor_id=principal.user_id,
         course_id=course.id,
@@ -85,8 +84,79 @@ async def create_session(
         start_time=starts_at,
         status=SessionStatus.PREPARED.value,
         mode=MODE_IN_PERSON,
+        # The course's saved AI switches, so a lecturer who chose once for the
+        # course does not choose again for every class.
+        ai_auto_checkpoints=defaults.auto_checkpoints,
+        ai_learning_assistant=defaults.learning_assistant,
+        ai_refocus_nudges=defaults.refocus_nudges,
+        ai_engagement_estimates=defaults.engagement_estimates,
+        checkpoint_minutes=defaults.checkpoint_minutes,
+        answer_seconds=defaults.answer_seconds,
     )
     return await session_out(db, row)
+
+
+def _title(raw: str) -> str:
+    title = raw.strip()
+    if not title or len(title) > MAX_TITLE_LENGTH:
+        raise ValidationError(
+            f"A session title must be 1 to {MAX_TITLE_LENGTH} characters.",
+            {"field": "title"},
+        )
+    return title
+
+
+def _aware(when: datetime) -> datetime:
+    return when if when.tzinfo is not None else when.replace(tzinfo=UTC)
+
+
+async def update_session(
+    db: AsyncSession, principal: Principal, session_id: UUID, payload: SessionUpdateRequest
+) -> SessionOut:
+    """Rename a session at any time. Its start can move only before it starts,
+    since a class that ran has a real start."""
+    row = await owned_session(SessionRepository(db), principal, session_id)
+    if payload.title is not None:
+        row.title = _title(payload.title)
+    if payload.starts_at is not None:
+        _require(row, SessionStatus.PREPARED, "reschedule")
+        row.start_time = _aware(payload.starts_at)
+    await db.commit()
+    return await session_out(db, row)
+
+
+async def copy_session(
+    db: AsyncSession, principal: Principal, session_id: UUID, payload: SessionCopyRequest
+) -> SessionOut:
+    """Prepare the same class again: same course, a new prepared session.
+    Questions are not copied: a staged question is open to any of the
+    lecturer's sessions for the course until one delivers it."""
+    source = await owned_session(SessionRepository(db), principal, session_id, for_update=False)
+    row = await SessionRepository(db).create(
+        instructor_id=source.instructor_id,
+        course_id=source.course_id,
+        title=_title(payload.title if payload.title is not None else source.title),
+        start_time=_aware(payload.starts_at) if payload.starts_at else datetime.now(UTC),
+        status=SessionStatus.PREPARED.value,
+        mode=MODE_IN_PERSON,
+    )
+    await db.commit()
+    return await session_out(db, row)
+
+
+async def delete_session(db: AsyncSession, principal: Principal, session_id: UUID) -> None:
+    """Remove a cancelled session from the list. Only a cancelled one: it
+    never ran, so no answer or score is lost. Cancel a prepared one first."""
+    repo = SessionRepository(db)
+    row = await owned_session(repo, principal, session_id)
+    _require(row, SessionStatus.CANCELLED, "delete")
+    if await repo.count_delivered(row.session_id):
+        raise ConflictError(
+            "This session delivered questions, so it is kept.", {"session_id": str(session_id)}
+        )
+    await db.delete(row)
+    await db.commit()
+    log.info("session %s deleted by %s", session_id, principal.user_id)
 
 
 async def start_session(db: AsyncSession, principal: Principal, session_id: UUID) -> SessionOut:
@@ -107,6 +177,7 @@ async def start_session(db: AsyncSession, principal: Principal, session_id: UUID
     row.status = SessionStatus.ACTIVE.value
     await db.commit()
 
+    classroom.remember_ai(row.session_id, AiControls.of(row))
     classroom.activate(row.session_id)
     await classroom.announce(row.session_id, SessionStatus.ACTIVE)
     log.info("session %s started by %s", session_id, principal.user_id)

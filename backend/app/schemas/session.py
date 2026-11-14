@@ -80,9 +80,62 @@ class SessionOut(BaseModel):
     )
 
 
+class QuestionBreakdown(BaseModel):
+    """How the class answered one question, in the order they were asked."""
+
+    number: int
+    question_id: UUID
+    prompt: str
+    type: str
+    options: list[str] | None = None
+    correct_option: int | None = None
+    topic: str | None = None
+    eligible: int = Field(description="Students connected when it was asked.")
+    answers: int
+    correct: int
+    marked: int = Field(description="Answers marked right or wrong. Some written answers are not.")
+    option_counts: list[int] | None = Field(
+        default=None, description="How many chose each option, for multiple choice."
+    )
+    median_seconds: float | None = None
+
+
+class StudentBreakdown(BaseModel):
+    """How one student did across the session."""
+
+    student_id: UUID
+    name: str
+    answered: int = 0
+    correct: int = 0
+    marked: int = 0
+    missed: int = 0
+
+
+class SessionBreakdownOut(BaseModel):
+    session_id: UUID
+    questions: list[QuestionBreakdown]
+    students: list[StudentBreakdown]
+
+
 class SessionCreateRequest(BaseModel):
     course_code: str = Field(max_length=MAX_COURSE_CODE_LENGTH)
     title: str = Field(max_length=MAX_TITLE_LENGTH)
+    starts_at: datetime | None = None
+
+
+class SessionUpdateRequest(BaseModel):
+    """Rename a session, or move one that has not started. Fields left out
+    stay as they are."""
+
+    title: str | None = Field(default=None, max_length=MAX_TITLE_LENGTH)
+    starts_at: datetime | None = None
+
+
+class SessionCopyRequest(BaseModel):
+    """Prepare a new session for the same course. The title defaults to the
+    original's, and the start to now."""
+
+    title: str | None = Field(default=None, max_length=MAX_TITLE_LENGTH)
     starts_at: datetime | None = None
 
 

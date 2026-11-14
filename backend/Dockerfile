@@ -23,11 +23,10 @@ WORKDIR /srv/clip
 # files Alembic needs are kept in the working directory.
 COPY pyproject.toml ./
 COPY app ./app
-# OCR for scanned PDF pages. Off by default: Tesseract adds about 30 MB, and
-# without it a scanned page is simply read as having no text.
+# English scanned PDF support. Adapted from Shezin-Ops-Health (cff5901).
 ARG ENABLE_OCR=false
 RUN if [ "$ENABLE_OCR" = "true" ]; then \
-        apt-get update && apt-get install -y --no-install-recommends tesseract-ocr \
+        apt-get update && apt-get install -y --no-install-recommends tesseract-ocr fonts-dejavu-core \
         && rm -rf /var/lib/apt/lists/*; \
     fi
 
@@ -37,7 +36,7 @@ RUN if [ "$ENABLE_LIVE_TRANSCRIPTION" = "true" ]; then pip install ".[transcript
 
 COPY alembic.ini ./
 COPY migrations ./migrations
-COPY scripts/prepare_live_speech.py ./scripts/prepare_live_speech.py
+COPY scripts/prepare_live_speech.py scripts/check_live_speech.py ./scripts/
 
 # Applies migrations, then replaces the shell with uvicorn so SIGTERM reaches it
 # and the lifespan shutdown (drain jobs, stop session timers) runs.
@@ -51,6 +50,10 @@ alembic upgrade head
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --proxy-headers
 EOF
 
+ARG CLIP_RELEASE_SHA=unknown
+ENV CLIP_RELEASE_SHA=$CLIP_RELEASE_SHA
+LABEL org.opencontainers.image.revision=$CLIP_RELEASE_SHA
+
 USER clip
 
 # Uploaded material. Mount a volume here to keep it. Reports are held in
@@ -60,9 +63,6 @@ VOLUME ["/data"]
 
 EXPOSE 8000
 
-# Readiness, not liveness: a backend that cannot reach its database cannot
-# sign anyone in, so it should not report healthy. Ollama is reported there
-# but does not gate it.
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=5 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/ready', timeout=4).status == 200 else 1)"
 

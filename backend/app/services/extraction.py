@@ -29,10 +29,13 @@ import io
 import logging
 import re
 import time
+import unicodedata
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
+
+from lxml import etree
 
 from app.core.errors import ValidationError
 
@@ -76,7 +79,7 @@ class ExtractedElement:
 
     el_type: str  # "text" | "heading" | "image" | "table"
     content: str  # the text, or a placeholder note for images
-    page: int  # page number (PDF) or slide number (PPTX). 1 for docx/txt.
+    page: int  # page (PDF), slide (PPTX), or section (DOCX, TXT: see number_sections).
     # Headings only: 1 for a top-level section, 2 for one inside it, and so on,
     # where the format says. 0 is a heading with no known level, such as a
     # slide title: it applies to its own page only.
@@ -134,6 +137,8 @@ class ProcessingResult:
     # highest page/slide seen. PDF and PPTX report real pages; DOCX and TXT
     # always report 1 because Word/plain-text have no fixed pagination without
     # rendering. BBIS persists this as-is - it is a known format limitation.
+    # Their elements and chunks are numbered by section instead (see
+    # number_sections), which page_count does not count.
     page_count: int = 0
     parser_used: str = ""  # "pypdf" | "pypdf+ocr" | "docling" | "pypdf-low-quality" | ...
     warnings: list[str] = field(default_factory=list)
@@ -285,8 +290,59 @@ def looks_letter_spaced(text: str) -> bool:
     return singles / len(words) > 0.4
 
 
+# A line is undecodable when at least this share of its visible characters,
+# and at least two of them, are control characters other than line breaks and
+# tabs. Real text has none; the text of a font with no character map has one
+# in every few, such as \x03 for each space.
+#
+# Known limit (review of #271): such a font can also give letters shifted to
+# other letters (",PDJHV" for "Images"), which has no control characters. On
+# a page that also has an undecodable line, every control-character line is
+# dropped with it; a shifted line with none of its own is kept. That caught
+# 36 of the 38 garbled pages in the sample; the other two are not caught.
+UNDECODED_SHARE = 0.1
+_LAYOUT = frozenset("\n\r\t \u00a0")
+
+
+def looks_undecoded(text: str) -> bool:
+    """Whether text came from a font with no character map (#266).
+
+    Such a PDF's text layer decodes to control characters and shifted letters,
+    e.g. "Images" as ",PDJHV" with \x03 between the words. Only control
+    characters count: letters of any script, digits, punctuation and maths
+    symbols never do, nor do the private-use characters old Symbol fonts use
+    for maths (σ, big brackets), which are odd but not junk.
+    """
+    visible = [c for c in text if c not in _LAYOUT]
+    bad = sum(1 for c in visible if unicodedata.category(c) == "Cc")
+    return bad >= 2 and bad >= UNDECODED_SHARE * len(visible)
+
+
+def readable_lines(text: str) -> tuple[str, int]:
+    """A page's text without its undecodable lines, and how many were dropped.
+
+    Once one line of a page is undecodable, the page's font is known to be
+    broken, so every line on it with a control character goes too: short
+    lines such as a footer can hold only one, too few to judge on their own.
+    """
+    lines = text.splitlines()
+    if not any(looks_undecoded(line) for line in lines):
+        return text, 0
+    # Tabs and line breaks are layout, as in looks_undecoded: a good
+    # tab-separated row on a broken page is kept.
+    kept = [
+        line
+        for line in lines
+        if not any(c not in _LAYOUT and unicodedata.category(c) == "Cc" for c in line)
+    ]
+    return "\n".join(kept), len(lines) - len(kept)
+
+
 def read_pdf_pypdf(
-    path: str, with_images: bool = False, ocr: Callable[[bytes], str] | None = None
+    path: str,
+    with_images: bool = False,
+    ocr: Callable[[bytes], str] | None = None,
+    undecoded: list[int] | None = None,
 ) -> list[ExtractedElement]:
     """Default PDF reader (Option B). Lightweight, installs everywhere.
 
@@ -299,6 +355,11 @@ def read_pdf_pypdf(
 
     With `ocr`, a page with no text layer, such as a scanned one, is read from
     its largest image instead, and kept as text when that finds some.
+
+    Lines that decode to junk are dropped (looks_undecoded), and a page left
+    with none is treated as having no text layer. The numbers of the pages
+    that lost text that way are appended to `undecoded`, so the lecturer can
+    be told.
     """
     from pypdf import PdfReader
 
@@ -306,7 +367,9 @@ def read_pdf_pypdf(
 
     els = []
     for i, page in enumerate(PdfReader(path).pages):
-        txt = page.extract_text() or ""
+        txt, dropped = readable_lines(page.extract_text() or "")
+        if dropped and undecoded is not None:
+            undecoded.append(i + 1)
         scanned = not txt.strip()
         images = _pypdf_images(page) if with_images or (scanned and ocr) else []
         if scanned and ocr and images:
@@ -369,21 +432,104 @@ def _pypdf_images(page) -> list[bytes]:
     return found
 
 
+_MC = "{http://schemas.openxmlformats.org/markup-compatibility/2006}"
+_MC_ALTERNATE = f"{_MC}AlternateContent"
+_A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+_M = "{http://schemas.openxmlformats.org/officeDocument/2006/math}"
+# A run of slide text, and a run of an equation's text.
+_TEXT_RUNS = (f"{_A}t", f"{_M}t")
+
+
+def _plain_math_letter(char: str) -> str:
+    """𝐴 as A. Equations are written in the Unicode block of styled maths
+    letters (italic, bold, script), which only changes how a letter looks:
+    read as written, "𝐴" never matches an "A" that a question quotes. Other
+    symbols, such as ℕ and ℝ, mean something different and are kept."""
+    if "\U0001d400" <= char <= "\U0001d7ff":
+        return unicodedata.normalize("NFKC", char)
+    return char
+
+
+def _delimiter(properties, which: str, default: str) -> str:
+    """One end of an equation's bracket: | in |A|, { in {p | p(x) = 0}.
+    Word stores these as properties rather than as text, ( and ) when unset."""
+    found = properties.find(f"{_M}{which}") if properties is not None else None
+    if found is None:
+        return default
+    return found.get(f"{_M}val", "")
+
+
+# Written before part of an equation, so its layout survives as text:
+# 3x^2 rather than 3x2, x_1 rather than x1, (a)/(b) for a fraction.
+_MATH_MARKS = {f"{_M}sup": "^", f"{_M}sub": "_", f"{_M}den": "/"}
+
+
+def _paragraph_text(paragraph) -> str:
+    out = []
+    for event, element in etree.iterwalk(paragraph, events=("start", "end")):
+        if element.tag in _TEXT_RUNS and event == "start":
+            out.append("".join(_plain_math_letter(c) for c in element.text or ""))
+        elif element.tag in _MATH_MARKS and event == "start":
+            out.append(_MATH_MARKS[element.tag])
+        elif element.tag == f"{_M}d":
+            properties = element.find(f"{_M}dPr")
+            if event == "start":
+                out.append(_delimiter(properties, "begChr", "("))
+            else:
+                out.append(_delimiter(properties, "endChr", ")"))
+    return "".join(out)
+
+
+def _alternate_content_text(alternate) -> str:
+    """The text of an mc:AlternateContent block on a slide.
+
+    PowerPoint writes the shape twice: as it is (mc:Choice, the equation as
+    editable math) and as older readers should see it (mc:Fallback, the same
+    words with the equation as a picture). The choice is read first, with the
+    equation's own text, so "Let D = {p | p(x) = 0}" keeps its symbols; the
+    fallback is used only when the choice holds no text. One line per
+    paragraph, as python-pptx gives a text frame.
+    """
+    for branch in (
+        *alternate.iterchildren(f"{_MC}Choice"),
+        *alternate.iterchildren(f"{_MC}Fallback"),
+    ):
+        text = "\n".join(_paragraph_text(p) for p in branch.iter(f"{_A}p"))
+        if text.strip():
+            return text
+    return ""
+
+
 def read_pptx(path: str, with_images: bool = False) -> list[ExtractedElement]:
     """PPTX reader. python-pptx already gives clean, slide-scoped text, so
     docling adds nothing here."""
     from pptx import Presentation
     from pptx.enum.shapes import MSO_SHAPE_TYPE
 
-    def walk(shapes, page, images):
+    def walk(shapes, tree, page, images):
         """Yield text from shapes, stepping inside groups so their text
         is not lost. Images are collected separately and appended after the
         slide's text, so elements keep document order (heading, body, images)
-        instead of images always landing first."""
+        instead of images always landing first.
+
+        `tree` is the XML element holding `shapes`. It is read directly
+        because python-pptx leaves out what PowerPoint wraps in
+        mc:AlternateContent, which is every text box holding an equation
+        made with Insert > Equation. Read through python-pptx alone, the
+        whole box vanished, words and all (#264)."""
+        known = {shape._element: shape for shape in shapes}
         parts = []
-        for shape in shapes:
+        for child in tree.iterchildren():
+            if child.tag == _MC_ALTERNATE:
+                text = _alternate_content_text(child)
+                if text.strip():
+                    parts.append(text)
+                continue
+            shape = known.get(child)
+            if shape is None:
+                continue
             if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
-                parts.extend(walk(shape.shapes, page, images))
+                parts.extend(walk(shape.shapes, shape._element, page, images))
             elif shape.has_text_frame and shape.text_frame.text.strip():
                 parts.append(shape.text_frame.text)
             elif shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
@@ -394,7 +540,7 @@ def read_pptx(path: str, with_images: bool = False) -> list[ExtractedElement]:
     els = []
     for i, slide in enumerate(Presentation(path).slides):
         slide_images: list[ExtractedElement] = []
-        parts = walk(slide.shapes, i + 1, slide_images)
+        parts = walk(slide.shapes, slide.shapes._spTree, i + 1, slide_images)
         if not parts:
             els.extend(slide_images)
             continue
@@ -509,6 +655,65 @@ def read_txt(path: str, with_images: bool = False) -> list[ExtractedElement]:
         )
 
     return [ExtractedElement("text", clean_text(text), 1)] if text.strip() else []
+
+
+# ---------------------------------------------------------------------------
+# sections for formats without pages
+# ---------------------------------------------------------------------------
+
+# About a printed page. Word and text files have no pages, so every chunk used
+# to be "page 1": the generator saw [page 1] on every excerpt, cited chapter
+# or example numbers instead, and the citation check rejected the draft. It
+# also could never tell one part of the document from another (#269).
+SECTION_WORDS = 400
+# Parsers whose elements are numbered by section, not page. page_count stays
+# 1 for them: it is what BBIS stores, and sections are not pages.
+SECTIONED_PARSERS = frozenset({"python-docx", "plain-text"})
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+
+
+def _word_groups(text: str, limit: int) -> list[str]:
+    """Text cut at sentence ends into pieces of at most `limit` words; a
+    single sentence longer than that stays whole."""
+    groups: list[str] = []
+    current: list[str] = []
+    words = 0
+    for sentence in _SENTENCE_END.split(text):
+        n = len(sentence.split())
+        if current and words + n > limit:
+            groups.append(" ".join(current))
+            current, words = [], 0
+        current.append(sentence)
+        words += n
+    if current:
+        groups.append(" ".join(current))
+    return groups
+
+
+def number_sections(elements: list[ExtractedElement]) -> list[ExtractedElement]:
+    """Number a page-less document's elements by section, as `page`.
+
+    A section starts at each heading with a level (Heading 1, 2, ...) and
+    whenever the current one passes SECTION_WORDS, so a long stretch with no
+    headings is still split into citable parts. A paragraph too long for one
+    section, such as a whole text file, is cut at sentence ends. Headings
+    stay in force across sections, so chunks keep their chapter path.
+    """
+    numbered: list[ExtractedElement] = []
+    section, words = 1, 0
+    for element in elements:
+        if element.el_type == "heading":
+            if element.level > 0 and words:
+                section, words = section + 1, 0
+            numbered.append(replace(element, page=section))
+            continue
+        for piece in _word_groups(element.content, SECTION_WORDS):
+            n = len(piece.split())
+            if words and words + n > SECTION_WORDS:
+                section, words = section + 1, 0
+            numbered.append(replace(element, content=piece, page=section))
+            words += n
+    return numbered
 
 
 # ---------------------------------------------------------------------------
@@ -831,6 +1036,15 @@ class OcrBudget:
         return notes
 
 
+def undecoded_pages_warning(pages: list[int]) -> str:
+    shown = ", ".join(str(p) for p in pages[:10]) + (", …" if len(pages) > 10 else "")
+    return (
+        f"{len(pages)} page(s) store some of their text in a form that cannot be "
+        f"decoded (page {shown}), so that text was left out. Exporting the PDF "
+        "again, or uploading the original slides, usually fixes this."
+    )
+
+
 NO_OCR_NOTE = (
     "Scanned pages have no text to read. Installing Tesseract on the server "
     "lets them be read with OCR."
@@ -856,7 +1070,11 @@ def extract(
         # Option B: pypdf is the default (light, installs everywhere).
         budget = OcrBudget(ocr) if ocr else None
         scans = {"ocr": budget} if budget else {}
-        elements = _run_reader(read_pdf_pypdf, path, **images, **scans)
+        undecoded: list[int] = []
+        elements = _run_reader(read_pdf_pypdf, path, **images, **scans, undecoded=undecoded)
+        # Added only where pypdf's text is kept: docling below re-reads the
+        # whole file, so nothing it returns was left out this way.
+        undecoded_note = [undecoded_pages_warning(undecoded)] if undecoded else []
         joined = " ".join(e.content for e in elements if e.el_type != "image")
 
         # quality guard: if pypdf produced letter-spaced garbage, try to
@@ -872,12 +1090,14 @@ def extract(
                     warnings,
                 )
             except ImportError:
+                warnings.extend(undecoded_note)
                 warnings.append(
                     "This PDF uses styled text that the default parser reads poorly. "
                     "Install the 'extraction' extra (docling) for better results."
                 )
                 return elements, "pypdf-low-quality", warnings
 
+        warnings.extend(undecoded_note)
         if budget:
             warnings.extend(budget.notes())
             if budget.read_pages:
@@ -889,9 +1109,9 @@ def extract(
     if ext == "pptx":
         return _run_reader(read_pptx, path, **images), "python-pptx", warnings
     if ext == "docx":
-        return _run_reader(read_docx, path, **images), "python-docx", warnings
+        return number_sections(_run_reader(read_docx, path, **images)), "python-docx", warnings
     if ext == "txt":
-        return _run_reader(read_txt, path, **images), "plain-text", warnings
+        return number_sections(_run_reader(read_txt, path, **images)), "plain-text", warnings
 
     raise ValidationError(f"Unsupported file format: .{ext}", {"received": ext})
 
@@ -961,6 +1181,33 @@ def extract_material(
     return Extraction(elements, parser, warnings)
 
 
+# A number as it appears in a table or an answer: -3.5, .25, 1e-3, 42%.
+NUMBER = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?%?"
+_NUMBER_TOKEN = re.compile(NUMBER)
+# Text is a table of numbers when at least this share of its words, among
+# at least DATA_MIN_WORDS, are numbers. Lecture prose with figures in it,
+# such as "Exp. return for Fair Roulette = 6.56%", stays well below it.
+DATA_NUMBER_SHARE = 0.6
+DATA_MIN_WORDS = 12
+
+
+def looks_like_data_table(text: str) -> bool:
+    """Whether text is mostly numbers: a data table rather than teaching (#270)."""
+    words = [w.strip(",;:()[]") for w in text.split()]
+    words = [w for w in words if w]
+    if len(words) < DATA_MIN_WORDS:
+        return False
+    numbers = sum(bool(_NUMBER_TOKEN.fullmatch(w)) for w in words)
+    return numbers >= DATA_NUMBER_SHARE * len(words)
+
+
+MOSTLY_NUMBERS_NOTE = (
+    "Most of this file is numbers with little explanation. A question that only "
+    "asks to look up a value in a table is not kept, so few questions may come "
+    "from it."
+)
+
+
 def finish_material(extraction: Extraction, material_id: uuid.UUID) -> ProcessingResult:
     """Chunk the elements, once any captions are in, and add the warnings
     that depend on them."""
@@ -971,6 +1218,8 @@ def finish_material(extraction: Extraction, material_id: uuid.UUID) -> Processin
     skipped = skipped_pages_warning(elements)
     if skipped:
         warnings.append(skipped)
+    if looks_like_data_table(" ".join(c.chunk_text for c in chunks)):
+        warnings.append(MOSTLY_NUMBERS_NOTE)
 
     log.info(
         "material %s: %s elements, %s chunks, parser=%s",
@@ -983,7 +1232,11 @@ def finish_material(extraction: Extraction, material_id: uuid.UUID) -> Processin
         material_id=material_id,
         elements=elements,
         chunks=chunks,
-        page_count=max((e.page for e in elements), default=0),
+        page_count=(
+            min(1, len(elements))
+            if extraction.parser_used in SECTIONED_PARSERS
+            else max((e.page for e in elements), default=0)
+        ),
         parser_used=extraction.parser_used,
         warnings=warnings,
     )

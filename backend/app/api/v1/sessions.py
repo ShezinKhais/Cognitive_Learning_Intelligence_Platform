@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from app.api.deps import (
     AppSettings,
@@ -30,22 +30,35 @@ from app.realtime.classroom import classroom
 from app.repositories.session_repository import SessionRepository
 from app.repositories.student_repository import StudentRepository
 from app.repositories.topic_difficulty_repository import DatabaseTopicAnswers
+from app.schemas.ai_controls import AiControlsOut, AiControlsUpdate
 from app.schemas.breakout import RoomPlanIn, RoomPlanOut
 from app.schemas.common import Page
 from app.schemas.identity import ConsentType, Role
+from app.schemas.question_plan import LessonQuestionOut, QuestionPlanIn, QuestionPlanOut
 from app.schemas.session import (
     AlertOut,
     DeliverableQuestionOut,
     EngagementOut,
     ResponseOut,
+    SessionBreakdownOut,
+    SessionCopyRequest,
     SessionCreateRequest,
     SessionOut,
     SessionReadinessOut,
     SessionStatus,
+    SessionUpdateRequest,
     StudentSessionSummary,
     TopicDifficultyOut,
 )
-from app.services import alert_store, breakout, session_lifecycle, session_reads
+from app.services import (
+    ai_controls,
+    alert_store,
+    breakout,
+    question_plan,
+    session_breakdown,
+    session_lifecycle,
+    session_reads,
+)
 from app.services.engagement_view import staff_confidence, staff_score, staff_signals
 from app.services.session_access import may_view_session_analytics
 from app.services.student_report import build_student_summary, record_staff_view
@@ -100,6 +113,57 @@ async def get_session(
     return await session_reads.get_session(db, principal, session_id)
 
 
+@router.patch("/{session_id}", response_model=SessionOut, dependencies=_staff)
+@audit_action("SESSION_UPDATED")
+async def update_session(
+    session_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+    payload: SessionUpdateRequest | None = None,
+) -> SessionOut:
+    """Rename a session, or move the start of one that has not started (409
+    once it has)."""
+    return await session_lifecycle.update_session(
+        db, principal, session_id, payload or SessionUpdateRequest()
+    )
+
+
+@router.post(
+    "/{session_id}/copy",
+    response_model=SessionOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=_staff,
+)
+@audit_action("SESSION_CREATED")
+async def copy_session(
+    session_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+    payload: SessionCopyRequest | None = None,
+) -> SessionOut:
+    """Prepare the same class again, for the same course."""
+    return await session_lifecycle.copy_session(
+        db, principal, session_id, payload or SessionCopyRequest()
+    )
+
+
+@router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=_staff)
+@audit_action("SESSION_DELETED")
+async def delete_session(
+    session_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> None:
+    """Remove a cancelled session (409 for any other)."""
+    await session_lifecycle.delete_session(db, principal, session_id)
+
+
 @router.get(
     "/{session_id}/questions",
     response_model=Page[DeliverableQuestionOut],
@@ -147,6 +211,29 @@ async def start_session(
 ) -> SessionOut:
     """Blocked until the session is ready. GET /readiness says why it is not."""
     return await session_lifecycle.start_session(db, principal, session_id)
+
+
+@router.get("/{session_id}/ai-controls", response_model=AiControlsOut, dependencies=_staff)
+async def read_ai_controls(
+    session_id: UUID, principal: CurrentUser, db: DbSession
+) -> AiControlsOut:
+    """The lecturer's AI switches for this class, and the course's defaults."""
+    return await ai_controls.read(db, principal, session_id)
+
+
+@router.put("/{session_id}/ai-controls", response_model=AiControlsOut, dependencies=_staff)
+@audit_action("SESSION_AI_CONTROLS_CHANGED")
+async def update_ai_controls(
+    session_id: UUID,
+    payload: AiControlsUpdate,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> AiControlsOut:
+    """Turn the class's AI features on or off. Applied at once, and the class is
+    told. With apply_to_course, every new class of the course starts this way."""
+    return await ai_controls.update(db, principal, session_id, payload)
 
 
 @router.post("/{session_id}/pause", response_model=SessionOut, dependencies=_staff)
@@ -316,6 +403,43 @@ async def require_analytics_access(db: DbSession, principal: CurrentUser, sessio
         raise NotFoundError("Session was not found.", {"session_id": str(session_id)})
 
 
+@router.get("/{session_id}/breakdown", response_model=SessionBreakdownOut, dependencies=_staff)
+async def session_breakdown_view(
+    session_id: UUID, principal: CurrentUser, db: DbSession
+) -> SessionBreakdownOut:
+    """Each question asked, with how the choices split, and each student's
+    answers, right answers and misses."""
+    await require_analytics_access(db, principal, session_id)
+    return await session_breakdown.build(db, session_id)
+
+
+@router.get(
+    "/{session_id}/results.csv",
+    dependencies=_staff,
+    response_class=Response,
+    responses={200: {"content": {"text/csv": {}}}},
+)
+@audit_action("SESSION_RESULTS_EXPORTED")
+async def session_results_csv(
+    session_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> Response:
+    """Every answer in the session as a CSV, one row per answer."""
+    await require_analytics_access(db, principal, session_id)
+    body = await session_breakdown.csv_rows(db, session_id)
+    return Response(
+        content="\ufeff" + body,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="session-{session_id}.csv"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 @router.get(
     "/{session_id}/summary/{student_id}",
     response_model=StudentSessionSummary,
@@ -416,3 +540,49 @@ async def close_rooms(
     the main meeting. Close the rooms in Teams as well."""
     row = await _room_session(db, principal, session_id)
     return await breakout.close(db, row)
+
+
+@router.get("/{session_id}/question-plan", response_model=QuestionPlanOut, dependencies=_staff)
+async def get_question_plan(
+    session_id: UUID,
+    principal: CurrentUser,
+    db: DbSession,
+    response: Response,
+):
+    response.headers["Cache-Control"] = "no-store"
+    return await question_plan.read_plan(db, principal, session_id)
+
+
+@router.get(
+    "/{session_id}/question-plan/candidates",
+    response_model=Page[LessonQuestionOut],
+    dependencies=_staff,
+)
+async def question_plan_candidates(
+    session_id: UUID,
+    principal: CurrentUser,
+    db: DbSession,
+    page: Paginated,
+    response: Response,
+    material: Annotated[str | None, Query(max_length=255)] = None,
+    topic: Annotated[str | None, Query(max_length=255)] = None,
+):
+    response.headers["Cache-Control"] = "no-store"
+    return await question_plan.candidates(
+        db, principal, session_id, page.limit, page.offset, material, topic
+    )
+
+
+@router.put("/{session_id}/question-plan", response_model=QuestionPlanOut, dependencies=_staff)
+@audit_action("LESSON_QUESTIONS_SELECTED")
+async def select_question_plan(
+    session_id: UUID,
+    payload: QuestionPlanIn,
+    principal: CurrentUser,
+    db: DbSession,
+    request: Request,
+    settings: AppSettings,
+    response: Response,
+):
+    response.headers["Cache-Control"] = "no-store"
+    return await question_plan.save_plan(db, principal, session_id, payload)

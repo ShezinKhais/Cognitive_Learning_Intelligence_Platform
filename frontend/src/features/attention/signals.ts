@@ -219,6 +219,13 @@ export interface GazeModel {
    * different ways (a squint, a prosthetic eye) give "no reading", never "away".
    */
   maxEyeDisagreement: number
+  /**
+   * Head tilt (ear towards shoulder) beyond which the landmarks are no longer
+   * trusted, so there is no reading. Below it tilt is ignored: it hardly moves
+   * where the eyes point, and resting the head on a hand, a stiff neck or a
+   * camera at an angle should not read as looking away (#166, P2's recording).
+   */
+  maxRollDegrees: number
 }
 
 /**
@@ -246,8 +253,8 @@ export function gazeAngles(
 /**
  * With a gaze model, "head 20° right, eyes 20° left" is looking at the screen
  * and "head still, eyes 20° left" is not: the eyes can rescue a turned head as
- * well as veto a still one. The yaw and pitch limits then apply to the gaze;
- * roll still applies to the head.
+ * well as veto a still one. The yaw and pitch limits then apply to the gaze.
+ * A tilted head is not "away"; tilted past gaze.maxRollDegrees it is no reading.
  */
 function classifyGaze(f: FaceFeatures, pose: PoseAngles, t: Thresholds, c: Calibration, gaze: GazeModel): FaceObservation {
   const forwardHead = Math.abs(pose.yaw - c.yaw) < t.maxYawDegrees
@@ -257,13 +264,8 @@ function classifyGaze(f: FaceFeatures, pose: PoseAngles, t: Thresholds, c: Calib
   const eyeOpen = (e: EyeFeatures | null) => e !== null && e.width >= t.minEyeWidth && e.open >= t.minOpenEyeRatio
   if (!eyeOpen(f.leftEye) || !eyeOpen(f.rightEye)) return { face: true, head, forward: null }
   const g = gazeAngles(f, pose, c, gaze)
-  if (!g) return { face: true, head, forward: null }
-  return {
-    face: true,
-    head,
-    forward: Math.abs(g.yaw) < t.maxYawDegrees && Math.abs(g.pitch) < t.maxPitchDegrees
-      && Math.abs(pose.roll - c.roll) < t.maxRollDegrees,
-  }
+  if (!g || Math.abs(pose.roll - c.roll) > gaze.maxRollDegrees) return { face: true, head, forward: null }
+  return { face: true, head, forward: Math.abs(g.yaw) < t.maxYawDegrees && Math.abs(g.pitch) < t.maxPitchDegrees }
 }
 
 export function observeFace(
@@ -443,6 +445,9 @@ export function classifyAdaptive(
   const seen = classifyFace(f, thresholds, state.centre, gaze)
   return !measurable && seen.forward === false ? { ...seen, forward: null } : seen
 }
+
+/** A voice-detection frame at or above this speech probability counts as speaking. */
+export const SPEECH_THRESHOLD = 0.6
 
 /** Null is absence, not a negative signal. Only the frozen wire shape leaves. */
 export function summary(

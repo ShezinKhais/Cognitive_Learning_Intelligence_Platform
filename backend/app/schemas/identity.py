@@ -69,6 +69,16 @@ class ConsentOut(BaseModel):
     recorded_at: datetime
 
 
+class ImportRow(BaseModel):
+    row: int
+    course_code: str
+    account: str
+    detail: str
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    room: str | None = None
+
+
 class TimetableImportResult(BaseModel):
     """Result of an administrator uploading a timetable CSV or XLSX.
 
@@ -81,3 +91,10 @@ class TimetableImportResult(BaseModel):
     conflicts: list[str] = Field(default_factory=list)
     unmatched_lecturers: list[str] = Field(default_factory=list)
     unmatched_students: list[str] = Field(default_factory=list)
+    sessions_to_create: int = 0
+    courses_changed: int = 0
+    new_course_codes: list[str] = Field(default_factory=list)
+    memberships_changed: int = 0
+    applied: bool = False
+    preview_token: str | None = None
+    rows: list[ImportRow] = Field(default_factory=list)

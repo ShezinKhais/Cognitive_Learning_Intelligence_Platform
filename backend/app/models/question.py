@@ -18,11 +18,12 @@ you were separately planning.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func, select
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, column_property, mapped_column
 
 from app.core.database import Base
+from app.models.material import Material
 
 
 class Question(Base):
@@ -32,6 +33,13 @@ class Question(Base):
         UUID(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
+    )
+
+    source_question_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("question.question_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     source_material_id: Mapped[uuid.UUID] = mapped_column(
@@ -107,6 +115,17 @@ class Question(Base):
     source_excerpt: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
+    )
+    # Read, never stored: the material's filename, so feedback can call
+    # source_slide a slide, a page or a section. Loaded with the question and
+    # kept across a flush, so reading it never runs a query of its own; read
+    # it with source_labels.question_source_label.
+    source_filename: Mapped[str | None] = column_property(
+        select(Material.filename)
+        .where(Material.id == source_material_id)
+        .correlate_except(Material)
+        .scalar_subquery(),
+        expire_on_flush=False,
     )
     # Free-text questions only (Phase 5): the model answer and the checklist
     # the classifier grades a student's answer against. Null for MCQs.

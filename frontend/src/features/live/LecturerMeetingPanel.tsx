@@ -10,6 +10,8 @@ import { useDocumentTitle } from '../../components/ui/useDocumentTitle'
 import { lecturerLiveSessionPath } from '../../teams/lecturerMeeting'
 import { statusLabel, statusTone } from '../sessions/format'
 import { getSession, listAllResponses, type SessionSummary } from '../sessions/sessionsApi'
+import AiControlsPanel from './AiControlsPanel'
+import LessonQuestionPlan from './LessonQuestionPlan'
 import ManualQuestionTrigger from './ManualQuestionTrigger'
 import { initialLifecycle, lifecycleReducer } from './panelLifecycle'
 import {
@@ -52,6 +54,7 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
   const { connectionStatus, sessionState, activeQuestion, closedQuestion, alerts, sessionNotice, acknowledgeAlert } =
     useLiveSession(sessionId)
 
+  const [lessonPlanPending, setLessonPlanPending] = useState(false)
   const [details, setDetails] = useState<SessionSummary | null>(null)
   const [readiness, setReadiness] = useState<SessionReadiness | null>(null)
   const [readinessFailed, setReadinessFailed] = useState(false)
@@ -275,6 +278,8 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
             </p>
           )}
 
+          {status === 'prepared' && <LessonQuestionPlan key={sessionId} sessionId={sessionId} onSaved={() => void checkReadiness()} onPendingChange={setLessonPlanPending} />}
+
           {actionError && (
             <p role="alert" className="mt-3 text-sm text-critical">
               {actionError}
@@ -286,7 +291,7 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
               <button
                 type="button"
                 className={buttonStyles()}
-                disabled={busy || readiness?.ready !== true}
+                disabled={busy || lessonPlanPending || readiness?.ready !== true}
                 onClick={() => void act('start')}
               >
                 <Play size={15} aria-hidden />
@@ -324,6 +329,10 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
             <p className="mt-3 text-sm text-muted-foreground">This session is no longer running.</p>
           )}
         </section>
+
+        {(live || status === 'prepared') && (
+          <AiControlsPanel sessionId={sessionId} courseCode={details?.course_code} compact />
+        )}
 
         <section aria-labelledby="panel-alerts" className="rounded-lg border border-border bg-card p-3">
           <h2 id="panel-alerts" className="font-bold">
