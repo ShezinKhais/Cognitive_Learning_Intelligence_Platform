@@ -128,6 +128,18 @@ authChannel?.addEventListener('message', (event: MessageEvent) => {
 // keep someone on a page they asked to leave.
 const LOGOUT_WAIT_MS = 5000
 
+/** Tutor transcripts kept for this tab, so the next person on a shared
+ * computer does not see them after a sign-out. */
+function forgetTutorTranscripts(): void {
+  try {
+    for (const key of Object.keys(window.sessionStorage)) {
+      if (key.startsWith('clip.tutor.')) window.sessionStorage.removeItem(key)
+    }
+  } catch {
+    // Storage blocked: nothing was kept.
+  }
+}
+
 /**
  * Sign out: forget the token here and in every other tab, and ask the
  * backend to drop the refresh cookie so a reload does not sign back in.
@@ -139,6 +151,7 @@ const LOGOUT_WAIT_MS = 5000
  */
 export function clearAccessToken(): Promise<boolean> {
   forgetAccessToken()
+  forgetTutorTranscripts()
   authChannel?.postMessage('signed-out')
   const cleared = fetch(apiUrl('/auth/logout'), {
     method: 'POST',
