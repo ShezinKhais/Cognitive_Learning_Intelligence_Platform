@@ -14,43 +14,10 @@ import {
   historyFor,
   initialChatState,
 } from './chatState'
-import type { ChatExchange, ChatState } from './chatTypes'
-
-// Finished exchanges are kept for this tab, so leaving the page and coming
-// back, or reviewing after class, does not lose what the tutor said. Only
-// this tab: a shared computer does not show the next person the transcript.
-const KEPT = 20
-
-function storageKey(sessionId: string, discussion: boolean, range: string): string {
-  // Each discussion range is its own conversation: an answer about the last
-  // 15 minutes is not context for a question about the whole class.
-  return `clip.tutor.${sessionId}.${discussion ? `discussion.${range}` : 'material'}`
-}
-
-function restore(key: string): ChatState {
-  try {
-    const raw = window.sessionStorage.getItem(key)
-    const kept = raw ? (JSON.parse(raw) as ChatExchange[]) : []
-    const exchanges = Array.isArray(kept) ? kept.filter((exchange) => exchange?.phase === 'completed') : []
-    return { ...initialChatState, exchanges }
-  } catch {
-    return initialChatState
-  }
-}
 
 export function useSocraticChat(sessionId: string, discussionSince?: string, discussionUntil?: string, discussion = false, discussionRollingMinutes?: number) {
-  const key = storageKey(sessionId, discussion, `${discussionSince ?? 'all'}.${discussionRollingMinutes ?? ''}`)
-  const [state, dispatch] = useReducer(chatReducer, key, restore)
+  const [state, dispatch] = useReducer(chatReducer, initialChatState)
   const controller = useRef<AbortController | null>(null)
-
-  useEffect(() => {
-    const done = state.exchanges.filter((exchange) => exchange.phase === 'completed').slice(-KEPT)
-    try {
-      window.sessionStorage.setItem(key, JSON.stringify(done))
-    } catch {
-      // Storage full or blocked: the conversation still works, it is just not kept.
-    }
-  }, [key, state.exchanges])
 
   useEffect(() => () => controller.current?.abort(), [])
 
