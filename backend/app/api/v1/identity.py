@@ -36,6 +36,7 @@ from app.core.audit import audit_action
 from app.core.config import Settings, get_settings
 from app.core.errors import (
     AuthenticationError,
+    ConflictError,
     PermissionError_,
     ValidationError,
 )
@@ -45,8 +46,11 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_access_token,
+    hash_password,
     verify_password,
 )
+from app.models.audit_log import AuditLog
+from app.models.user import User
 from app.realtime.classroom import classroom
 from app.repositories.consent_repository import ConsentRepository
 from app.repositories.teams_user_mapping_repository import TeamsUserMappingRepository
@@ -56,6 +60,7 @@ from app.schemas.identity import (
     ConsentRequest,
     ConsentType,
     LoginRequest,
+    PasswordChangeRequest,
     Role,
     TeamsSignInRequest,
     TimetableImportResult,
@@ -501,6 +506,63 @@ async def logout(
     _clear_refresh_cookie(response, settings)
     log.info("security_event=SIGNED_OUT")
     return response
+
+
+@auth.post(
+    "/password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def change_password(
+    payload: PasswordChangeRequest,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> Response:
+    """Change the signed-in user's own password. The current one is checked,
+    and a wrong one counts towards the account lock as a failed sign-in does,
+    so this cannot be used to guess it."""
+
+    if not settings.is_production:
+        raise ConflictError(
+            "Development accounts have fixed passwords. Run with CLIP_ENV=production to "
+            "change one.",
+            {},
+        )
+    user = await db.get(User, principal.user_id)
+    if user is None or not user.password_hash:
+        raise ConflictError(
+            "This account signs in through Microsoft, so it has no password here.", {}
+        )
+    security = PersistentLoginSecurityStore(db)
+    if await security.is_locked(user.user_id):
+        # Not a 401: the user is signed in, and a 401 would sign them out.
+        raise PermissionError_("The account is locked for now. Try again later.")
+    if not verify_password(payload.current_password, user.password_hash):
+        await security.record_failed_login(user.user_id)
+        await db.commit()
+        log.warning("security_event=PASSWORD_CHANGE_FAILED user_id=%s", user.user_id)
+        raise ValidationError("The current password is not right.", {"field": "current_password"})
+    if payload.new_password == payload.current_password:
+        raise ValidationError(
+            "Choose a password different from the current one.", {"field": "new_password"}
+        )
+    user.password_hash = hash_password(payload.new_password)
+    # Audited here rather than by @audit_action: a wrong password commits its
+    # failed attempt before refusing, and the decorator would record that
+    # commit as a password change.
+    db.add(
+        AuditLog(
+            user_id=user.user_id,
+            action_type="PASSWORD_CHANGED",
+            target_type="user",
+            target_id=user.user_id,
+        )
+    )
+    await db.commit()
+    log.info("security_event=PASSWORD_CHANGED user_id=%s", user.user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @auth.get(
