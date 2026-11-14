@@ -302,6 +302,13 @@ improves and the existing labels do not get worse.
 it back to `null` turns the check off, and the model is then not even
 downloaded in the classroom.
 
+**What a rejection does, and does not do (G34: anti-spoofing without
+proctoring).** A rejected face only changes the student's own signal in the
+browser: `face_present: false` and no gaze reading, exactly as if nobody were
+in view. Nothing about spoofing is sent, stored, or shown to the lecturer or
+the student; the server has no spoof field and cannot tell a rejected face
+from an empty chair.
+
 **The problem.** A photo or video of a face on a phone is detected as a face,
 and as "looking at the screen" (Findings, point 6). A blink rule was rejected
 because, at 4 frames per second, real students would be flagged.
