@@ -58,6 +58,12 @@ class Wait:
     # Who rejoining cancels the wait; None means anyone.
     waiting_for: frozenset[str] | None
     task: asyncio.Task[None] | None = field(default=None, repr=False)
+    # Set once cancelled. Ending the class checks it after every database
+    # await, so a rejoin or Keep running during those awaits still counts.
+    cancelled: bool = False
+    # False once the delay is over and the class is being ended. The task is
+    # then left to finish rather than cancelled halfway through a write.
+    sleeping: bool = True
 
 
 class MeetingPresence:
@@ -97,11 +103,13 @@ class MeetingPresence:
         session_id: UUID,
         reason: str,
         delay: float,
-        end: Callable[[str, str], Awaitable[None]],
+        end: Callable[[str, Wait], Awaitable[None]],
         waiting_for: Iterable[str] | None = None,
     ) -> Wait | None:
-        """Run end(meeting_id, reason) after delay, unless the wait is
-        cancelled first. Replaces any wait already running."""
+        """Run end(meeting_id, wait) after delay, unless the wait is
+        cancelled first. Replaces any wait already running. The wait stays
+        registered while end runs, so it can still be cancelled; end checks
+        pending() before acting."""
         self.cancel(meeting_id)
         if delay <= 0:
             return None
@@ -114,18 +122,29 @@ class MeetingPresence:
 
         async def run() -> None:
             await asyncio.sleep(delay)
-            if self.waits.get(meeting_id) is not wait:
+            if not self.pending(meeting_id, wait):
                 return
-            del self.waits[meeting_id]
-            await end(meeting_id, reason)
+            wait.sleeping = False
+            try:
+                await end(meeting_id, wait)
+            finally:
+                if self.waits.get(meeting_id) is wait:
+                    del self.waits[meeting_id]
 
         wait.task = asyncio.create_task(run(), name=f"teams-end-{meeting_id[:24]}")
         self.waits[meeting_id] = wait
         return wait
 
+    def pending(self, meeting_id: str, wait: Wait) -> bool:
+        """Whether this wait is still the meeting's and has not been cancelled."""
+        return self.waits.get(meeting_id) is wait and not wait.cancelled
+
     def cancel(self, meeting_id: str) -> Wait | None:
         wait = self.waits.pop(meeting_id, None)
-        if wait is not None and wait.task is not None and not wait.task.done():
+        if wait is None:
+            return None
+        wait.cancelled = True
+        if wait.sleeping and wait.task is not None and not wait.task.done():
             wait.task.cancel()
         return wait
 
@@ -137,13 +156,22 @@ class MeetingPresence:
 presence = MeetingPresence()
 
 
-async def end_class(meeting_id: str, reason: str) -> None:
-    """End the class linked to a meeting its people have left."""
+async def end_class(meeting_id: str, wait: Wait) -> None:
+    """End the class a wait was started for, once its people have left.
+
+    The class is the one the wait names, not whatever the meeting links to
+    now, and the wait is checked again after every await: a rejoin or Keep
+    running that lands during the lookups stops the end.
+    """
     settings = get_settings()
+    session_id, reason = wait.session_id, wait.reason
+
+    def called_off() -> bool:
+        return not presence.pending(meeting_id, wait)
+
     try:
         async with get_session_factory()() as db:
-            session_id = await meetings.directory.session_for(meeting_id)
-            if session_id is None:
+            if await meetings.directory.session_for(meeting_id) != session_id or called_off():
                 return
             if reason == EVERYONE_LEFT and classroom.anyone_connected(session_id):
                 log.info(
@@ -154,10 +182,10 @@ async def end_class(meeting_id: str, reason: str) -> None:
                 await classroom.tell_ending(session_id, None, None)
                 return
             status = await db.scalar(select(Session.status).where(Session.session_id == session_id))
-            if status != SessionStatus.ACTIVE.value:
+            if status != SessionStatus.ACTIVE.value or called_off():
                 return
             owner = await session_lifecycle.meeting_owner(db, meeting_id, settings)
-            if owner is None:
+            if owner is None or called_off():
                 return
             await session_lifecycle.end_session(db, owner, session_id)
             log.info("session %s ended: %s meeting %s", session_id, reason, meeting_id)

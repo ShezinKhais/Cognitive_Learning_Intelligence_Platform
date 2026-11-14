@@ -142,8 +142,8 @@ async def world(db, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN001, ANN201
     monkeypatch.setattr(flow_module, "presence", MeetingPresence())
     emptied: list[tuple[str, str]] = []
 
-    async def end_class(meeting_id: str, reason: str) -> None:
-        emptied.append((meeting_id, reason))
+    async def end_class(meeting_id: str, wait) -> None:  # noqa: ANN001
+        emptied.append((meeting_id, wait.reason))
 
     monkeypatch.setattr(flow_module, "end_class", end_class)
     _, factory, created = db
@@ -429,7 +429,7 @@ async def test_a_wait_of_zero_never_ends_the_class() -> None:
     presence = MeetingPresence()
     ended: list[str] = []
 
-    async def end(meeting_id: str, reason: str) -> None:
+    async def end(meeting_id: str, wait) -> None:  # noqa: ANN001
         ended.append(meeting_id)
 
     presence.joined("m", {"a"})
