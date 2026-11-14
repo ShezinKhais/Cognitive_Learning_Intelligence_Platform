@@ -203,8 +203,9 @@ removed, and one 3-minute `no_face` clip cut to 10 seconds. Full tables:
   with glasses a face is found 83% of the time (90% without) and "looking" is
   right 49% of the time; sitting far back, real looking is caught 47% of the
   time; turning away right often gives no face at all with glasses.
-- **Tuned limits differ from the shipped ones** (yaw 15° against 10°;
-  calibrated pitch 30° against 16°). Not changed here: a team decision.
+- **Tuned limits differ from #159's** (yaw 15° against 10°;
+  calibrated pitch 30° against 16°). PR #298 ships the tuned limits (see the
+  decisions below).
 
 **Anti-spoofing (#165), leaving one participant out** (six people with spoof
 clips, tuned settings `everyMs 1000, window 2, spoofBelow 0.5`):
@@ -235,7 +236,7 @@ calibrate clips as a stand-in for the moments the classroom learns from while a 
 The same overall, and the worst-off participant does better (P7: 73.8% to
 82.2%). `screen_head_turned` reads 57.6% on screen, `away_eyes_only` 21.3%.
 
-**Decided by AI 1 (Luna), November 2026, and switched on in PR #233:**
+**Decided by AI 1 (Luna), November 2026, and switched on in PR #298:**
 - `LIVENESS` on, with the tuned settings `everyMs 1000, window 2, spoofBelow 0.5` (#165).
 - `GAZE_MODEL` on, fitted without calibration (`kYaw 120, kPitch 0`), and
   `ADAPTATION` on with the suggested settings (#166).
@@ -249,10 +250,10 @@ to Cyber 2's device checklist (#160).
 
 ## Next: adaptive limits and combined gaze (#166)
 
-**Status: measured on ten participants** (see the second round above). Nothing
-below changes what the classroom does today: `GAZE_MODEL` and `ADAPTATION` in `signals.ts` are both
-`null`, so the browser judges exactly as in #159 until the numbers say
-otherwise.
+**Status: measured on ten participants and switched on in PR #298** (see the
+second round above). `GAZE_MODEL` and `ADAPTATION` in `signals.ts` now hold the
+settings fitted there; setting either back to `null` returns the browser to
+#159's rule. The plan below is kept as the record of how it was built.
 
 | Part | File | What it does |
 |---|---|---|
@@ -295,10 +296,11 @@ improves and the existing labels do not get worse.
 
 ## Next: anti-spoofing (#165)
 
-**Status: measured on six participants' spoof clips** (see the second round
-above). Nothing changes in the classroom today: `LIVENESS` in
-`frontend/src/features/attention/liveness.ts` is `null`, and while it is the
-model is not even downloaded there.
+**Status: measured on six participants' spoof clips and switched on in PR #298**
+(see the second round above). `LIVENESS` in
+`frontend/src/features/attention/liveness.ts` holds the tuned settings; setting
+it back to `null` turns the check off, and the model is then not even
+downloaded in the classroom.
 
 **The problem.** A photo or video of a face on a phone is detected as a face,
 and as "looking at the screen" (Findings, point 6). A blink rule was rejected

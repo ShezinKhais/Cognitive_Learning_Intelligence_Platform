@@ -86,13 +86,12 @@ export const DEFAULT_THRESHOLDS: Thresholds = {
 }
 
 /**
- * The classroom no longer offers calibration (#166: it no longer helped), so
- * every student is judged with DEFAULT_THRESHOLDS: the gaze limits tuned
- * without calibration. These remain for a calibration made elsewhere, such as
- * the evaluation. For a student who has calibrated. With GAZE_MODEL on, the yaw and pitch
- * limits apply to the combined head and eye direction measured from the
- * student's own centre: the gaze limits tuned on the ten-participant
- * recordings (#253, #166), which DEFAULT_THRESHOLDS cannot use without a centre.
+ * Limits for a face with a calibrated centre. The classroom no longer offers
+ * calibration (#166: it no longer helped), so every student there is judged
+ * with DEFAULT_THRESHOLDS, the gaze limits tuned without calibration. These
+ * remain for a calibration made elsewhere, such as the evaluation recorder.
+ * With GAZE_MODEL on, the yaw and pitch limits apply to the combined head and
+ * eye direction measured from that centre (#253, #166).
  */
 export const CALIBRATED_THRESHOLDS: Thresholds = {
   ...DEFAULT_THRESHOLDS,
