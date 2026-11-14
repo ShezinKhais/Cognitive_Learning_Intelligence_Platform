@@ -13,7 +13,7 @@ from uuid import UUID
 from rapidfuzz import fuzz
 
 from app.schemas.content import Difficulty, QuestionType
-from app.services.extraction import ContentChunk
+from app.services.extraction import NUMBER, ContentChunk, looks_like_data_table
 from app.services.material_seams import DraftQuestion
 from app.services.retrieval import RetrievedChunk
 from app.services.text_variants import SET_ASIDE, normalise_for_screening, screening_variants
@@ -152,6 +152,14 @@ def ungrounded_links(text: str, material_text: str) -> list[str]:
     ]
 
 
+# An answer that is only a number, perhaps with a short unit: "0.2425 kg".
+_NUMERIC_ANSWER = re.compile(rf"{NUMBER}\s*(?:[^\W\d_]{{1,6}}(?:/[^\W\d_]{{1,4}})?)?")
+
+
+def is_numeric_answer(answer: str) -> bool:
+    return bool(_NUMERIC_ANSWER.fullmatch(answer.strip()))
+
+
 def rejection_reasons(draft: DraftQuestion, chunks: list[RetrievedChunk]) -> list[str]:
     """Every reason this draft is unusable. Empty list means it passed."""
     if draft.type == QuestionType.FREE_TEXT:
@@ -198,6 +206,18 @@ def rejection_reasons(draft: DraftQuestion, chunks: list[RetrievedChunk]) -> lis
                     f"correct answer has little overlap with the cited excerpt "
                     f"(score {support:.0f})"
                 )
+
+    # A value looked up in a table of numbers passes every check above: it
+    # is on the page, and it overlaps the excerpt. Nothing here can tell
+    # whether it is the value on the row the question asks about; in the
+    # #235 practice round both such questions that passed had swapped the
+    # table's columns (#270). They test only a lookup, so they are dropped.
+    if draft.correct_option is not None and 0 <= draft.correct_option < len(options):
+        cited = " ".join(c.chunk_text for c in chunks if c.source_page == draft.source_slide)
+        if is_numeric_answer(options[draft.correct_option]) and looks_like_data_table(cited):
+            reasons.append(
+                "answer is a value looked up in a table of numbers, which the checks cannot confirm"
+            )
 
     return reasons
 
@@ -459,10 +479,26 @@ def build_verification_prompt(draft: DraftQuestion, slide: str) -> str:
     return VERIFY_PROMPT.format(slide=fenced, question=draft.prompt, options=options)
 
 
-def parse_verification(raw: str, option_count: int) -> set[int]:
+# A reply item that is a letter on its own: "B", "b.", "(B)", "B)".
+_BARE_LETTER = re.compile(r"\(?([A-Da-d])\)?[.):]?")
+# A letter labelled as one, then the option's text: "B. Delete the node".
+_LABELLED_LETTER = re.compile(r"\(?([A-Da-d])[.):]\s+\S.*")
+
+
+def _same_text(a: str, b: str) -> bool:
+    return " ".join(a.split()).casefold() == " ".join(b.split()).casefold()
+
+
+def parse_verification(raw: str, options: Sequence[str]) -> set[int]:
     """The options the model says the slide supports, as 0-based indexes.
 
-    Raises ValueError when the reply cannot be read."""
+    The model is asked for letters but sometimes names an option by its text
+    ("EuRoulette", "-28.0%"). An item is read as an option when it is that
+    option's text, as a letter when it is a letter on its own or a labelled
+    letter ("B. ..."), and never by its first character alone, which read
+    "Base layers" as option B (#268).
+
+    Raises ValueError when the reply, or any item in it, cannot be read."""
     text = raw.strip()
     start, end = text.find("{"), text.rfind("}")
     try:
@@ -471,13 +507,18 @@ def parse_verification(raw: str, option_count: int) -> set[int]:
         raise ValueError(f"verification reply is not JSON: {exc}") from exc
     if not isinstance(payload, dict) or not isinstance(payload.get("correct"), list):
         raise ValueError('verification reply has no "correct" list')
-    letters = OPTION_LETTERS[:option_count]
+    letters = OPTION_LETTERS[: len(options)]
     found = set()
     for item in payload["correct"]:
-        letter = str(item).strip().strip(".").upper()[:1]
-        if letter not in letters:
+        named = str(item).strip()
+        by_text = [i for i, option in enumerate(options) if _same_text(named, option)]
+        letter = _BARE_LETTER.fullmatch(named) or _LABELLED_LETTER.fullmatch(named)
+        if by_text:
+            found.update(by_text)
+        elif letter and letter.group(1).upper() in letters:
+            found.add(letters.index(letter.group(1).upper()))
+        else:
             raise ValueError(f"verification named an option that does not exist: {item!r}")
-        found.add(letters.index(letter))
     return found
 
 
@@ -525,7 +566,7 @@ async def ask_verifier(
         return "", None
     raw = response.choices[0].message.content or ""
     try:
-        return raw, parse_verification(raw, len(draft.options or ()))
+        return raw, parse_verification(raw, draft.options or ())
     except ValueError as exc:
         logger.warning("verification could not be read: %s", exc)
         return raw, None
@@ -599,6 +640,41 @@ def build_prompt(
     return template.format(excerpts=excerpts, count=count)
 
 
+# A JSON escape that never starts a LaTeX command, which is kept, or any other
+# backslash, which is doubled. Read left to right, so "\\(" is an escaped
+# backslash and then "(", not a backslash before a stray "\(". \b \f \n \r
+# and \t are JSON escapes too, but in a maths reply they are far more often
+# \beta, \frac, \nabla, \right and \theta, so they are doubled as well: in a
+# repaired reply a "\n" reads as the two characters, not a line break.
+_ESCAPE = re.compile(r'\\(["\\/]|u[0-9a-fA-F]{4})|\\')
+
+
+def escape_stray_backslashes(text: str) -> str:
+    """Text with each backslash that is not a quote, slash, backslash or \\u
+    escape doubled, so it reads as the backslash the model wrote."""
+    return _ESCAPE.sub(lambda m: m.group(0) if m.group(1) else "\\\\", text)
+
+
+def _decoded_latex(value: object) -> bool:
+    """Whether a parsed reply holds LaTeX that JSON decoded as escapes.
+
+    "\\frac" parses as a form feed and "rac", "\\theta" as a tab and "heta",
+    "\\nabla" as a line break and "abla". No draft needs a control character
+    other than a line break, and a line break straight before a lower-case
+    letter is a LaTeX command far more often than a new line of text.
+    """
+    if isinstance(value, str):
+        return bool(_DECODED_LATEX.search(value))
+    if isinstance(value, list):
+        return any(_decoded_latex(v) for v in value)
+    if isinstance(value, dict):
+        return any(_decoded_latex(v) for v in value.values())
+    return False
+
+
+_DECODED_LATEX = re.compile(r"[\x00-\x09\x0b-\x1f\x7f]|\n[a-z]")
+
+
 def parse_drafts(raw: str, question_type: QuestionType = QuestionType.MCQ) -> list[DraftQuestion]:
     """Turn the model's reply into drafts, tolerating markdown fences."""
     text = raw.strip()
@@ -611,8 +687,25 @@ def parse_drafts(raw: str, question_type: QuestionType = QuestionType.MCQ) -> li
     # not the whole material job.
     try:
         payload = json.loads(text)
+        if _decoded_latex(payload):
+            # It parsed, but LaTeX such as "\\frac" was read as JSON escapes.
+            # Read it again with the backslashes as written, if that works.
+            try:
+                payload = json.loads(escape_stray_backslashes(text))
+            except json.JSONDecodeError:
+                pass
     except json.JSONDecodeError as exc:
-        raise ValueError(f"model did not return valid JSON: {exc}") from exc
+        # A maths lecture's reply often holds LaTeX, "\(\hat{a}\)", whose
+        # backslashes are not JSON escapes. One of them used to cost every
+        # draft in the reply (#267), so they are kept as written and the
+        # reply read again; anything else wrong with it still fails.
+        repaired = escape_stray_backslashes(text)
+        try:
+            payload = json.loads(repaired) if repaired != text else None
+        except json.JSONDecodeError:
+            payload = None
+        if payload is None:
+            raise ValueError(f"model did not return valid JSON: {exc}") from exc
 
     if not isinstance(payload, list):
         raise ValueError("expected a JSON array of questions")

@@ -1,0 +1,68 @@
+[
+  {
+    "question_id": "c1",
+    "topic": "Why convolutions instead of fully connected layers",
+    "source_slide": 2,
+    "question_text": "Why is a fully connected layer a poor choice for a one-megapixel image, and what do CNNs do instead?",
+    "reference_answer": "Each image would have a million inputs, so even a thousand hidden units need about a billion parameters, which would need huge amounts of compute and data. CNNs use the structure in images to learn with far fewer parameters.",
+    "key_points": [
+      "a megapixel image gives a million input dimensions",
+      "a fully connected layer would need about 10^9 parameters",
+      "that needs too much compute and data to learn",
+      "CNNs exploit image structure to use fewer parameters"
+    ],
+    "source_excerpt": "A one-megapixel photograph gives each input one million dimensions. Even an aggressive reduction to one thousand hidden dimensions needs a fully connected layer with 10^6 x 10^3 = 10^9 parameters. Learning that many parameters would need many GPUs and an enormous dataset. Images have rich structure, and CNNs exploit that structure to learn with fewer parameters."
+  },
+  {
+    "question_id": "c2",
+    "topic": "Translation invariance and locality",
+    "source_slide": 3,
+    "question_text": "Explain translation invariance and locality in the early layers of a CNN.",
+    "reference_answer": "Translation invariance means the early layers respond the same way to a patch wherever it appears in the image. Locality means early layers look only at small local regions, not distant parts of the image; deeper layers combine these into longer-range features.",
+    "key_points": [
+      "translation invariance: same response to a patch wherever it appears",
+      "locality: early layers look at local regions only",
+      "deeper layers capture longer-range features"
+    ],
+    "source_excerpt": "Translation invariance: the earliest layers respond similarly to the same patch, regardless of where it appears in the image. Locality: the earliest layers focus on local regions, without regard for the contents of distant regions. Deeper layers capture longer-range features, like higher level vision in nature."
+  },
+  {
+    "question_id": "c3",
+    "topic": "Padding",
+    "source_slide": 7,
+    "question_text": "What problem does padding solve in a CNN, and how does it work?",
+    "reference_answer": "Each convolution shrinks the image, so after many layers the output is much smaller and corner pixels are hardly used. Padding adds filler pixels, usually zeros, around the border; with kh - 1 rows and kw - 1 columns of padding the output keeps the input's size.",
+    "key_points": [
+      "convolutions shrink the output and lose border or corner pixels",
+      "padding adds extra pixels, usually zeros, around the boundary",
+      "the right amount of padding keeps the output the same size as the input"
+    ],
+    "source_excerpt": "Successive convolutions shrink the image: ten layers of 5 x 5 convolutions reduce a 240 x 240 image to 200 x 200, slicing off 30% of it. Pixels in the corners are hardly used at all. Padding adds extra pixels of filler, usually zeros, around the boundary. With ph rows and pw columns of padding the output is (nh - kh + ph + 1) x (nw - kw + pw + 1). Setting ph = kh - 1 and pw = kw - 1 keeps the output the same size as the input."
+  },
+  {
+    "question_id": "c4",
+    "topic": "Stride",
+    "source_slide": 9,
+    "question_text": "What is stride, and why would you use a stride larger than 1?",
+    "reference_answer": "Stride is how many rows and columns the window moves each step. A stride above 1 skips positions, which saves computation and downsamples the output, making it smaller.",
+    "key_points": [
+      "stride is how many rows and columns the window moves per step",
+      "a larger stride skips intermediate positions",
+      "used for computational efficiency or to downsample"
+    ],
+    "source_excerpt": "Stride is the number of rows and columns the window moves per slide. So far the stride has been 1 for both height and width. A larger stride skips intermediate locations, for computational efficiency or to downsample."
+  },
+  {
+    "question_id": "c5",
+    "topic": "Pooling",
+    "source_slide": 10,
+    "question_text": "What does a pooling layer do, and how is it different from a convolutional layer?",
+    "reference_answer": "Pooling slides a window over the input and takes the maximum or the average of each window. It makes the network less sensitive to exact location and downsamples the representation. Unlike a convolutional layer it has no parameters to learn.",
+    "key_points": [
+      "slides a window and takes the maximum or average",
+      "reduces sensitivity to location and downsamples",
+      "has no parameters, unlike a convolutional layer"
+    ],
+    "source_excerpt": "Pooling mitigates the sensitivity of convolutional layers to location and spatially downsamples representations. A pooling window slides over the input like a kernel, but the pooling layer contains no parameters. Maximum pooling takes the largest value in the window; average pooling takes the mean."
+  }
+]

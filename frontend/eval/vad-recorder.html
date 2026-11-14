@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Microphone indicator evaluation</title>
+</head>
+<body>
+  <main>
+    <h1>Microphone indicator evaluation</h1>
+    <p>Use the assigned participant code. This page processes microphone input on this device
+      and exports only counts of speech, quiet and unavailable readings.</p>
+    <p>Record ten-second trials. Speak normally for a speech trial. For a quiet trial,
+      stay silent even if another speaker or background noise is present.</p>
+    <p><label>Participant code <input id="participant" maxlength="20" autocomplete="off"></label></p>
+    <p><label>Device class
+      <select id="device">
+        <option value="standard">Standard device</option>
+        <option value="lower-spec">Lower-spec device</option>
+      </select>
+    </label></p>
+    <p><label>Condition
+      <select id="condition">
+        <option value="quiet">Quiet room</option>
+        <option value="noise">Background noise</option>
+        <option value="other-speaker">Another speaker</option>
+      </select>
+    </label></p>
+    <p><label><input type="checkbox" id="consent"> I agree to run this local microphone trial.</label></p>
+    <p>
+      <button id="start" type="button">Start microphone</button>
+      <button id="stop" type="button" disabled>Stop microphone</button>
+    </p>
+    <p>
+      <button id="speaking" type="button" disabled>Start speaking trial</button>
+      <button id="quiet" type="button" disabled>Start quiet trial</button>
+    </p>
+    <p id="status" role="status">Microphone off.</p>
+    <button id="download" type="button" disabled>Download trial counts</button>
+  </main>
+  <script type="module" src="./vad-recorder.ts"></script>
+</body>
+</html>

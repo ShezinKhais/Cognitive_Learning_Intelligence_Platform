@@ -388,6 +388,50 @@ def test_housekeeping_registers_the_database_purges():
         get_purge_runner.cache_clear()
 
 
+async def test_scheduler_automatically_purges_at_ninety_days(db, history, borrowed, monkeypatch):
+    import asyncio
+
+    from app.core.config import Settings
+    from app.main import housekeeping
+    from app.services.purge_runner import PurgeRunner
+    from app.services.retention_tasks import RosterSyncPurge, SessionDataPurge
+    from app.services.scheduler import Scheduler
+
+    settings = Settings(
+        _env_file=None, data_retention_days=120, retention_purge_interval_hours=0.001
+    )
+    runner = PurgeRunner(retention=lambda: timedelta(days=settings.data_retention_days))
+    runner.register(SessionDataPurge(borrowed))
+    runner.register(RosterSyncPurge(borrowed))
+    finished = asyncio.Event()
+    run = runner.run
+
+    async def run_and_signal():
+        report = await run()
+        finished.set()
+        return report
+
+    monkeypatch.setattr(runner, "run", run_and_signal)
+    monkeypatch.setattr("app.main.get_settings", lambda: settings)
+    monkeypatch.setattr("app.main.get_purge_runner", lambda: runner)
+    monkeypatch.setattr("app.services.purge_runner.get_settings", lambda: settings)
+    monkeypatch.setattr("app.services.purge_runner.get_purge_runner", lambda: runner)
+    # Only the purge touches this test transaction.
+    monkeypatch.setattr("app.main.register_database_purges", lambda runner: None)
+    [job] = [job for job in housekeeping().jobs if job.name == "retention-purge"]
+    scheduler = Scheduler([job])
+    scheduler.start()
+    try:
+        await asyncio.wait_for(finished.wait(), timeout=10)
+    finally:
+        await scheduler.stop()
+
+    assert await holdings(db, history.expired) == dict.fromkeys(HOLDINGS, 0)
+    assert await holdings(db, history.kept) == dict.fromkeys(HOLDINGS, 1)
+    assert await roster_syncs(db, history.expired) == 0
+    assert await roster_syncs(db, history.kept) == 1
+
+
 # -- archiving into the history database -------------------------------------------------------
 
 

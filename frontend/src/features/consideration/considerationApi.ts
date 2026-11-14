@@ -1,6 +1,6 @@
-import { apiAuthenticatedRequest } from '../../api'
+import { apiAuthenticatedRequest, authenticatedFetch } from '../../api'
 
-export type ConsiderationNeed = 'camera' | 'gaze' | 'pace' | 'prompts'
+export type ConsiderationNeed = 'camera' | 'microphone' | 'gaze' | 'pace' | 'prompts'
 export type ConsiderationStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn'
 
 export interface ConsiderationRequest {
@@ -13,6 +13,7 @@ export interface ConsiderationRequest {
   created_at: string
   reviewed_at: string | null
   decision_note: string | null
+  has_evidence?: boolean
 }
 
 export interface AdminConsiderationRequest extends ConsiderationRequest {
@@ -31,6 +32,7 @@ export interface Page<T> {
 /** What each need is, and what C.L.I.P does about it. */
 export const NEEDS: { key: ConsiderationNeed; label: string; effect: string }[] = [
   { key: 'camera', label: 'I cannot use a camera in class', effect: 'Attention will not read your camera at all.' },
+  { key: 'microphone', label: 'I cannot use a microphone in class', effect: 'Tell the administrator you need to keep your microphone off.' },
   { key: 'gaze', label: 'Eye-tracking does not work for me', effect: 'Where you look is never counted.' },
   { key: 'pace', label: 'I need more time to answer', effect: 'How fast you answer is never counted.' },
   { key: 'prompts', label: 'Check-in prompts disrupt me', effect: 'You will not get private check-in prompts.' },
@@ -53,8 +55,35 @@ export function getMyRequest(): Promise<{ current: ConsiderationRequest | null }
   return apiAuthenticatedRequest(MINE)
 }
 
-export function sendRequest(body: { needs: ConsiderationNeed[]; until: string | null; note: string | null }): Promise<ConsiderationRequest> {
-  return apiAuthenticatedRequest(MINE, json(body))
+export const MAX_EVIDENCE_BYTES = 5 * 1024 * 1024
+
+export function sendRequest(
+  body: { needs: ConsiderationNeed[]; until: string | null; note: string | null },
+  evidence: File | null,
+): Promise<ConsiderationRequest> {
+  if (!evidence) return apiAuthenticatedRequest(MINE, json(body))
+  const form = new FormData()
+  form.set('payload', JSON.stringify(body))
+  form.set('evidence', evidence)
+  return apiAuthenticatedRequest(`${MINE}/with-evidence`, { method: 'POST', body: form })
+}
+
+export async function downloadEvidence(id: string): Promise<void> {
+  const response = await authenticatedFetch(`${ADMIN}/${encodeURIComponent(id)}/evidence`, { cache: 'no-store' })
+  if (!response.ok) throw new Error('Supporting evidence could not be downloaded.')
+  const filename = response.headers.get('Content-Disposition')
+    ?.match(/filename="(consideration-evidence\.(?:pdf|png|jpg))"/)?.[1] ?? 'consideration-evidence'
+  const url = URL.createObjectURL(await response.blob())
+  const link = document.createElement('a')
+  try {
+    link.href = url
+    link.download = filename
+    document.body.append(link)
+    link.click()
+  } finally {
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
 }
 
 export function withdrawRequest(): Promise<ConsiderationRequest> {

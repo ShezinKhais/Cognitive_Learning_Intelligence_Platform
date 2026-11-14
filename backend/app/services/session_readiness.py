@@ -96,4 +96,14 @@ async def evaluate_readiness(db: AsyncSession, live: Session) -> SessionReadines
     repo = SessionRepository(db)
     materials = await repo.materials_for(live)
     deliverable = await repo.count_deliverable(live)
-    return assess(live.session_id, materials, deliverable)
+    report = assess(live.session_id, materials, deliverable)
+    if getattr(live, "question_selection_enabled", False):
+        for warning in report.warnings:
+            if warning.code == ReadinessIssueCode.NO_MATERIAL:
+                warning.message = "No material is included in this lesson selection."
+            elif warning.code == ReadinessIssueCode.NO_APPROVED_QUESTIONS:
+                warning.message = (
+                    "No selected checkpoint is ready to send. This lesson does not "
+                    "fall back to other course questions. Choose before starting."
+                )
+    return report

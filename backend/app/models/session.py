@@ -91,3 +91,11 @@ class Session(Base):
     ai_engagement_estimates: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=true()
     )
+
+    # Opt-in lesson plan. False preserves the existing course-bank workflow.
+    question_selection_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )

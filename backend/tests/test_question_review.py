@@ -882,3 +882,120 @@ def test_a_bulk_request_is_bounded_and_names_each_question_once():
         QuestionBulkReviewRequest(
             question_ids=[uuid4() for _ in range(MAX_BULK_REVIEW_IDS + 1)], status="approved"
         )
+
+
+# -- the question bank: reuse, writing one's own, and taking one back --------
+
+
+async def _cleanup_material(session_factory, material_id: UUID, question_id: UUID):
+    """Remove the questions added to the material, then the seed itself."""
+    async with session_factory() as cleanup:
+        await cleanup.execute(
+            text("delete from question where source_material_id = :mid and question_id != :qid"),
+            {"mid": material_id, "qid": question_id},
+        )
+        await cleanup.commit()
+    await _cleanup(session_factory, question_id)
+
+
+async def test_a_delivered_question_is_reused_as_a_staged_copy(db_client, app):
+    test_client, session_factory = db_client
+    lecturer_id = uuid4()
+    material_id, question_id = await _seed_question(
+        session_factory, uploaded_by=lecturer_id, status="delivered"
+    )
+    try:
+        _as(app, lecturer_id, Role.LECTURER, "lecturer@uni.test")
+        url = f"/api/v1/materials/{material_id}/questions/{question_id}:reuse"
+
+        copy = test_client.post(url)
+
+        assert copy.status_code == 201, copy.text
+        body = copy.json()
+        assert body["id"] != str(question_id)
+        assert (body["status"], body["prompt"], body["correct_option"]) == (
+            "staged",
+            "What is the capital of France?",
+            0,
+        )
+        # The copy can still be sent, so it is not reused again.
+        again = test_client.post(f"/api/v1/materials/{material_id}/questions/{body['id']}:reuse")
+        assert again.status_code == 409
+
+        _as(app, uuid4(), Role.LECTURER, "other@uni.test")
+        assert test_client.post(url).status_code in (403, 404)
+    finally:
+        await _cleanup_material(session_factory, material_id, question_id)
+        app.dependency_overrides.pop(get_principal, None)
+
+
+async def test_a_lecturer_writes_their_own_question(db_client, app):
+    test_client, session_factory = db_client
+    lecturer_id = uuid4()
+    material_id, question_id = await _seed_question(session_factory, uploaded_by=lecturer_id)
+    try:
+        _as(app, lecturer_id, Role.LECTURER, "lecturer@uni.test")
+        url = f"/api/v1/materials/{material_id}/questions"
+
+        mcq = test_client.post(
+            url, json={"prompt": " Which is a prime? ", "options": ["4", "7"], "correct_option": 1}
+        )
+        free = test_client.post(
+            url,
+            json={
+                "type": "free_text",
+                "prompt": "Explain recursion.",
+                "reference_answer": "A function that calls itself on a smaller input.",
+                "key_points": ["calls itself", "base case"],
+            },
+        )
+        unmarkable = test_client.post(url, json={"type": "free_text", "prompt": "Explain loops."})
+        broken = test_client.post(
+            url, json={"prompt": "Pick one", "options": ["a"], "correct_option": 0}
+        )
+        no_key = test_client.post(url, json={"prompt": "Pick one", "options": ["a", "b"]})
+
+        assert mcq.status_code == 201, mcq.text
+        assert (mcq.json()["status"], mcq.json()["prompt"]) == ("staged", "Which is a prime?")
+        assert free.status_code == 201
+        assert free.json()["options"] is None
+        assert unmarkable.status_code == 422
+        assert broken.status_code == 422
+        assert no_key.status_code == 422
+
+        _as(app, uuid4(), Role.LECTURER, "other@uni.test")
+        assert test_client.post(url, json={"type": "free_text", "prompt": "x"}).status_code in (
+            403,
+            404,
+        )
+    finally:
+        await _cleanup_material(session_factory, material_id, question_id)
+        app.dependency_overrides.pop(get_principal, None)
+
+
+async def test_a_staged_question_goes_back_to_review_until_a_class_claims_it(db_client, app):
+    test_client, session_factory = db_client
+    lecturer_id = uuid4()
+    material_id, question_id = await _seed_question(
+        session_factory, uploaded_by=lecturer_id, status="staged"
+    )
+    claimed_material, claimed_id = await _seed_question(
+        session_factory, uploaded_by=uuid4(), status="staged", session_instructor_id=uuid4()
+    )
+    try:
+        _as(app, lecturer_id, Role.LECTURER, "lecturer@uni.test")
+        back = test_client.patch(
+            f"/api/v1/materials/{material_id}/questions/{question_id}", json={"status": "draft"}
+        )
+        assert back.status_code == 200, back.text
+        assert back.json()["status"] == "draft"
+
+        _as(app, uuid4(), Role.ADMIN, "admin@uni.test")
+        held = test_client.patch(
+            f"/api/v1/materials/{claimed_material}/questions/{claimed_id}", json={"status": "draft"}
+        )
+        assert held.status_code == 409
+    finally:
+        await _cleanup(session_factory, question_id)
+        await _cleanup(session_factory, claimed_id)
+        app.dependency_overrides.pop(get_principal, None)

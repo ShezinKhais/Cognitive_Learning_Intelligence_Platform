@@ -82,10 +82,23 @@ MAX_EARLIER_TURNS = 3
 MAX_CHUNK_CHARS = 1500
 MAX_FOLLOW_UP_CHARS = 120
 MAX_FOLLOW_UPS = 3
-# Cosine distance beyond which an excerpt is not about the question. A
-# conservative starting point, not a measured one: AI 1 owns calibrating it
-# against the labelled set, and tutor_max_distance on guarded_chat overrides it.
-RETRIEVAL_MAX_DISTANCE = 0.65
+# Cosine distance beyond which an excerpt is not about the question. When
+# every excerpt is further than this, the tutor says the material does not
+# cover the question instead of answering from text about something else.
+#
+# Measured, not guessed (#274, from #252's course retrieval test with
+# nomic-embed-text on 10 lectures in 5 courses). The earlier 0.65 never
+# refused anything: every off-topic or other-course question, even "Recipe
+# for chocolate cake", had some excerpt nearer than 0.65 (0 of 22 refused).
+# 0.43 was chosen on the dev questions and, on held-out ones, refused 6 of 6
+# that nothing answers and wrongly refused 2 of 35 that a page does answer.
+# It refuses Arabic questions, which this English-only embedding model could
+# not match to the right page anyway.
+#
+# Distances depend on the embedding model: change EMBEDDING_MODEL and this
+# must be measured again (scripts/evaluate_course_retrieval.py).
+RETRIEVAL_MAX_DISTANCE = 0.43
+RETRIEVAL_MAX_DISTANCE_MODEL = "nomic-embed-text"
 # How much of a live question's wording, found in what a student wrote, means
 # they are asking about that question.
 OPEN_QUESTION_OVERLAP = 60.0

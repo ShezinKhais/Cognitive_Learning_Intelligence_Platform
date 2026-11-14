@@ -25,11 +25,14 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from app.core.config import MAX_DATA_RETENTION_DAYS
 from scripts.db_evidence import prepare, scratch_url
 from scripts.db_purge_simulation import seed
 
 BIG_SCAN = 10_000  # a sequential scan over more rows than this is worth a look
-EXPIRED = "coalesce(ended_at, end_time, start_time) < now() - interval '120 days'"
+EXPIRED = (
+    f"coalesce(ended_at, end_time, start_time) < now() - interval '{MAX_DATA_RETENTION_DAYS} days'"
+)
 
 
 def walk(node: dict[str, Any], found: list[dict[str, Any]]) -> None:

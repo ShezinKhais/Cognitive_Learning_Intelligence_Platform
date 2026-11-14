@@ -3,7 +3,17 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Index, String, func, text
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    LargeBinary,
+    String,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -50,3 +60,6 @@ class ConsiderationRequest(Base):
     )
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     decision_note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
+    evidence_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    evidence: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, deferred=True)

@@ -45,6 +45,7 @@ def _out(row: ConsiderationRequest) -> ConsiderationOut:
         created_at=row.created_at,
         reviewed_at=row.reviewed_at,
         decision_note=row.decision_note,
+        has_evidence=row.evidence_type is not None,
     )
 
 
@@ -69,7 +70,14 @@ async def my_request(db: AsyncSession, user_id: UUID) -> ConsiderationOut | None
     return _out(row) if row else None
 
 
-async def submit(db: AsyncSession, user_id: UUID, payload: ConsiderationCreate) -> ConsiderationOut:
+async def submit(
+    db: AsyncSession,
+    user_id: UUID,
+    payload: ConsiderationCreate,
+    *,
+    evidence: bytes | None = None,
+    evidence_type: str | None = None,
+) -> ConsiderationOut:
     student = await _student(db, user_id)
     today = _today()
     if payload.until is not None and not today <= payload.until <= today + timedelta(MAX_DAYS):
@@ -83,12 +91,14 @@ async def submit(db: AsyncSession, user_id: UUID, payload: ConsiderationCreate) 
         until=payload.until,
         note=payload.note,
         status="pending",
+        evidence=evidence,
+        evidence_type=evidence_type,
     )
-    db.add(row)
     try:
         # A unique index allows one waiting request per student, so two sent
         # at once cannot both get past the check above.
         async with db.begin_nested():
+            db.add(row)
             await db.flush()
     except IntegrityError:
         raise ConflictError("You already have a request waiting for a decision.", {}) from None
@@ -98,10 +108,18 @@ async def submit(db: AsyncSession, user_id: UUID, payload: ConsiderationCreate) 
 
 async def withdraw(db: AsyncSession, user_id: UUID) -> ConsiderationOut:
     student = await _student(db, user_id)
-    latest = await _latest(db, student.student_id)
+    latest = await db.scalar(
+        select(ConsiderationRequest)
+        .where(
+            ConsiderationRequest.student_id == student.student_id,
+            ConsiderationRequest.status == "pending",
+        )
+        .with_for_update()
+    )
     if latest is None or latest.status != "pending":
         raise ConflictError("There is no request waiting to withdraw.", {})
     latest.status = "withdrawn"
+    latest.evidence = latest.evidence_type = None
     await db.flush()
     return _out(latest)
 
@@ -171,6 +189,7 @@ async def decide(
             {"until": row.until.isoformat()},
         )
     row.status = "approved" if approve else "rejected"
+    row.evidence = row.evidence_type = None
     row.reviewed_by = reviewer_id
     row.reviewed_at = datetime.now(UTC)
     row.decision_note = note.strip() or None if note else None
@@ -181,3 +200,17 @@ async def decide(
         raise NotFoundError("That student was not found.", {"request_id": str(request_id)})
     await db.flush()
     return _out(row), student_user
+
+
+async def capture_policy(db: AsyncSession, user_id: UUID) -> bool:
+    """All applicable approvals count; a later pending/longer different need
+    must not hide an active camera-off approval. Never infer needs from notes."""
+    student = await _student(db, user_id)
+    rows = await db.scalars(
+        select(ConsiderationRequest.needs).where(
+            ConsiderationRequest.student_id == student.student_id,
+            ConsiderationRequest.status == "approved",
+            ConsiderationRequest.until.is_(None) | (ConsiderationRequest.until >= _today()),
+        )
+    )
+    return not any("camera" in needs for needs in rows)
