@@ -162,13 +162,16 @@ class Client:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._reader
 
-    async def answer(self, question_id: str, option: int = 1) -> float | None:
+    async def answer(
+        self, question_id: str, option: int = 1, *, free_text: str | None = None
+    ) -> float | None:
         """Answer a question and wait for the receipt. Returns the seconds
         from sending to an accepting receipt, or None if it was refused."""
         seen = len(self.events)
+        payload = {"free_text": free_text} if free_text is not None else {"selected_option": option}
         sent = await self.send(
             "answer.submit",
-            {"question_id": question_id, "selected_option": option, "client_elapsed_ms": 500},
+            {"question_id": question_id, "client_elapsed_ms": 500, **payload},
         )
 
         def mine(event: Received) -> bool:

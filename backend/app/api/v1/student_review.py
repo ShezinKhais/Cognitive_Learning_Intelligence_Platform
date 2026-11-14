@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Response
 from app.api.deps import CurrentUser, DbSession, Paginated, require_consents, require_roles
 from app.schemas.common import Page
 from app.schemas.identity import ConsentType, Role
-from app.schemas.student_review import ReviewSession, ReviewSources, StudentReview
+from app.schemas.student_review import MissedQuestion, ReviewSession, ReviewSources, StudentReview
 from app.services import student_review
 
 router = APIRouter(
@@ -42,3 +42,21 @@ async def sources(
 ):
     response.headers["Cache-Control"] = "no-store"
     return await student_review.read_sources(db, principal.user_id, session_id, response_id)
+
+
+@router.get("/{session_id}/missed", response_model=Page[MissedQuestion])
+async def missed(
+    session_id: UUID, principal: CurrentUser, db: DbSession, page: Paginated, response: Response
+):
+    response.headers["Cache-Control"] = "no-store"
+    return await student_review.read_missed(
+        db, principal.user_id, session_id, page.limit, page.offset
+    )
+
+
+@router.get("/{session_id}/missed/{missed_id}/sources", response_model=ReviewSources)
+async def missed_sources(
+    session_id: UUID, missed_id: UUID, principal: CurrentUser, db: DbSession, response: Response
+):
+    response.headers["Cache-Control"] = "no-store"
+    return await student_review.read_missed_sources(db, principal.user_id, session_id, missed_id)

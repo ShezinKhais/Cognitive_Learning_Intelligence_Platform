@@ -26,6 +26,7 @@ def audit_action(
     action_type: str,
     *,
     commit: bool = False,
+    require_argument: str | None = None,
 ) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
     """Audit a successful state-changing endpoint.
 
@@ -50,6 +51,9 @@ def audit_action(
             **kwargs: P.kwargs,
         ) -> R:
             bound = endpoint_signature.bind_partial(*args, **kwargs)
+
+            if require_argument is not None and bound.arguments.get(require_argument) is None:
+                return await func(*args, **kwargs)
 
             principal: Any = bound.arguments.get("principal")
             db: Any = bound.arguments.get("db")

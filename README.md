@@ -20,29 +20,17 @@ rather than understanding. C.L.I.P runs continuously in the background of the cl
   explanation for every alert, while there is still time to act.
 
 C.L.I.P is **not** a grading system, a proctoring tool or a replacement for the lecturer.
-The AI suggests and the lecturer decides. No raw video, audio or transcripts are ever
-stored, and every model runs on our own hardware, so no student data is sent to a
-third-party AI service.
+The AI suggests and the lecturer decides. Models run locally. See [the current data flow](#privacy-and-security) for student indicators and lecturer speech.
 
 The platform serves three roles: **students**, who answer checkpoints and see their own
 progress; **lecturers**, who prepare material and run the live class; and
 **administrators**, who import the timetable and rosters and govern access.
 
-## Website
+## Project materials
 
-> Placeholder: the project website has not been published yet.
-
-- Website: `TBD`
-- Figma prototype: [Student Meeting Helper](https://www.figma.com/make/jo2GCIds0CExSKltEoG5tZ/Student-Meeting-Helper)
-
-## Demo Video
-
-> Placeholder: the demonstration video will be recorded once the Teams integration is
-> running in a tenant. Replace `VIDEO_ID` below with the YouTube id.
-
-<!--
-[![Demonstration Video](https://img.youtube.com/vi/VIDEO_ID/maxresdefault.jpg)](https://www.youtube.com/watch?v=VIDEO_ID)
--->
+The [Figma prototype](https://www.figma.com/make/jo2GCIds0CExSKltEoG5tZ/Student-Meeting-Helper)
+shows the student meeting helper. The published website, demo video and final
+submission links are tracked in [issue #257](https://github.com/ShezinKhais/Cognitive_Learning_Intelligence_Platform/issues/257).
 
 ## Architecture
 
@@ -96,7 +84,10 @@ AI pipeline, and PostgreSQL with pgvector holds everything that must outlive a s
 - **AI.** Models run locally through Ollama. Camera and microphone signals are processed
   in the student's browser, and only numeric indicators reach the server.
 
-The full design, from the design document and the system design presentation:
+The diagrams below come from the design-stage presentation. The current setup
+and runtime flow are described in [Deployment](docs/deployment.md),
+[Live lecturer transcription](docs/live-transcription.md) and
+[Session catch-up](docs/session-catchup.md).
 
 ![System architecture](docs/images/architecture-master.png)
 
@@ -179,9 +170,9 @@ joins late is shown the question that is open.
 
 Multiple-choice answers are scored deterministically against the lecturer-approved answer
 key, and the feedback cites the slide the question came from. A right answer is labelled
-**mastered** and a wrong one **struggling**. Free-text answers are accepted and stored
-now, and will be classified into **mastered**, **partial** or **struggling** by the
-language model in Phase 5. Each student receives private feedback on their own answer,
+**mastered** and a wrong one **struggling**. Free-text answers are stored
+and can be classified into **mastered**, **partial** or **struggling** by the
+local language model when free-text marking is enabled. Each student receives private feedback on their own answer,
 and the correct answer is revealed when the window closes.
 
 ### Phase 5 - Engagement scoring and alerts
@@ -196,7 +187,7 @@ and the correct answer is revealed when the window closes.
 
 ### Phase 7 - Retention, deletion requests and the audit log
 
-- **Retention.** A session is purged 120 days (a semester) after it ended. The purge
+- **Retention.** A session becomes eligible for automatic purge 90 days after it ends. The purge
   removes everything the session holds: answers and their labels, engagement, prompts,
   alerts and attention summaries. Lecturer questions and uploaded material stay. Teams
   roster syncs hold participant names, so they are purged on their own received date.
@@ -403,9 +394,9 @@ cp .env.example .env
 alembic upgrade head
 uvicorn app.main:app --reload
 
-# 4. Frontend, on http://localhost:5173
+# 4. Frontend, on http://localhost:5173 (in a second terminal from the repository root)
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
@@ -522,15 +513,16 @@ The [privacy notice](frontend/src/pages/PrivacyPage.tsx) and [terms of use](fron
 are served by the app at `/privacy` and `/terms`, open to anyone, and linked from sign-in,
 the consent screen and the Teams manifest. Their wording awaits team and university approval.
 
-- No raw video, audio, screenshots or transcripts are ever stored.
-- Camera and microphone processing happens on the student's own device. Only numeric
-  indicators leave it, and no event type can carry anything else.
+- Student camera and microphone processing happens on the device. Only derived
+  indicators reach the server.
+- With lecturer consent, short microphone chunks go to the backend for local
+  speech recognition. Recognized discussion text can be stored. Teams transcript
+  imports can create private drafts for lecturer review and publication.
 - Every monitoring feature needs its own consent. Declining one never blocks another, and
   never lowers a student's score.
 - Engagement and comprehension are measured separately, and neither is an assessment.
 - Every role is checked on the server; Teams context is never trusted for authorisation.
-- Session data is deleted after a semester (120 days), in line with UAE Federal Decree-Law No. 45 of
-  2021 on the Protection of Personal Data.
+- The automatic retention purge removes expired session data under the project’s 90-day policy.
 
 ## Project Status
 
@@ -554,18 +546,13 @@ rather than a component, so every phase ends with something that runs end to end
 
 ## Documentation
 
-> Placeholders: links will be added as each document is published.
-
-| Document | Link |
+| Guide or evidence | Repository link |
 |---|---|
-| Proposal | `TBD` |
-| Planning and Feasibility Report | `TBD` |
-| Requirements Analysis (SRS) | `TBD` |
-| Design Document | `TBD` |
-| Test Plan | `TBD` |
-| Security and privacy reviews | [docs/security](docs/security/README.md) |
-| Final Report | `TBD` |
-| Poster | `TBD` |
+| Local setup | [Getting started](#getting-started) |
+| Teams setup and roles | [Demo quickstart](docs/teams-demo-quickstart.md) and [tenant setup](docs/teams-tenant-setup.md) |
+| Release validation | [Teams release acceptance](docs/teams-release-acceptance.md) |
+| Test plan and execution evidence | [Evidence tracker](https://github.com/ShezinKhais/Cognitive_Learning_Intelligence_Platform/issues/175), [student browser test report](docs/phase8-ai2-test-report.md) and [database recovery evidence](docs/database-integrity-and-recovery.md) |
+| Security and privacy reviews | [Review index](docs/security/README.md) |
 
 ### Reference documents
 
@@ -584,7 +571,7 @@ Written alongside the code, in `docs/`:
 | [Breakout rooms in Teams](docs/breakout-rooms-teams.md) | What Teams lets an app do with breakout rooms, and why students confirm their own room |
 | [Governance](docs/governance.md) | The audit log, retention and deletion requests |
 | [Backup and restore](docs/backup-restore.md) | Taking and restoring a database backup |
-| [Load and recovery](docs/load-and-recovery.md) | The load-test harness and how the system behaves under failure: 67 of 67 checks with 40 students, 21 October |
+| [Load and recovery](docs/load-and-recovery.md) | The load-test harness and how the system behaves under failure: historical baseline of 67 checks with 40 students on 21 October 2026 |
 | [Teams frontend security](docs/teams-frontend-security.md) | Deployment security requirements for the Teams tab |
 
 ## Team

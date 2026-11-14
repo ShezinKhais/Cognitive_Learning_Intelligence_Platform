@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from datetime import date
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, Response, UploadFile, status
-from sqlalchemy import event, select
+from fastapi import APIRouter, Depends, Form, Request, Response, UploadFile, status
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -45,7 +47,6 @@ from app.core.security import (
     decode_access_token,
     verify_password,
 )
-from app.models.user import User
 from app.realtime.classroom import classroom
 from app.repositories.consent_repository import ConsentRepository
 from app.repositories.teams_user_mapping_repository import TeamsUserMappingRepository
@@ -61,10 +62,9 @@ from app.schemas.identity import (
     TokenResponse,
     UserOut,
 )
+from app.services.course_imports import finish_import, lock_imports, plan_roster, plan_timetable
 from app.services.teams_sso import EntraIdentity, verify_entra_token
 from app.services.timetable_import import (
-    detect_timetable_conflicts,
-    match_names,
     parse_roster,
     parse_timetable,
 )
@@ -644,90 +644,59 @@ async def record_consent(
     )
 
 
-@admin.post(
-    "/timetable",
-    response_model=TimetableImportResult,
-)
-@audit_action("TIMETABLE_IMPORTED")
+@admin.post("/timetable", response_model=TimetableImportResult)
+@audit_action("TIMETABLE_IMPORTED", commit=True, require_argument="preview_token")
 async def import_timetable(
     file: UploadFile,
     principal: CurrentUser,
-    request: Request,
     settings: AppSettings,
     db: DbSession,
+    week_start: Annotated[date | None, Form()] = None,
+    preview_token: Annotated[str | None, Form(pattern=r"^[0-9a-f]{64}$")] = None,
 ) -> TimetableImportResult:
-    """CSV or XLSX only. Structured data is parsed, never OCR'd."""
-
+    """Preview or confirm one Dubai-local week of dated sessions."""
     raw = await _read_upload_with_limit(file)
-
-    rows, rows_read = parse_timetable(
-        file.filename or "",
-        raw,
-    )
-
-    conflicts = detect_timetable_conflicts(rows)
-
-    # Matched against the lecturers who have accounts. Nothing is stored yet:
-    # turning a weekly slot into dated sessions is still to be decided.
-    known_lecturers = await _names_of(db, Role.LECTURER)
-
-    unmatched_lecturers, _ = match_names(
-        [row.lecturer for row in rows],
-        known_lecturers,
-    )
-
-    return TimetableImportResult(
-        rows_read=rows_read,
-        sessions_created=0,
-        conflicts=conflicts,
-        unmatched_lecturers=unmatched_lecturers,
-        unmatched_students=[],
+    rows, _ = parse_timetable(file.filename or "", raw)
+    if preview_token is not None:
+        await lock_imports(db)
+    plan = await plan_timetable(db, rows, week_start)
+    return await finish_import(
+        db,
+        plan,
+        raw=raw,
+        week_start=week_start,
+        actor=principal.user_id,
+        secret=settings.clip_secret_key,
+        confirmation=preview_token,
+        can_apply=week_start is not None,
     )
 
 
-@admin.post(
-    "/roster",
-    response_model=TimetableImportResult,
-)
-@audit_action("ROSTER_IMPORTED")
+@admin.post("/roster", response_model=TimetableImportResult)
+@audit_action("ROSTER_IMPORTED", commit=True, require_argument="preview_token")
 async def import_roster(
     file: UploadFile,
     principal: CurrentUser,
-    request: Request,
     settings: AppSettings,
     db: DbSession,
+    preview_token: Annotated[str | None, Form(pattern=r"^[0-9a-f]{64}$")] = None,
 ) -> TimetableImportResult:
-    """CSV or XLSX only, same reasoning as /timetable: no OCR path."""
-
+    """Preview or confirm additional enrolments by student account email."""
     raw = await _read_upload_with_limit(file)
-
-    rows, rows_read = parse_roster(
-        file.filename or "",
-        raw,
+    rows, _ = parse_roster(file.filename or "", raw)
+    if preview_token is not None:
+        await lock_imports(db)
+    plan = await plan_roster(db, rows)
+    return await finish_import(
+        db,
+        plan,
+        raw=raw,
+        week_start=None,
+        actor=principal.user_id,
+        secret=settings.clip_secret_key,
+        confirmation=preview_token,
+        can_apply=True,
     )
-
-    # Matched against the students who have accounts. Nothing is stored yet:
-    # a student holds one enrolment (student.user_id is unique), so enrolling
-    # from a roster would move students between courses.
-    known_students = await _names_of(db, Role.STUDENT)
-
-    unmatched_students, _ = match_names(
-        [row.student_name for row in rows],
-        known_students,
-    )
-
-    return TimetableImportResult(
-        rows_read=rows_read,
-        sessions_created=0,
-        conflicts=[],
-        unmatched_lecturers=[],
-        unmatched_students=unmatched_students,
-    )
-
-
-async def _names_of(db: AsyncSession, role: Role) -> list[str]:
-    """The names of every account with this role, for matching an import."""
-    return list(await db.scalars(select(User.name).where(User.role == role.value)))
 
 
 router.include_router(auth)

@@ -516,13 +516,19 @@ async def test_a_student_not_enrolled_for_the_session_is_told_it_is_not_there(
     assert tutor.model.embedded == []
 
 
-async def test_a_session_that_is_over_has_no_tutor(db, app, tutor) -> None:
+async def test_ended_session_retains_material_tutor_for_current_members(db, app, tutor) -> None:
     client, _, _ = db
     live = await _running_class(db, app)
     sign_in_as(app, LECTURER_ID, Role.LECTURER)
     assert client.post(f"/api/v1/sessions/{live.id}/end").status_code == 200
     sign_in_as(app, STUDENT_ID, Role.STUDENT)
 
+    result = _ask(client, live.id)
+    assert result.status_code == 200
+    assert result.headers["cache-control"] == "no-store"
+    assert '"type":"completed"' in result.text.replace(" ", "")
+    # Ending a session does not bypass current course membership.
+    await enrol(db[1], await add_course(db[1], db[2]))
     assert _ask(client, live.id).status_code == 404
 
 
