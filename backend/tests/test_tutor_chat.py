@@ -267,6 +267,7 @@ async def test_a_student_is_answered_from_the_sessions_material(db, app, tutor) 
             "material_title": "week1.pdf",
             "source_page": 3,
             "source_slide": None,
+            "source_section": None,
             "excerpt": EXCERPT,
         }
     ]

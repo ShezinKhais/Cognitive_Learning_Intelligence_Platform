@@ -17,6 +17,8 @@ export interface ChatCitation {
   material_title: string
   source_page: number | null
   source_slide: number | null
+  /** A Word or text file's section. Older servers leave it out. */
+  source_section?: number | null
   excerpt: string | null
 }
 

@@ -225,6 +225,11 @@ class QuestionDeliveredPayload(BaseModel):
     closes_at: datetime
     window_seconds: int
     source_slide: int | None = None
+    source_label: Literal["Page", "Slide", "Section"] | None = Field(
+        default=None,
+        description="What source_slide numbers. Word and text files are numbered by section. "
+        "Null when not known.",
+    )
 
 
 class QuestionClosedPayload(BaseModel):
@@ -256,6 +261,11 @@ class FeedbackResultPayload(BaseModel):
     correct: bool | None = Field(default=None, description="Null while free text is classifying.")
     explanation: str | None = None
     source_slide: int | None = None
+    source_label: Literal["Page", "Slide", "Section"] | None = Field(
+        default=None,
+        description="What source_slide numbers. Word and text files are numbered by section. "
+        "Null when not known.",
+    )
 
 
 class AttentionPromptPayload(BaseModel):

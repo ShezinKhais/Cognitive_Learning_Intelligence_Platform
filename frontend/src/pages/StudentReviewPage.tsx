@@ -270,7 +270,7 @@ function Sources({ sessionId, responseId }: { sessionId: string; responseId: str
           <MetaLine
             items={[
               <span key="title" className="font-semibold text-foreground">{source.material_title}</span>,
-              source.source_page !== null ? `Page or slide ${source.source_page}` : null,
+              source.source_page !== null ? `${source.source_label ?? 'Page or slide'} ${source.source_page}` : null,
               source.match === 'excerpt' ? 'The passage the question came from' : 'Same page, passage not confirmed',
             ]}
           />
