@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, func, true
+from sqlalchemy import Boolean, DateTime, Integer, String, func, true
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -37,3 +37,8 @@ class Course(Base):
     ai_engagement_estimates: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=true()
     )
+
+    # The lecturer's pacing for this class: minutes between automatic
+    # checkpoints and seconds to answer. Empty means the deployment's own.
+    checkpoint_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    answer_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)

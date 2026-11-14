@@ -44,7 +44,7 @@ async def test_a_class_starts_with_every_switch_on(db, app) -> None:
     client, _, _, session = await _teaching(db, app)
     body = client.get(f"/api/v1/sessions/{session['id']}/ai-controls").json()
     assert {k: body[k] for k in ALL_OFF} == dict.fromkeys(ALL_OFF, True)
-    assert body["course_defaults"] == dict.fromkeys(ALL_OFF, True)
+    assert {k: body["course_defaults"][k] for k in ALL_OFF} == dict.fromkeys(ALL_OFF, True)
 
 
 async def test_a_change_is_for_this_class_unless_saved_for_the_course(db, app) -> None:
@@ -59,7 +59,7 @@ async def test_a_change_is_for_this_class_unless_saved_for_the_course(db, app) -
     assert fresh_controls["auto_checkpoints"] is True
 
     saved = client.put(path, json={**ALL_OFF, "apply_to_course": True}).json()
-    assert saved["course_defaults"] == ALL_OFF
+    assert {k: saved["course_defaults"][k] for k in ALL_OFF} == ALL_OFF
     later = create_session(client, course, "Week 3")
     later_controls = client.get(f"/api/v1/sessions/{later['id']}/ai-controls").json()
     assert {k: later_controls[k] for k in ALL_OFF} == ALL_OFF
@@ -157,3 +157,58 @@ async def test_the_switches_are_forgotten_when_the_class_ends(room) -> None:
     await built.end(row.session_id, SessionStatus.ENDED, 0)
     assert built.ai(row.session_id) == AiControls()
     assert built.ai(uuid4()) == AiControls()
+
+
+async def test_a_class_has_its_own_pacing_and_can_save_it_for_the_course(db, app) -> None:
+    client, _, course, session = await _teaching(db, app)
+    path = f"/api/v1/sessions/{session['id']}/ai-controls"
+    paced = {"checkpoint_minutes": 5, "answer_seconds": 45}
+
+    saved = client.put(path, json={**paced, "apply_to_course": True})
+    assert saved.status_code == 200, saved.text
+    assert (saved.json()["checkpoint_minutes"], saved.json()["answer_seconds"]) == (5, 45)
+    later = create_session(client, course, "Workshop 2")
+    inherited = client.get(f"/api/v1/sessions/{later['id']}/ai-controls").json()
+    assert (inherited["checkpoint_minutes"], inherited["answer_seconds"]) == (5, 45)
+
+    assert client.put(path, json={"checkpoint_minutes": 1}).status_code == 422
+    assert client.put(path, json={"answer_seconds": 5000}).status_code == 422
+    cleared = client.put(path, json={}).json()
+    assert (cleared["checkpoint_minutes"], cleared["answer_seconds"]) == (None, None)
+
+
+def test_the_classroom_follows_the_class_pacing() -> None:
+    from datetime import timedelta
+    from uuid import uuid4
+
+    from app.realtime.classroom import Classroom
+
+    built = Classroom()
+    paced, usual = uuid4(), uuid4()
+    built.remember_ai(paced, AiControls(checkpoint_minutes=5, answer_seconds=45))
+
+    assert built.state(paced, SessionStatus.ACTIVE).ai.checkpoint_minutes is None
+    assert built._window(paced) == timedelta(seconds=45)
+    assert built._window(usual) == timedelta(seconds=30)
+    for _ in range(20):
+        wait = built._next_wait(paced)
+        assert wait is not None
+        assert timedelta(seconds=270) <= wait <= timedelta(seconds=330)
+
+
+async def test_class_pacing_runs_even_when_the_deployment_cycle_is_off(
+    fake_session_repository,  # noqa: ANN001
+) -> None:
+    built, _ = make_room(interval=0.0)
+    row = make_row()
+    live = built.activate(row.session_id)
+    assert (live.cycle, live.countdown.due) == (None, None)
+
+    await built.set_ai(row.session_id, AiControls(checkpoint_minutes=5), SessionStatus.ACTIVE)
+
+    assert live.cycle is not None
+    assert live.countdown.due is not None
+    first = live.countdown.due
+    await built.set_ai(row.session_id, AiControls(checkpoint_minutes=30), SessionStatus.ACTIVE)
+    assert live.countdown.due is not None and live.countdown.due > first
+    await built.shutdown()

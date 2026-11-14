@@ -258,9 +258,15 @@ class Classroom:
         # of them on.
         self._ai: dict[UUID, AiControls] = {}
 
-    def _next_wait(self) -> timedelta | None:
+    def _next_wait(self, session_id: UUID | None = None) -> timedelta | None:
         """A fresh random wait before the next scheduled question, or None
-        when the cycle is off and the lecturer sends every question."""
+        when the cycle is off and the lecturer sends every question. A class
+        with its own pacing waits about that long, give or take a tenth, so
+        checkpoints do not land on the minute."""
+        minutes = self.ai(session_id).checkpoint_minutes if session_id else None
+        if minutes:
+            seconds = minutes * 60
+            return timedelta(seconds=self._random.uniform(seconds * 0.9, seconds * 1.1))
         settings = self._settings()
         low = settings.checkpoint_interval_min_seconds
         high = settings.checkpoint_interval_max_seconds
@@ -304,9 +310,11 @@ class Classroom:
         for problem in problems:
             log.warning("live sessions: %s", problem)
 
-    @property
-    def _window(self) -> timedelta:
-        return timedelta(seconds=self._settings().checkpoint_response_window_seconds)
+    def _window(self, session_id: UUID) -> timedelta:
+        """How long a class has to answer: the lecturer's choice, else the
+        deployment's."""
+        chosen = self.ai(session_id).answer_seconds
+        return timedelta(seconds=chosen or self._settings().checkpoint_response_window_seconds)
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -326,19 +334,27 @@ class Classroom:
         class is paused (the resume does). Turning a switch off never takes
         back a question already sent or a prompt already shown.
         """
+        before = self._ai.get(session_id) or AiControls()
         self._ai[session_id] = controls
         live = self._live.get(session_id)
         if live is not None:
             async with live.lock:
+                repaced = before.checkpoint_minutes != controls.checkpoint_minutes
                 if not controls.auto_checkpoints:
                     live.countdown.start(None)
-                elif live.open is None and live.countdown.due is None:
-                    live.countdown.start(self._next_wait())
+                elif live.open is None and (live.countdown.due is None or repaced):
+                    # New spacing applies to the wait now running, not only
+                    # the one after it. A paused class keeps it until resume.
+                    live.countdown.start(self._next_wait(session_id))
+                if not live.countdown.paused and (live.cycle is None or live.cycle.done()):
+                    self._start_cycle(live)
         await self.announce(session_id, status)
 
     def _next_wait_for(self, live: LiveSession) -> timedelta | None:
         """The next scheduled wait, or None while automatic checkpoints are off."""
-        return self._next_wait() if self.ai(live.session_id).auto_checkpoints else None
+        if not self.ai(live.session_id).auto_checkpoints:
+            return None
+        return self._next_wait(live.session_id)
 
     def get_running(self, session_id: UUID) -> LiveSession | None:
         return self._live.get(session_id)
@@ -356,7 +372,7 @@ class Classroom:
             live = self._live[session_id] = LiveSession(
                 session_id,
                 delivered,
-                self._next_wait() if self.ai(session_id).auto_checkpoints else None,
+                self._next_wait(session_id) if self.ai(session_id).auto_checkpoints else None,
                 Rooms(RoomLimits.from_settings(self._settings())),
                 paused,
             )
@@ -492,8 +508,10 @@ class Classroom:
         await asyncio.gather(*storing, return_exceptions=True)
 
     def _start_cycle(self, live: LiveSession) -> None:
-        # With the interval at 0 the lecturer sends every question.
-        if self._settings().checkpoint_interval_max_seconds > 0:
+        # With the interval at 0 the lecturer sends every question, unless
+        # this class has its own spacing.
+        paced = self.ai(live.session_id).checkpoint_minutes is not None
+        if self._settings().checkpoint_interval_max_seconds > 0 or paced:
             live.cycle = asyncio.create_task(
                 self._run_cycle(live), name=f"question-cycle-{live.session_id}"
             )
@@ -511,7 +529,10 @@ class Classroom:
             active_question_id=live.open.question.question_id if live and live.open else None,
             questions_delivered=live.delivered if live else delivered,
             paused=bool(live and live.countdown.paused),
-            ai=self.ai(session_id),
+            # The spacing stays with the lecturer: a class that knows it could
+            # predict when the next checkpoint lands, which the random wait
+            # exists to prevent.
+            ai=self.ai(session_id).model_copy(update={"checkpoint_minutes": None}),
         )
 
     async def announce(self, session_id: UUID, status: SessionStatus, delivered: int = 0) -> None:
@@ -665,7 +686,7 @@ class Classroom:
                     {"question_id": str(live.open.question.question_id)},
                 )
             now = _now()
-            window = self._window
+            window = self._window(row.session_id)
             closes_at = now + window
             window_seconds = int(window.total_seconds())
             question = await SessionRepository(db).claim_for_delivery(

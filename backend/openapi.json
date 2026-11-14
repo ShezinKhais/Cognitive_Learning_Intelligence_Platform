@@ -220,11 +220,39 @@
       "AiControls": {
         "description": "The lecturer's AI switches for one class. Each is on unless turned off.",
         "properties": {
+          "answer_seconds": {
+            "anyOf": [
+              {
+                "maximum": 300.0,
+                "minimum": 10.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How long students have to answer a checkpoint. Empty: the deployment's usual window.",
+            "title": "Answer Seconds"
+          },
           "auto_checkpoints": {
             "default": true,
             "description": "Checkpoints go out on C.L.I.P's own timer. Off: only the lecturer sends them.",
             "title": "Auto Checkpoints",
             "type": "boolean"
+          },
+          "checkpoint_minutes": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": 3.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Roughly how many minutes between automatic checkpoints. Empty: the deployment's usual spacing.",
+            "title": "Checkpoint Minutes"
           },
           "engagement_estimates": {
             "default": true,
@@ -250,11 +278,39 @@
       },
       "AiControlsOut": {
         "properties": {
+          "answer_seconds": {
+            "anyOf": [
+              {
+                "maximum": 300.0,
+                "minimum": 10.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How long students have to answer a checkpoint. Empty: the deployment's usual window.",
+            "title": "Answer Seconds"
+          },
           "auto_checkpoints": {
             "default": true,
             "description": "Checkpoints go out on C.L.I.P's own timer. Off: only the lecturer sends them.",
             "title": "Auto Checkpoints",
             "type": "boolean"
+          },
+          "checkpoint_minutes": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": 3.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Roughly how many minutes between automatic checkpoints. Empty: the deployment's usual spacing.",
+            "title": "Checkpoint Minutes"
           },
           "course_defaults": {
             "$ref": "#/components/schemas/AiControls",
@@ -287,6 +343,20 @@
       },
       "AiControlsUpdate": {
         "properties": {
+          "answer_seconds": {
+            "anyOf": [
+              {
+                "maximum": 300.0,
+                "minimum": 10.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How long students have to answer a checkpoint. Empty: the deployment's usual window.",
+            "title": "Answer Seconds"
+          },
           "apply_to_course": {
             "default": false,
             "description": "Also make these the course's defaults for every new class. Only a lecturer of the course, or an admin, may.",
@@ -298,6 +368,20 @@
             "description": "Checkpoints go out on C.L.I.P's own timer. Off: only the lecturer sends them.",
             "title": "Auto Checkpoints",
             "type": "boolean"
+          },
+          "checkpoint_minutes": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": 3.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Roughly how many minutes between automatic checkpoints. Empty: the deployment's usual spacing.",
+            "title": "Checkpoint Minutes"
           },
           "engagement_estimates": {
             "default": true,

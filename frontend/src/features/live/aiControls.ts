@@ -32,8 +32,39 @@ export const AI_SWITCHES: readonly AiSwitch[] = [
   },
 ]
 
-export interface AiControlsView extends AiControls {
-  course_defaults: AiControls
+/** The lecturer's pacing for a class. Null is the deployment's usual. */
+export interface ClassPacing {
+  checkpoint_minutes: number | null
+  answer_seconds: number | null
+}
+
+export const PACING_LIMITS = {
+  checkpoint_minutes: { min: 3, max: 90 },
+  answer_seconds: { min: 10, max: 300 },
+} as const
+
+export interface AiControlsView extends AiControls, Partial<ClassPacing> {
+  course_defaults: AiControls & Partial<ClassPacing>
+}
+
+export function pacingOf(view: Partial<ClassPacing>): ClassPacing {
+  return { checkpoint_minutes: view.checkpoint_minutes ?? null, answer_seconds: view.answer_seconds ?? null }
+}
+
+/** A typed number for one pacing field: null when empty, or an error when it
+ * is outside what the server accepts. */
+export function readPacing(
+  raw: string,
+  field: keyof typeof PACING_LIMITS,
+): { value: number | null } | { error: string } {
+  const text = raw.trim()
+  if (!text) return { value: null }
+  const value = Number(text)
+  const { min, max } = PACING_LIMITS[field]
+  if (!Number.isInteger(value) || value < min || value > max) {
+    return { error: `Use a whole number from ${min} to ${max}, or leave it empty.` }
+  }
+  return { value }
 }
 
 export function allOff(): AiControls {
