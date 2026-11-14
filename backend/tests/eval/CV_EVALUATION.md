@@ -229,25 +229,35 @@ apart from two long ones; no printed photos and no weaker laptop; P1 has the
 most clips (68). "Looking at the screen" stays a camera-facing proxy, never
 a measure of attention or understanding.
 
-**Measured without calibration** (same leave-one-participant-out method; adaptation learns from the
+**Also measured without calibration** (same leave-one-participant-out method; adaptation learns from the
 calibrate clips as a stand-in for the moments the classroom learns from while a student types):
 
 | Setting | All | Worst participant |
 |---|---|---|
 | #166 combined gaze + adaptation, with calibration | 81.5% (76.7–86.6) | 73.8% (P7) |
-| **#166 combined gaze + adaptation, without calibration** | **81.4% (76.0–87.7)** | **76.9% (P6)** |
+| #166 combined gaze + adaptation, without calibration | 81.4% (76.0–87.7) | 76.9% (P6) |
 | #166 combined gaze, without calibration | 80.2% (75.2–85.4) | |
 
-The same overall, and the worst-off participant does better (P7: 73.8% to
-82.2%). `screen_head_turned` reads 57.6% on screen, `away_eyes_only` 21.3%.
+The same overall. But this does not show the classroom can do without
+calibration: the "without" rows still let adaptation learn each person's
+centre from their calibrate clips, which is close to what calibration does.
 
 **Decided by AI 1 (Luna), November 2026, and switched on in PR #298:**
 - `LIVENESS` on, with the tuned settings `everyMs 1000, window 2, spoofBelow 0.5` (#165).
-- `GAZE_MODEL` on, fitted without calibration (`kYaw 120, kPitch 0`), and
+- `GAZE_MODEL` on (`kYaw 150, kPitch 0`, fitted with calibration) and
   `ADAPTATION` on with the suggested settings (#166).
-- **Calibration dropped** from the student's camera panel. Every student is
-  judged with `DEFAULT_THRESHOLDS`, the gaze limits tuned without calibration:
-  yaw 15° / pitch 25° / roll 30°, iris 0.3–0.7.
+- The tuned limits: `DEFAULT_THRESHOLDS` yaw 15° / pitch 30° / roll 30°,
+  iris 0.3–0.7; `CALIBRATED_THRESHOLDS` the gaze limits yaw 20° / pitch 25°.
+- **Calibration is kept**, as an optional step in the student's camera panel.
+  It was removed for a while in this PR and put back, because without it a
+  student's own normal is learned late or not at all:
+  - every student starts from a centre of "straight at the camera";
+  - adaptation only learns while a student types a free-text answer, so not
+    before the first one and never in a class with only multiple-choice
+    checkpoints;
+  - it skips frames far outside the current limits, so a student sitting far
+    back or well off-centre, the case calibration was built for, may never be
+    learned.
 - **What a rejected face does** (G34, anti-spoofing without proctoring): a face
   judged not live counts as no face, with no gaze reading (`applyLiveness`), on
   the student's device only. It reaches the server like any moment with no face
@@ -260,13 +270,14 @@ The same overall, and the worst-off participant does better (P7: 73.8% to
   video clips, from six people; printed photos and weaker laptops were not
   tested. It is a deterrent, not a guarantee, and nothing is decided from it:
   a missed spoof counts as a face, a caught one as no face.
-- **No calibration, and cameras off to one side.** Off-centre clips (P1, P6,
-  P8; 24 clips, so wide intervals) read "looking" as well without calibration
-  as with it: 87.2% against 86.9% recall with the tuned pose limits (`cv/RESULTS.md`, by
-  condition). Adaptation then learns each student's own centre from the moments
-  they type an answer. A head tilt is ignored up to 45°. Students whose camera
-  or posture still reads poorly can leave the camera off: it is optional and
-  needs its own consent.
+- **Students who skip calibration.** It is optional, so some will. They are
+  judged from a straight-ahead centre with `DEFAULT_THRESHOLDS` until
+  adaptation has learned from typed answers. Off-centre clips (P1, P6, P8; 24
+  clips, so wide intervals) read "looking" about as well without calibration
+  as with it using the tuned pose limits (87.2% against 86.9% recall,
+  `cv/RESULTS.md`, by condition); sitting far back is the weak case. A head
+  tilt is ignored up to 45°. Students whose camera or posture still reads
+  poorly can leave the camera off: it is optional and needs its own consent.
 - **Weak spots that remain:** glasses ("looking" right 49% of the time),
   sitting far back (47%) and looking down at notes (read as on screen 43% of
   the time), as listed above.
@@ -280,8 +291,8 @@ classroom runs them until that is turned on.
 
 **Still needed before that, and before merging:**
 - Cyber 1 (Hunain) fairness sign-off on `LIVENESS` and `ADAPTATION`, as #165
-  and #166 require, including whether dropping calibration is acceptable for
-  students with different camera positions and physical needs.
+  and #166 require, including how students who skip the optional calibration
+  are judged, across camera positions and physical needs.
 - Cyber 2's device acceptance checklist (#160), with a spoof check, camera
   performance, glasses, lighting and a weaker device.
 

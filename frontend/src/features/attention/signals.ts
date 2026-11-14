@@ -77,7 +77,7 @@ export const DEFAULT_THRESHOLDS: Thresholds = {
   maxYawProxy: 0.22,
   maxRollProxy: 0.3,
   maxYawDegrees: 15,
-  maxPitchDegrees: 25,
+  maxPitchDegrees: 30,
   maxRollDegrees: 30,
   minEyeWidth: 0.005,
   minOpenEyeRatio: 0.12,
@@ -86,12 +86,10 @@ export const DEFAULT_THRESHOLDS: Thresholds = {
 }
 
 /**
- * Limits for a face with a calibrated centre. The classroom no longer offers
- * calibration (#166: it no longer helped), so every student there is judged
- * with DEFAULT_THRESHOLDS, the gaze limits tuned without calibration. These
- * remain for a calibration made elsewhere, such as the evaluation recorder.
- * With GAZE_MODEL on, the yaw and pitch limits apply to the combined head and
- * eye direction measured from that centre (#253, #166).
+ * For a student who has calibrated. With GAZE_MODEL on, the yaw and pitch
+ * limits apply to the combined head and eye direction measured from the
+ * student's own centre: the gaze limits tuned on the ten-participant
+ * recordings (#253, #166), which DEFAULT_THRESHOLDS cannot use without a centre.
  */
 export const CALIBRATED_THRESHOLDS: Thresholds = {
   ...DEFAULT_THRESHOLDS,
@@ -230,14 +228,13 @@ export interface GazeModel {
 }
 
 /**
- * What ships: k fitted on the ten-participant recordings (#253, #166) for a
- * classroom with no calibration step. Leaving one participant out, combined
- * gaze and adaptation without calibration reached 81.4% balanced accuracy
- * (worst participant 76.9%), against 81.5% (worst 73.8%) with calibration and
- * 77.6% for the head check alone (CV_EVALUATION.md, second round). Null would
- * bring back #159's rule (the head check, with the eyes as a veto).
+ * What ships: k fitted on the ten-participant recordings (#253, #166), with
+ * `screen_head_turned` and `away_eyes_only` clips. Leaving one participant out,
+ * combined gaze and adaptation reached 81.5% balanced accuracy against 77.6%
+ * for the head check alone (CV_EVALUATION.md, second round). Null would bring
+ * back #159's rule (the head check, with the eyes as a veto).
  */
-export const GAZE_MODEL: GazeModel | null = { kYaw: 120, kPitch: 0, maxEyeDisagreement: 0.15, maxRollDegrees: 45 }
+export const GAZE_MODEL: GazeModel | null = { kYaw: 150, kPitch: 0, maxEyeDisagreement: 0.15, maxRollDegrees: 45 }
 
 /** One gaze direction, in degrees from the student's centre, or null when there is no reliable reading. */
 export function gazeAngles(

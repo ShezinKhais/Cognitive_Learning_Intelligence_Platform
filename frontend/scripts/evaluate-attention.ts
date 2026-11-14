@@ -166,9 +166,10 @@ if (by === 'participant') {
   say()
 }
 
-// The tuned rows, then what ships: combined gaze and adaptation without
-// calibration, so the fairness review sees each condition for what students get.
-for (const chosen of [rows[2], rows[3], rows[8]]) {
+// The tuned rows, then what ships, so the fairness review sees each condition
+// for what students get: combined gaze and adaptation for a student who
+// calibrates (rows[6]) and for one who skips the optional calibration (rows[8]).
+for (const chosen of [rows[2], rows[3], rows[6], rows[8]]) {
   say(`## What each label was read as (${chosen.name})`)
   say()
   say('| Label | On screen | Away | No reading |')
