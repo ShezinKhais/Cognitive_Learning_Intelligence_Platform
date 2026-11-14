@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState, type FormEvent } from 'react'
-import { Plus } from 'lucide-react'
+import { Copy, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Link, useNavigate } from 'react-router'
 
 import { ApiError } from '../api'
@@ -14,7 +14,15 @@ import { countBy, filterSessions, type SessionFilter } from '../features/format/
 import { sinceVerb } from '../features/format/relativeTime'
 import { createSession } from '../features/live/sessionActions'
 import { formatWhen, groupOf, groupSessions, statusLabel, statusTone } from '../features/sessions/format'
-import { listSessions, type SessionSummary } from '../features/sessions/sessionsApi'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
+import {
+  copySession,
+  deleteSession,
+  listSessions,
+  updateSession,
+  type SessionSummary,
+} from '../features/sessions/sessionsApi'
+import { fromLocalInput, toLocalInput } from '../features/sessions/localTime'
 import { myCourses } from '../features/courses/coursesApi'
 import type { Course } from '../features/governance/accountsApi'
 
@@ -52,6 +60,18 @@ export default function LecturerSessionsPage() {
   const counts = useMemo(() => countBy(sessions, (session) => groupOf(session.status)), [sessions])
   const shown = useMemo(() => filterSessions(sessions, query, filter), [sessions, query, filter])
   const groups = groupSessions(shown)
+
+  const changed = (updated: SessionSummary) =>
+    setLoad((current) =>
+      current.state === 'ready'
+        ? { state: 'ready', sessions: current.sessions.map((item) => (item.id === updated.id ? updated : item)) }
+        : current,
+    )
+  const removed = (id: string) =>
+    setLoad((current) =>
+      current.state === 'ready' ? { state: 'ready', sessions: current.sessions.filter((item) => item.id !== id) } : current,
+    )
+  const actions = { changed, removed }
 
   return (
     <>
@@ -128,15 +148,20 @@ export default function LecturerSessionsPage() {
           </EmptyState>
         )}
 
-        {groups.live.length > 0 && <SessionList heading="Live now" sessions={groups.live} />}
-        {groups.prepared.length > 0 && <SessionList heading="Prepared" sessions={groups.prepared} />}
-        {groups.finished.length > 0 && <SessionList heading="Finished" sessions={groups.finished} />}
+        {groups.live.length > 0 && <SessionList heading="Live now" sessions={groups.live} actions={actions} />}
+        {groups.prepared.length > 0 && <SessionList heading="Prepared" sessions={groups.prepared} actions={actions} />}
+        {groups.finished.length > 0 && <SessionList heading="Finished" sessions={groups.finished} actions={actions} />}
       </PageBody>
     </>
   )
 }
 
-function SessionList({ heading, sessions }: { heading: string; sessions: SessionSummary[] }) {
+interface RowActions {
+  changed: (session: SessionSummary) => void
+  removed: (id: string) => void
+}
+
+function SessionList({ heading, sessions, actions }: { heading: string; sessions: SessionSummary[]; actions: RowActions }) {
   const id = useId()
   return (
     <section className="mb-10" aria-labelledby={id}>
@@ -146,7 +171,7 @@ function SessionList({ heading, sessions }: { heading: string; sessions: Session
       <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
         {sessions.map((session) => (
           <li key={session.id}>
-            <SessionRow session={session} />
+            <SessionRow session={session} actions={actions} />
           </li>
         ))}
       </ul>
@@ -174,8 +199,44 @@ function SessionTime({ session }: { session: SessionSummary }) {
   )
 }
 
-function SessionRow({ session }: { session: SessionSummary }) {
+function SessionRow({ session, actions }: { session: SessionSummary; actions: RowActions }) {
+  const navigate = useNavigate()
+  const [editing, setEditing] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const finished = session.status === 'ended' || session.status === 'cancelled'
+
+  function failed(caught: unknown, fallback: string) {
+    setBusy(false)
+    if (caught instanceof ApiError && caught.status === 401) return signInAgain()
+    setError(caught instanceof ApiError ? caught.message : fallback)
+  }
+
+  function again() {
+    setBusy(true)
+    setError(null)
+    copySession(session.id).then(
+      (copy) => navigate(`/lecturer/sessions/${copy.id}/live`),
+      (caught: unknown) => failed(caught, 'The session could not be copied.'),
+    )
+  }
+
+  function remove() {
+    setBusy(true)
+    setError(null)
+    deleteSession(session.id).then(
+      () => {
+        setDeleting(false)
+        actions.removed(session.id)
+      },
+      (caught: unknown) => {
+        setDeleting(false)
+        failed(caught, 'The session could not be deleted.')
+      },
+    )
+  }
+
   const live = `/lecturer/sessions/${session.id}/live`
   const results = `/lecturer/sessions/${session.id}/results`
   const report = `/lecturer/sessions/${session.id}/report`
@@ -216,8 +277,132 @@ function SessionRow({ session }: { session: SessionSummary }) {
             </Link>
           </>
         )}
+        {!editing && (
+          <button type="button" className={buttonStyles({ intent: 'quiet' })} onClick={() => setEditing(true)}>
+            <Pencil size={14} aria-hidden />
+            Edit
+          </button>
+        )}
+        {finished && (
+          <button type="button" className={buttonStyles({ intent: 'quiet' })} disabled={busy} onClick={again}>
+            <Copy size={14} aria-hidden />
+            Run again
+          </button>
+        )}
+        {session.status === 'cancelled' && (
+          <button type="button" className={buttonStyles({ intent: 'quiet' })} disabled={busy} onClick={() => setDeleting(true)}>
+            <Trash2 size={14} aria-hidden />
+            Delete
+          </button>
+        )}
       </div>
+      {error && (
+        <p role="alert" className="text-sm text-critical sm:col-span-2">
+          {error}
+        </p>
+      )}
+      {editing && (
+        <EditSession
+          session={session}
+          onCancel={() => setEditing(false)}
+          onSaved={(updated) => {
+            setEditing(false)
+            actions.changed(updated)
+          }}
+        />
+      )}
+      <ConfirmDialog
+        open={deleting}
+        title="Delete this cancelled session?"
+        confirmLabel="Delete it"
+        busy={busy}
+        onConfirm={remove}
+        onCancel={() => setDeleting(false)}
+      >
+        It never ran, so no answers or results are lost. This cannot be undone.
+      </ConfirmDialog>
     </div>
+  )
+}
+
+function EditSession({
+  session,
+  onCancel,
+  onSaved,
+}: {
+  session: SessionSummary
+  onCancel: () => void
+  onSaved: (session: SessionSummary) => void
+}) {
+  const id = useId()
+  const [title, setTitle] = useState(session.title)
+  const [startsAt, setStartsAt] = useState(toLocalInput(session.starts_at))
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const movable = session.status === 'prepared'
+
+  function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const name = title.trim()
+    if (!name) return setError('Enter a title for this session.')
+    const changes: { title: string; starts_at?: string | null } = { title: name }
+    const when = fromLocalInput(startsAt)
+    // Only a changed start is sent: the box holds minutes, so sending it back
+    // unchanged would drop the seconds of the stored time.
+    if (movable && when && startsAt !== toLocalInput(session.starts_at)) changes.starts_at = when
+    setSaving(true)
+    setError(null)
+    updateSession(session.id, changes).then(onSaved, (caught: unknown) => {
+      setSaving(false)
+      if (caught instanceof ApiError && caught.status === 401) return signInAgain()
+      setError(caught instanceof ApiError ? caught.message : 'The session could not be saved.')
+    })
+  }
+
+  const field = 'mt-1 w-full rounded-md border border-input bg-input-background px-3 py-2'
+  return (
+    <form
+      onSubmit={save}
+      className="grid gap-3 rounded-md border border-border bg-muted/40 p-3 sm:col-span-2 sm:grid-cols-[1fr_14rem_auto] sm:items-end"
+    >
+      <label htmlFor={`${id}-title`} className="text-sm font-semibold">
+        Title
+        <input
+          id={`${id}-title`}
+          value={title}
+          maxLength={200}
+          onChange={(event) => setTitle(event.target.value)}
+          className={field}
+        />
+      </label>
+      {movable ? (
+        <label htmlFor={`${id}-start`} className="text-sm font-semibold">
+          Starts
+          <input
+            id={`${id}-start`}
+            type="datetime-local"
+            value={startsAt}
+            onChange={(event) => setStartsAt(event.target.value)}
+            className={field}
+          />
+        </label>
+      ) : (
+        <p className="text-sm text-muted-foreground">A class that has run keeps its start time.</p>
+      )}
+      <div className="flex gap-2">
+        <button type="submit" className={buttonStyles()} disabled={saving}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button type="button" className={buttonStyles({ intent: 'quiet' })} onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+      {error && (
+        <p role="alert" className="text-sm text-critical sm:col-span-3">
+          {error}
+        </p>
+      )}
+    </form>
   )
 }
 
@@ -225,6 +410,7 @@ function CreateSession({ onCancel }: { onCancel: () => void }) {
   const navigate = useNavigate()
   const [courseCode, setCourseCode] = useState('')
   const [title, setTitle] = useState('')
+  const [startsAt, setStartsAt] = useState('')
   // Lecturers mostly teach their own courses, so those are offered and the
   // first is filled in. Another course's code can still be typed.
   const [mine, setMine] = useState<Course[]>([])
@@ -250,7 +436,7 @@ function CreateSession({ onCancel }: { onCancel: () => void }) {
     setSaving(true)
     setError(null)
     try {
-      const session = await createSession({ course_code: course, title: name })
+      const session = await createSession({ course_code: course, title: name, starts_at: fromLocalInput(startsAt) })
       navigate(`/lecturer/sessions/${session.id}/live`)
     } catch (caught: unknown) {
       if (caught instanceof ApiError && caught.status === 401) return signInAgain()
@@ -302,6 +488,16 @@ function CreateSession({ onCancel }: { onCancel: () => void }) {
             maxLength={200}
             disabled={saving}
             className={field}
+          />
+        </label>
+        <label className="text-sm font-semibold sm:col-span-2">
+          Starts <span className="font-normal text-muted-foreground">(optional, now if left empty)</span>
+          <input
+            type="datetime-local"
+            value={startsAt}
+            onChange={(event) => setStartsAt(event.target.value)}
+            disabled={saving}
+            className={cn(field, 'sm:max-w-xs')}
           />
         </label>
         {error && (
