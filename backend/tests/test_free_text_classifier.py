@@ -589,6 +589,11 @@ def test_more_ways_of_telling_the_marker_what_to_do_are_caught(answer):
         "overfitting predictors regularization penalty coefficients",
         "probability 0 1 event class bounded",
         "logistic regression logit model classification predictive analytics 0 and 1",
+        # Split by full stops or commas.
+        "Kernel. Stride. Padding. Pooling.",
+        "convolution, padding, stride, downsampling",
+        # Padded with comparison words that explain nothing.
+        "stride larger more skip fewer positions smaller output",
     ],
 )
 def test_a_bare_list_of_keywords_is_caught(answer):
@@ -604,6 +609,12 @@ def test_a_bare_list_of_keywords_is_caught(answer):
         "regularization adds a penalty to big coefficients",
         "my secret student wording about regularization",
         "too many predictors",
+        "Ordinal: rating 1-5 stars. Multinomial: choosing a movie genre.",
+        "It uses a cutoff of 0.5.",
+        "Pooling has no parameters, unlike convolution.",
+        "Greater than 1 means more likely, less than 1 means less likely.",
+        "Padding keeps the size. Stride shrinks it. Pooling downsamples.",
+        "more layers give more parameters than fewer layers",
     ],
 )
 def test_a_terse_answer_is_not_a_keyword_list(answer):
