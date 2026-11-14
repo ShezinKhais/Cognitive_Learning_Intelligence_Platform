@@ -292,6 +292,12 @@ def looks_letter_spaced(text: str) -> bool:
 # and at least two of them, are control characters other than line breaks and
 # tabs. Real text has none; the text of a font with no character map has one
 # in every few, such as \x03 for each space.
+#
+# Known limit (review of #271): such a font can also give letters shifted to
+# other letters (",PDJHV" for "Images"), which has no control characters. On
+# a page that also has an undecodable line, every control-character line is
+# dropped with it; a shifted line with none of its own is kept. That caught
+# 36 of the 38 garbled pages in the sample; the other two are not caught.
 UNDECODED_SHARE = 0.1
 _LAYOUT = frozenset("\n\r\t \u00a0")
 
