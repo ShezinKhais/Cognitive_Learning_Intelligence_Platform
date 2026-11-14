@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
-import { apiAuthenticatedGet } from '../../api'
+import { apiAuthenticatedGet, apiAuthenticatedRequest } from '../../api'
+import { buttonStyles } from '../../components/ui/button'
 import { MetaLine, Panel, Tag } from '../../components/ui/primitives'
 import { sinceVerb } from '../format/relativeTime'
 
@@ -26,6 +27,20 @@ interface RecentErrors {
 export default function RecentErrorsPanel({ refresh }: { refresh: number }) {
   const [recent, setRecent] = useState<RecentErrors | null>(null)
   const [failed, setFailed] = useState(false)
+  // Bumped after a test error is sent, so the list reloads at once.
+  const [tick, setTick] = useState(0)
+  const [testing, setTesting] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle')
+
+  function sendTestError() {
+    setTesting('sending')
+    apiAuthenticatedRequest<void>('/admin/errors/synthetic', { method: 'POST' }).then(
+      () => {
+        setTesting('sent')
+        setTick((value) => value + 1)
+      },
+      () => setTesting('failed'),
+    )
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -50,7 +65,7 @@ export default function RecentErrorsPanel({ refresh }: { refresh: number }) {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [refresh])
+  }, [refresh, tick])
 
   return (
     <Panel
@@ -96,6 +111,23 @@ export default function RecentErrorsPanel({ refresh }: { refresh: number }) {
           ))}
         </ul>
       )}
+      <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-border pt-3">
+        <button
+          type="button"
+          className={buttonStyles({ intent: 'quiet' })}
+          disabled={testing === 'sending'}
+          onClick={sendTestError}
+        >
+          {testing === 'sending' ? 'Sending…' : 'Send a test error'}
+        </button>
+        <span className="text-xs text-muted-foreground" role="status">
+          {testing === 'sent'
+            ? 'A synthetic server error was logged. It should appear above.'
+            : testing === 'failed'
+              ? 'The test error could not be sent.'
+              : 'Checks that server errors reach this list. Recorded in the audit log.'}
+        </span>
+      </div>
     </Panel>
   )
 }

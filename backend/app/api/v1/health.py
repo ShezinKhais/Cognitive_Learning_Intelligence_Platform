@@ -16,6 +16,7 @@ from sqlalchemy import text
 
 from app.api.deps import AppSettings, DbSession
 from app.core.config import get_settings
+from app.core.error_log import error_log
 from app.schemas.common import DependencyStatus, HealthResponse, ReadinessResponse
 from app.services.ai_gateway import get_ai_gateway
 
@@ -126,4 +127,6 @@ async def ready(db: DbSession, response: Response, settings: AppSettings) -> Rea
         ready=ready_now,
         checked_at=datetime.now(UTC),
         dependencies=dependencies,
+        # A yes or no only: which errors, and where, stay on the admin page.
+        server_error_spike=error_log.server_error_spike(),
     )

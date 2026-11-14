@@ -925,6 +925,121 @@
         "title": "Body_upload_material_api_v1_materials_post",
         "type": "object"
       },
+      "BulkRosterIn": {
+        "description": "A pasted or uploaded list of students for a course: one per line, an\nemail or `name,email`, with an optional header row.",
+        "properties": {
+          "confirm": {
+            "default": false,
+            "description": "False previews what each line will do; true applies it.",
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "create_missing": {
+            "default": false,
+            "description": "Admin only: create the student accounts that do not exist yet.",
+            "title": "Create Missing",
+            "type": "boolean"
+          },
+          "text": {
+            "maxLength": 200000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "BulkRosterIn",
+        "type": "object"
+      },
+      "BulkRosterLine": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "line": {
+            "title": "Line",
+            "type": "integer"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/BulkRosterOutcome"
+          }
+        },
+        "required": [
+          "line",
+          "email",
+          "outcome"
+        ],
+        "title": "BulkRosterLine",
+        "type": "object"
+      },
+      "BulkRosterOut": {
+        "properties": {
+          "applied": {
+            "title": "Applied",
+            "type": "boolean"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/BulkRosterLine"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "roster": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CourseRoster"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The course after the change, when it was applied."
+          }
+        },
+        "required": [
+          "applied",
+          "lines",
+          "counts"
+        ],
+        "title": "BulkRosterOut",
+        "type": "object"
+      },
+      "BulkRosterOutcome": {
+        "enum": [
+          "add",
+          "create",
+          "already",
+          "no_account",
+          "not_student",
+          "inactive",
+          "invalid",
+          "duplicate"
+        ],
+        "title": "BulkRosterOutcome",
+        "type": "string"
+      },
       "CapturePolicyOut": {
         "description": "Minimal own-student capture policy, without request notes or diagnoses.",
         "properties": {
@@ -1025,6 +1140,135 @@
           "answer"
         ],
         "title": "ChatTurn",
+        "type": "object"
+      },
+      "ClassEngagement": {
+        "properties": {
+          "course_code": {
+            "title": "Course Code",
+            "type": "string"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "participation": {
+            "$ref": "#/components/schemas/ClassParticipation"
+          },
+          "readings": {
+            "$ref": "#/components/schemas/ClassReadings"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "title",
+          "course_code",
+          "ended_at",
+          "participation",
+          "readings"
+        ],
+        "title": "ClassEngagement",
+        "type": "object"
+      },
+      "ClassParticipation": {
+        "properties": {
+          "answered": {
+            "title": "Answered",
+            "type": "integer"
+          },
+          "checkpoints": {
+            "description": "Checkpoints sent to the class.",
+            "title": "Checkpoints",
+            "type": "integer"
+          },
+          "joined": {
+            "description": "The student connected to the class at least once.",
+            "title": "Joined",
+            "type": "boolean"
+          },
+          "missed": {
+            "description": "Sent while connected, closed without an answer.",
+            "title": "Missed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "joined",
+          "checkpoints",
+          "answered",
+          "missed"
+        ],
+        "title": "ClassParticipation",
+        "type": "object"
+      },
+      "ClassReadings": {
+        "description": "Whether optional device readings exist for this class. Counts of\none-minute windows, not a measure of attention or understanding.",
+        "properties": {
+          "camera": {
+            "enum": [
+              "available",
+              "none_recorded",
+              "not_consented"
+            ],
+            "title": "Camera",
+            "type": "string"
+          },
+          "camera_windows": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera Windows"
+          },
+          "microphone": {
+            "enum": [
+              "available",
+              "none_recorded",
+              "not_consented"
+            ],
+            "title": "Microphone",
+            "type": "string"
+          },
+          "microphone_windows": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Microphone Windows"
+          }
+        },
+        "required": [
+          "camera",
+          "microphone"
+        ],
+        "title": "ClassReadings",
         "type": "object"
       },
       "ClientErrorIn": {
@@ -4136,6 +4380,12 @@
           "ready": {
             "title": "Ready",
             "type": "boolean"
+          },
+          "server_error_spike": {
+            "default": false,
+            "description": "At least ten server errors a minute for the last two minutes on this process. Reported for an outside alert; it does not change readiness.",
+            "title": "Server Error Spike",
+            "type": "boolean"
           }
         },
         "required": [
@@ -5503,6 +5753,42 @@
         "title": "StudentDataExport",
         "type": "object"
       },
+      "StudentEngagementHistory": {
+        "properties": {
+          "classes": {
+            "items": {
+              "$ref": "#/components/schemas/ClassEngagement"
+            },
+            "title": "Classes",
+            "type": "array"
+          },
+          "explanation": {
+            "default": "What was recorded in each finished class. Answers and missed checkpoints come from the class itself. Camera and microphone counts appear only for readings you agreed to, and only from when you agreed. A class with no reading says so; it is not counted as zero, and none of this measures how well you understood.",
+            "title": "Explanation",
+            "type": "string"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "classes",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "StudentEngagementHistory",
+        "type": "object"
+      },
       "StudentReview": {
         "properties": {
           "answers": {
@@ -6648,6 +6934,45 @@
         ]
       }
     },
+    "/api/v1/admin/errors/synthetic": {
+      "post": {
+        "description": "Record server errors on purpose, to check the dashboard and alerts\n(#173). Ten or more a minute for two minutes trips the spike alert. The\nerrors carry no request data and name themselves as synthetic.",
+        "operationId": "synthetic_error_api_v1_admin_errors_synthetic_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "count",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 30,
+              "minimum": 1,
+              "title": "Count",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Synthetic Error",
+        "tags": [
+          "monitoring"
+        ]
+      }
+    },
     "/api/v1/admin/roster": {
       "post": {
         "description": "Preview or confirm additional enrolments by student account email.",
@@ -7269,6 +7594,59 @@
           }
         },
         "summary": "Remove Student",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/v1/courses/{code}/students:bulk": {
+      "post": {
+        "description": "Preview, then apply, a list of students for this course (#293). Each\nline is reported on its own; one bad line never fails the list. Only an\nadmin may create the accounts that do not exist yet.",
+        "operationId": "add_students_in_bulk_api_v1_courses__code__students_bulk_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkRosterIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkRosterOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Students In Bulk",
         "tags": [
           "courses"
         ]
@@ -8708,6 +9086,64 @@
         "summary": "Request My Deletion",
         "tags": [
           "my-data"
+        ]
+      }
+    },
+    "/api/v1/me/engagement-history": {
+      "get": {
+        "description": "What was recorded in each of the caller's finished classes, newest first.\nNo score; readings only where consented, and never as zero when missing.",
+        "operationId": "my_engagement_history_api_v1_me_engagement_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentEngagementHistory"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "My Engagement History",
+        "tags": [
+          "student review"
         ]
       }
     },

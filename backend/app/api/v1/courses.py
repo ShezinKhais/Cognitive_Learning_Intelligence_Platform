@@ -92,6 +92,22 @@ async def add_student(
     return await course_membership.roster(db, principal, code)
 
 
+@router.post("/{code}/students:bulk", response_model=BulkRosterOut)
+@audit_action("COURSE_STUDENTS_BULK")
+async def add_students_in_bulk(
+    code: str,
+    payload: BulkRosterIn,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> BulkRosterOut:
+    """Preview, then apply, a list of students for this course (#293). Each
+    line is reported on its own; one bad line never fails the list. Only an
+    admin may create the accounts that do not exist yet."""
+    return await roster_bulk.run(db, principal, code, payload)
+
+
 @router.delete("/{code}/students/{user_id}", response_model=CourseRoster)
 @audit_action("COURSE_STUDENT_REMOVED")
 async def remove_student(
