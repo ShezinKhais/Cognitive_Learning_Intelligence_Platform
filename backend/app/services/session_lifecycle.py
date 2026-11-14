@@ -90,6 +90,8 @@ async def create_session(
         ai_learning_assistant=defaults.learning_assistant,
         ai_refocus_nudges=defaults.refocus_nudges,
         ai_engagement_estimates=defaults.engagement_estimates,
+        checkpoint_minutes=defaults.checkpoint_minutes,
+        answer_seconds=defaults.answer_seconds,
     )
     return await session_out(db, row)
 

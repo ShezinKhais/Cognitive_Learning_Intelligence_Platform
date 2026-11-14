@@ -202,6 +202,10 @@ class ClientEvent(BaseModel):
 # --------------------------------------------------------------------------
 
 
+MIN_CHECKPOINT_MINUTES, MAX_CHECKPOINT_MINUTES = 3, 90
+MIN_ANSWER_SECONDS, MAX_ANSWER_SECONDS = 10, 300
+
+
 class AiControls(BaseModel):
     """The lecturer's AI switches for one class. Each is on unless turned off."""
 
@@ -222,6 +226,20 @@ class AiControls(BaseModel):
         default=True,
         description="Camera and microphone indicators, and engagement scoring, for the class.",
     )
+    checkpoint_minutes: int | None = Field(
+        default=None,
+        ge=MIN_CHECKPOINT_MINUTES,
+        le=MAX_CHECKPOINT_MINUTES,
+        description="Roughly how many minutes between automatic checkpoints. Empty: the "
+        "deployment's usual spacing.",
+    )
+    answer_seconds: int | None = Field(
+        default=None,
+        ge=MIN_ANSWER_SECONDS,
+        le=MAX_ANSWER_SECONDS,
+        description="How long students have to answer a checkpoint. Empty: the deployment's "
+        "usual window.",
+    )
 
     @classmethod
     def of(cls, row: object) -> AiControls:
@@ -232,6 +250,8 @@ class AiControls(BaseModel):
             learning_assistant=getattr(row, "ai_learning_assistant", True),
             refocus_nudges=getattr(row, "ai_refocus_nudges", True),
             engagement_estimates=getattr(row, "ai_engagement_estimates", True),
+            checkpoint_minutes=getattr(row, "checkpoint_minutes", None),
+            answer_seconds=getattr(row, "answer_seconds", None),
         )
 
 

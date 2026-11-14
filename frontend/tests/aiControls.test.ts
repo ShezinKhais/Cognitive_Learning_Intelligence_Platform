@@ -47,3 +47,13 @@ test('the session state carries the switches to the student page', () => {
   assert.equal(state?.ai.engagement_estimates, false)
   assert.equal(state?.ai.learning_assistant, true)
 })
+
+test('pacing reads an empty box as the usual, and refuses numbers out of range', async () => {
+  const { readPacing, pacingOf } = await import('../src/features/live/aiControls.ts')
+  assert.deepEqual(readPacing('  ', 'checkpoint_minutes'), { value: null })
+  assert.deepEqual(readPacing('10', 'checkpoint_minutes'), { value: 10 })
+  assert.ok('error' in readPacing('2', 'checkpoint_minutes'))
+  assert.ok('error' in readPacing('7.5', 'answer_seconds'))
+  assert.ok('error' in readPacing('301', 'answer_seconds'))
+  assert.deepEqual(pacingOf({}), { checkpoint_minutes: null, answer_seconds: null })
+})
