@@ -365,4 +365,4 @@ async def test_invalid_evidence_does_not_create_a_request(db, app) -> None:
             files={"evidence": (name, content)},
         )
         assert invalid.status_code == 422, invalid.text
-        assert client.get(MINE).json() == {"current": None}
+        assert client.get(MINE).json() == {"current": None, "in_force": []}

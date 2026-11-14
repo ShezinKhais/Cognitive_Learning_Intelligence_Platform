@@ -42,7 +42,12 @@ def test_the_committed_manifest_and_icons_are_packageable(package: ModuleType) -
 def test_the_meeting_tab_is_installable_before_and_during_a_private_meeting(package) -> None:
     manifest = json.loads(_manifest(package))
     [tab] = manifest["configurableTabs"]
-    assert set(tab["context"]) == {"meetingChatTab", "meetingDetailsTab", "meetingSidePanel"}
+    assert set(tab["context"]) == {
+        "meetingChatTab",
+        "meetingDetailsTab",
+        "meetingSidePanel",
+        "meetingStage",
+    }
     assert tab["scopes"] == ["groupChat"]
     assert manifest["bots"][0]["scopes"] == ["groupChat"]
 
@@ -117,7 +122,8 @@ def test_filled_package_needs_consistent_sso_and_meeting_permissions(package):
     data = package.resolved_manifest(_manifest(package), filled)
     assert package.deployment_problems(data, filled) == []
     data["webApplicationInfo"]["resource"] = "api://different.example.com"
-    data["authorization"]["permissions"]["resourceSpecific"].pop()
+    granted = data["authorization"]["permissions"]["resourceSpecific"]
+    granted.remove(next(p for p in granted if p["name"] == "OnlineMeetingNotification.Send.Chat"))
     assert len(package.deployment_problems(data, filled)) == 2
 
 
