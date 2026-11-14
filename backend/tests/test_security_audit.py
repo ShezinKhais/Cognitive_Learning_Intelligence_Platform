@@ -148,6 +148,8 @@ AUDIENCE = {
     ("POST", "/api/v1/sessions/{session_id}/resume"): STAFF,
     ("POST", "/api/v1/sessions/{session_id}/start"): STAFF,
     ("GET", "/api/v1/sessions/{session_id}/summary/{student_id}"): MEMBER,
+    ("GET", "/api/v1/sessions/{session_id}/breakdown"): STAFF,
+    ("GET", "/api/v1/sessions/{session_id}/results.csv"): STAFF,
     ("GET", "/api/v1/sessions/{session_id}/topics"): STAFF,
     ("POST", "/api/v1/sessions/{session_id}/reports"): STAFF,
     ("GET", "/api/v1/reports/{report_id}"): STAFF,
