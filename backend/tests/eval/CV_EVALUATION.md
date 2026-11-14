@@ -243,6 +243,12 @@ The same overall, and the worst-off participant does better (P7: 73.8% to
 - **Calibration dropped** from the student's camera panel. Every student is
   judged with `DEFAULT_THRESHOLDS`, the gaze limits tuned without calibration:
   yaw 15° / pitch 25° / roll 30°, iris 0.3–0.7.
+- **What a rejected face does** (G34, anti-spoofing without proctoring): a face
+  judged not live counts as no face, with no gaze reading (`applyLiveness`), on
+  the student's device only. It reaches the server like any moment with no face
+  in view, inside the usual derived figures. Nothing marks it as a suspected
+  photo or video: no flag, alert or message goes to the lecturer, and nothing
+  is stored about it.
 
 **Still needed before merging:** Cyber 1 (Hunain) fairness sign-off on
 `LIVENESS` and `ADAPTATION`, as #165 and #166 require, and a spoof check added
