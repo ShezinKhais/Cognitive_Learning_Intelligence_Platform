@@ -15,10 +15,17 @@ from fastapi.responses import Response
 
 from app.api.deps import AppSettings, CurrentUser, DbSession, require_consents, require_roles
 from app.core.audit import audit_action
-from app.schemas.accounts import CourseLecturersSet, CourseOut, CourseRoster, RosterStudentAdd
+from app.schemas.accounts import (
+    BulkRosterIn,
+    BulkRosterOut,
+    CourseLecturersSet,
+    CourseOut,
+    CourseRoster,
+    RosterStudentAdd,
+)
 from app.schemas.attendance import CourseAttendanceOut
 from app.schemas.identity import ConsentType, Role
-from app.services import attendance, course_membership
+from app.services import attendance, course_membership, roster_bulk
 
 router = APIRouter(
     prefix="/courses",
