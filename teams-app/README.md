@@ -40,6 +40,51 @@ Which meeting holds which session is stored in the database
 (`teams_meeting_link`, through BBIS's `DatabaseMeetingDirectory`), so links
 survive a restart.
 
+## Sharing the class to the meeting stage
+
+In a meeting, the lecturer's panel has a **Share to the meeting stage**
+button while the class is live. It asks Teams to open the same meeting page
+the side panel uses, large, for everyone. The link carries only the session
+id. Teams opens it in each person's own client, so each person reaches C.L.I.P
+signed in as themselves and sees only what their own role and enrolment
+allow. Nothing about a student is shared with the others.
+
+It needs the manifest's `meetingStage` context and the delegated
+`MeetingStage.Write.Chat` permission, both added here. The button is hidden
+outside Teams, and says so when a meeting does not allow sharing. Real
+stage sharing only works in a real Teams meeting.
+
+### Trying it without Teams
+
+The mock adapter can stand in for the stage, so the student's stage view can
+be checked locally. With the backend running (the Docker demo on port 8088
+will do), in `frontend/.env.local` set the switches below (the live class is
+off by default in the dev server, and the student panel stays on "Waiting for
+your lecturer" without it) and run `npm run dev`:
+
+```
+VITE_TEAMS_MOCK_ENABLED=true
+VITE_LIVE_SESSIONS_ENABLED=true
+VITE_SOCRATIC_CHAT_ENABLED=true
+VITE_MATERIAL_PIPELINE_ENABLED=true
+CLIP_BACKEND_URL=http://127.0.0.1:8088
+```
+
+The student's side panel then rests as a small paperclip with their checkpoint
+count, and opens by itself when the lecturer sends a checkpoint.
+
+1. Lecturer window, a simulated meeting: open
+   `http://localhost:5173/teams/meeting?teamsMock=1&meetingId=test-meeting`,
+   signed in as the lecturer, with a live session linked to that meeting.
+   The **Share to the meeting stage** button shows; clicking it opens the
+   stage link in a new window.
+2. Student window (another browser or incognito, signed in as a student):
+   open `http://localhost:5173/teams/meeting?teamsMock=1&meetingId=test-meeting&frame=content`.
+   This is the stage frame: the live class, full width, with the checkpoint.
+
+The mock is never available in a production build, so the Docker demo's web
+image on 8088 cannot do this; use the Vite dev server.
+
 ## Running it without Teams
 
 With the backend and frontend running:

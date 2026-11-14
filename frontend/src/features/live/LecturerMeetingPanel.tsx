@@ -14,6 +14,7 @@ import AiControlsPanel from './AiControlsPanel'
 import LessonQuestionPlan from './LessonQuestionPlan'
 import ManualQuestionTrigger from './ManualQuestionTrigger'
 import TeamsUpdatesSection from './TeamsUpdatesSection'
+import ShareToStageButton from './ShareToStageButton'
 import { initialLifecycle, lifecycleReducer } from './panelLifecycle'
 import {
   getSessionReadiness,
@@ -379,6 +380,7 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
         </section>
 
         {(live || status === 'prepared') && <TeamsUpdatesSection sessionId={sessionId} />}
+        {live && <ShareToStageButton sessionId={sessionId} />}
 
         <a
           href={dashboard}
