@@ -1,7 +1,8 @@
 # Camera attention evaluation (Phase 8, AI 1, #159)
 
 How well the browser's camera indicator tells whether a student is looking at
-the screen, measured on six team members, before and after tuning. Every
+the screen, measured on six team members (#159), then on ten participants
+including four volunteers (second round, #253), before and after tuning. Every
 number comes from `frontend/scripts/evaluate-attention.ts`; the full tables
 are in [`cv/RESULTS.md`](cv/RESULTS.md) and can be regenerated with
 `npm run eval:attention` from `frontend/`.
@@ -168,12 +169,73 @@ fairness review and Cyber 2's device tests pass. Next: record "head turned,
 eyes on the screen" and eye-only clips, and combine head and eye direction
 (#166).
 
+## Second round: ten participants (#253, #165, #166)
+
+**Recorded November 2026.** The six team members (P1–P6, the #159 clips plus
+P1–P3's later #166 clips) and four new volunteers (P7–P10), each on their own
+laptop through the recorder, coded by number only. 201 clips, 15,428 frames.
+New conditions: glasses (P1, P9), dim light (P1, P8), far (P7, P9),
+off-centre (P8), 3-minute natural clips (P2, P8), and photo and video spoofs
+from six people. Cleaning, by hand: duplicate downloads dropped (three P1
+files were exact copies of others), retakes and mistaken clips removed on the
+participant's word, `two_faces` clips with no second face in any frame
+removed, and one 3-minute `no_face` clip cut to 10 seconds. Full tables:
+[`cv/RESULTS.md`](cv/RESULTS.md).
+
+**Gaze, leaving one participant out** (balanced accuracy, 95% interval):
+
+| Setting | All | Worst participant |
+|---|---|---|
+| Before (#63 landmark proxies) | 69.4% (60.9–80.1) | 65.9% |
+| Pose angles, tuned limits | 77.6% (70.2–85.6) | 74.1% |
+| Tuned limits + calibration | 75.8% (69.2–82.9) | 67.3% |
+| #166: + combined head and eye gaze | 80.2% (76.1–84.5) | 73.8% |
+| **#166: + both (combined gaze and adaptation)** | **81.5% (76.7–86.6)** | 73.8% |
+
+- **#166 helps.** "Eyes on the screen, head turned" read as on screen 58%
+  of the time with the combined gaze, against 38%; eye-only glances stay
+  mostly "away" (20% on screen). Adaptation adds little on its own.
+- **Adaptation is not quite never harsher:** 19 of 13,080 held-out frames
+  (0.15%) went from "on screen" to "away", all through a moved centre. Small,
+  but for Cyber 1 to judge.
+- **Calibration no longer helps** on this set (75.8% against 77.6%).
+- **Weak spots:** looking down at notes reads as on screen 43% of the time;
+  with glasses a face is found 83% of the time (90% without) and "looking" is
+  right 49% of the time; sitting far back, real looking is caught 47% of the
+  time; turning away right often gives no face at all with glasses.
+- **Tuned limits differ from the shipped ones** (yaw 15° against 10°;
+  calibrated pitch 30° against 16°). Not changed here: a team decision.
+
+**Anti-spoofing (#165), leaving one participant out** (six people with spoof
+clips, tuned settings `everyMs 1000, window 2, spoofBelow 0.5`):
+
+| | Result |
+|---|---|
+| Live faces wrongly rejected | **0.1%** (0.0–0.4); worst participant 1.3% (P3); every condition under 0.2% |
+| Spoofs caught | **56%** (40–71): photos 62%, videos 50%; none of P7's |
+| Time per check | 7 ms median, 9 ms 95th percentile |
+
+It meets the agreed bar of under 2% live faces rejected, but misses about
+half the photos and videos, and printed photos were not tested.
+
+**Limits of this round:** ten people, four of them new; acted 10-second clips
+apart from two long ones; no printed photos and no weaker laptop; P1 has the
+most clips (68). "Looking at the screen" stays a camera-facing proxy, never
+a measure of attention or understanding.
+
+**For the team (not changed in code):**
+- [ ] Switch on `GAZE_MODEL` and `ADAPTATION` (#166)? Best result and the
+      worst participant improves; Cyber 1 to sign off the 0.15% frames
+      adaptation made harsher.
+- [ ] Copy the tuned limits into `signals.ts`?
+- [ ] Keep or drop the opt-in calibration, which no longer helps?
+- [ ] Keep `LIVENESS` off (#165)? Safe for real faces, but catches only
+      about half of spoofs; Cyber 1 sign-off needed either way.
+
 ## Next: adaptive limits and combined gaze (#166)
 
-**Status: code and evaluation ready, waiting for recordings.** No numbers
-yet: the #159 recordings contain neither case the combined gaze is for, and
-only 10-second clips, too short to learn from. Nothing below changes what the
-classroom does today: `GAZE_MODEL` and `ADAPTATION` in `signals.ts` are both
+**Status: measured on ten participants** (see the second round above). Nothing
+below changes what the classroom does today: `GAZE_MODEL` and `ADAPTATION` in `signals.ts` are both
 `null`, so the browser judges exactly as in #159 until the numbers say
 otherwise.
 
@@ -218,9 +280,8 @@ improves and the existing labels do not get worse.
 
 ## Next: anti-spoofing (#165)
 
-**Status: code, model and evaluation ready, waiting for recordings.** No
-accuracy numbers yet, because nobody has recorded photo or video clips. Nothing
-changes in the classroom today: `LIVENESS` in
+**Status: measured on six participants' spoof clips** (see the second round
+above). Nothing changes in the classroom today: `LIVENESS` in
 `frontend/src/features/attention/liveness.ts` is `null`, and while it is the
 model is not even downloaded there.
 
