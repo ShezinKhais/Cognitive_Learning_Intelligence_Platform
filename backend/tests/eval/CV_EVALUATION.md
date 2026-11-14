@@ -146,7 +146,11 @@ and 30°.
    during the countdown, and unticking consent did not stop the camera. Both
    fixed and tested.
 
-## Limits
+## Limits (first round, six participants)
+
+These are the first round's limits, kept as its record. The second round below
+added four volunteers, glasses, more dim, far and off-centre clips; its own
+limits are listed there.
 
 - Six participants, all team members of similar age, so the intervals are wide
   and the results may not hold for a class.
@@ -161,9 +165,10 @@ and 30°.
   Teams testing is Cyber 2's (#160). `VITE_LOCAL_ATTENTION_ENABLED` stays off
   until both are done.
 
-## Recommendation
+## Recommendation (first round)
 
-Ship the tuned limits with calibration offered at opt-in and encouraged, since
+Superseded by the second round's decisions below. First-round advice: ship the
+tuned limits with calibration offered at opt-in and encouraged, since
 that is where the improvement is. Keep the feature flag off until Cyber 1's
 fairness review and Cyber 2's device tests pass. Next: record "head turned,
 eyes on the screen" and eye-only clips, and combine head and eye direction
