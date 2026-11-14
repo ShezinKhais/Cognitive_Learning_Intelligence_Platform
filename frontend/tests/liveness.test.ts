@@ -22,8 +22,9 @@ function step(state: LivenessState, ms: number, live: number, faces = 1): Livene
   return faces === 1 && dueForCheck(state, ms, s) ? recordCheck(state, live, ms, s) : state
 }
 
-test('off by default: the classroom judges faces exactly as before', () => {
-  assert.equal(LIVENESS, null)
+test('on, with the settings tuned on the recordings (#165, #253)', () => {
+  assert.deepEqual(LIVENESS, { everyMs: 1000, window: 2, spoofBelow: 0.5 })
+  assert.equal(wantsLivenessModel(LIVENESS, false), true, 'the classroom loads the model')
 })
 
 test('a face is rejected only when every check in a full window says not live', () => {
@@ -117,8 +118,8 @@ const seen = { face: true, forward: true, head: 'forward' } as const
 const lowCheck = async (): Promise<LiveCheck> => ({ live: 0.01, ms: 3 })
 
 test('with LIVENESS off, the worker does not load the model and judges faces as before', async () => {
-  assert.equal(wantsLivenessModel(LIVENESS, false), false, 'classroom: no import, no download')
-  assert.equal(wantsLivenessModel(LIVENESS, true), true, 'the recorder still asks for scores')
+  assert.equal(wantsLivenessModel(null, false), false, 'classroom: no import, no download')
+  assert.equal(wantsLivenessModel(null, true), true, 'the recorder still asks for scores')
   let calls = 0
   const check = async () => { calls += 1; return { live: 0.01, ms: 3 } }
   let state = startLiveness()

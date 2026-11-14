@@ -223,14 +223,21 @@ apart from two long ones; no printed photos and no weaker laptop; P1 has the
 most clips (68). "Looking at the screen" stays a camera-facing proxy, never
 a measure of attention or understanding.
 
-**For the team (not changed in code):**
-- [ ] Switch on `GAZE_MODEL` and `ADAPTATION` (#166)? Best result and the
-      worst participant improves; Cyber 1 to sign off the 0.15% frames
-      adaptation made harsher.
-- [ ] Copy the tuned limits into `signals.ts`?
-- [ ] Keep or drop the opt-in calibration, which no longer helps?
-- [ ] Keep `LIVENESS` off (#165)? Safe for real faces, but catches only
-      about half of spoofs; Cyber 1 sign-off needed either way.
+**Decided by AI 1 (Luna), November 2026, and switched on in PR #233:**
+- `LIVENESS` on, with the tuned settings `everyMs 1000, window 2, spoofBelow 0.5` (#165).
+- `GAZE_MODEL` on (`kYaw 150, kPitch 0`) and `ADAPTATION` on with the
+  suggested settings (#166).
+- The tuned limits: `DEFAULT_THRESHOLDS` yaw 15° / pitch 30° / roll 30°,
+  iris 0.3–0.7; `CALIBRATED_THRESHOLDS` the gaze limits yaw 20° / pitch 25°.
+- **Calibration is kept for now.** The combined gaze measures the eyes against
+  the student's calibrated centre, and adaptation starts from it; the 81.5%
+  was measured with calibration. "Calibration no longer helps" holds for the
+  head check alone. Dropping it needs the combined gaze measured without it
+  first.
+
+**Still needed before merging:** Cyber 1 (Hunain) fairness sign-off on
+`LIVENESS` and `ADAPTATION`, as #165 and #166 require, and a spoof check added
+to Cyber 2's device checklist (#160).
 
 ## Next: adaptive limits and combined gaze (#166)
 

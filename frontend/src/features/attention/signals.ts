@@ -76,26 +76,25 @@ export const DEFAULT_THRESHOLDS: Thresholds = {
   minFaceWidth: 0.03,
   maxYawProxy: 0.22,
   maxRollProxy: 0.3,
-  maxYawDegrees: 10,
+  maxYawDegrees: 15,
   maxPitchDegrees: 30,
-  maxRollDegrees: 20,
+  maxRollDegrees: 30,
   minEyeWidth: 0.005,
   minOpenEyeRatio: 0.12,
-  irisX: [0.2, 0.8],
+  irisX: [0.3, 0.7],
   irisY: [0.1, 0.9],
 }
 
 /**
- * With the student's own centre known, pitch can be strict enough to tell the
- * screen from notes on the desk; without it, it has to allow for every camera
- * height, which is why DEFAULT_THRESHOLDS is looser.
+ * For a student who has calibrated. With GAZE_MODEL on, the yaw and pitch
+ * limits apply to the combined head and eye direction measured from the
+ * student's own centre: the gaze limits tuned on the ten-participant
+ * recordings (#253, #166), which DEFAULT_THRESHOLDS cannot use without a centre.
  */
 export const CALIBRATED_THRESHOLDS: Thresholds = {
   ...DEFAULT_THRESHOLDS,
-  maxYawDegrees: 15,
-  maxPitchDegrees: 16,
-  maxRollDegrees: 15,
-  irisX: [0.25, 0.75],
+  maxYawDegrees: 20,
+  maxPitchDegrees: 25,
 }
 
 export const thresholdsFor = (calibration: Calibration | null): Thresholds =>
@@ -229,11 +228,13 @@ export interface GazeModel {
 }
 
 /**
- * What ships. Null keeps #159's rule (the head check, with the eyes as a veto)
- * until `screen_head_turned` and `away_eyes_only` recordings exist to fit k on:
- * the #159 recordings have neither case, so a k fitted on them means nothing.
+ * What ships: k fitted on the ten-participant recordings (#253, #166), with
+ * `screen_head_turned` and `away_eyes_only` clips. Leaving one participant out,
+ * combined gaze and adaptation reached 81.5% balanced accuracy against 77.6%
+ * for the head check alone (CV_EVALUATION.md, second round). Null would bring
+ * back #159's rule (the head check, with the eyes as a veto).
  */
-export const GAZE_MODEL: GazeModel | null = null
+export const GAZE_MODEL: GazeModel | null = { kYaw: 150, kPitch: 0, maxEyeDisagreement: 0.15, maxRollDegrees: 45 }
 
 /** One gaze direction, in degrees from the student's centre, or null when there is no reliable reading. */
 export function gazeAngles(
@@ -344,11 +345,11 @@ export interface AdaptationSettings {
 }
 
 /**
- * What ships. Null keeps #159's fixed limits until the evaluation on longer,
- * natural recordings shows adaptation helps (see CV_EVALUATION.md); the
- * evaluation replays with SUGGESTED_ADAPTATION meanwhile.
+ * What ships: the suggested settings, evaluated with GAZE_MODEL on the
+ * ten-participant recordings (#253, #166). Learned limits are never stricter;
+ * a moved centre turned 19 of 13,080 held-out frames (0.15%) from "on screen"
+ * to "away" (CV_EVALUATION.md). Null would bring back fixed limits.
  */
-export const ADAPTATION: AdaptationSettings | null = null
 export const SUGGESTED_ADAPTATION: AdaptationSettings = {
   rate: 0.05,
   maxCentreStepDegrees: 0.5,
@@ -356,6 +357,7 @@ export const SUGGESTED_ADAPTATION: AdaptationSettings = {
   maxLimits: { yaw: 25, pitch: 30, roll: 25 },
   minFrames: 12,
 }
+export const ADAPTATION: AdaptationSettings | null = SUGGESTED_ADAPTATION
 
 export interface AdaptiveState {
   /** Good frames learned from so far. */

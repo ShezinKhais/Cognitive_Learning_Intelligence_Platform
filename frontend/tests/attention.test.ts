@@ -55,8 +55,14 @@ test('the first summary covers only time since local sensing began', () => {
 // -- #159: head pose, calibration and the evaluation ---------------------------
 
 import {
-  CALIBRATED_THRESHOLDS, DEFAULT_THRESHOLDS, calibrate, classifyFace, faceFeatures, poseFromMatrix, thresholdsFor, type FaceFeatures,
+  CALIBRATED_THRESHOLDS as SHIPPED_CALIBRATED, DEFAULT_THRESHOLDS as SHIPPED_DEFAULT,
+  calibrate, classifyFace, faceFeatures, poseFromMatrix, thresholdsFor, type FaceFeatures, type Thresholds,
 } from '../src/features/attention/signals.ts'
+
+// The behaviour tests below use #159's limits, so they keep testing the rules
+// whatever limits ship; the test after them checks what ships.
+const DEFAULT_THRESHOLDS: Thresholds = { ...SHIPPED_DEFAULT, maxYawDegrees: 10, maxPitchDegrees: 30, maxRollDegrees: 20, irisX: [0.2, 0.8] }
+const CALIBRATED_THRESHOLDS: Thresholds = { ...DEFAULT_THRESHOLDS, maxYawDegrees: 15, maxPitchDegrees: 16, maxRollDegrees: 15, irisX: [0.25, 0.75] }
 import {
   balancedAccuracy, bootstrap, calibrations, count, dropCountdown, framesToCsv, parseCsv, folds, observe, precision, recall, score, tune, type Frame,
 } from '../eval/evaluation.ts'
@@ -86,12 +92,13 @@ test('looking down at notes is not forward once a pose is known', () => {
   assert.equal(observeFace([face()], [rotation('y', 40)]).forward, false)
 })
 
-test('the thresholds are the ones tuned in CV_EVALUATION.md', () => {
-  const limits = (t: typeof DEFAULT_THRESHOLDS) => ({ yaw: t.maxYawDegrees, pitch: t.maxPitchDegrees, roll: t.maxRollDegrees, irisX: t.irisX })
-  assert.deepEqual(limits(DEFAULT_THRESHOLDS), { yaw: 10, pitch: 30, roll: 20, irisX: [0.2, 0.8] })
-  assert.deepEqual(limits(CALIBRATED_THRESHOLDS), { yaw: 15, pitch: 16, roll: 15, irisX: [0.25, 0.75] })
-  assert.equal(thresholdsFor(null), DEFAULT_THRESHOLDS)
-  assert.equal(thresholdsFor({ yaw: 0, pitch: 0, roll: 0, irisX: 0.5, irisY: 0.5 }), CALIBRATED_THRESHOLDS)
+test('the thresholds are the ones tuned in CV_EVALUATION.md (second round)', () => {
+  const limits = (t: Thresholds) => ({ yaw: t.maxYawDegrees, pitch: t.maxPitchDegrees, roll: t.maxRollDegrees, irisX: t.irisX })
+  assert.deepEqual(limits(SHIPPED_DEFAULT), { yaw: 15, pitch: 30, roll: 30, irisX: [0.3, 0.7] })
+  // Calibrated students get the gaze limits, which apply to the combined head and eye direction.
+  assert.deepEqual(limits(SHIPPED_CALIBRATED), { yaw: 20, pitch: 25, roll: 30, irisX: [0.3, 0.7] })
+  assert.equal(thresholdsFor(null), SHIPPED_DEFAULT)
+  assert.equal(thresholdsFor({ yaw: 0, pitch: 0, roll: 0, irisX: 0.5, irisY: 0.5 }), SHIPPED_CALIBRATED)
 })
 
 function looking(pitch: number, irisX = 0.5): FaceFeatures {
@@ -233,9 +240,9 @@ function pose(yaw: number, pitch = 0, roll = 0, irisX = 0.5, irisY = 0.5, gapX =
 const GAZE: GazeModel = { kYaw: -100, kPitch: 0, maxEyeDisagreement: 0.15, maxRollDegrees: 45 }
 const centre = { yaw: 0, pitch: 0, roll: 0, irisX: 0.5, irisY: 0.5 }
 
-test('the combined gaze and adaptation stay off until recordings support them', () => {
-  assert.equal(GAZE_MODEL, null)
-  assert.equal(ADAPTATION, null)
+test('the combined gaze and adaptation ship with the settings fitted on the ten-participant recordings', () => {
+  assert.deepEqual(GAZE_MODEL, { kYaw: 150, kPitch: 0, maxEyeDisagreement: 0.15, maxRollDegrees: 45 })
+  assert.equal(ADAPTATION, SUGGESTED_ADAPTATION)
 })
 
 test('with a gaze model, the eyes can rescue a turned head as well as veto a still one', () => {
