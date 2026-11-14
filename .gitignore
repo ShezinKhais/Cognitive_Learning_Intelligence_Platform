@@ -54,3 +54,8 @@ backend/var/
 
 # Database backups hold personal data
 backend/backups/
+
+# Generated dependency-audit evidence (uploaded by CI).
+frontend/npm-audit*.json
+backend/pip-audit.json
+backend/audit-resolved.txt

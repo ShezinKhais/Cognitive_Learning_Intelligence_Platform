@@ -107,6 +107,8 @@ class QuestionOut(BaseModel):
         description="Never sent to students. Lecturer and admin views only.",
     )
     topic: str | None = None
+    reference_answer: str | None = None
+    key_points: list[str] | None = None
     source_slide: int | None = Field(
         default=None,
         description="Drives the 'see slide 3' reference in student feedback.",
@@ -134,6 +136,31 @@ class QuestionReviewRequest(BaseModel):
     )
     correct_option: int | None = Field(default=None, ge=0, lt=MAX_OPTIONS)
     difficulty: Difficulty | None = None
+
+
+class QuestionCreateRequest(BaseModel):
+    """A question the lecturer writes themselves. It is ready to send at once."""
+
+    source_slide: int | None = Field(default=None, ge=1)
+    source_excerpt: str | None = Field(default=None, max_length=MAX_PROMPT_CHARS)
+    type: QuestionType = QuestionType.MCQ
+    prompt: str = Field(min_length=1, max_length=MAX_PROMPT_CHARS)
+    options: list[Annotated[str, Field(max_length=MAX_OPTION_CHARS)]] | None = Field(
+        default=None, max_length=MAX_OPTIONS
+    )
+    correct_option: int | None = Field(default=None, ge=0, lt=MAX_OPTIONS)
+    difficulty: Difficulty = Difficulty.MEDIUM
+    topic: str | None = Field(default=None, max_length=255)
+    reference_answer: str | None = Field(
+        default=None,
+        max_length=MAX_PROMPT_CHARS,
+        description="A model answer. Needed for a written-answer question to be marked.",
+    )
+    key_points: list[Annotated[str, Field(max_length=MAX_OPTION_CHARS)]] | None = Field(
+        default=None,
+        max_length=10,
+        description="What a full written answer covers. Needed for it to be marked.",
+    )
 
 
 # Far above any one material's question count. Unbounded, a single request

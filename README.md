@@ -20,37 +20,27 @@ rather than understanding. C.L.I.P runs continuously in the background of the cl
   explanation for every alert, while there is still time to act.
 
 C.L.I.P is **not** a grading system, a proctoring tool or a replacement for the lecturer.
-The AI suggests and the lecturer decides. Optional student camera and microphone
-attention indicators are processed locally in the student's browser, with only
-derived measurements sent to the server. Separately, lecturers may explicitly
-enable live microphone transcription, which temporarily sends audio chunks to
-C.L.I.P's backend for local speech recognition. Recognized transcript text is
-stored and automatically shared with enrolled course students and the
-catch-up assistant as an unreviewed transcript. The lecturer microphone
-may also pick up nearby voices. Optional Teams transcript imports
-can also generate private draft teaching minutes for lecturer review. C.L.I.P
-does not store raw camera video or microphone recording files through these
-features.
+The AI suggests and the lecturer decides. Models run locally.
+Optional student camera and microphone attention indicators are processed in
+the student's browser, with only derived measurements transmitted to the
+server. Separately, lecturers can explicitly enable live microphone
+transcription. Audio chunks are temporarily sent to C.L.I.P's backend for local
+speech recognition. Recognized transcript text is stored and automatically
+shared with enrolled course students and the catch-up assistant as an
+unreviewed transcript. The lecturer microphone may also capture nearby voices.
+Optional Teams transcript imports can create private draft teaching minutes
+for lecturer review. Raw camera video and microphone recording files are not
+stored through these features.
 
 The platform serves three roles: **students**, who answer checkpoints and see their own
 progress; **lecturers**, who prepare material and run the live class; and
 **administrators**, who import the timetable and rosters and govern access.
 
-## Website
+## Project materials
 
-> Placeholder: the project website has not been published yet.
-
-- Website: `TBD`
-- Figma prototype: [Student Meeting Helper](https://www.figma.com/make/jo2GCIds0CExSKltEoG5tZ/Student-Meeting-Helper)
-
-## Demo Video
-
-> Placeholder: the demonstration video will be recorded once the Teams integration is
-> running in a tenant. Replace `VIDEO_ID` below with the YouTube id.
-
-<!--
-[![Demonstration Video](https://img.youtube.com/vi/VIDEO_ID/maxresdefault.jpg)](https://www.youtube.com/watch?v=VIDEO_ID)
--->
+The [Figma prototype](https://www.figma.com/make/jo2GCIds0CExSKltEoG5tZ/Student-Meeting-Helper)
+shows the student meeting helper. The published website, demo video and final
+submission links are tracked in [issue #257](https://github.com/ShezinKhais/Cognitive_Learning_Intelligence_Platform/issues/257).
 
 ## Architecture
 
@@ -104,7 +94,10 @@ AI pipeline, and PostgreSQL with pgvector holds everything that must outlive a s
 - **AI.** Models run locally through Ollama. Camera and microphone signals are processed
   in the student's browser, and only numeric indicators reach the server.
 
-The full design, from the design document and the system design presentation:
+The diagrams below come from the design-stage presentation. The current setup
+and runtime flow are described in [Deployment](docs/deployment.md),
+[Live lecturer transcription](docs/live-transcription.md) and
+[Session catch-up](docs/session-catchup.md).
 
 ![System architecture](docs/images/architecture-master.png)
 
@@ -187,9 +180,9 @@ joins late is shown the question that is open.
 
 Multiple-choice answers are scored deterministically against the lecturer-approved answer
 key, and the feedback cites the slide the question came from. A right answer is labelled
-**mastered** and a wrong one **struggling**. Free-text answers are accepted and stored
-now, and will be classified into **mastered**, **partial** or **struggling** by the
-language model in Phase 5. Each student receives private feedback on their own answer,
+**mastered** and a wrong one **struggling**. Free-text answers are stored
+and can be classified into **mastered**, **partial** or **struggling** by the
+local language model when free-text marking is enabled. Each student receives private feedback on their own answer,
 and the correct answer is revealed when the window closes.
 
 ### Phase 5 - Engagement scoring and alerts
@@ -204,7 +197,7 @@ and the correct answer is revealed when the window closes.
 
 ### Phase 7 - Retention, deletion requests and the audit log
 
-- **Retention.** A session is purged 120 days (a semester) after it ended. The purge
+- **Retention.** A session becomes eligible for automatic purge 90 days after it ends. The purge
   removes everything the session holds: answers and their labels, engagement, prompts,
   alerts and attention summaries. Lecturer questions and uploaded material stay. Teams
   roster syncs hold participant names, so they are purged on their own received date.
@@ -411,9 +404,9 @@ cp .env.example .env
 alembic upgrade head
 uvicorn app.main:app --reload
 
-# 4. Frontend, on http://localhost:5173
+# 4. Frontend, on http://localhost:5173 (in a second terminal from the repository root)
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
@@ -530,26 +523,25 @@ The [privacy notice](frontend/src/pages/PrivacyPage.tsx) and [terms of use](fron
 are served by the app at `/privacy` and `/terms`, open to anyone, and linked from sign-in,
 the consent screen and the Teams manifest. Their wording awaits team and university approval.
 
-- Optional student camera and microphone attention indicators are processed locally
-  in the browser. Only derived attention signals are transmitted to the server.
-- Optional live lecturer transcription temporarily sends microphone audio chunks
-  to C.L.I.P's backend for local speech recognition. Audio recording files are not
-  stored, but recognized text is stored and automatically shared with enrolled
-  course students and the catch-up assistant as an unreviewed transcript.
+- Student camera and microphone processing happens on the device. Only derived
+  indicators reach the server.
+- With lecturer consent, short microphone audio chunks are temporarily sent to
+  C.L.I.P's backend for local speech recognition. Raw audio recordings are not
+  stored. Recognized transcript text is stored and automatically shared with
+  enrolled course students and the catch-up assistant as an unreviewed transcript.
   The lecturer microphone may also pick up nearby voices.
-- Optional Microsoft Teams transcript imports process available meeting transcript
-  text to create private draft teaching minutes. The lecturer reviews and explicitly
-  publishes these drafts before students can access the approved minutes.
-- Stored transcript text, published minutes and private draft records follow the
+- Optional Teams transcript imports create private draft teaching minutes.
+  Lecturers review and explicitly publish them before students can access
+  the approved minutes.
+- Stored transcripts, published minutes and private drafts follow the
   applicable access, retention, deletion and backup rules.
-- Student attention consent is separate from lecturer microphone transcription
-  and institutional Microsoft Teams transcription permissions.
+- Student attention consent is separate from lecturer transcription and
+  institutional Teams transcription permissions.
 - Every monitoring feature needs its own consent. Declining one never blocks another, and
   never lowers a student's score.
 - Engagement and comprehension are measured separately, and neither is an assessment.
 - Every role is checked on the server; Teams context is never trusted for authorisation.
-- Session data is deleted after a semester (120 days), in line with UAE Federal Decree-Law No. 45 of
-  2021 on the Protection of Personal Data.
+- The automatic retention purge removes expired session data under the project’s 90-day policy.
 
 ## Project Status
 
@@ -573,18 +565,13 @@ rather than a component, so every phase ends with something that runs end to end
 
 ## Documentation
 
-> Placeholders: links will be added as each document is published.
-
-| Document | Link |
+| Guide or evidence | Repository link |
 |---|---|
-| Proposal | `TBD` |
-| Planning and Feasibility Report | `TBD` |
-| Requirements Analysis (SRS) | `TBD` |
-| Design Document | `TBD` |
-| Test Plan | `TBD` |
-| Security and privacy reviews | [docs/security](docs/security/README.md) |
-| Final Report | `TBD` |
-| Poster | `TBD` |
+| Local setup | [Getting started](#getting-started) |
+| Teams setup and roles | [Demo quickstart](docs/teams-demo-quickstart.md) and [tenant setup](docs/teams-tenant-setup.md) |
+| Release validation | [Teams release acceptance](docs/teams-release-acceptance.md) |
+| Test plan and execution evidence | [Evidence tracker](https://github.com/ShezinKhais/Cognitive_Learning_Intelligence_Platform/issues/175), [student browser test report](docs/phase8-ai2-test-report.md) and [database recovery evidence](docs/database-integrity-and-recovery.md) |
+| Security and privacy reviews | [Review index](docs/security/README.md) |
 
 ### Reference documents
 
@@ -603,7 +590,7 @@ Written alongside the code, in `docs/`:
 | [Breakout rooms in Teams](docs/breakout-rooms-teams.md) | What Teams lets an app do with breakout rooms, and why students confirm their own room |
 | [Governance](docs/governance.md) | The audit log, retention and deletion requests |
 | [Backup and restore](docs/backup-restore.md) | Taking and restoring a database backup |
-| [Load and recovery](docs/load-and-recovery.md) | The load-test harness and how the system behaves under failure: 67 of 67 checks with 40 students, 21 October |
+| [Load and recovery](docs/load-and-recovery.md) | The load-test harness and how the system behaves under failure: historical baseline of 67 checks with 40 students on 21 October 2026 |
 | [Teams frontend security](docs/teams-frontend-security.md) | Deployment security requirements for the Teams tab |
 
 ## Team

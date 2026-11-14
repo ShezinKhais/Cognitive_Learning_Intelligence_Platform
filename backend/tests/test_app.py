@@ -10,6 +10,8 @@ def test_health(client: TestClient) -> None:
     body = response.json()
     assert body["status"] == "ok"
     assert body["version"]
+    assert "release_sha" in body
+    assert response.headers["cache-control"] == "no-store"
     assert isinstance(body["teams_configured"], bool)
 
 
@@ -55,7 +57,14 @@ def test_upload_extensions_are_parsed_and_normalised() -> None:
 
 def test_session_defaults() -> None:
     # 30s comes from the design document; the SRS still says 50s.
-    settings = Settings()
+    settings = Settings(_env_file=None)
     assert settings.checkpoint_response_window_seconds == 30
     assert settings.comprehension_alert_threshold == 0.50
-    assert settings.data_retention_days == 120
+    assert settings.data_retention_days == 90
+
+
+def test_retention_settings_cap_legacy_values_but_allow_shorter_periods(monkeypatch) -> None:
+    monkeypatch.setenv("DATA_RETENTION_DAYS", "120")
+    assert Settings(_env_file=None).data_retention_days == 90
+    monkeypatch.setenv("DATA_RETENTION_DAYS", "30")
+    assert Settings(_env_file=None).data_retention_days == 30

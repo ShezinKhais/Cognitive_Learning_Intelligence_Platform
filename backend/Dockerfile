@@ -23,13 +23,20 @@ WORKDIR /srv/clip
 # files Alembic needs are kept in the working directory.
 COPY pyproject.toml ./
 COPY app ./app
+# English scanned PDF support. Adapted from Shezin-Ops-Health (cff5901).
+ARG ENABLE_OCR=false
+RUN if [ "$ENABLE_OCR" = "true" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends tesseract-ocr fonts-dejavu-core \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
+
 ARG ENABLE_LIVE_TRANSCRIPTION=false
 RUN if [ "$ENABLE_LIVE_TRANSCRIPTION" = "true" ]; then pip install ".[transcription]"; else pip install .; fi \
     && rm -rf ./app
 
 COPY alembic.ini ./
 COPY migrations ./migrations
-COPY scripts/prepare_live_speech.py ./scripts/prepare_live_speech.py
+COPY scripts/prepare_live_speech.py scripts/check_live_speech.py ./scripts/
 
 # Applies migrations, then replaces the shell with uvicorn so SIGTERM reaches it
 # and the lifespan shutdown (drain jobs, stop session timers) runs.
@@ -42,6 +49,10 @@ set -e
 alembic upgrade head
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --proxy-headers
 EOF
+
+ARG CLIP_RELEASE_SHA=unknown
+ENV CLIP_RELEASE_SHA=$CLIP_RELEASE_SHA
+LABEL org.opencontainers.image.revision=$CLIP_RELEASE_SHA
 
 USER clip
 
