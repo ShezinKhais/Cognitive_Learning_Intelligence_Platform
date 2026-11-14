@@ -36,6 +36,8 @@ Leave one participant out: 10 rounds, each tuning the limits on 9 participants a
 | #166: + combined head and eye gaze | 99.6% (98.8%–100.0%) | 89.1% (77.8%–97.1%) | 68.1% (46.7%–82.2%) | 80.7% (72.4%–89.9%) | 46.6% (34.3%–60.1%) | 80.2% (76.1%–84.5%) |
 | #166: + adaptive limits | 99.6% (98.8%–100.0%) | 89.1% (77.8%–97.1%) | 63.6% (42.0%–79.7%) | 74.1% (58.3%–88.5%) | 51.5% (39.9%–64.2%) | 77.0% (69.5%–84.8%) |
 | #166: + both | 99.6% (98.8%–100.0%) | 89.1% (77.8%–97.1%) | 68.5% (46.9%–82.4%) | 83.7% (74.5%–92.0%) | 46.8% (34.4%–60.2%) | 81.5% (76.7%–86.6%) |
+| #166 without calibration: combined gaze | 99.6% (98.8%–100.0%) | 89.1% (77.8%–97.1%) | 67.1% (45.9%–81.9%) | 83.5% (72.4%–93.8%) | 45.1% (32.8%–58.4%) | 80.2% (75.2%–85.4%) |
+| #166 without calibration: + adaptive limits | 99.6% (98.8%–100.0%) | 89.1% (77.8%–97.1%) | 66.7% (46.0%–81.4%) | 85.5% (74.4%–95.4%) | 45.9% (33.3%–59.3%) | 81.4% (76.0%–87.7%) |
 
 Balanced accuracy counts a frame with no gaze reading as "not looking", as a five-second window with no forward frames does; it is what tuning maximises. "Two faces" gives no reading at all by design.
 
@@ -43,20 +45,20 @@ Balanced accuracy counts a frame with no gaze reading as "not looking", as a fiv
 
 Balanced accuracy on each person, with the limits tuned on everyone else. Yaw / pitch / roll are those limits, so the spread shows how much they depend on who is in the tuning set.
 
-| Held out | Clips | Before | After | After + calibration | + gaze | + adaptive | + both | Tuned limits (yaw / pitch / roll) | With calibration | Gaze k (yaw / pitch) |
-|---|---|---|---|---|---|---|---|---|---|---|
-| P1 | 68 | 73.1% | 74.7% | 75.4% | 75.8% | 75.1% | 75.8% | 15° / 30° / 30° | 10° / 30° / 30° | 60 / 0 |
-| P10 | 8 | 80.3% | 87.7% | 87.7% | 87.5% | 87.7% | 87.5% | 15° / 30° / 30° | 15° / 30° / 30° | 150 / 0 |
-| P2 | 27 | 70.9% | 76.8% | 73.2% | 80.1% | 76.5% | 83.5% | 15° / 30° / 30° | 15° / 16° / 30° | 120 / 0 |
-| P3 | 20 | 82.0% | 88.5% | 85.6% | 87.4% | 86.0% | 88.2% | 15° / 30° / 30° | 15° / 30° / 30° | 90 / 0 |
-| P4 | 8 | 81.3% | 85.4% | 85.4% | 86.7% | 85.4% | 86.9% | 15° / 30° / 30° | 15° / 30° / 30° | 150 / 0 |
-| P5 | 7 | 98.8% | 92.5% | 92.5% | 91.8% | 92.5% | 93.0% | 15° / 30° / 30° | 15° / 30° / 30° | 150 / 0 |
-| P6 | 8 | 74.8% | 74.8% | 80.2% | 76.5% | 76.3% | 76.7% | 15° / 30° / 30° | 15° / 30° / 30° | 150 / 0 |
-| P7 | 9 | 65.9% | 74.1% | 73.5% | 73.8% | 73.5% | 73.8% | 15° / 30° / 30° | 15° / 30° / 30° | 60 / 0 |
-| P8 | 18 | 66.3% | 81.0% | 81.0% | 83.8% | 81.0% | 83.3% | 10° / 30° / 30° | 10° / 30° / 30° | 90 / 0 |
-| P9 | 10 | 65.9% | 83.8% | 67.3% | 87.0% | 67.3% | 87.0% | 15° / 30° / 30° | 15° / 30° / 30° | 90 / 0 |
+| Held out | Clips | Before | After | After + calibration | + gaze | + adaptive | + both | Both, no calibration | Tuned limits (yaw / pitch / roll) | With calibration | Gaze k (yaw / pitch) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| P1 | 68 | 73.1% | 74.7% | 75.4% | 75.8% | 75.1% | 75.8% | 79.2% | 15° / 30° / 30° | 10° / 30° / 30° | 60 / 0 |
+| P10 | 8 | 80.3% | 87.7% | 87.7% | 87.5% | 87.7% | 87.5% | 88.2% | 15° / 30° / 30° | 15° / 30° / 30° | 150 / 0 |
+| P2 | 27 | 70.9% | 76.8% | 73.2% | 80.1% | 76.5% | 83.5% | 81.1% | 15° / 30° / 30° | 15° / 16° / 30° | 120 / 0 |
+| P3 | 20 | 82.0% | 88.5% | 85.6% | 87.4% | 86.0% | 88.2% | 89.1% | 15° / 30° / 30° | 15° / 30° / 30° | 90 / 0 |
+| P4 | 8 | 81.3% | 85.4% | 85.4% | 86.7% | 85.4% | 86.9% | 87.9% | 15° / 30° / 30° | 15° / 30° / 30° | 150 / 0 |
+| P5 | 7 | 98.8% | 92.5% | 92.5% | 91.8% | 92.5% | 93.0% | 90.8% | 15° / 30° / 30° | 15° / 30° / 30° | 150 / 0 |
+| P6 | 8 | 74.8% | 74.8% | 80.2% | 76.5% | 76.3% | 76.7% | 76.9% | 15° / 30° / 30° | 15° / 30° / 30° | 150 / 0 |
+| P7 | 9 | 65.9% | 74.1% | 73.5% | 73.8% | 73.5% | 73.8% | 82.2% | 15° / 30° / 30° | 15° / 30° / 30° | 60 / 0 |
+| P8 | 18 | 66.3% | 81.0% | 81.0% | 83.8% | 81.0% | 83.3% | 82.9% | 10° / 30° / 30° | 10° / 30° / 30° | 90 / 0 |
+| P9 | 10 | 65.9% | 83.8% | 67.3% | 87.0% | 67.3% | 87.0% | 87.9% | 15° / 30° / 30° | 15° / 30° / 30° | 90 / 0 |
 
-Worst participant: before 65.9% (P7), after 74.1% (P7), after + calibration 67.3% (P9), + gaze 73.8% (P7), + adaptive 67.3% (P9), + both 73.8% (P7).
+Worst participant: before 65.9% (P7), after 74.1% (P7), after + calibration 67.3% (P9), + gaze 73.8% (P7), + adaptive 67.3% (P9), + both 73.8% (P7), both without calibration 76.9% (P6).
 
 ## What each label was read as (After: pose angles, tuned limits)
 
@@ -116,16 +118,16 @@ Worst participant: before 65.9% (P7), after 74.1% (P7), after + calibration 67.3
 
 Share of frames read as "on screen". `screen_head_turned` should be high, `away_eyes_only` low.
 
-| Label | Clips | After + calibration | #166: + combined head and eye gaze | #166: + adaptive limits | #166: + both |
-|---|---|---|---|---|---|
-| screen_head_turned | 11 | 37.7% (28.9%–42.7%) | 58.4% (41.6%–66.4%) | 38.0% (29.8%–43.4%) | 58.4% (41.1%–66.6%) |
-| away_eyes_only | 12 | 22.0% (13.2%–55.9%) | 20.0% (11.1%–53.1%) | 21.9% (12.9%–56.1%) | 19.9% (11.0%–53.1%) |
+| Label | Clips | After + calibration | #166: + combined head and eye gaze | #166: + adaptive limits | #166: + both | #166 without calibration: combined gaze | #166 without calibration: + adaptive limits |
+|---|---|---|---|---|---|---|---|
+| screen_head_turned | 11 | 37.7% (28.9%–42.7%) | 58.4% (41.6%–66.4%) | 38.0% (29.8%–43.4%) | 58.4% (41.1%–66.6%) | 58.4% (52.0%–76.1%) | 57.6% (50.9%–73.2%) |
+| away_eyes_only | 12 | 22.0% (13.2%–55.9%) | 20.0% (11.1%–53.1%) | 21.9% (12.9%–56.1%) | 19.9% (11.0%–53.1%) | 21.5% (13.7%–50.9%) | 21.3% (14.0%–50.5%) |
 
 ## Adaptation fairness check
 
 Of 13080 held-out frames, adaptation turned 19 from "on screen" to "away" (only a moved centre can do this; the learned limits are never stricter) and 0 from "away" to "no reading" (a normal wider than the camera can measure).
 
-Adaptation settings replayed: `{"rate":0.05,"maxCentreStepDegrees":0.5,"spreadMultiplier":3,"maxLimits":{"yaw":25,"pitch":30,"roll":25},"minFrames":12}` (suggested; `ADAPTATION` is off in `signals.ts`). The recordings' only certain "looking" moments are the calibrate clips, so adaptation learns from those; the classroom also learns while a student types an answer, which these clips do not contain.
+Adaptation settings replayed: `{"rate":0.05,"maxCentreStepDegrees":0.5,"spreadMultiplier":3,"maxLimits":{"yaw":25,"pitch":30,"roll":25},"minFrames":12}` (shipped). The recordings' only certain "looking" moments are the calibrate clips, so adaptation learns from those; the classroom also learns while a student types an answer, which these clips do not contain.
 
 ## Anti-spoofing (#165)
 
@@ -167,18 +169,19 @@ Held out one participant at a time (6 rounds). Acceptance bar to agree: under 2.
 
 Time per check in the browser: median 7.0 ms, 95th percentile 9.0 ms (4381 checks). Note the device each participant used: a slow laptop is the case that matters.
 
-Tuned on every recording: `{"everyMs":1000,"window":2,"spoofBelow":0.5}` (meets the bar there: 56.2% caught, 0.1% live rejected). Shipped `LIVENESS`: off.
+Tuned on every recording: `{"everyMs":1000,"window":2,"spoofBelow":0.5}` (meets the bar there: 56.2% caught, 0.1% live rejected). Shipped `LIVENESS`: `{"everyMs":1000,"window":2,"spoofBelow":0.5}`.
 
 ## Thresholds
 
 - Starting limits (#63): `maxYawDegrees: 25, maxPitchDegrees: 20, maxRollDegrees: 20, irisX: [0.2, 0.8]`
 - Tuned on every recording, without calibration: `maxYawDegrees: 15, maxPitchDegrees: 30, maxRollDegrees: 30, irisX: [0.3, 0.7]` (balanced accuracy on those recordings 78.5%)
 - Tuned on every recording, with calibration: `maxYawDegrees: 15, maxPitchDegrees: 30, maxRollDegrees: 30, irisX: [0.3, 0.7]` (78.1%)
-- #166 gaze model tuned on every recording: `kYaw: 150, kPitch: 0`, gaze limits `maxYawDegrees: 20, maxPitchDegrees: 25, maxRollDegrees: 30, irisX: [0.3, 0.7]` (82.4%). Shipped `GAZE_MODEL`: off.
+- #166 gaze model tuned on every recording: `kYaw: 150, kPitch: 0`, gaze limits `maxYawDegrees: 20, maxPitchDegrees: 25, maxRollDegrees: 30, irisX: [0.3, 0.7]` (82.4%). Shipped `GAZE_MODEL`: `{"kYaw":150,"kPitch":0,"maxEyeDisagreement":0.15,"maxRollDegrees":45}`.
+- #166 gaze model tuned on every recording, without calibration: `kYaw: 120, kPitch: 0`, gaze limits `maxYawDegrees: 15, maxPitchDegrees: 25, maxRollDegrees: 30, irisX: [0.3, 0.7]` (80.6%).
 
 These are the limits to ship. The held-out results above estimate how they do on a new person, since each round tuned the same way without that person.
 
-- Shipped in `signals.ts`: `DEFAULT_THRESHOLDS` maxYawDegrees: 10, maxPitchDegrees: 30, maxRollDegrees: 20, irisX: [0.2, 0.8]; `CALIBRATED_THRESHOLDS` maxYawDegrees: 15, maxPitchDegrees: 16, maxRollDegrees: 15, irisX: [0.25, 0.75].
+- Shipped in `signals.ts`: `DEFAULT_THRESHOLDS` maxYawDegrees: 15, maxPitchDegrees: 30, maxRollDegrees: 30, irisX: [0.3, 0.7]; `CALIBRATED_THRESHOLDS` maxYawDegrees: 20, maxPitchDegrees: 25, maxRollDegrees: 30, irisX: [0.3, 0.7].
 
 If the tuned values above differ from the shipped ones, copy them into `signals.ts` and the threshold test in `tests/attention.test.ts`.
 
