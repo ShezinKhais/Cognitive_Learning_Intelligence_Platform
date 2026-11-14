@@ -114,6 +114,60 @@ Worst participant: before 65.9% (P7), after 74.1% (P7), after + calibration 67.3
 | distance | near | 155 | 88.1% (73.9%–98.3%) | 62.7% (37.8%–80.8%) | 81.1% (70.8%–87.3%) |
 | distance | far | 28 | 92.8% (76.4%–98.0%) | 65.6% (14.0%–89.3%) | 46.3% (39.2%–87.4%) |
 
+## What each label was read as (#166: + both)
+
+| Label | On screen | Away | No reading |
+|---|---|---|---|
+| away_left | 130 (8.6%) | 537 (35.4%) | 852 (56.1%) |
+| down_notes | 580 (38.3%) | 119 (7.8%) | 817 (53.9%) |
+| no_face | 27 (1.8%) | 1 (0.1%) | 1494 (98.2%) |
+| screen | 1802 (82.8%) | 131 (6.0%) | 244 (11.2%) |
+| away_right | 65 (4.3%) | 530 (34.9%) | 923 (60.8%) |
+| eyes_closed | 78 (5.1%) | 10 (0.7%) | 1431 (94.2%) |
+| two_faces | 16 (1.6%) | 37 (3.6%) | 978 (94.9%) |
+| screen_head_turned | 654 (58.4%) | 349 (31.2%) | 117 (10.4%) |
+| away_eyes_only | 231 (19.9%) | 821 (70.9%) | 106 (9.2%) |
+
+## By condition (#166: + both, held-out, all rounds pooled)
+
+| Condition | Value | Clips | Face present: recall | Looking: precision | Looking: recall |
+|---|---|---|---|---|---|
+| glasses | no | 153 | 89.6% (77.3%–98.4%) | 70.6% (47.2%–84.8%) | 84.0% (74.1%–93.0%) |
+| glasses | yes | 30 | 82.9% (65.9%–96.1%) | 49.6% (20.7%–80.9%) | 79.7% (63.7%–95.0%) |
+| lighting | normal | 106 | 94.4% (89.3%–98.1%) | 66.4% (40.7%–81.5%) | 90.3% (78.2%–96.3%) |
+| lighting | dim | 77 | 86.6% (70.2%–98.1%) | 70.1% (30.6%–89.6%) | 79.5% (68.2%–91.2%) |
+| position | centred | 159 | 87.6% (75.2%–97.2%) | 63.4% (40.0%–80.2%) | 80.6% (71.8%–91.3%) |
+| position | off_centre | 24 | 99.2% (96.4%–100.0%) | 88.2% (19.1%–98.5%) | 93.4% (76.9%–95.5%) |
+| distance | near | 155 | 88.1% (73.9%–98.3%) | 66.4% (41.6%–82.4%) | 88.4% (78.9%–93.4%) |
+| distance | far | 28 | 92.8% (76.4%–98.0%) | 76.2% (21.7%–93.3%) | 71.6% (67.4%–97.3%) |
+
+## What each label was read as (#166 without calibration: + adaptive limits)
+
+| Label | On screen | Away | No reading |
+|---|---|---|---|
+| away_left | 142 (9.3%) | 489 (32.2%) | 888 (58.5%) |
+| down_notes | 614 (40.5%) | 85 (5.6%) | 817 (53.9%) |
+| no_face | 28 (1.8%) | 0 (0.0%) | 1494 (98.2%) |
+| screen | 1847 (84.8%) | 77 (3.5%) | 253 (11.6%) |
+| away_right | 101 (6.7%) | 457 (30.1%) | 960 (63.2%) |
+| eyes_closed | 82 (5.4%) | 6 (0.4%) | 1431 (94.2%) |
+| two_faces | 32 (3.1%) | 21 (2.0%) | 978 (94.9%) |
+| screen_head_turned | 645 (57.6%) | 344 (30.7%) | 131 (11.7%) |
+| away_eyes_only | 247 (21.3%) | 791 (68.3%) | 120 (10.4%) |
+
+## By condition (#166 without calibration: + adaptive limits, held-out, all rounds pooled)
+
+| Condition | Value | Clips | Face present: recall | Looking: precision | Looking: recall |
+|---|---|---|---|---|---|
+| glasses | no | 153 | 89.6% (77.3%–98.4%) | 68.3% (44.3%–83.4%) | 85.1% (72.6%–95.7%) |
+| glasses | yes | 30 | 82.9% (65.9%–96.1%) | 52.3% (22.8%–81.9%) | 91.4% (80.2%–100.0%) |
+| lighting | normal | 106 | 94.4% (89.3%–98.1%) | 67.2% (42.2%–81.7%) | 94.8% (85.8%–99.0%) |
+| lighting | dim | 77 | 86.6% (70.2%–98.1%) | 66.2% (27.6%–88.0%) | 79.7% (64.8%–94.6%) |
+| position | centred | 159 | 87.6% (75.2%–97.2%) | 61.2% (38.3%–78.8%) | 83.3% (71.1%–96.2%) |
+| position | off_centre | 24 | 99.2% (96.4%–100.0%) | 89.5% (21.2%–98.3%) | 92.6% (74.5%–97.3%) |
+| distance | near | 155 | 88.1% (73.9%–98.3%) | 65.7% (40.9%–82.4%) | 92.6% (86.0%–96.0%) |
+| distance | far | 28 | 92.8% (76.4%–98.0%) | 70.3% (19.8%–91.0%) | 67.8% (61.6%–100.0%) |
+
 ## #166 labels on their own (held-out, all rounds pooled)
 
 Share of frames read as "on screen". `screen_head_turned` should be high, `away_eyes_only` low.
