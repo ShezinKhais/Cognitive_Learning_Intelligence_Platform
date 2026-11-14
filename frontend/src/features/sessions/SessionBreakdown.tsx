@@ -101,8 +101,13 @@ export function DownloadResults({ sessionId, title }: { sessionId: string; title
       const link = document.createElement('a')
       link.href = url
       link.download = `${title.replace(/[^\w -]+/g, '').trim() || 'session'} results.csv`
+      link.rel = 'noopener'
+      // Attached while it is clicked, and the URL is kept for a minute: Safari
+      // and Firefox can cancel a download whose URL is revoked straight away.
+      document.body.append(link)
       link.click()
-      URL.revokeObjectURL(url)
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : 'The results could not be downloaded.')
     } finally {
