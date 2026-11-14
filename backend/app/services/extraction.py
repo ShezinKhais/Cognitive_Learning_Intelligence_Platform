@@ -32,7 +32,7 @@ import time
 import unicodedata
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from lxml import etree
@@ -79,7 +79,7 @@ class ExtractedElement:
 
     el_type: str  # "text" | "heading" | "image" | "table"
     content: str  # the text, or a placeholder note for images
-    page: int  # page number (PDF) or slide number (PPTX). 1 for docx/txt.
+    page: int  # page (PDF), slide (PPTX), or section (DOCX, TXT: see number_sections).
     # Headings only: 1 for a top-level section, 2 for one inside it, and so on,
     # where the format says. 0 is a heading with no known level, such as a
     # slide title: it applies to its own page only.
@@ -137,6 +137,8 @@ class ProcessingResult:
     # highest page/slide seen. PDF and PPTX report real pages; DOCX and TXT
     # always report 1 because Word/plain-text have no fixed pagination without
     # rendering. BBIS persists this as-is - it is a known format limitation.
+    # Their elements and chunks are numbered by section instead (see
+    # number_sections), which page_count does not count.
     page_count: int = 0
     parser_used: str = ""  # "pypdf" | "pypdf+ocr" | "docling" | "pypdf-low-quality" | ...
     warnings: list[str] = field(default_factory=list)
@@ -292,6 +294,12 @@ def looks_letter_spaced(text: str) -> bool:
 # and at least two of them, are control characters other than line breaks and
 # tabs. Real text has none; the text of a font with no character map has one
 # in every few, such as \x03 for each space.
+#
+# Known limit (review of #271): such a font can also give letters shifted to
+# other letters (",PDJHV" for "Images"), which has no control characters. On
+# a page that also has an undecodable line, every control-character line is
+# dropped with it; a shifted line with none of its own is kept. That caught
+# 36 of the 38 garbled pages in the sample; the other two are not caught.
 UNDECODED_SHARE = 0.1
 _LAYOUT = frozenset("\n\r\t \u00a0")
 
@@ -647,6 +655,65 @@ def read_txt(path: str, with_images: bool = False) -> list[ExtractedElement]:
         )
 
     return [ExtractedElement("text", clean_text(text), 1)] if text.strip() else []
+
+
+# ---------------------------------------------------------------------------
+# sections for formats without pages
+# ---------------------------------------------------------------------------
+
+# About a printed page. Word and text files have no pages, so every chunk used
+# to be "page 1": the generator saw [page 1] on every excerpt, cited chapter
+# or example numbers instead, and the citation check rejected the draft. It
+# also could never tell one part of the document from another (#269).
+SECTION_WORDS = 400
+# Parsers whose elements are numbered by section, not page. page_count stays
+# 1 for them: it is what BBIS stores, and sections are not pages.
+SECTIONED_PARSERS = frozenset({"python-docx", "plain-text"})
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+
+
+def _word_groups(text: str, limit: int) -> list[str]:
+    """Text cut at sentence ends into pieces of at most `limit` words; a
+    single sentence longer than that stays whole."""
+    groups: list[str] = []
+    current: list[str] = []
+    words = 0
+    for sentence in _SENTENCE_END.split(text):
+        n = len(sentence.split())
+        if current and words + n > limit:
+            groups.append(" ".join(current))
+            current, words = [], 0
+        current.append(sentence)
+        words += n
+    if current:
+        groups.append(" ".join(current))
+    return groups
+
+
+def number_sections(elements: list[ExtractedElement]) -> list[ExtractedElement]:
+    """Number a page-less document's elements by section, as `page`.
+
+    A section starts at each heading with a level (Heading 1, 2, ...) and
+    whenever the current one passes SECTION_WORDS, so a long stretch with no
+    headings is still split into citable parts. A paragraph too long for one
+    section, such as a whole text file, is cut at sentence ends. Headings
+    stay in force across sections, so chunks keep their chapter path.
+    """
+    numbered: list[ExtractedElement] = []
+    section, words = 1, 0
+    for element in elements:
+        if element.el_type == "heading":
+            if element.level > 0 and words:
+                section, words = section + 1, 0
+            numbered.append(replace(element, page=section))
+            continue
+        for piece in _word_groups(element.content, SECTION_WORDS):
+            n = len(piece.split())
+            if words and words + n > SECTION_WORDS:
+                section, words = section + 1, 0
+            numbered.append(replace(element, content=piece, page=section))
+            words += n
+    return numbered
 
 
 # ---------------------------------------------------------------------------
@@ -1042,9 +1109,9 @@ def extract(
     if ext == "pptx":
         return _run_reader(read_pptx, path, **images), "python-pptx", warnings
     if ext == "docx":
-        return _run_reader(read_docx, path, **images), "python-docx", warnings
+        return number_sections(_run_reader(read_docx, path, **images)), "python-docx", warnings
     if ext == "txt":
-        return _run_reader(read_txt, path, **images), "plain-text", warnings
+        return number_sections(_run_reader(read_txt, path, **images)), "plain-text", warnings
 
     raise ValidationError(f"Unsupported file format: .{ext}", {"received": ext})
 
@@ -1165,7 +1232,11 @@ def finish_material(extraction: Extraction, material_id: uuid.UUID) -> Processin
         material_id=material_id,
         elements=elements,
         chunks=chunks,
-        page_count=max((e.page for e in elements), default=0),
+        page_count=(
+            min(1, len(elements))
+            if extraction.parser_used in SECTIONED_PARSERS
+            else max((e.page for e in elements), default=0)
+        ),
         parser_used=extraction.parser_used,
         warnings=warnings,
     )

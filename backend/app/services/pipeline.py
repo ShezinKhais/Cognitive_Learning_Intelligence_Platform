@@ -42,7 +42,12 @@ from app.core.threads import run_in_daemon_thread
 from app.realtime.hub import SessionHub
 from app.realtime.hub import hub as default_hub
 from app.schemas.events import MaterialProgressPayload, MaterialStage, ServerEventType
-from app.services.extraction import ContentChunk, extract_material, finish_material
+from app.services.extraction import (
+    SECTIONED_PARSERS,
+    ContentChunk,
+    extract_material,
+    finish_material,
+)
 from app.services.generation import contains_embedded_instruction
 from app.services.image_captioning import CAPTION_PROMPT_VERSION, ImageCaptioner, add_captions
 from app.services.jobs import (
@@ -207,8 +212,15 @@ class MaterialJob:
             )
 
         # Checked before captioning, so a file already over the limits is
-        # rejected before it spends minutes of vision model calls.
-        validate_extraction(extraction.elements, pipeline.settings)
+        # rejected before it spends minutes of vision model calls. A Word or
+        # text file is numbered by section, not page, so it is one page here,
+        # as finish_material reports it: a long document is held back by the
+        # character limit, not by its number of sections.
+        validate_extraction(
+            extraction.elements,
+            pipeline.settings,
+            1 if extraction.parser_used in SECTIONED_PARSERS else None,
+        )
 
         model_runs: list[ModelRun] = []
         if pipeline.captioner is not None and any(e.image for e in extraction.elements):

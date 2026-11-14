@@ -34,6 +34,7 @@ from app.schemas.student_review import (
     StudentReview,
 )
 from app.services.course_membership import courses_of_user
+from app.services.source_labels import source_label
 
 
 def sessions_query(user_id: UUID):
@@ -313,6 +314,7 @@ async def question_sources(db: AsyncSession, session: Session, question: Questio
                 chunk_id=chunk.chunk_id,
                 material_title=title,
                 source_page=chunk.source_page,
+                source_label=source_label(title) or "Page",
                 text=chunk.chunk_text,
                 match="excerpt" if excerpt and excerpt in chunk.chunk_text else "page",
             )

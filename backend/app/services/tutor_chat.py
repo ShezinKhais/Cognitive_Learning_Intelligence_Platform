@@ -55,6 +55,7 @@ from app.schemas.content import MaterialStatus
 from app.services.ai_gateway import AiGateway, AiRequest, Priority, get_ai_gateway
 from app.services.discussion import notes_for
 from app.services.retrieval import RetrievedChunk
+from app.services.source_labels import source_label
 from app.services.tutor_guardrails import EarlierTurn, OpenQuestion, TutorPrompt, guarded_chat
 
 log = logging.getLogger("clip.tutor")
@@ -63,7 +64,8 @@ NDJSON = "application/x-ndjson"
 RATE_WINDOW_SECONDS = 60.0
 # How much of an excerpt a citation shows. Enough to recognise the passage.
 CITATION_EXCERPT_CHARS = 240
-# Lecture slides are cited by slide, everything else by page.
+# Lecture slides are cited by slide, Word and text files by section, and
+# everything else by page.
 SLIDE_SUFFIXES = (".pptx", ".ppt")
 
 
@@ -148,6 +150,7 @@ def longest_exchange(settings: Settings) -> float:
 class MaterialSource:
     title: str
     slides: bool
+    sections: bool = False
 
 
 @dataclass(frozen=True)
@@ -279,6 +282,7 @@ async def prepare(
         material.id: MaterialSource(
             title=material.filename,
             slides=material.filename.lower().endswith(SLIDE_SUFFIXES),
+            sections=source_label(material.filename) == "Section",
         )
         for material in await SessionRepository(db).materials_for(live)
         if material.status == MaterialStatus.COMPLETED.value
@@ -447,6 +451,7 @@ class TutorExchange:
                 + f" — {note.occurred_at.isoformat()}",
                 "source_page": None,
                 "source_slide": None,
+                "source_section": None,
                 "excerpt": note.text[:CITATION_EXCERPT_CHARS],
             }
         source = self._context.materials[self._found_in[chunk.chunk_id]]
@@ -456,8 +461,9 @@ class TutorExchange:
             # The [n] the answer cites it by, so the panel can link the two.
             "number": number,
             "material_title": source.title,
-            "source_page": None if source.slides else chunk.source_page,
+            "source_page": None if source.slides or source.sections else chunk.source_page,
             "source_slide": chunk.source_page if source.slides else None,
+            "source_section": chunk.source_page if source.sections else None,
             "excerpt": excerpt or None,
         }
 

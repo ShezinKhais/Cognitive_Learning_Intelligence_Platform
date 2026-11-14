@@ -35,11 +35,18 @@ class ExtractedContent(Protocol):
     source_page: int | None
 
 
-def page_previews(elements: Iterable[ExtractedContent]) -> list[MaterialPageOut]:
+def page_previews(
+    elements: Iterable[ExtractedContent], *, sections: bool = False
+) -> list[MaterialPageOut]:
     """One preview per page that has content, in page order.
 
     Elements without a page (a format with no pagination) are shown as page 1,
     which is how extraction numbers them.
+
+    `sections` is for a Word or text file, numbered by section rather than
+    page. A short section, such as a heading and a sentence, is normal there
+    and says nothing about the document, so only a whole document with too
+    little text is flagged, once, on its first section.
     """
     texts: dict[int, list[str]] = defaultdict(list)
     visuals: dict[int, int] = defaultdict(int)
@@ -51,8 +58,9 @@ def page_previews(elements: Iterable[ExtractedContent]) -> list[MaterialPageOut]
         elif element.content:
             texts[page].append(element.content)
 
+    total_words = sum(len(re.findall(r"\w+", "\n".join(parts))) for parts in texts.values())
     previews = []
-    for page in sorted(set(texts) | set(visuals)):
+    for index, page in enumerate(sorted(set(texts) | set(visuals))):
         text = "\n".join(texts[page])
         words = len(re.findall(r"\w+", text))
         images = visuals[page]
@@ -62,7 +70,11 @@ def page_previews(elements: Iterable[ExtractedContent]) -> list[MaterialPageOut]
                 text=text,
                 word_count=words,
                 visual_element_count=images,
-                is_thin=words < THIN_PAGE_WORDS,
+                is_thin=(
+                    index == 0 and total_words < THIN_PAGE_WORDS
+                    if sections
+                    else words < THIN_PAGE_WORDS
+                ),
                 is_visual_heavy=images >= VISUAL_PAGE_IMAGES and words < VISUAL_PAGE_WORDS,
             )
         )

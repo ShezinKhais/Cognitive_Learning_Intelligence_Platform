@@ -660,8 +660,9 @@ def _decoded_latex(value: object) -> bool:
 
     "\\frac" parses as a form feed and "rac", "\\theta" as a tab and "heta",
     "\\nabla" as a line break and "abla". No draft needs a control character
-    other than a line break, and a line break straight before a lower-case
-    letter is a LaTeX command far more often than a new line of text.
+    other than a line break. A line break is LaTeX only when what follows it
+    finishes a LaTeX command that starts with "n" ("abla", "eq", "ot", ...),
+    so a real new line, such as one before "a) first option", is kept.
     """
     if isinstance(value, str):
         return bool(_DECODED_LATEX.search(value))
@@ -672,7 +673,15 @@ def _decoded_latex(value: object) -> bool:
     return False
 
 
-_DECODED_LATEX = re.compile(r"[\x00-\x09\x0b-\x1f\x7f]|\n[a-z]")
+# LaTeX commands that start with "n", without the "n": a line break followed
+# by one of these, and then something that is not a letter, is "\\n" read as
+# an escape. "\\ni" and "\\nu" are left out: a new line starting "i)" or
+# "u " is likelier than either command.
+_N_COMMANDS = (
+    "abla|eq|eg|e|ewline|ot|otin|exists|leq|geq|mid|parallel|subseteq|"
+    "supseteq|earrow|warrow|atural|onumber|olimits|ormalsize"
+)
+_DECODED_LATEX = re.compile(rf"[\x00-\x09\x0b-\x1f\x7f]|\n(?:{_N_COMMANDS})(?![A-Za-z])")
 
 
 def parse_drafts(raw: str, question_type: QuestionType = QuestionType.MCQ) -> list[DraftQuestion]:

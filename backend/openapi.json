@@ -217,6 +217,194 @@
         "title": "ActionItem",
         "type": "object"
       },
+      "AiControls": {
+        "description": "The lecturer's AI switches for one class. Each is on unless turned off.",
+        "properties": {
+          "answer_seconds": {
+            "anyOf": [
+              {
+                "maximum": 300.0,
+                "minimum": 10.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How long students have to answer a checkpoint. Empty: the deployment's usual window.",
+            "title": "Answer Seconds"
+          },
+          "auto_checkpoints": {
+            "default": true,
+            "description": "Checkpoints go out on C.L.I.P's own timer. Off: only the lecturer sends them.",
+            "title": "Auto Checkpoints",
+            "type": "boolean"
+          },
+          "checkpoint_minutes": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": 3.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Roughly how many minutes between automatic checkpoints. Empty: the deployment's usual spacing.",
+            "title": "Checkpoint Minutes"
+          },
+          "engagement_estimates": {
+            "default": true,
+            "description": "Camera and microphone indicators, and engagement scoring, for the class.",
+            "title": "Engagement Estimates",
+            "type": "boolean"
+          },
+          "learning_assistant": {
+            "default": true,
+            "description": "Students may ask the learning assistant (tutor chat).",
+            "title": "Learning Assistant",
+            "type": "boolean"
+          },
+          "refocus_nudges": {
+            "default": true,
+            "description": "Students may get private prompts when they seem to have drifted off.",
+            "title": "Refocus Nudges",
+            "type": "boolean"
+          }
+        },
+        "title": "AiControls",
+        "type": "object"
+      },
+      "AiControlsOut": {
+        "properties": {
+          "answer_seconds": {
+            "anyOf": [
+              {
+                "maximum": 300.0,
+                "minimum": 10.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How long students have to answer a checkpoint. Empty: the deployment's usual window.",
+            "title": "Answer Seconds"
+          },
+          "auto_checkpoints": {
+            "default": true,
+            "description": "Checkpoints go out on C.L.I.P's own timer. Off: only the lecturer sends them.",
+            "title": "Auto Checkpoints",
+            "type": "boolean"
+          },
+          "checkpoint_minutes": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": 3.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Roughly how many minutes between automatic checkpoints. Empty: the deployment's usual spacing.",
+            "title": "Checkpoint Minutes"
+          },
+          "course_defaults": {
+            "$ref": "#/components/schemas/AiControls",
+            "description": "What every new class of this course starts with."
+          },
+          "engagement_estimates": {
+            "default": true,
+            "description": "Camera and microphone indicators, and engagement scoring, for the class.",
+            "title": "Engagement Estimates",
+            "type": "boolean"
+          },
+          "learning_assistant": {
+            "default": true,
+            "description": "Students may ask the learning assistant (tutor chat).",
+            "title": "Learning Assistant",
+            "type": "boolean"
+          },
+          "refocus_nudges": {
+            "default": true,
+            "description": "Students may get private prompts when they seem to have drifted off.",
+            "title": "Refocus Nudges",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "course_defaults"
+        ],
+        "title": "AiControlsOut",
+        "type": "object"
+      },
+      "AiControlsUpdate": {
+        "properties": {
+          "answer_seconds": {
+            "anyOf": [
+              {
+                "maximum": 300.0,
+                "minimum": 10.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How long students have to answer a checkpoint. Empty: the deployment's usual window.",
+            "title": "Answer Seconds"
+          },
+          "apply_to_course": {
+            "default": false,
+            "description": "Also make these the course's defaults for every new class. Only a lecturer of the course, or an admin, may.",
+            "title": "Apply To Course",
+            "type": "boolean"
+          },
+          "auto_checkpoints": {
+            "default": true,
+            "description": "Checkpoints go out on C.L.I.P's own timer. Off: only the lecturer sends them.",
+            "title": "Auto Checkpoints",
+            "type": "boolean"
+          },
+          "checkpoint_minutes": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": 3.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Roughly how many minutes between automatic checkpoints. Empty: the deployment's usual spacing.",
+            "title": "Checkpoint Minutes"
+          },
+          "engagement_estimates": {
+            "default": true,
+            "description": "Camera and microphone indicators, and engagement scoring, for the class.",
+            "title": "Engagement Estimates",
+            "type": "boolean"
+          },
+          "learning_assistant": {
+            "default": true,
+            "description": "Students may ask the learning assistant (tutor chat).",
+            "title": "Learning Assistant",
+            "type": "boolean"
+          },
+          "refocus_nudges": {
+            "default": true,
+            "description": "Students may get private prompts when they seem to have drifted off.",
+            "title": "Refocus Nudges",
+            "type": "boolean"
+          }
+        },
+        "title": "AiControlsUpdate",
+        "type": "object"
+      },
       "AlertOut": {
         "description": "An alert kept for the lecturer: what was raised, why, what to do about it,\nand whether anyone has seen it.\n\nServed from the stored alert, so it is there after a refresh and after the\nsession. The three figures at the end are those of a topic difficulty alert,\nnull for any other kind.",
         "properties": {
@@ -4466,6 +4654,16 @@
           },
           "material_title": {
             "title": "Material Title",
+            "type": "string"
+          },
+          "source_label": {
+            "default": "Page",
+            "enum": [
+              "Page",
+              "Slide",
+              "Section"
+            ],
+            "title": "Source Label",
             "type": "string"
           },
           "source_page": {
@@ -9187,6 +9385,102 @@
           }
         },
         "summary": "Update Session",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/ai-controls": {
+      "get": {
+        "description": "The lecturer's AI switches for this class, and the course's defaults.",
+        "operationId": "read_ai_controls_api_v1_sessions__session_id__ai_controls_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiControlsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Ai Controls",
+        "tags": [
+          "sessions"
+        ]
+      },
+      "put": {
+        "description": "Turn the class's AI features on or off. Applied at once, and the class is\ntold. With apply_to_course, every new class of the course starts this way.",
+        "operationId": "update_ai_controls_api_v1_sessions__session_id__ai_controls_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiControlsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiControlsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Ai Controls",
         "tags": [
           "sessions"
         ]

@@ -144,6 +144,8 @@ AUDIENCE = {
     ("GET", "/api/v1/sessions/{session_id}/question-plan"): STAFF,
     ("GET", "/api/v1/sessions/{session_id}/question-plan/candidates"): STAFF,
     ("PUT", "/api/v1/sessions/{session_id}/question-plan"): STAFF,
+    ("GET", "/api/v1/sessions/{session_id}/ai-controls"): STAFF,
+    ("PUT", "/api/v1/sessions/{session_id}/ai-controls"): STAFF,
     ("GET", "/api/v1/sessions/{session_id}/questions"): STAFF,
     ("POST", "/api/v1/sessions/{session_id}/questions/{question_id}:deliver"): STAFF,
     ("GET", "/api/v1/sessions/{session_id}/readiness"): STAFF,

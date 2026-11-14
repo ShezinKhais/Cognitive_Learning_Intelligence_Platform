@@ -202,6 +202,59 @@ class ClientEvent(BaseModel):
 # --------------------------------------------------------------------------
 
 
+MIN_CHECKPOINT_MINUTES, MAX_CHECKPOINT_MINUTES = 3, 90
+MIN_ANSWER_SECONDS, MAX_ANSWER_SECONDS = 10, 300
+
+
+class AiControls(BaseModel):
+    """The lecturer's AI switches for one class. Each is on unless turned off."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    auto_checkpoints: bool = Field(
+        default=True,
+        description="Checkpoints go out on C.L.I.P's own timer. Off: only the lecturer sends them.",
+    )
+    learning_assistant: bool = Field(
+        default=True, description="Students may ask the learning assistant (tutor chat)."
+    )
+    refocus_nudges: bool = Field(
+        default=True,
+        description="Students may get private prompts when they seem to have drifted off.",
+    )
+    engagement_estimates: bool = Field(
+        default=True,
+        description="Camera and microphone indicators, and engagement scoring, for the class.",
+    )
+    checkpoint_minutes: int | None = Field(
+        default=None,
+        ge=MIN_CHECKPOINT_MINUTES,
+        le=MAX_CHECKPOINT_MINUTES,
+        description="Roughly how many minutes between automatic checkpoints. Empty: the "
+        "deployment's usual spacing.",
+    )
+    answer_seconds: int | None = Field(
+        default=None,
+        ge=MIN_ANSWER_SECONDS,
+        le=MAX_ANSWER_SECONDS,
+        description="How long students have to answer a checkpoint. Empty: the deployment's "
+        "usual window.",
+    )
+
+    @classmethod
+    def of(cls, row: object) -> AiControls:
+        """The switches stored on a session or course row. A row without them,
+        such as one built by a test, has every switch on."""
+        return cls(
+            auto_checkpoints=getattr(row, "ai_auto_checkpoints", True),
+            learning_assistant=getattr(row, "ai_learning_assistant", True),
+            refocus_nudges=getattr(row, "ai_refocus_nudges", True),
+            engagement_estimates=getattr(row, "ai_engagement_estimates", True),
+            checkpoint_minutes=getattr(row, "checkpoint_minutes", None),
+            answer_seconds=getattr(row, "answer_seconds", None),
+        )
+
+
 class SessionStatePayload(BaseModel):
     """Sent on join and whenever the session changes state, so a client that
     connects late renders the right thing without polling."""
@@ -216,6 +269,11 @@ class SessionStatePayload(BaseModel):
         description="An active session the lecturer has paused. No question goes out until "
         "it resumes; one already open runs to the end of its window.",
     )
+    ai: AiControls = Field(
+        default_factory=AiControls,
+        description="The lecturer's AI switches for the class, so students' pages hide what "
+        "is off.",
+    )
 
 
 class QuestionDeliveredPayload(BaseModel):
@@ -225,6 +283,11 @@ class QuestionDeliveredPayload(BaseModel):
     closes_at: datetime
     window_seconds: int
     source_slide: int | None = None
+    source_label: Literal["Page", "Slide", "Section"] | None = Field(
+        default=None,
+        description="What source_slide numbers. Word and text files are numbered by section. "
+        "Null when not known.",
+    )
 
 
 class QuestionClosedPayload(BaseModel):
@@ -256,6 +319,11 @@ class FeedbackResultPayload(BaseModel):
     correct: bool | None = Field(default=None, description="Null while free text is classifying.")
     explanation: str | None = None
     source_slide: int | None = None
+    source_label: Literal["Page", "Slide", "Section"] | None = Field(
+        default=None,
+        description="What source_slide numbers. Word and text files are numbered by section. "
+        "Null when not known.",
+    )
 
 
 class AttentionPromptPayload(BaseModel):

@@ -267,6 +267,7 @@ async def test_a_student_is_answered_from_the_sessions_material(db, app, tutor) 
             "material_title": "week1.pdf",
             "source_page": 3,
             "source_slide": None,
+            "source_section": None,
             "excerpt": EXCERPT,
         }
     ]
@@ -780,3 +781,22 @@ async def test_the_session_and_course_are_left_as_they_were(db, app, tutor) -> N
         question = await check.get(Question, live.question_id)
         course = await check.get(Course, live.course.id)
     assert (status, question.status, course.code) == ("active", "staged", live.course.code)
+
+
+async def test_a_student_cannot_ask_when_the_lecturer_turned_the_assistant_off(
+    db, app, tutor
+) -> None:
+    client, _, _ = db
+    live = await _running_class(db, app)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    switched = client.put(
+        f"/api/v1/sessions/{live.id}/ai-controls", json={"learning_assistant": False}
+    )
+    assert switched.status_code == 200, switched.text
+    sign_in_as(app, STUDENT_ID, Role.STUDENT)
+
+    refused = _ask(client, live.id)
+
+    assert refused.status_code == 403
+    assert refused.json()["error"]["detail"]["reason"] == "learning_assistant_off"
+    assert tutor.model.embedded == []
