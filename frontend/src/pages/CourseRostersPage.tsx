@@ -7,6 +7,7 @@ import { EmptyState, PageBody, PageHeader, Panel, SkeletonRows, Tag } from '../c
 import { ProblemState } from '../components/ui/ProblemState'
 import { problemArt, problemOf, type Problem } from '../components/ui/problem'
 import { useToast } from '../components/ui/toast'
+import { CourseAttendancePanel } from '../features/courses/Attendance'
 import {
   addStudent,
   getRoster,
@@ -278,6 +279,7 @@ export default function CourseRostersPage() {
                 </Panel>
               </div>
             )}
+            {code && <CourseAttendancePanel key={code} code={code} />}
           </div>
         )}
       </PageBody>

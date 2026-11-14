@@ -49,6 +49,9 @@ NOT_AUDITED = {
     # Authenticated by Bot Framework, not a user; acts through the meeting
     # routes' service, and each activity is logged.
     ("POST", "/api/v1/teams/messages"),
+    # Mutes the lecturer's own Teams pop-ups for the class that is running.
+    # Held in memory for that class only, and nothing is kept.
+    ("PUT", "/api/v1/meetings/sessions/{session_id}/updates"),
     # Asks the tutor a question and changes nothing that is kept.
     ("POST", "/api/v1/sessions/{session_id}/chat"),
     # Streams the upload to disk outside any database transaction, so there

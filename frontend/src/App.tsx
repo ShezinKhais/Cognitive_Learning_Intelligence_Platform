@@ -53,6 +53,7 @@ const StudentSummaryPage = lazy(() => import('./pages/StudentSummaryPage'))
 const SystemStatusPage = lazy(() => import('./pages/SystemStatusPage'))
 const TeamsConfigPage = lazy(() => import('./pages/TeamsConfigPage'))
 const TeamsLecturerMeetingPage = lazy(() => import('./pages/TeamsLecturerMeetingPage'))
+const TeamsLecturerUpdatePage = lazy(() => import('./pages/TeamsLecturerUpdatePage'))
 const TeamsLauncherPage = lazy(() => import('./pages/TeamsLauncherPage'))
 const TeamsMeetingEntryPage = lazy(() => import('./pages/TeamsMeetingEntryPage'))
 const TeamsMeetingPage = lazy(() => import('./pages/TeamsMeetingPage'))
@@ -256,6 +257,11 @@ export default function App() {
             <Route
               path="/lecturer/teams/meeting"
               element={<TeamsLecturerMeetingPage />}
+            />
+            {/* The pop-up Teams opens for a lecturer's class update. */}
+            <Route
+              path="/lecturer/teams/update"
+              element={<TeamsLecturerUpdatePage />}
             />
 
             <Route element={<ShellOutlet />}>

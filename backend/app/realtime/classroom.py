@@ -129,6 +129,15 @@ WORKERS_ENV = "WEB_CONCURRENCY"
 ENGAGEMENT_PROMPT_MESSAGE = "Quick check-in: are you still following along?"
 # Sent when a student's own device has reported them away for a while.
 REFOCUS_PROMPT_MESSAGE = "Quick check-in: are you still with the class?"
+# The lecturer is told engagement is low across the class once at least this
+# many connected students, and this share of them, are scored low together.
+# One student is never singled out to them this way.
+LOW_ENGAGEMENT_UPDATE_STUDENTS = 3
+# A last call goes this long before a checkpoint closes, to students who have
+# not answered, and only when the window is at least the minimum.
+LAST_CALL_SECONDS = 10
+LAST_CALL_MIN_WINDOW_SECONDS = 25
+LOW_ENGAGEMENT_UPDATE_SHARE = 0.25
 
 NOT_OPEN = "This question is not open."
 
@@ -253,8 +262,22 @@ class Classroom:
         self.alert_recorder: AlertRecorder | None = None
         self.attention_recorder: AttentionRecorder | None = None
         self.checkpoint_notifier: Callable[[UUID, UUID, float], None] | None = None
-        # Tells the session's lecturer in Teams that an alert was raised.
-        self.alert_notifier: Callable[[UUID], None] | None = None
+        # Tells the session's lecturer in Teams that an alert was raised,
+        # with the alert's message.
+        self.alert_notifier: Callable[[UUID, str | None], None] | None = None
+        # Tells the session's lecturer in Teams how the class is going: a kind
+        # (checkpoint, attention) and a line of counts, never a name.
+        self.lecturer_update_notifier: Callable[[UUID, str, str], None] | None = None
+        # Tells the meeting a class has ended, so students can review it.
+        self.class_ended_notifier: Callable[[UUID], None] | None = None
+        # Adds what the stored answers say to the lecturer's checkpoint update,
+        # such as the most common wrong answer. Reads the database, so it is
+        # wired at startup and absent in tests that have none.
+        self.checkpoint_detail: Callable[[UUID, UUID], Awaitable[str | None]] | None = None
+        # Tells students who have not answered that a checkpoint is about to
+        # close: the session, the question, who, and when it closes.
+        self.last_call_notifier: Callable[[UUID, UUID, set[UUID], float], None] | None = None
+        self._last_calls: set[asyncio.Task[None]] = set()
         # The lecturer's AI switches, by session. A session not here has all
         # of them on.
         self._ai: dict[UUID, AiControls] = {}
@@ -457,6 +480,7 @@ class Classroom:
         live = self._live.pop(session_id, None)
         if live is None:
             await self.announce(session_id, status, delivered)
+            self._class_ended(session_id, status)
             self._hub.forget_session(session_id)
             return
         async with self._settled(live):
@@ -473,6 +497,7 @@ class Classroom:
         for prompt in withdrawn:
             _cancel(prompt.expiry)
         await self.announce(session_id, status, delivered)
+        self._class_ended(session_id, status)
         # Before the session is forgotten, so the class can still be shown the
         # answer and the lecturer told. Independent of each other, and the
         # lecturer's request waits on them.
@@ -491,7 +516,7 @@ class Classroom:
         Attention minutes already being stored are waited for, not cancelled:
         each is bounded by the recorder timeout, and cancelling one would lose
         a minute that was handed over before its commit."""
-        tasks = []
+        tasks: list = list(self._last_calls)
         storing = [task for live in self._live.values() for task in live.storing]
         for live in self._live.values():
             tasks.append(live.cycle)
@@ -604,9 +629,45 @@ class Classroom:
         await self._tell_staff(session_id, ServerEventType.ALERT_RAISED, data)
         if self.alert_notifier is not None:
             try:
-                self.alert_notifier(session_id)
+                message = data.get("message")
+                self.alert_notifier(session_id, message if isinstance(message, str) else None)
             except Exception:
                 log.warning("Could not enqueue Teams alert notification")
+
+    def _schedule_last_call(self, live: LiveSession, open_: _OpenQuestion) -> None:
+        """LAST_CALL_SECONDS before a checkpoint closes, tell the students who
+        were shown it and have not answered. Only for a window long enough
+        that the reminder does not land on top of the question itself."""
+        closes = open_.question.closes_at
+        if (closes - open_.opened_at).total_seconds() < LAST_CALL_MIN_WINDOW_SECONDS:
+            return
+
+        async def remind() -> None:
+            await asyncio.sleep(max(0.0, (closes - _now()).total_seconds() - LAST_CALL_SECONDS))
+            if live.open is not open_ or live.countdown.paused:
+                return
+            waiting = open_.present - open_.answered
+            if waiting and self.last_call_notifier is not None:
+                try:
+                    self.last_call_notifier(
+                        live.session_id,
+                        open_.question.question_id,
+                        set(waiting),
+                        closes.timestamp(),
+                    )
+                except Exception:
+                    log.warning("Could not enqueue a Teams last call")
+
+        task = asyncio.create_task(remind(), name=f"last-call-{open_.question.question_id}")
+        self._last_calls.add(task)
+        task.add_done_callback(self._last_calls.discard)
+
+    def _update_lecturer(self, session_id: UUID, kind: str, text: str) -> None:
+        if self.lecturer_update_notifier is not None:
+            try:
+                self.lecturer_update_notifier(session_id, kind, text)
+            except Exception:
+                log.warning("Could not enqueue a Teams update for the lecturer")
 
     def welcome(
         self, session_id: UUID, recorded: SessionStatus, user_id: UUID, role: Role | None
@@ -742,6 +803,8 @@ class Classroom:
                     )
                 except Exception:
                     log.warning("Could not enqueue Teams checkpoint notification")
+            if self.last_call_notifier is not None:
+                self._schedule_last_call(live, live.open)
         return payload
 
     async def _close_when_due(self, live: LiveSession, open_: _OpenQuestion) -> None:
@@ -779,6 +842,13 @@ class Classroom:
                 if open_ is None or all(saved.done() for saved in open_.saving):
                     yield
                     return
+
+    def _class_ended(self, session_id: UUID, status: SessionStatus) -> None:
+        if status is SessionStatus.ENDED and self.class_ended_notifier is not None:
+            try:
+                self.class_ended_notifier(session_id)
+            except Exception:
+                log.warning("Could not enqueue the Teams end-of-class card")
 
     async def _close_locked(
         self, live: LiveSession, reason: QuestionCloseReason
@@ -1199,7 +1269,10 @@ class Classroom:
         the cooldown. _prompt_locked then applies the limits every prompt
         obeys: not while paused, not over a question the student still has to
         answer, one at a time, and no more than the cap. The prompt goes to
-        the student alone; staff are not told.
+        the student alone; staff are not told who.
+
+        When enough of the class is scored low at once, the lecturer is told
+        how many, in Teams, so they can change pace without opening C.L.I.P.
         """
         ai = self.ai(live.session_id)
         if not ai.engagement_estimates:
@@ -1209,6 +1282,7 @@ class Classroom:
         needed = settings.refocus_min_signal_seconds
         cooldown = timedelta(seconds=settings.refocus_cooldown_seconds)
         accommodated = self.accommodations.members()
+        low = 0
         for user_id in live.attention.observed():
             # Withdrawing monitoring already drops the student's signals
             # (Attention.forget), so they are not observed; this is the
@@ -1216,6 +1290,7 @@ class Classroom:
             if user_id not in connected or not self.consents.monitored(user_id):
                 continue
             scored = live.attention.rescore(user_id, now, user_id in accommodated)
+            low += should_send_dynamic_prompt(scored.engagement)
             signal = live.attention.signal(user_id, now)
             if (
                 ai.refocus_nudges
@@ -1228,6 +1303,14 @@ class Classroom:
                 and await self._prompt_locked(live, user_id, REFOCUS_PROMPT_MESSAGE) is not None
             ):
                 live.attention.refocused(user_id, now)
+        if low >= LOW_ENGAGEMENT_UPDATE_STUDENTS and low >= LOW_ENGAGEMENT_UPDATE_SHARE * len(
+            connected
+        ):
+            self._update_lecturer(
+                live.session_id,
+                "attention",
+                f"Engagement looks low for {low} of {len(connected)} students right now.",
+            )
 
     async def _tell_rooms_locked(self, live: LiveSession, now: datetime) -> list[RoomAlert]:
         """Tell connected staff about every room whose status has changed,
@@ -1422,9 +1505,26 @@ class Classroom:
         """Store a close and reveal its answer, and alert the lecturer if the
         class did not follow. Independent, so neither waits on the other."""
         if closed is not None:
-            await asyncio.gather(
-                self._record_close(closed), self._check_comprehension(live, closed)
-            )
+            # The close is stored first, so the lecturer's update can say
+            # what the stored answers show.
+            await self._record_close(closed)
+            if closed.reason is not QuestionCloseReason.SESSION_ENDED and closed.eligible:
+                text = (
+                    f"Checkpoint closed: {len(closed.answered)} of {len(closed.eligible)} "
+                    "students answered."
+                )
+                if self.checkpoint_detail is not None and closed.answered:
+                    detail = await best_effort(
+                        self.checkpoint_detail(closed.session_id, closed.question_id),
+                        "describe a checkpoint",
+                        closed.session_id,
+                    )
+                    if detail:
+                        text = f"{text[:-1]}, {detail}"
+                # Before the comprehension check, so an alert it raises is
+                # told after it.
+                self._update_lecturer(closed.session_id, "checkpoint", text)
+            await self._check_comprehension(live, closed)
 
     async def _record_close(self, closed: ClosedQuestion) -> None:
         if self.close_recorder is None:

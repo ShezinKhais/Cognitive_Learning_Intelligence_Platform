@@ -577,6 +577,115 @@
         "title": "AlertOut",
         "type": "object"
       },
+      "AttendanceClass": {
+        "properties": {
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "title",
+          "starts_at"
+        ],
+        "title": "AttendanceClass",
+        "type": "object"
+      },
+      "AttendanceRow": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "first_seen": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Seen"
+          },
+          "last_seen": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen"
+          },
+          "minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "From first seen to last seen, rounded down. None if absent.",
+            "title": "Minutes"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "present": {
+            "title": "Present",
+            "type": "boolean"
+          },
+          "sources": {
+            "description": "clip: joined the class in C.L.I.P. teams: seen joining the Teams meeting.",
+            "items": {
+              "enum": [
+                "clip",
+                "teams"
+              ],
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "student_id": {
+            "format": "uuid",
+            "title": "Student Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "student_id",
+          "name",
+          "email",
+          "present"
+        ],
+        "title": "AttendanceRow",
+        "type": "object"
+      },
       "AuditEntryOut": {
         "properties": {
           "action_type": {
@@ -1537,6 +1646,74 @@
         "title": "ConsiderationOut",
         "type": "object"
       },
+      "CourseAttendanceOut": {
+        "properties": {
+          "classes": {
+            "description": "Finished classes, oldest first.",
+            "items": {
+              "$ref": "#/components/schemas/AttendanceClass"
+            },
+            "title": "Classes",
+            "type": "array"
+          },
+          "course_code": {
+            "title": "Course Code",
+            "type": "string"
+          },
+          "students": {
+            "items": {
+              "$ref": "#/components/schemas/CourseAttendanceRow"
+            },
+            "title": "Students",
+            "type": "array"
+          }
+        },
+        "required": [
+          "course_code",
+          "classes",
+          "students"
+        ],
+        "title": "CourseAttendanceOut",
+        "type": "object"
+      },
+      "CourseAttendanceRow": {
+        "properties": {
+          "attended": {
+            "title": "Attended",
+            "type": "integer"
+          },
+          "classes": {
+            "description": "One per class, in the order of `classes`.",
+            "items": {
+              "type": "boolean"
+            },
+            "title": "Classes",
+            "type": "array"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "student_id": {
+            "format": "uuid",
+            "title": "Student Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "student_id",
+          "name",
+          "email",
+          "attended",
+          "classes"
+        ],
+        "title": "CourseAttendanceRow",
+        "type": "object"
+      },
       "CourseCreate": {
         "properties": {
           "code": {
@@ -2375,6 +2552,31 @@
           "detail"
         ],
         "title": "ImportRow",
+        "type": "object"
+      },
+      "LecturerUpdateOut": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "kind": {
+            "description": "alert, checkpoint or attention.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "kind",
+          "text"
+        ],
+        "title": "LecturerUpdateOut",
         "type": "object"
       },
       "LessonQuestionOut": {
@@ -4911,6 +5113,61 @@
         "title": "RosterStudentAdd",
         "type": "object"
       },
+      "SessionAttendanceOut": {
+        "properties": {
+          "course_code": {
+            "title": "Course Code",
+            "type": "string"
+          },
+          "present": {
+            "title": "Present",
+            "type": "integer"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "students": {
+            "items": {
+              "$ref": "#/components/schemas/AttendanceRow"
+            },
+            "title": "Students",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "title",
+          "course_code",
+          "starts_at",
+          "present",
+          "total",
+          "students"
+        ],
+        "title": "SessionAttendanceOut",
+        "type": "object"
+      },
       "SessionBreakdownOut": {
         "properties": {
           "questions": {
@@ -5698,6 +5955,58 @@
           "token"
         ],
         "title": "TeamsSignInRequest",
+        "type": "object"
+      },
+      "TeamsUpdatesMute": {
+        "properties": {
+          "muted": {
+            "default": true,
+            "description": "False turns the pop-ups back on.",
+            "title": "Muted",
+            "type": "boolean"
+          }
+        },
+        "title": "TeamsUpdatesMute",
+        "type": "object"
+      },
+      "TeamsUpdatesOut": {
+        "description": "What the lecturer's Teams update pop-up shows: the latest updates for\nthe class, newest first, whether they are muted, and how many of the\ncourse's students C.L.I.P can reach in Teams.",
+        "properties": {
+          "muted": {
+            "title": "Muted",
+            "type": "boolean"
+          },
+          "students_in_teams": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Students who have opened C.L.I.P in Teams, so checkpoints pop up for them. None when Teams notifications are off.",
+            "title": "Students In Teams"
+          },
+          "students_on_course": {
+            "title": "Students On Course",
+            "type": "integer"
+          },
+          "updates": {
+            "items": {
+              "$ref": "#/components/schemas/LecturerUpdateOut"
+            },
+            "title": "Updates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "muted",
+          "updates",
+          "students_on_course",
+          "students_in_teams"
+        ],
+        "title": "TeamsUpdatesOut",
         "type": "object"
       },
       "TimetableImportResult": {
@@ -7001,6 +7310,88 @@
           }
         },
         "summary": "My Courses",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/v1/courses/{code}/attendance": {
+      "get": {
+        "description": "Who attended each finished class of the course, oldest first.",
+        "operationId": "course_attendance_api_v1_courses__code__attendance_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseAttendanceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Course Attendance",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/v1/courses/{code}/attendance.csv": {
+      "get": {
+        "description": "The same as a CSV, one row per student and one column per class.",
+        "operationId": "course_attendance_csv_api_v1_courses__code__attendance_csv_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/csv": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Course Attendance Csv",
         "tags": [
           "courses"
         ]
@@ -8798,6 +9189,102 @@
         ]
       }
     },
+    "/api/v1/meetings/sessions/{session_id}/updates": {
+      "get": {
+        "description": "The latest Teams updates for the lecturer's class, for the pop-up\nthey open, and how many of its students C.L.I.P can reach in Teams.",
+        "operationId": "teams_updates_api_v1_meetings_sessions__session_id__updates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamsUpdatesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Teams Updates",
+        "tags": [
+          "meetings"
+        ]
+      },
+      "put": {
+        "description": "Mute, or unmute, the lecturer's Teams pop-ups for the rest of the class.\nThe updates are still listed.",
+        "operationId": "mute_teams_updates_api_v1_meetings_sessions__session_id__updates_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamsUpdatesMute"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamsUpdatesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mute Teams Updates",
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
     "/api/v1/meetings/{meeting_id}": {
       "get": {
         "description": "The session this meeting holds, if the caller runs it or is an admin.\nFor the lecturer's Teams tab, which knows the meeting but not the session.",
@@ -9554,6 +10041,50 @@
           }
         },
         "summary": "Acknowledge Session Alert",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/attendance": {
+      "get": {
+        "description": "Which of the course's students were in this class: joined it in C.L.I.P\nor were seen joining its Teams meeting.",
+        "operationId": "session_attendance_api_v1_sessions__session_id__attendance_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionAttendanceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Session Attendance",
         "tags": [
           "sessions"
         ]

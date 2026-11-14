@@ -11,19 +11,14 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import Response
 
 from app.api.deps import AppSettings, CurrentUser, DbSession, require_consents, require_roles
 from app.core.audit import audit_action
-from app.schemas.accounts import (
-    BulkRosterIn,
-    BulkRosterOut,
-    CourseLecturersSet,
-    CourseOut,
-    CourseRoster,
-    RosterStudentAdd,
-)
+from app.schemas.accounts import CourseLecturersSet, CourseOut, CourseRoster, RosterStudentAdd
+from app.schemas.attendance import CourseAttendanceOut
 from app.schemas.identity import ConsentType, Role
-from app.services import course_membership, roster_bulk
+from app.services import attendance, course_membership
 
 router = APIRouter(
     prefix="/courses",
@@ -40,6 +35,39 @@ async def my_courses(principal: CurrentUser, db: DbSession) -> list[CourseOut]:
     """The courses the caller manages: those they teach, or every course for
     an admin."""
     return await course_membership.my_courses(db, principal)
+
+
+@router.get("/{code}/attendance", response_model=CourseAttendanceOut)
+async def course_attendance(
+    code: str, principal: CurrentUser, db: DbSession
+) -> CourseAttendanceOut:
+    """Who attended each finished class of the course, oldest first."""
+    course = await course_membership._course(db, code)
+    await course_membership._may_manage(db, principal, course)
+    return await attendance.course_attendance(db, course)
+
+
+@router.get(
+    "/{code}/attendance.csv",
+    response_class=Response,
+    responses={200: {"content": {"text/csv": {}}}},
+)
+@audit_action("COURSE_ATTENDANCE_EXPORTED")
+async def course_attendance_csv(
+    code: str, principal: CurrentUser, request: Request, settings: AppSettings, db: DbSession
+) -> Response:
+    """The same as a CSV, one row per student and one column per class."""
+    course = await course_membership._course(db, code)
+    await course_membership._may_manage(db, principal, course)
+    body = attendance.course_csv(await attendance.course_attendance(db, course))
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="attendance-{course.code}.csv"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.get("/{code}/roster", response_model=CourseRoster)

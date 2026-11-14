@@ -17,7 +17,7 @@ from app.api.deps import AppSettings, DbSession
 from app.core.errors import ServiceUnavailableError
 from app.schemas.meetings import TeamsActivity
 from app.services import teams_bot, teams_replies
-from app.services.teams_notifications import remember_reference
+from app.services.teams_notifications import checkpoint_dialog_for, remember_reference
 
 router = APIRouter(prefix="/teams", tags=["teams"])
 
@@ -48,7 +48,7 @@ async def bot_messages(
     db: DbSession,
     settings: AppSettings,
     authenticator: Annotated[teams_bot.BotAuthenticator, Depends(get_bot_authenticator)],
-) -> None:
+) -> dict | None:
     """Receive an activity from Teams. Meeting starts and ends are applied to
     the linked session; a message gets a short reply; everything else is
     acknowledged. An activity from any other Bot Framework channel, or from
@@ -57,6 +57,10 @@ async def bot_messages(
         request.headers.get("Authorization"), activity.service_url, activity.channel_id
     )
     authenticator.authorize(activity)
+    if activity.type == "invoke" and activity.name == "task/fetch":
+        # "Answer now" on a checkpoint card: Teams opens the dialog this
+        # returns over the meeting, so the student never leaves the lecture.
+        return checkpoint_dialog_for(getattr(activity, "value", None), settings) or {}
     # Before the activity is applied, so a refusal there still leaves the
     # meeting reachable for checkpoint notifications.
     await remember_reference(db, activity, settings)

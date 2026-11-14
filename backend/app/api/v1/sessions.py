@@ -31,6 +31,7 @@ from app.repositories.session_repository import SessionRepository
 from app.repositories.student_repository import StudentRepository
 from app.repositories.topic_difficulty_repository import DatabaseTopicAnswers
 from app.schemas.ai_controls import AiControlsOut, AiControlsUpdate
+from app.schemas.attendance import SessionAttendanceOut
 from app.schemas.breakout import RoomPlanIn, RoomPlanOut
 from app.schemas.common import Page
 from app.schemas.identity import ConsentType, Role
@@ -53,6 +54,7 @@ from app.schemas.session import (
 from app.services import (
     ai_controls,
     alert_store,
+    attendance,
     breakout,
     question_plan,
     session_breakdown,
@@ -401,6 +403,17 @@ async def require_analytics_access(db: DbSession, principal: CurrentUser, sessio
         row, user_id=principal.user_id, role=principal.role
     ):
         raise NotFoundError("Session was not found.", {"session_id": str(session_id)})
+
+
+@router.get("/{session_id}/attendance", response_model=SessionAttendanceOut, dependencies=_staff)
+async def session_attendance(
+    session_id: UUID, principal: CurrentUser, db: DbSession
+) -> SessionAttendanceOut:
+    """Which of the course's students were in this class: joined it in C.L.I.P
+    or were seen joining its Teams meeting."""
+    await require_analytics_access(db, principal, session_id)
+    row = await SessionRepository(db).get(session_id)
+    return await attendance.session_attendance(db, row)
 
 
 @router.get("/{session_id}/breakdown", response_model=SessionBreakdownOut, dependencies=_staff)
