@@ -143,7 +143,7 @@ export default function AppShell({ user, children }: { user: CurrentUser; childr
         <motion.main
           id="content"
           tabIndex={-1}
-          className="min-w-0 outline-none"
+          className="flex min-h-[calc(100dvh-var(--shell-header,0px))] min-w-0 flex-col outline-none"
           initial={false}
           animate={entered ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
           transition={{ duration: 0.4, ease: [0.2, 0, 0, 1] }}
@@ -157,6 +157,11 @@ export default function AppShell({ user, children }: { user: CurrentUser; childr
           >
             {children}
           </motion.div>
+          <footer className="mt-auto px-4 pb-4 pt-8 text-center text-xs text-muted-foreground">
+            <Link to="/privacy" className="underline-offset-2 hover:text-foreground hover:underline">Privacy notice</Link>
+            <span aria-hidden="true" className="mx-2">·</span>
+            <Link to="/terms" className="underline-offset-2 hover:text-foreground hover:underline">Terms of use</Link>
+          </footer>
         </motion.main>
       </div>
     </LayoutGroup>

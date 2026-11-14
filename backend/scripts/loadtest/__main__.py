@@ -22,10 +22,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from app.core.config import get_settings
 from scripts.loadtest import environment, scenarios
 from scripts.loadtest.environment import BACKEND, Database, Seeded, Server
 from scripts.loadtest.report import write_markdown
 from scripts.loadtest.scenarios import Classroom, Result
+from scripts.loadtest.scenarios.live_ai import live_ai_load
 
 ALL = (
     "class",
@@ -39,6 +41,7 @@ ALL = (
     "teams",
     "scheduler",
 )
+OPT_IN = {"live-ai"}
 
 # The class scenarios share one server. Short timings, so a run takes minutes:
 # a response window of two seconds, and the watch looking every second.
@@ -82,14 +85,26 @@ def machine() -> dict[str, Any]:
 
 
 async def run(args: argparse.Namespace) -> list[Result]:
-    chosen = [name for name in ALL if name in args.only]
+    chosen = [name for name in (*ALL, "live-ai") if name in args.only]
     if "database" in chosen and not args.database_outage:
         chosen.remove("database")
     results: list[Result] = []
     workdir = Path(tempfile.mkdtemp(prefix="clip-load-"))
     secret = secrets.token_urlsafe(48)
     database: Database = await environment.create_database(args.database_host)
-    server = Server(database, secret, workdir, **CLASS_SERVER)
+    class_settings = dict(CLASS_SERVER)
+    if "live-ai" in chosen:
+        settings = get_settings()
+        class_settings.update(
+            OLLAMA_BASE_URL=settings.ollama_base_url,
+            OLLAMA_MODEL=settings.ollama_model,
+            EMBEDDING_MODEL=settings.embedding_model,
+            AI_MAX_CONCURRENCY=str(settings.ai_max_concurrency),
+            AI_QUEUE_LIMIT=str(settings.ai_queue_limit),
+            FREE_TEXT_QUESTIONS_ENABLED="true",
+            CHECKPOINT_RESPONSE_WINDOW_SECONDS="8",
+        )
+    server = Server(database, secret, workdir, **class_settings)
     cycle_server = Server(database, secret, workdir, **CYCLE_SERVER)
     try:
         seeded: Seeded = await environment.seed(
@@ -180,6 +195,10 @@ async def class_scenarios(
     for name, step in steps.items():
         if name in chosen:
             results.append(await guarded(name, step()))
+    if "live-ai" in chosen:
+        results.append(
+            await guarded("live-ai", live_ai_load(room, get_settings(), args.ai_chatters))
+        )
     await room.end()
     await room.close()
     if "teams" in chosen:
@@ -197,7 +216,12 @@ def main(argv: list[str] | None = None) -> int:
         "--classes", type=int, default=10, help="sessions in the scheduler scenario"
     )
     parser.add_argument("--cycle-seconds", type=float, default=30.0)
-    parser.add_argument("--only", default=",".join(ALL), help="comma-separated scenario names")
+    parser.add_argument(
+        "--only", default=",".join(ALL), help="scenario names, including opt-in live-ai"
+    )
+    parser.add_argument(
+        "--ai-chatters", type=int, default=4, help="simultaneous tutors for live-ai"
+    )
     parser.add_argument(
         "--database-outage",
         action="store_true",
@@ -211,9 +235,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--markdown", type=Path, default=None, help="write the results as a report")
     args = parser.parse_args(argv)
     args.only = {name.strip() for name in args.only.split(",") if name.strip()}
-    unknown = args.only - set(ALL)
+    unknown = args.only - set(ALL) - OPT_IN
     if unknown:
         parser.error(f"unknown scenario(s): {', '.join(sorted(unknown))}")
+
+    if "live-ai" in args.only:
+        if "model" in args.only:
+            parser.error("run live-ai and the model-down scenario separately")
+        if not 1 <= args.ai_chatters <= args.students:
+            parser.error("--ai-chatters must be between 1 and --students")
 
     results = asyncio.run(run(args))
     document = {

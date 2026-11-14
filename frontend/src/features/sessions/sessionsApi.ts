@@ -1,4 +1,4 @@
-import { ApiError, apiAuthenticatedGet, type Page } from '../../api'
+import { ApiError, apiAuthenticatedGet, apiAuthenticatedRequest, type Page } from '../../api'
 
 export type SessionStatus = 'prepared' | 'active' | 'ending' | 'ended' | 'cancelled'
 
@@ -70,4 +70,30 @@ export async function getStudentSummary(sessionId: string, studentId: string): P
     if (error instanceof ApiError && error.status === 501) return null
     throw error
   }
+}
+
+export interface SessionChanges {
+  title?: string
+  starts_at?: string | null
+}
+
+const send = (method: string, body?: unknown): RequestInit => ({
+  method,
+  headers: { 'Content-Type': 'application/json' },
+  body: body === undefined ? undefined : JSON.stringify(body),
+})
+
+/** Rename a session, or move one that has not started. */
+export function updateSession(id: string, changes: SessionChanges): Promise<SessionSummary> {
+  return apiAuthenticatedRequest(session(id), send('PATCH', changes))
+}
+
+/** Prepare the same class again, for the same course. */
+export function copySession(id: string, changes: SessionChanges = {}): Promise<SessionSummary> {
+  return apiAuthenticatedRequest(`${session(id)}/copy`, send('POST', changes))
+}
+
+/** Remove a cancelled session. */
+export function deleteSession(id: string): Promise<void> {
+  return apiAuthenticatedRequest(session(id), send('DELETE'))
 }

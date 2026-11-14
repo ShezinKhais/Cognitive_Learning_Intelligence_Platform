@@ -100,7 +100,7 @@ def housekeeping() -> Scheduler:
                 "retention-purge",
                 purge_every,
                 purge_expired_data,
-                first_after=min(timedelta(minutes=10), purge_every),
+                first_after=min(timedelta(minutes=1), purge_every),
             ),
         ]
     )
