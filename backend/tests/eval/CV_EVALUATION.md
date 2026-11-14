@@ -223,17 +223,25 @@ apart from two long ones; no printed photos and no weaker laptop; P1 has the
 most clips (68). "Looking at the screen" stays a camera-facing proxy, never
 a measure of attention or understanding.
 
+**Measured without calibration** (same leave-one-participant-out method; adaptation learns from the
+calibrate clips as a stand-in for the moments the classroom learns from while a student types):
+
+| Setting | All | Worst participant |
+|---|---|---|
+| #166 combined gaze + adaptation, with calibration | 81.5% (76.7–86.6) | 73.8% (P7) |
+| **#166 combined gaze + adaptation, without calibration** | **81.4% (76.0–87.7)** | **76.9% (P6)** |
+| #166 combined gaze, without calibration | 80.2% (75.2–85.4) | |
+
+The same overall, and the worst-off participant does better (P7: 73.8% to
+82.2%). `screen_head_turned` reads 57.6% on screen, `away_eyes_only` 21.3%.
+
 **Decided by AI 1 (Luna), November 2026, and switched on in PR #233:**
 - `LIVENESS` on, with the tuned settings `everyMs 1000, window 2, spoofBelow 0.5` (#165).
-- `GAZE_MODEL` on (`kYaw 150, kPitch 0`) and `ADAPTATION` on with the
-  suggested settings (#166).
-- The tuned limits: `DEFAULT_THRESHOLDS` yaw 15° / pitch 30° / roll 30°,
-  iris 0.3–0.7; `CALIBRATED_THRESHOLDS` the gaze limits yaw 20° / pitch 25°.
-- **Calibration is kept for now.** The combined gaze measures the eyes against
-  the student's calibrated centre, and adaptation starts from it; the 81.5%
-  was measured with calibration. "Calibration no longer helps" holds for the
-  head check alone. Dropping it needs the combined gaze measured without it
-  first.
+- `GAZE_MODEL` on, fitted without calibration (`kYaw 120, kPitch 0`), and
+  `ADAPTATION` on with the suggested settings (#166).
+- **Calibration dropped** from the student's camera panel. Every student is
+  judged with `DEFAULT_THRESHOLDS`, the gaze limits tuned without calibration:
+  yaw 15° / pitch 25° / roll 30°, iris 0.3–0.7.
 
 **Still needed before merging:** Cyber 1 (Hunain) fairness sign-off on
 `LIVENESS` and `ADAPTATION`, as #165 and #166 require, and a spoof check added

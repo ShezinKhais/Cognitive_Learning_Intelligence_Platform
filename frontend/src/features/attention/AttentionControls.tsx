@@ -1,7 +1,7 @@
-import { Camera, ChevronDown, Crosshair, Info, Mic, Power, ShieldCheck } from 'lucide-react'
+import { Camera, ChevronDown, Info, Mic, Power, ShieldCheck } from 'lucide-react'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { getCurrentUser, recordConsent } from '../../api'
-import { calibrateCamera, startCamera, startMicrophone, type CalibrationResult } from './localSensors'
+import { startCamera, startMicrophone } from './localSensors'
 import { awayDurationSeconds, nextAwayStart } from './awayDuration'
 import { readCaptureConsent } from './captureConsent'
 import { useCameraPolicy } from './useCameraPolicy'
@@ -29,7 +29,6 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
   const lastFaceObservationAt = useRef<number | null>(null)
   const lastForward = useRef<boolean | null>(null)
   const [awaySeconds, setAwaySeconds] = useState<number | null>(null)
-  const [calibration, setCalibration] = useState<'none' | 'running' | CalibrationResult>('none')
   const {
     status: cameraStatus, latest: face, start: enableCamera, stop: stopCamera,
     drain: drainCamera, isActive: cameraActive,
@@ -248,11 +247,6 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
 
 
 
-  // A new camera start forgets the old calibration, as the worker does.
-  useEffect(() => { if (cameraStatus !== 'on') setCalibration('none') }, [cameraStatus])
-  function startCalibration() {
-    if (calibrateCamera(setCalibration)) setCalibration('running')
-  }
 
   const running = cameraStatus === 'on' || microphoneStatus === 'on'
   const pending = cameraStatus === 'starting' || microphoneStatus === 'starting'
@@ -376,29 +370,6 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
               <Chip good={speaking === null ? null : true} label={`Voice: ${speaking === null ? 'unavailable' : speaking ? 'speaking' : 'quiet'}`} />
             )}
           </div>
-          {cameraStatus === 'on' && (
-            <div className="mt-3 border-t border-border pt-3">
-              <div className="flex flex-wrap items-center gap-3">
-                <button type="button" disabled={calibration === 'running'} onClick={startCalibration}
-                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-semibold hover:bg-muted disabled:opacity-60">
-                  <Crosshair aria-hidden="true" size={15} />
-                  {calibration === 'running' ? 'Look at the screen…' : calibration === 'done' ? 'Calibrate again' : 'Calibrate: look at the screen for 3 seconds'}
-                </button>
-                <span className="text-sm text-foreground">
-                  {calibration === 'done' && 'Calibrated to where you look. Only the offsets are kept, on this device.'}
-                  {calibration === 'failed' && 'That did not work: your face was not clearly facing the screen. The standard settings are used.'}
-                  {calibration === 'timeout' && 'The camera stopped sending pictures, so calibration did not finish. The standard settings are used.'}
-                  {calibration === 'none' && 'Optional. Helps if your camera is off to one side.'}
-                  {calibration === 'running' && 'Keep looking at the middle of the screen.'}
-                </span>
-              </div>
-              {calibration === 'running' && (
-                <div aria-hidden="true" className="mt-2 h-1.5 overflow-hidden rounded-full bg-card">
-                  <div className="animate-fill-3s h-full rounded-full bg-info" />
-                </div>
-              )}
-            </div>
-          )}
         </div>
       )}
 

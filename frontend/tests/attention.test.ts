@@ -94,7 +94,7 @@ test('looking down at notes is not forward once a pose is known', () => {
 
 test('the thresholds are the ones tuned in CV_EVALUATION.md (second round)', () => {
   const limits = (t: Thresholds) => ({ yaw: t.maxYawDegrees, pitch: t.maxPitchDegrees, roll: t.maxRollDegrees, irisX: t.irisX })
-  assert.deepEqual(limits(SHIPPED_DEFAULT), { yaw: 15, pitch: 30, roll: 30, irisX: [0.3, 0.7] })
+  assert.deepEqual(limits(SHIPPED_DEFAULT), { yaw: 15, pitch: 25, roll: 30, irisX: [0.3, 0.7] })
   // Calibrated students get the gaze limits, which apply to the combined head and eye direction.
   assert.deepEqual(limits(SHIPPED_CALIBRATED), { yaw: 20, pitch: 25, roll: 30, irisX: [0.3, 0.7] })
   assert.equal(thresholdsFor(null), SHIPPED_DEFAULT)
@@ -241,7 +241,7 @@ const GAZE: GazeModel = { kYaw: -100, kPitch: 0, maxEyeDisagreement: 0.15, maxRo
 const centre = { yaw: 0, pitch: 0, roll: 0, irisX: 0.5, irisY: 0.5 }
 
 test('the combined gaze and adaptation ship with the settings fitted on the ten-participant recordings', () => {
-  assert.deepEqual(GAZE_MODEL, { kYaw: 150, kPitch: 0, maxEyeDisagreement: 0.15, maxRollDegrees: 45 })
+  assert.deepEqual(GAZE_MODEL, { kYaw: 120, kPitch: 0, maxEyeDisagreement: 0.15, maxRollDegrees: 45 })
   assert.equal(ADAPTATION, SUGGESTED_ADAPTATION)
 })
 
