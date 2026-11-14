@@ -114,6 +114,7 @@ from app.services.ai_explainability import (
     fallback_explanation,
 )
 from app.services.engagement import evaluate_comprehension_alert, should_send_dynamic_prompt
+from app.services.source_labels import question_source_label
 
 log = logging.getLogger("clip.classroom")
 
@@ -712,6 +713,7 @@ class Classroom:
                 closes_at=closes_at,
                 window_seconds=window_seconds,
                 source_slide=question.source_slide,
+                source_label=question_source_label(question),
             )
             # The claim and its delivery record are committed before anyone
             # is told, so a delivered question is never missing from the

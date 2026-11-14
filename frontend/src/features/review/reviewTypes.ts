@@ -45,6 +45,8 @@ export interface ReviewSources {
     chunk_id: string
     material_title: string
     source_page: number | null
+    /** What source_page numbers. Older servers leave it out. */
+    source_label?: 'Page' | 'Slide' | 'Section'
     text: string
     match: 'excerpt' | 'page'
   }[]

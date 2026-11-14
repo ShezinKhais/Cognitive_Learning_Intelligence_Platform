@@ -63,6 +63,8 @@ class ReviewSource(BaseModel):
     chunk_id: UUID
     material_title: str
     source_page: int | None
+    # What source_page numbers: Word and text files are numbered by section.
+    source_label: Literal["Page", "Slide", "Section"] = "Page"
     text: str
     match: Literal["excerpt", "page"]
 

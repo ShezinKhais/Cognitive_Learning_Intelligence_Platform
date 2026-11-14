@@ -7,8 +7,10 @@ import {
   liveSessionReducer,
   remainingResponseSeconds,
 } from '../src/features/student/liveSessionState.ts'
+import { sourcePlace } from '../src/features/student/liveSessionTypes.ts'
 import {
   buildAuthPayload,
+  parseFeedbackResult,
   parseLiveQuestion,
   parseServerEvent,
   parseSessionState,
@@ -726,4 +728,27 @@ test('an unconfirmed answer can be retried after its timeout if connected', () =
 
   assert.equal(state.checkpoint?.phase, 'answering')
   assert.equal(state.checkpoint?.selectedOption, 0)
+})
+
+test('a question and its feedback name the part of the file they came from', () => {
+  const question = {
+    question_id: 'q1',
+    prompt: 'What does each step lower?',
+    options: ['The loss', 'The data'],
+    closes_at: '2026-09-20T10:01:00.000Z',
+    window_seconds: 60,
+    source_slide: 3,
+  }
+  assert.deepEqual(parseLiveQuestion({ ...question, source_label: 'Section' }), { ...question, source_label: 'Section' })
+  assert.deepEqual(parseLiveQuestion(question), question)
+  assert.equal(parseLiveQuestion({ ...question, source_label: 'Chapter' }), null)
+
+  const feedback = { question_id: 'q1', correct: true, explanation: null, source_slide: 3 }
+  assert.ok(parseFeedbackResult({ ...feedback, source_label: 'Section' }))
+  assert.equal(parseFeedbackResult({ ...feedback, source_label: 4 }), null)
+
+  assert.equal(sourcePlace('Section', 3), 'Section 3')
+  assert.equal(sourcePlace('Page', 3), 'Page 3')
+  // An older server says nothing, and the page says what it always did.
+  assert.equal(sourcePlace(undefined, 3), 'Slide 3')
 })

@@ -34,6 +34,14 @@ export interface SessionStateEvent {
   ai: AiControls
 }
 
+/** Word and text files are numbered by section, PowerPoint by slide. */
+export type SourceLabel = 'Page' | 'Slide' | 'Section'
+
+/** "Section 3", or "Slide 3" when the server did not say. */
+export function sourcePlace(label: SourceLabel | null | undefined, number: number): string {
+  return `${label ?? 'Slide'} ${number}`
+}
+
 export interface LiveQuestion {
   question_id: string
   prompt: string
@@ -41,6 +49,8 @@ export interface LiveQuestion {
   closes_at: string
   window_seconds: number
   source_slide: number | null
+  /** What source_slide numbers. Older servers leave it out. */
+  source_label?: SourceLabel | null
 }
 
 export interface QuestionClosedEvent {
@@ -62,6 +72,7 @@ export interface FeedbackResult {
   correct: boolean | null
   explanation: string | null
   source_slide: number | null
+  source_label?: SourceLabel | null
 }
 
 export interface AttentionPrompt {

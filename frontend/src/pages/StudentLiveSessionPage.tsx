@@ -30,6 +30,7 @@ import type {
   CheckpointState,
   LiveConnectionStatus,
 } from '../features/student/liveSessionTypes'
+import { sourcePlace } from '../features/student/liveSessionTypes'
 import type { StudentSession } from '../features/student/types'
 import ParticipationGauge from '../features/student/ParticipationGauge'
 import AssignedRoom from '../features/student/AssignedRoom'
@@ -449,7 +450,7 @@ function CheckpointCard({
 
           {question.source_slide !== null && (
             <p className="mt-1 text-xs text-muted-foreground">
-              Based on slide {question.source_slide}
+              Based on {sourcePlace(question.source_label, question.source_slide).toLowerCase()}
             </p>
           )}
         </div>
@@ -703,7 +704,7 @@ function CheckpointOutcome({
       {feedback?.source_slide !== null &&
         feedback?.source_slide !== undefined && (
           <p className="mt-2 text-xs font-medium text-info">
-            Review slide {feedback.source_slide}
+            Review {sourcePlace(feedback.source_label, feedback.source_slide).toLowerCase()}
           </p>
         )}
     </div>

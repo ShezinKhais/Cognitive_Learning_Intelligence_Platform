@@ -50,8 +50,15 @@ export function isFinished(material: Pick<Material, 'status'>): boolean {
   return material.status === 'completed' || material.status === 'failed'
 }
 
-export function sourceName(material: Pick<Material, 'filename'>): 'Slide' | 'Page' {
-  return fileExtension(material.filename) === 'pptx' ? 'Slide' : 'Page'
+export type SourceName = 'Slide' | 'Page' | 'Section'
+
+/** What a material's numbered parts are called. Word and text files have no
+ * pages, so the backend numbers them by section (about a page each). */
+export function sourceName(material: Pick<Material, 'filename'>): SourceName {
+  const extension = fileExtension(material.filename)
+  if (extension === 'pptx') return 'Slide'
+  if (extension === 'docx' || extension === 'txt') return 'Section'
+  return 'Page'
 }
 
 /** The material's own warnings, then one for each thin or image-heavy page. */

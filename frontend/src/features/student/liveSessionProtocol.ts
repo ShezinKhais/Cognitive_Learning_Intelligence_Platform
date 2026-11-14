@@ -106,6 +106,10 @@ export function parseAiControls(value: unknown): AiControls {
   }
 }
 
+function isSourceLabel(value: unknown): boolean {
+  return value === undefined || value === null || ['Page', 'Slide', 'Section'].includes(String(value))
+}
+
 export function parseLiveQuestion(value: unknown): LiveQuestion | null {
   if (!isRecord(value)) return null
   if (typeof value.question_id !== 'string' || typeof value.prompt !== 'string') return null
@@ -115,6 +119,7 @@ export function parseLiveQuestion(value: unknown): LiveQuestion | null {
     !Array.isArray(value.options) || !value.options.every((option) => typeof option === 'string')
   )) return null
   if (value.source_slide !== null && !isNumber(value.source_slide)) return null
+  if (!isSourceLabel(value.source_label)) return null
 
   return value as unknown as LiveQuestion
 }
@@ -142,6 +147,7 @@ export function parseFeedbackResult(value: unknown): FeedbackResult | null {
   if (value.correct !== null && typeof value.correct !== 'boolean') return null
   if (!isStringOrNull(value.explanation)) return null
   if (value.source_slide !== null && !isNumber(value.source_slide)) return null
+  if (!isSourceLabel(value.source_label)) return null
 
   return value as unknown as FeedbackResult
 }

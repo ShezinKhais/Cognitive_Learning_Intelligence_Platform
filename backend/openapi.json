@@ -4454,6 +4454,16 @@
             "title": "Material Title",
             "type": "string"
           },
+          "source_label": {
+            "default": "Page",
+            "enum": [
+              "Page",
+              "Slide",
+              "Section"
+            ],
+            "title": "Source Label",
+            "type": "string"
+          },
           "source_page": {
             "anyOf": [
               {
