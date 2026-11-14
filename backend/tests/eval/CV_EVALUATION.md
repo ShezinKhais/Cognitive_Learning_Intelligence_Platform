@@ -139,7 +139,8 @@ and 30°.
 6. **A photo is accepted as a face.** A face shown on a phone was detected, and
    judged as looking at the screen. A blink check was considered and rejected:
    at 4 frames per second, no blink was seen in 7 of 27 real 10-second clips,
-   so it would flag real students. On-device anti-spoofing is proposed in #165.
+   so it would flag real students. On-device anti-spoofing is now built, off
+   until recorded: see the #165 section below.
 7. **Recorder fixes found while recording** (thanks to Joel): frames were kept
    during the countdown, and unticking consent did not stop the camera. Both
    fixed and tested.
@@ -179,6 +180,7 @@ otherwise.
 | Part | File | What it does |
 |---|---|---|
 | Combined gaze | `signals.ts` (`GazeModel`, `gazeAngles`) | gaze yaw = head yaw + k × (iris x − the student's iris x), and the same for pitch. The eyes can rescue a turned head as well as veto a still one. |
+| Head tilt | `signals.ts` (`GazeModel.maxRollDegrees`) | With the combined gaze, tilting the head (ear towards shoulder) is ignored up to 45°, then gives no reading. A tilt hardly moves where the eyes point; with the #159 rule, P2's `screen_head_turned` clip (head tilted about 30°, eyes on the screen) read 3% "looking", 93% with the change. |
 | Eyes that disagree | `signals.ts` (`gazeAngles`, `Calibration.eyeGapX`) | If the two irises disagree by more than 0.15 beyond the student's own calibrated gap, there is no reading, never "away". A squint present while calibrating is the student's normal. |
 | Adaptive limits | `signals.ts` (`learn`, `adaptedThresholds`, `classifyAdaptive`) | Learns the student's centre and spread from good moments; limits = 3 × their spread, never below the standard limits, never above 25° / 30° / 25°. A wider normal than that gives "no reading". |
 | Good moments | `face.worker.ts`, `localSensors.ts` (`markLookingAtScreen`), `StudentLiveSessionPage.tsx` | The calibration, and 1.5 s after each key typed in a checkpoint answer. Frames far from the current normal are skipped, so a glance at the keyboard or a long look away is not learned. |
@@ -213,3 +215,60 @@ counts these frames, so the cost is visible.
 `npm run eval:attention`, and copy the before and after tables here. Switch on
 `GAZE_MODEL` (with the fitted k) and `ADAPTATION` only if the worst participant
 improves and the existing labels do not get worse.
+
+## Next: anti-spoofing (#165)
+
+**Status: code, model and evaluation ready, waiting for recordings.** No
+accuracy numbers yet, because nobody has recorded photo or video clips. Nothing
+changes in the classroom today: `LIVENESS` in
+`frontend/src/features/attention/liveness.ts` is `null`, and while it is the
+model is not even downloaded there.
+
+**The problem.** A photo or video of a face on a phone is detected as a face,
+and as "looking at the screen" (Findings, point 6). A blink rule was rejected
+because, at 4 frames per second, real students would be flagged.
+
+**The fix.** A small open model that is trained to tell a live face from one
+on a screen or printed paper, run in the browser on the face crop MediaPipe
+already finds.
+
+| Part | File | What it does |
+|---|---|---|
+| Model | `frontend/attention-models/minifasnet_v2_80x80.onnx` | MiniFASNetV2 from Minivision's Silent-Face-Anti-Spoofing (Apache-2.0), 1.7 MB, 80 x 80 input, about 0.4 M parameters. Converted from the published weights by `convert_minifasnet.py` next to it; committed and pinned by SHA-256 in `scripts/prepare-attention.mjs`, so nothing is fetched at build or run time. |
+| Crop and input | `liveness.ts` (`faceBox`, `cropBox`, `MODEL_INPUT`) | The face box from the landmarks, grown 2.7 times as the model was trained (a port of the source's `_get_new_box`, checked against it on 2,000 random boxes), resized to 80 x 80 by the browser, then turned into blue-green-red, 0 to 255, by ONNX Runtime itself, so app code never handles pixels (the privacy test forbids `getImageData` in `src/`). |
+| Runtime | `livenessModel.ts` | `onnxruntime-web` (already shipped for the microphone), one thread, engine files from `public/attention/onnx/`. Loaded only when needed. |
+| Vote | `liveness.ts` (`noteFrame`, `recordCheck`, `isSpoof`) | One check every `everyMs`, not every frame. A face is rejected only when **every one** of the last `window` checks says "not live". A face leaving, a second face, or a gap in frames starts the vote again. A failed check never counts towards rejecting. |
+| Effect | `applyLiveness`, `face.worker.ts` | A rejected face is reported as no face: `face_present: false`, no gaze reading. Nothing is learned from it by adaptation (#166). The payload is unchanged. |
+| Calibration | `liveness.ts` (`forCalibration`), `face.worker.ts` | Frames of a face already judged not live are left out of calibration, and so out of the adaptation it seeds (#166). Limit: the vote needs a full window (about 4 s at the suggested settings), so a photo first shown during the 3-second calibration is not yet rejected. |
+| Fails safe | `face.worker.ts` | If the model cannot load, faces are judged exactly as before. |
+| Recorder | `eval/evaluation.ts`, `eval/recorder.ts` | New labels `photo_on_phone`, `video_on_phone`, `printed_photo`; a `live` score and `live_ms` time per frame in the CSV. Older files still parse. |
+| Evaluation | `evaluation.ts` (`replayLiveness`, `livenessCounts`, `tuneLiveness`), `scripts/evaluate-attention.ts` | Replays the browser's vote on the recordings. Leaving one participant out: spoofs caught and live faces wrongly rejected, with clip bootstrap intervals, per participant, per condition, per spoof type, and time per check. Spoof clips are kept out of the #159 and #166 tables so those stay comparable. |
+| Tests | `frontend/tests/liveness.test.ts` | The vote, resets, failed checks, crop and input maths, CSV round trip, tuning, the model's checksum, and that the model loads and answers. |
+
+**Tuning rule.** Wrongly rejecting a real student is worse than missing a
+photo (#165), so `tuneLiveness` first keeps only settings that reject under 2%
+of live faces on the tuning set, then picks the one that catches the most
+spoofs. If none get under 2%, it picks the one rejecting the fewest live
+faces, and the report says the bar was not met.
+
+**Checked so far, without recordings:**
+- The ONNX file gives the same answers as the original PyTorch model (to
+  0.0001) and loads in Chromium from our own server.
+- The crop matches the original code exactly on 2,000 random face boxes.
+- The vote, resets and tuning behave as described (unit tests).
+
+**Known differences from how the model was trained**, to watch in the numbers:
+- The original found faces with RetinaFace; here the box comes from MediaPipe's
+  landmarks, which cut off closer to the hairline. The 2.7 times crop includes
+  much more than the face either way, but a tighter box means a slightly
+  smaller crop.
+- The classroom camera is 320 x 240, so the crop is often upscaled to 80 x 80.
+  Low resolution hides the moiré and glare the model looks for, and may hurt
+  both rates.
+
+**To finish #165:** record the labels in `cv/README.md`, run
+`npm run eval:attention`, and copy the anti-spoofing tables here. Switch
+`LIVENESS` on (with the tuned settings) only if live faces wrongly rejected are
+under the agreed bar for **every** participant and condition, and Cyber 1 has
+signed off fairness across skin tones, lighting and cameras. Add a spoof check
+to Cyber 2's device checklist (#160) at the same time.
