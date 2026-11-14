@@ -29,10 +29,13 @@ import io
 import logging
 import re
 import time
+import unicodedata
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from lxml import etree
 
 from app.core.errors import ValidationError
 
@@ -369,21 +372,104 @@ def _pypdf_images(page) -> list[bytes]:
     return found
 
 
+_MC = "{http://schemas.openxmlformats.org/markup-compatibility/2006}"
+_MC_ALTERNATE = f"{_MC}AlternateContent"
+_A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+_M = "{http://schemas.openxmlformats.org/officeDocument/2006/math}"
+# A run of slide text, and a run of an equation's text.
+_TEXT_RUNS = (f"{_A}t", f"{_M}t")
+
+
+def _plain_math_letter(char: str) -> str:
+    """𝐴 as A. Equations are written in the Unicode block of styled maths
+    letters (italic, bold, script), which only changes how a letter looks:
+    read as written, "𝐴" never matches an "A" that a question quotes. Other
+    symbols, such as ℕ and ℝ, mean something different and are kept."""
+    if "\U0001d400" <= char <= "\U0001d7ff":
+        return unicodedata.normalize("NFKC", char)
+    return char
+
+
+def _delimiter(properties, which: str, default: str) -> str:
+    """One end of an equation's bracket: | in |A|, { in {p | p(x) = 0}.
+    Word stores these as properties rather than as text, ( and ) when unset."""
+    found = properties.find(f"{_M}{which}") if properties is not None else None
+    if found is None:
+        return default
+    return found.get(f"{_M}val", "")
+
+
+# Written before part of an equation, so its layout survives as text:
+# 3x^2 rather than 3x2, x_1 rather than x1, (a)/(b) for a fraction.
+_MATH_MARKS = {f"{_M}sup": "^", f"{_M}sub": "_", f"{_M}den": "/"}
+
+
+def _paragraph_text(paragraph) -> str:
+    out = []
+    for event, element in etree.iterwalk(paragraph, events=("start", "end")):
+        if element.tag in _TEXT_RUNS and event == "start":
+            out.append("".join(_plain_math_letter(c) for c in element.text or ""))
+        elif element.tag in _MATH_MARKS and event == "start":
+            out.append(_MATH_MARKS[element.tag])
+        elif element.tag == f"{_M}d":
+            properties = element.find(f"{_M}dPr")
+            if event == "start":
+                out.append(_delimiter(properties, "begChr", "("))
+            else:
+                out.append(_delimiter(properties, "endChr", ")"))
+    return "".join(out)
+
+
+def _alternate_content_text(alternate) -> str:
+    """The text of an mc:AlternateContent block on a slide.
+
+    PowerPoint writes the shape twice: as it is (mc:Choice, the equation as
+    editable math) and as older readers should see it (mc:Fallback, the same
+    words with the equation as a picture). The choice is read first, with the
+    equation's own text, so "Let D = {p | p(x) = 0}" keeps its symbols; the
+    fallback is used only when the choice holds no text. One line per
+    paragraph, as python-pptx gives a text frame.
+    """
+    for branch in (
+        *alternate.iterchildren(f"{_MC}Choice"),
+        *alternate.iterchildren(f"{_MC}Fallback"),
+    ):
+        text = "\n".join(_paragraph_text(p) for p in branch.iter(f"{_A}p"))
+        if text.strip():
+            return text
+    return ""
+
+
 def read_pptx(path: str, with_images: bool = False) -> list[ExtractedElement]:
     """PPTX reader. python-pptx already gives clean, slide-scoped text, so
     docling adds nothing here."""
     from pptx import Presentation
     from pptx.enum.shapes import MSO_SHAPE_TYPE
 
-    def walk(shapes, page, images):
+    def walk(shapes, tree, page, images):
         """Yield text from shapes, stepping inside groups so their text
         is not lost. Images are collected separately and appended after the
         slide's text, so elements keep document order (heading, body, images)
-        instead of images always landing first."""
+        instead of images always landing first.
+
+        `tree` is the XML element holding `shapes`. It is read directly
+        because python-pptx leaves out what PowerPoint wraps in
+        mc:AlternateContent, which is every text box holding an equation
+        made with Insert > Equation. Read through python-pptx alone, the
+        whole box vanished, words and all (#264)."""
+        known = {shape._element: shape for shape in shapes}
         parts = []
-        for shape in shapes:
+        for child in tree.iterchildren():
+            if child.tag == _MC_ALTERNATE:
+                text = _alternate_content_text(child)
+                if text.strip():
+                    parts.append(text)
+                continue
+            shape = known.get(child)
+            if shape is None:
+                continue
             if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
-                parts.extend(walk(shape.shapes, page, images))
+                parts.extend(walk(shape.shapes, shape._element, page, images))
             elif shape.has_text_frame and shape.text_frame.text.strip():
                 parts.append(shape.text_frame.text)
             elif shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
@@ -394,7 +480,7 @@ def read_pptx(path: str, with_images: bool = False) -> list[ExtractedElement]:
     els = []
     for i, slide in enumerate(Presentation(path).slides):
         slide_images: list[ExtractedElement] = []
-        parts = walk(slide.shapes, i + 1, slide_images)
+        parts = walk(slide.shapes, slide.shapes._spTree, i + 1, slide_images)
         if not parts:
             els.extend(slide_images)
             continue
