@@ -78,6 +78,16 @@ async def session_chat(
         live = await session_lifecycle.joinable_session(
             db, principal.user_id, principal.role, session_id
         )
+        if live is None:
+            # Review tutoring uses the same current-membership check as discussion.
+            # Prepared/cancelled sessions do not gain access through this fallback.
+            try:
+                ended = await discussion.accessible_session(
+                    db, session_id, principal.user_id, principal.role
+                )
+            except NotFoundError:
+                ended = None
+            live = ended if ended is not None and ended.status == "ended" else None
     if live is None:
         # A session that does not exist and one the student is not enrolled
         # for are refused alike, so a session id cannot be probed.

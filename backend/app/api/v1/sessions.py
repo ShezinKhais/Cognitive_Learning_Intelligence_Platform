@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from app.api.deps import (
     AppSettings,
@@ -34,19 +34,29 @@ from app.schemas.attendance import SessionAttendanceOut
 from app.schemas.breakout import RoomPlanIn, RoomPlanOut
 from app.schemas.common import Page
 from app.schemas.identity import ConsentType, Role
+from app.schemas.question_plan import LessonQuestionOut, QuestionPlanIn, QuestionPlanOut
 from app.schemas.session import (
     AlertOut,
     DeliverableQuestionOut,
     EngagementOut,
     ResponseOut,
+    SessionCopyRequest,
     SessionCreateRequest,
     SessionOut,
     SessionReadinessOut,
     SessionStatus,
+    SessionUpdateRequest,
     StudentSessionSummary,
     TopicDifficultyOut,
 )
-from app.services import alert_store, attendance, breakout, session_lifecycle, session_reads
+from app.services import (
+    alert_store,
+    attendance,
+    breakout,
+    question_plan,
+    session_lifecycle,
+    session_reads,
+)
 from app.services.engagement_view import staff_confidence, staff_score, staff_signals
 from app.services.session_access import may_view_session_analytics
 from app.services.student_report import build_student_summary, record_staff_view
@@ -99,6 +109,57 @@ async def get_session(
     db: DbSession,
 ) -> SessionOut:
     return await session_reads.get_session(db, principal, session_id)
+
+
+@router.patch("/{session_id}", response_model=SessionOut, dependencies=_staff)
+@audit_action("SESSION_UPDATED")
+async def update_session(
+    session_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+    payload: SessionUpdateRequest | None = None,
+) -> SessionOut:
+    """Rename a session, or move the start of one that has not started (409
+    once it has)."""
+    return await session_lifecycle.update_session(
+        db, principal, session_id, payload or SessionUpdateRequest()
+    )
+
+
+@router.post(
+    "/{session_id}/copy",
+    response_model=SessionOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=_staff,
+)
+@audit_action("SESSION_CREATED")
+async def copy_session(
+    session_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+    payload: SessionCopyRequest | None = None,
+) -> SessionOut:
+    """Prepare the same class again, for the same course."""
+    return await session_lifecycle.copy_session(
+        db, principal, session_id, payload or SessionCopyRequest()
+    )
+
+
+@router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=_staff)
+@audit_action("SESSION_DELETED")
+async def delete_session(
+    session_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> None:
+    """Remove a cancelled session (409 for any other)."""
+    await session_lifecycle.delete_session(db, principal, session_id)
 
 
 @router.get(
@@ -428,3 +489,49 @@ async def close_rooms(
     the main meeting. Close the rooms in Teams as well."""
     row = await _room_session(db, principal, session_id)
     return await breakout.close(db, row)
+
+
+@router.get("/{session_id}/question-plan", response_model=QuestionPlanOut, dependencies=_staff)
+async def get_question_plan(
+    session_id: UUID,
+    principal: CurrentUser,
+    db: DbSession,
+    response: Response,
+):
+    response.headers["Cache-Control"] = "no-store"
+    return await question_plan.read_plan(db, principal, session_id)
+
+
+@router.get(
+    "/{session_id}/question-plan/candidates",
+    response_model=Page[LessonQuestionOut],
+    dependencies=_staff,
+)
+async def question_plan_candidates(
+    session_id: UUID,
+    principal: CurrentUser,
+    db: DbSession,
+    page: Paginated,
+    response: Response,
+    material: Annotated[str | None, Query(max_length=255)] = None,
+    topic: Annotated[str | None, Query(max_length=255)] = None,
+):
+    response.headers["Cache-Control"] = "no-store"
+    return await question_plan.candidates(
+        db, principal, session_id, page.limit, page.offset, material, topic
+    )
+
+
+@router.put("/{session_id}/question-plan", response_model=QuestionPlanOut, dependencies=_staff)
+@audit_action("LESSON_QUESTIONS_SELECTED")
+async def select_question_plan(
+    session_id: UUID,
+    payload: QuestionPlanIn,
+    principal: CurrentUser,
+    db: DbSession,
+    request: Request,
+    settings: AppSettings,
+    response: Response,
+):
+    response.headers["Cache-Control"] = "no-store"
+    return await question_plan.save_plan(db, principal, session_id, payload)

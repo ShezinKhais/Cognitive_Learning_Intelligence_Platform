@@ -1,8 +1,8 @@
 import StudentMyDataPage from '../../src/pages/StudentMyDataPage'
-import { BrowserRouter, MemoryRouter } from 'react-router'
+import { BrowserRouter, Link, MemoryRouter, Route, Routes } from 'react-router'
 import DiscussionPanel from '../../src/features/discussion/DiscussionPanel'
 import { useState } from 'react'
-import { LiveSessionPanel } from '../../src/pages/StudentLiveSessionPage'
+import StudentLiveSessionPage, { LiveSessionPanel } from '../../src/pages/StudentLiveSessionPage'
 import { TeamsProvider } from '../../src/teams/TeamsProvider'
 import { createRoot } from 'react-dom/client'
 import { AttentionControls } from '../../src/features/attention/AttentionControls'
@@ -50,6 +50,10 @@ function ProgressSocket() {
 }
 const socket = new URLSearchParams(window.location.search).get('socket')
 createRoot(document.getElementById('root')!).render(
+  socket === 'student-entry' ? <MemoryRouter initialEntries={['/student/session/new-session/live']}><TeamsProvider>
+    <Link to="/student/session/other-session/live">Open another class</Link>
+    <Routes><Route path="/student/session/:sessionId/live" element={<StudentLiveSessionPage />} /></Routes>
+  </TeamsProvider></MemoryRouter> :
   socket === 'student-panel' ? <MemoryRouter><TeamsProvider><LiveSessionPanel session={{
     id: 'completion-session', course_code: 'SYNTHETIC', title: 'Student completion regression',
     lecturer_id: 'lecturer', status: 'active',

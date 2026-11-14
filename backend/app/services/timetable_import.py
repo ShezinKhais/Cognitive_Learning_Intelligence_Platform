@@ -17,10 +17,12 @@ from __future__ import annotations
 import csv
 import io
 from dataclasses import dataclass, field
-from datetime import time
+from datetime import datetime, time
+from itertools import zip_longest
 
 import openpyxl
 from email_validator import EmailNotValidError, validate_email
+from openpyxl.utils.datetime import from_excel
 from rapidfuzz import fuzz, process
 
 from app.core.errors import ValidationError
@@ -44,7 +46,7 @@ class TimetableRow:
     start_time: time
     end_time: time
     room: str
-    row_number: int  # 1-indexed, header excluded — for error messages
+    row_number: int  # 1-indexed source row, including the header
 
 
 @dataclass
@@ -105,7 +107,7 @@ def _normalise_headers(
     return headers
 
 
-def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
+def _read_rows(filename: str, raw: bytes) -> list[tuple[int, dict[str, str]]]:
     """Read a CSV or XLSX into a list of {column: value} dicts, header-normalized.
 
     Raises ValidationError for anything that isn't clean structured data —
@@ -131,31 +133,33 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
                 {"filename": filename},
             )
 
-        reader = csv.DictReader(io.StringIO(text))
-
-        if reader.fieldnames is None:
+        reader = csv.reader(io.StringIO(text, newline=""), strict=True)
+        row_number = 1
+        try:
+            values = next(reader, None)
+            if not values:
+                raise ValidationError("File has no header row.", {"filename": filename})
+            header = _normalise_headers(values, filename)
+            rows = []
+            row_number = reader.line_num + 1
+            for values in reader:
+                if any(value.strip() for value in values):
+                    rows.append(
+                        (
+                            row_number,
+                            {
+                                key: value.strip()
+                                for key, value in zip_longest(header, values, fillvalue="")
+                                if key
+                            },
+                        )
+                    )
+                row_number = reader.line_num + 1
+        except csv.Error as exc:
             raise ValidationError(
-                "File has no header row.",
-                {"filename": filename},
-            )
-
-        reader.fieldnames = _normalise_headers(
-            list(reader.fieldnames),
-            filename,
-        )
-
-        rows = []
-
-        for row in reader:
-            cleaned: dict[str, str] = {}
-
-            for key, value in row.items():
-                if key is None:
-                    continue
-
-                cleaned[key.strip().lower()] = value.strip() if isinstance(value, str) else ""
-
-            rows.append(cleaned)
+                f"Row {row_number}: malformed CSV. Check quoting and field length.",
+                {"filename": filename, "row": row_number},
+            ) from exc
     elif ext == "xlsx":
         try:
             wb = openpyxl.load_workbook(
@@ -186,17 +190,14 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
 
             rows = []
 
-            for raw_row in it:
-                if all(c is None for c in raw_row):
-                    continue
-
+            for row_number, raw_row in enumerate(it, start=2):
                 row = {
-                    header[i]: ("" if c is None else str(c).strip())
-                    for i, c in enumerate(raw_row)
-                    if i < len(header) and header[i]
+                    key: _xlsx_cell(key, value)
+                    for key, value in zip_longest(header, raw_row)
+                    if key
                 }
-
-                rows.append(row)
+                if any(row.values()):
+                    rows.append((row_number, row))
         finally:
             wb.close()
     else:
@@ -209,6 +210,20 @@ def _read_rows(filename: str, raw: bytes) -> list[dict[str, str]]:
         raise ValidationError("File has a header but no data rows.", {"filename": filename})
 
     return rows
+
+
+def _xlsx_cell(column: str, value: object) -> str:
+    # Excel can store a time of day as a fraction even with General formatting.
+    if (
+        column in {"start_time", "end_time"}
+        and isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and 0 <= value < 1
+    ):
+        converted = from_excel(value)
+        if isinstance(converted, time):
+            return converted.isoformat()
+    return "" if value is None else str(value).strip()
 
 
 DAY_ALIASES = {
@@ -255,11 +270,9 @@ def _normalise_day(
 
 def _parse_time(value: str, row_number: int, column: str) -> time:
     value = value.strip()
-    for fmt in ("%H:%M", "%H:%M:%S", "%I:%M %p"):
+    for fmt in ("%H:%M", "%H:%M:%S", "%H:%M:%S.%f", "%I:%M %p"):
         try:
-            from datetime import datetime as _dt
-
-            return _dt.strptime(value, fmt).time()
+            return datetime.strptime(value, fmt).time()
         except ValueError:
             continue
     raise ValidationError(
@@ -279,7 +292,7 @@ def parse_timetable(filename: str, raw: bytes) -> tuple[list[TimetableRow], int]
     """
     rows = _read_rows(filename, raw)
 
-    header_cols = set(rows[0].keys())
+    header_cols = set(rows[0][1])
     missing = REQUIRED_TIMETABLE_COLUMNS - header_cols
     if missing:
         raise ValidationError(
@@ -288,7 +301,7 @@ def parse_timetable(filename: str, raw: bytes) -> tuple[list[TimetableRow], int]
         )
 
     parsed: list[TimetableRow] = []
-    for i, row in enumerate(rows, start=2):
+    for i, row in rows:
         course_code = row["course_code"].strip()
         lecturer = row["lecturer"].strip()
         day = _normalise_day(
@@ -331,7 +344,7 @@ def parse_roster(filename: str, raw: bytes) -> tuple[list[RosterRow], int]:
     """Parse a student roster CSV/XLSX. Returns (rows, rows_read)."""
     rows = _read_rows(filename, raw)
 
-    header_cols = set(rows[0].keys())
+    header_cols = set(rows[0][1])
     missing = REQUIRED_ROSTER_COLUMNS - header_cols
     if missing:
         raise ValidationError(
@@ -340,7 +353,7 @@ def parse_roster(filename: str, raw: bytes) -> tuple[list[RosterRow], int]:
         )
 
     parsed: list[RosterRow] = []
-    for i, row in enumerate(rows, start=2):
+    for i, row in rows:
         raw_email = row["student_email"].strip()
         name = row["student_name"].strip()
         course_code = row["course_code"].strip()

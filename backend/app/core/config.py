@@ -8,6 +8,7 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 INSECURE_SECRET_KEY = "change-me-in-production"
+MAX_DATA_RETENTION_DAYS = 90
 
 # The environments the application knows. Anything else is refused at startup:
 # an unrecognised name ("Production " with a stray space, "prod-eu", "staging")
@@ -78,6 +79,7 @@ class Settings(BaseSettings):
 
     # Application
     clip_env: str = "development"
+    clip_release_sha: str = Field(default="unknown", pattern=r"^(unknown|[a-f0-9]{40})$")
     clip_secret_key: str = "change-me-in-production"
     clip_log_level: str = "INFO"
     access_token_expire_minutes: int = 60
@@ -279,9 +281,8 @@ class Settings(BaseSettings):
     max_extracted_characters: int = 2_000_000
     max_material_chunks: int = 5000
 
-    # Retention (UAE PDPL)
-    # A semester, so the live database only holds the current one.
-    data_retention_days: int = Field(default=120, ge=1)
+    # Deployments can shorten retention, but old overrides cannot extend it.
+    data_retention_days: int = Field(default=MAX_DATA_RETENTION_DAYS, ge=1)
     # How often the purge of data past that period runs, and how long one run
     # may take. A run cut short carries on at the next.
     retention_purge_interval_hours: float = Field(default=24.0, gt=0)
@@ -289,6 +290,11 @@ class Settings(BaseSettings):
     # A second database for derived per-student summaries kept after the
     # purge (app/history). Empty means history is off.
     history_database_url: str = ""
+
+    @field_validator("data_retention_days")
+    @classmethod
+    def _cap_retention_days(cls, value: int) -> int:
+        return min(value, MAX_DATA_RETENTION_DAYS)
 
     @field_validator("clip_env")
     @classmethod

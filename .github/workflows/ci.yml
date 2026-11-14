@@ -124,6 +124,8 @@ jobs:
       CLIP_SECRET_KEY: clip-ci-disposable-signing-key-not-for-production
       CLIP_ENV: development
       DEMO_PORT: "8088"
+      OCR_IN_IMAGE: "true"
+      CLIP_RELEASE_SHA: ${{ github.sha }}
       AI_WARMUP_ENABLED: "false"
       CLIP_DEPLOYMENT_TEST_URL: http://localhost:8088
     steps:
@@ -141,7 +143,15 @@ jobs:
       - name: Verify external HTTP, database, cookie and WebSocket connections
         run: |
           pip install httpx websockets
-          python backend/scripts/smoke_test.py --base http://localhost:8088 --idle 2
+          docker compose -p clip-ci-integration -f docker-compose.demo.yml exec -T backend python - < backend/scripts/check_deployed_ocr.py &
+          ocr_pid=$!
+          smoke_status=0
+          python backend/scripts/smoke_test.py --base http://localhost:8088 --idle 2 || smoke_status=$?
+          wait "$ocr_pid"
+          exit "$smoke_status"
+      - name: Verify web and API revision
+        run: |
+          python backend/scripts/check_deployed_release.py --base http://localhost:8088 --revision "$CLIP_RELEASE_SHA"
       - name: Install deployed-browser test dependencies
         working-directory: frontend
         run: |
@@ -167,4 +177,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: python -c "import json; json.load(open('teams-app/manifest.json'))"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate the filled package against Microsoft's manifest schema
+        run: |
+          pip install jsonschema==4.26.0
+          curl --fail --silent --show-error --max-time 30 https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json -o "$RUNNER_TEMP/teams-schema.json"
+          echo "87a5c136c48597686402ee509c4de59fc54f53b8262649c5fbf01748affc938e  $RUNNER_TEMP/teams-schema.json" | sha256sum --check
+          python backend/scripts/package_teams_app.py --check --schema "$RUNNER_TEMP/teams-schema.json"

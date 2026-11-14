@@ -645,6 +645,18 @@
             "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
+          },
+          "preview_token": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Token"
           }
         },
         "required": [
@@ -659,12 +671,56 @@
             "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
+          },
+          "preview_token": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Token"
+          },
+          "week_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Week Start"
           }
         },
         "required": [
           "file"
         ],
         "title": "Body_import_timetable_api_v1_admin_timetable_post",
+        "type": "object"
+      },
+      "Body_submit_with_evidence_api_v1_me_consideration_with_evidence_post": {
+        "properties": {
+          "evidence": {
+            "contentMediaType": "application/octet-stream",
+            "title": "Evidence",
+            "type": "string"
+          },
+          "payload": {
+            "maxLength": 4096,
+            "title": "Payload",
+            "type": "string"
+          }
+        },
+        "required": [
+          "payload",
+          "evidence"
+        ],
+        "title": "Body_submit_with_evidence_api_v1_me_consideration_with_evidence_post",
         "type": "object"
       },
       "Body_upload_material_api_v1_materials_post": {
@@ -679,6 +735,20 @@
           "file"
         ],
         "title": "Body_upload_material_api_v1_materials_post",
+        "type": "object"
+      },
+      "CapturePolicyOut": {
+        "description": "Minimal own-student capture policy, without request notes or diagnoses.",
+        "properties": {
+          "camera_allowed": {
+            "title": "Camera Allowed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "camera_allowed"
+        ],
+        "title": "CapturePolicyOut",
         "type": "object"
       },
       "ChatRequest": {
@@ -891,6 +961,11 @@
             ],
             "title": "Decision Note"
           },
+          "has_evidence": {
+            "default": false,
+            "title": "Has Evidence",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -979,7 +1054,7 @@
             "items": {
               "$ref": "#/components/schemas/ConsiderationNeed"
             },
-            "maxItems": 4,
+            "maxItems": 5,
             "minItems": 1,
             "title": "Needs",
             "type": "array"
@@ -1037,6 +1112,7 @@
       "ConsiderationNeed": {
         "enum": [
           "camera",
+          "microphone",
           "gaze",
           "pace",
           "prompts"
@@ -1061,6 +1137,11 @@
               }
             ],
             "title": "Decision Note"
+          },
+          "has_evidence": {
+            "default": false,
+            "title": "Has Evidence",
+            "type": "boolean"
           },
           "id": {
             "format": "uuid",
@@ -1868,6 +1949,11 @@
             "title": "Env",
             "type": "string"
           },
+          "release_sha": {
+            "default": "unknown",
+            "title": "Release Sha",
+            "type": "string"
+          },
           "status": {
             "default": "ok",
             "title": "Status",
@@ -1973,6 +2059,69 @@
         "title": "HistorySummaryOut",
         "type": "object"
       },
+      "ImportRow": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "course_code": {
+            "title": "Course Code",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "end_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Time"
+          },
+          "room": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room"
+          },
+          "row": {
+            "title": "Row",
+            "type": "integer"
+          },
+          "start_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Time"
+          }
+        },
+        "required": [
+          "row",
+          "course_code",
+          "account",
+          "detail"
+        ],
+        "title": "ImportRow",
+        "type": "object"
+      },
       "LecturerUpdateOut": {
         "properties": {
           "at": {
@@ -1996,6 +2145,146 @@
           "text"
         ],
         "title": "LecturerUpdateOut",
+        "type": "object"
+      },
+      "LessonQuestionOut": {
+        "properties": {
+          "correct_option": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Never sent to students. Lecturer and admin views only.",
+            "title": "Correct Option"
+          },
+          "difficulty": {
+            "$ref": "#/components/schemas/Difficulty"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "key_points": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Points"
+          },
+          "material_id": {
+            "format": "uuid",
+            "title": "Material Id",
+            "type": "string"
+          },
+          "material_title": {
+            "title": "Material Title",
+            "type": "string"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "reference_answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Answer"
+          },
+          "source_excerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The text the question was generated from. Grounding evidence.",
+            "title": "Source Excerpt"
+          },
+          "source_question_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Question Id"
+          },
+          "source_slide": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Drives the 'see slide 3' reference in student feedback.",
+            "title": "Source Slide"
+          },
+          "status": {
+            "$ref": "#/components/schemas/QuestionStatus"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic"
+          },
+          "type": {
+            "$ref": "#/components/schemas/QuestionType"
+          }
+        },
+        "required": [
+          "id",
+          "material_id",
+          "type",
+          "status",
+          "difficulty",
+          "prompt",
+          "material_title"
+        ],
+        "title": "LessonQuestionOut",
         "type": "object"
       },
       "LiveCaptureStart": {
@@ -2426,6 +2715,56 @@
         "title": "MeetingLinkRequest",
         "type": "object"
       },
+      "MissedQuestion": {
+        "properties": {
+          "correct_answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correct Answer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "key_points": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Key Points",
+            "type": "array"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic"
+          }
+        },
+        "required": [
+          "id",
+          "question",
+          "topic",
+          "correct_answer"
+        ],
+        "title": "MissedQuestion",
+        "type": "object"
+      },
       "MyConsiderationOut": {
         "description": "The student's most recent request, if any.",
         "properties": {
@@ -2680,6 +3019,37 @@
         "title": "Page[DeliverableQuestionOut]",
         "type": "object"
       },
+      "Page_LessonQuestionOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LessonQuestionOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[LessonQuestionOut]",
+        "type": "object"
+      },
       "Page_MaterialOut_": {
         "properties": {
           "items": {
@@ -2709,6 +3079,37 @@
           "offset"
         ],
         "title": "Page[MaterialOut]",
+        "type": "object"
+      },
+      "Page_MissedQuestion_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MissedQuestion"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[MissedQuestion]",
         "type": "object"
       },
       "Page_QuestionOut_": {
@@ -2938,6 +3339,125 @@
         "title": "QuestionBulkReviewResult",
         "type": "object"
       },
+      "QuestionCreateRequest": {
+        "description": "A question the lecturer writes themselves. It is ready to send at once.",
+        "properties": {
+          "correct_option": {
+            "anyOf": [
+              {
+                "exclusiveMaximum": 8.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correct Option"
+          },
+          "difficulty": {
+            "$ref": "#/components/schemas/Difficulty",
+            "default": "medium"
+          },
+          "key_points": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 500,
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What a full written answer covers. Needed for it to be marked.",
+            "title": "Key Points"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 500,
+                  "type": "string"
+                },
+                "maxItems": 8,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "prompt": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "reference_answer": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A model answer. Needed for a written-answer question to be marked.",
+            "title": "Reference Answer"
+          },
+          "source_excerpt": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Excerpt"
+          },
+          "source_slide": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Slide"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic"
+          },
+          "type": {
+            "$ref": "#/components/schemas/QuestionType",
+            "default": "mcq"
+          }
+        },
+        "required": [
+          "prompt"
+        ],
+        "title": "QuestionCreateRequest",
+        "type": "object"
+      },
       "QuestionOut": {
         "properties": {
           "correct_option": {
@@ -2959,6 +3479,20 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "key_points": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Points"
           },
           "material_id": {
             "format": "uuid",
@@ -2982,6 +3516,17 @@
           "prompt": {
             "title": "Prompt",
             "type": "string"
+          },
+          "reference_answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Answer"
           },
           "source_excerpt": {
             "anyOf": [
@@ -3034,6 +3579,65 @@
           "prompt"
         ],
         "title": "QuestionOut",
+        "type": "object"
+      },
+      "QuestionPlanIn": {
+        "properties": {
+          "question_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Question Ids",
+            "type": "array"
+          },
+          "reviewed_confirmed": {
+            "title": "Reviewed Confirmed",
+            "type": "boolean"
+          },
+          "selected_only": {
+            "title": "Selected Only",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "selected_only",
+          "reviewed_confirmed"
+        ],
+        "title": "QuestionPlanIn",
+        "type": "object"
+      },
+      "QuestionPlanOut": {
+        "properties": {
+          "editable": {
+            "title": "Editable",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LessonQuestionOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "selected_only": {
+            "title": "Selected Only",
+            "type": "boolean"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "selected_only",
+          "editable",
+          "items"
+        ],
+        "title": "QuestionPlanOut",
         "type": "object"
       },
       "QuestionReviewRequest": {
@@ -3557,6 +4161,17 @@
             ],
             "title": "Confidence"
           },
+          "correct_answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correct Answer"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -3572,6 +4187,13 @@
               }
             ],
             "title": "Is Correct"
+          },
+          "key_points": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Key Points",
+            "type": "array"
           },
           "label": {
             "anyOf": [
@@ -3630,18 +4252,45 @@
       },
       "ReviewEngagement": {
         "properties": {
+          "camera_windows": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera Windows"
+          },
           "explanation": {
             "default": "A verified post-session engagement record with confidence and signal availability is not available. Missing readings are not zero and do not indicate understanding.",
             "title": "Explanation",
             "type": "string"
+          },
+          "microphone_windows": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Microphone Windows"
           },
           "score": {
             "title": "Score",
             "type": "null"
           },
           "status": {
-            "const": "unavailable",
             "default": "unavailable",
+            "enum": [
+              "unavailable",
+              "readings_available"
+            ],
             "title": "Status",
             "type": "string"
           }
@@ -3955,6 +4604,37 @@
           "students"
         ],
         "title": "SessionAttendanceOut",
+        "type": "object"
+      },
+      "SessionCopyRequest": {
+        "description": "Prepare a new session for the same course. The title defaults to the\noriginal's, and the start to now.",
+        "properties": {
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "SessionCopyRequest",
         "type": "object"
       },
       "SessionCreateRequest": {
@@ -4314,6 +4994,37 @@
         "title": "SessionStatus",
         "type": "string"
       },
+      "SessionUpdateRequest": {
+        "description": "Rename a session, or move one that has not started. Fields left out\nstay as they are.",
+        "properties": {
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "SessionUpdateRequest",
+        "type": "object"
+      },
       "StudentDataExport": {
         "properties": {
           "account": {
@@ -4633,11 +5344,51 @@
       "TimetableImportResult": {
         "description": "Result of an administrator uploading a timetable CSV or XLSX.\n\nCSV and XLSX are parsed as structured data. There is no OCR path, because a\nmisread digit would silently assign a student to the wrong session.",
         "properties": {
+          "applied": {
+            "default": false,
+            "title": "Applied",
+            "type": "boolean"
+          },
           "conflicts": {
             "items": {
               "type": "string"
             },
             "title": "Conflicts",
+            "type": "array"
+          },
+          "courses_changed": {
+            "default": 0,
+            "title": "Courses Changed",
+            "type": "integer"
+          },
+          "memberships_changed": {
+            "default": 0,
+            "title": "Memberships Changed",
+            "type": "integer"
+          },
+          "new_course_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "New Course Codes",
+            "type": "array"
+          },
+          "preview_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Token"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ImportRow"
+            },
+            "title": "Rows",
             "type": "array"
           },
           "rows_read": {
@@ -4646,6 +5397,11 @@
           },
           "sessions_created": {
             "title": "Sessions Created",
+            "type": "integer"
+          },
+          "sessions_to_create": {
+            "default": 0,
+            "title": "Sessions To Create",
             "type": "integer"
           },
           "unmatched_lecturers": {
@@ -5328,6 +6084,46 @@
         ]
       }
     },
+    "/api/v1/admin/consideration-requests/{request_id}/evidence": {
+      "get": {
+        "description": "Download an attachment while the request is pending.",
+        "operationId": "download_evidence_api_v1_admin_consideration_requests__request_id__evidence_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Evidence",
+        "tags": [
+          "consideration"
+        ]
+      }
+    },
     "/api/v1/admin/consideration-requests/{request_id}/reject": {
       "post": {
         "description": "Refuse a waiting request. Nothing about the student changes.",
@@ -5472,7 +6268,7 @@
     },
     "/api/v1/admin/roster": {
       "post": {
-        "description": "CSV or XLSX only, same reasoning as /timetable: no OCR path.",
+        "description": "Preview or confirm additional enrolments by student account email.",
         "operationId": "import_roster_api_v1_admin_roster_post",
         "requestBody": {
           "content": {
@@ -5514,7 +6310,7 @@
     },
     "/api/v1/admin/timetable": {
       "post": {
-        "description": "CSV or XLSX only. Structured data is parsed, never OCR'd.",
+        "description": "Preview or confirm one Dubai-local week of dated sessions.",
         "operationId": "import_timetable_api_v1_admin_timetable_post",
         "requestBody": {
           "content": {
@@ -7022,6 +7818,58 @@
         "tags": [
           "content"
         ]
+      },
+      "post": {
+        "description": "Add a question of the lecturer's own to one of their materials. It is\nready to send straight away.",
+        "operationId": "write_question_api_v1_materials__material_id__questions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "material_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Material Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestionCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Write Question",
+        "tags": [
+          "content"
+        ]
       }
     },
     "/api/v1/materials/{material_id}/questions/{question_id}": {
@@ -7142,6 +7990,60 @@
         ]
       }
     },
+    "/api/v1/materials/{material_id}/questions/{question_id}:reuse": {
+      "post": {
+        "description": "Stage a copy of a question that has been asked, for another class\n(409 for one that has not been asked).",
+        "operationId": "reuse_question_api_v1_materials__material_id__questions__question_id__reuse_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "material_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Material Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "question_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Question Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reuse Question",
+        "tags": [
+          "content"
+        ]
+      }
+    },
     "/api/v1/materials/{material_id}/questions:bulk": {
       "post": {
         "description": "Backs the 'approve all' and 'stage N questions' actions.",
@@ -7253,6 +8155,69 @@
           }
         },
         "summary": "Submit Request",
+        "tags": [
+          "consideration"
+        ]
+      }
+    },
+    "/api/v1/me/consideration/policy": {
+      "get": {
+        "operationId": "capture_policy_api_v1_me_consideration_policy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapturePolicyOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Capture Policy",
+        "tags": [
+          "consideration"
+        ]
+      }
+    },
+    "/api/v1/me/consideration/with-evidence": {
+      "post": {
+        "description": "Submit one request and its supporting document in the same transaction.",
+        "operationId": "submit_with_evidence_api_v1_me_consideration_with_evidence_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_submit_with_evidence_api_v1_me_consideration_with_evidence_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsiderationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit With Evidence",
         "tags": [
           "consideration"
         ]
@@ -7907,6 +8872,41 @@
       }
     },
     "/api/v1/sessions/{session_id}": {
+      "delete": {
+        "description": "Remove a cancelled session (409 for any other).",
+        "operationId": "delete_session_api_v1_sessions__session_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Session",
+        "tags": [
+          "sessions"
+        ]
+      },
       "get": {
         "operationId": "get_session_api_v1_sessions__session_id__get",
         "parameters": [
@@ -7944,6 +8944,65 @@
           }
         },
         "summary": "Get Session",
+        "tags": [
+          "sessions"
+        ]
+      },
+      "patch": {
+        "description": "Rename a session, or move the start of one that has not started (409\nonce it has).",
+        "operationId": "update_session_api_v1_sessions__session_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SessionUpdateRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Session",
         "tags": [
           "sessions"
         ]
@@ -8173,6 +9232,67 @@
         "summary": "Session Chat",
         "tags": [
           "chat"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/copy": {
+      "post": {
+        "description": "Prepare the same class again, for the same course.",
+        "operationId": "copy_session_api_v1_sessions__session_id__copy_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SessionCopyRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Copy Session",
+        "tags": [
+          "sessions"
         ]
       }
     },
@@ -8949,6 +10069,201 @@
         ]
       }
     },
+    "/api/v1/sessions/{session_id}/question-plan": {
+      "get": {
+        "operationId": "get_question_plan_api_v1_sessions__session_id__question_plan_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionPlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Question Plan",
+        "tags": [
+          "sessions"
+        ]
+      },
+      "put": {
+        "operationId": "select_question_plan_api_v1_sessions__session_id__question_plan_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestionPlanIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionPlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Select Question Plan",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/question-plan/candidates": {
+      "get": {
+        "operationId": "question_plan_candidates_api_v1_sessions__session_id__question_plan_candidates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "material",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Material"
+            }
+          },
+          {
+            "in": "query",
+            "name": "topic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Topic"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_LessonQuestionOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Question Plan Candidates",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
     "/api/v1/sessions/{session_id}/questions": {
       "get": {
         "description": "List staged questions that this session may actually deliver.",
@@ -9678,6 +10993,126 @@
           }
         },
         "summary": "Review",
+        "tags": [
+          "student-review"
+        ]
+      }
+    },
+    "/api/v1/student-reviews/{session_id}/missed": {
+      "get": {
+        "operationId": "missed_api_v1_student_reviews__session_id__missed_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_MissedQuestion_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Missed",
+        "tags": [
+          "student-review"
+        ]
+      }
+    },
+    "/api/v1/student-reviews/{session_id}/missed/{missed_id}/sources": {
+      "get": {
+        "operationId": "missed_sources_api_v1_student_reviews__session_id__missed__missed_id__sources_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "missed_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Missed Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewSources"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Missed Sources",
         "tags": [
           "student-review"
         ]

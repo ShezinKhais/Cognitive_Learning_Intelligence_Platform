@@ -218,3 +218,21 @@ async def test_stopping_capture_during_inference_prevents_publication(db, app, m
     )
     assert result.status_code == 409, result.text
     assert client.get(f"/api/v1/sessions/{sid}/discussion").json()["notes"] == []
+
+
+def test_speech_configuration_requires_complete_local_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(local_speech.importlib.util, "find_spec", lambda _: object())
+    settings = SimpleNamespace(
+        live_transcription_enabled=True, live_transcription_model_path=str(tmp_path)
+    )
+    assert not local_speech.configured(settings)
+    for name in ("config.json", "model.bin"):
+        (tmp_path / name).write_text("placeholder")
+    assert not local_speech.configured(settings)
+    tokenizer = tmp_path / "tokenizer.json"
+    tokenizer.touch()
+    assert not local_speech.configured(settings)
+    tokenizer.write_text("{}")
+    assert local_speech.configured(settings)
+    settings.live_transcription_enabled = False
+    assert not local_speech.configured(settings)

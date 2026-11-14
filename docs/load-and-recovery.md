@@ -108,6 +108,27 @@ The scheduler scenario starts a second server with the cycle on: a question
 every three seconds in every session, one second to answer and two between.
 Nothing else about the server is changed.
 
+## Tutor and marking under classroom load (#254)
+
+On the target test host, use its planned Ollama model, embedding model, and
+queue settings. Run this opt-in workload against a disposable test Postgres
+instance with the usual load-test database permissions:
+
+```bash
+python -m scripts.loadtest --only live-ai --students 40 --ai-chatters 4 --out live-ai-results.json
+```
+
+The harness seeds synthetic course material and embeds it through Ollama. It
+starts tutor streams while all connected students receive and answer a
+free-text checkpoint. The report records tutor first-token and completion
+latency, stream outcomes, checkpoint delivery and receipt latency, and stored
+model marks. Increase the chat count in separate runs to measure queue
+saturation. Record the host, release, model and budget used for each run.
+
+Use the baseline restart scenarios to test recovery separately. A full-length
+lesson with lecturer speech and concurrent OCR still needs a target-host
+exercise. Link the measured results to #175 and #254.
+
 ## Results
 
 <!-- results:begin -->

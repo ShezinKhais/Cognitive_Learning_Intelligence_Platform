@@ -10,6 +10,7 @@ import { useDocumentTitle } from '../../components/ui/useDocumentTitle'
 import { lecturerLiveSessionPath } from '../../teams/lecturerMeeting'
 import { statusLabel, statusTone } from '../sessions/format'
 import { getSession, listAllResponses, type SessionSummary } from '../sessions/sessionsApi'
+import LessonQuestionPlan from './LessonQuestionPlan'
 import ManualQuestionTrigger from './ManualQuestionTrigger'
 import TeamsUpdatesSection from './TeamsUpdatesSection'
 import { initialLifecycle, lifecycleReducer } from './panelLifecycle'
@@ -53,6 +54,7 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
   const { connectionStatus, sessionState, activeQuestion, closedQuestion, alerts, sessionNotice, acknowledgeAlert } =
     useLiveSession(sessionId)
 
+  const [lessonPlanPending, setLessonPlanPending] = useState(false)
   const [details, setDetails] = useState<SessionSummary | null>(null)
   const [readiness, setReadiness] = useState<SessionReadiness | null>(null)
   const [readinessFailed, setReadinessFailed] = useState(false)
@@ -276,6 +278,8 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
             </p>
           )}
 
+          {status === 'prepared' && <LessonQuestionPlan key={sessionId} sessionId={sessionId} onSaved={() => void checkReadiness()} onPendingChange={setLessonPlanPending} />}
+
           {actionError && (
             <p role="alert" className="mt-3 text-sm text-critical">
               {actionError}
@@ -287,7 +291,7 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
               <button
                 type="button"
                 className={buttonStyles()}
-                disabled={busy || readiness?.ready !== true}
+                disabled={busy || lessonPlanPending || readiness?.ready !== true}
                 onClick={() => void act('start')}
               >
                 <Play size={15} aria-hidden />

@@ -32,8 +32,9 @@ Branch `hunain-phase-6`, built on `main`.
 * Camera consent withdrawal now also purges the camera-derived baseline (`purge_visual`).
 * Privacy verification: `AttentionSignalPayload` is closed (`extra="forbid"`), frames over
   64 KiB (text or binary) close the socket with 1009, and `tests/test_privacy_verification.py`
-  guards the schema allowlist, absence of binary columns and raw reading columns, no
-  readings in logs, the single place `accessibility_need` is read, and the frontend
+  guards the schema allowlist, the absence of raw reading columns, the restriction
+  of binary storage to student-submitted special consideration evidence, the absence
+  of readings in logs, the single place `accessibility_need` is read, and the frontend
   (no media-recording/serialising APIs; sockets only send `JSON.stringify`).
 
 ## 3. Judgment calls
