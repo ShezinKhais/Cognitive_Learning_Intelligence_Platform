@@ -6,6 +6,7 @@ reads, and the cards it posts, never leave the test.
 
 from __future__ import annotations
 
+import asyncio
 import random
 from uuid import uuid4
 
@@ -20,11 +21,13 @@ from app.models.session import Session
 from app.models.teams_meeting_reference import TeamsMeetingReference
 from app.models.teams_roster_sync import TeamsRosterSync
 from app.models.teams_user_mapping import TeamsUserMapping
+from app.realtime.classroom import classroom
 from app.schemas.identity import ConsentType
 from app.schemas.meetings import TeamsActivity
 from app.services import teams_meeting_flow as flow_module
 from app.services import teams_replies
 from app.services.meeting_directory import InMemoryMeetingDirectory, meetings
+from app.services.meeting_organiser import thread_in
 from app.services.teams_meeting_flow import (
     DISMISS,
     NOT_A_CLASS,
@@ -37,9 +40,11 @@ from app.services.teams_meeting_flow import (
     question_card,
     started_card,
 )
+from app.services.teams_presence import MeetingPresence
 
 SERVICE_URL = "https://smba.trafficmanager.net/emea/"
 JOIN = "application/vnd.microsoft.meetingParticipantJoin"
+LEAVE = "application/vnd.microsoft.meetingParticipantLeave"
 
 
 # -- reading the title --------------------------------------------------------------
@@ -132,6 +137,15 @@ async def world(db, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN001, ANN201
     monkeypatch.setattr(
         flow_module.notifications, "enqueue_welcome", lambda *args: welcomed.append(args)
     )
+    # A class started however it is tells the meeting through the classroom.
+    monkeypatch.setattr(classroom, "class_started_notifier", lambda sid: welcomed.append((sid,)))
+    monkeypatch.setattr(flow_module, "presence", MeetingPresence())
+    emptied: list[tuple[str, str]] = []
+
+    async def end_class(meeting_id: str, reason: str) -> None:
+        emptied.append((meeting_id, reason))
+
+    monkeypatch.setattr(flow_module, "end_class", end_class)
     _, factory, created = db
     tenant = f"tenant-{uuid4().hex}"
     organiser = uuid4().hex
@@ -168,6 +182,7 @@ async def world(db, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN001, ANN201
         "code": code,
         "lecturer": lecturer,
         "welcomed": welcomed,
+        "emptied": emptied,
     }
     async with factory() as cleanup:
         await cleanup.execute(delete(TeamsRosterSync).where(TeamsRosterSync.meeting_id == meeting))
@@ -315,11 +330,13 @@ async def test_not_a_class_names_the_session_it_ends(world) -> None:
     assert (await _session(world)).status == "active"
 
 
-def _joined(meeting: str, event_id: str, *members: tuple[str, str]) -> TeamsActivity:
+def _joined(
+    meeting: str, event_id: str, *members: tuple[str, str], name: str = JOIN
+) -> TeamsActivity:
     return TeamsActivity.model_validate(
         {
             "type": "event",
-            "name": JOIN,
+            "name": name,
             "id": event_id,
             "serviceUrl": SERVICE_URL,
             "channelId": "msteams",
@@ -362,3 +379,131 @@ async def test_joining_a_meeting_with_no_class_does_nothing(world) -> None:
             db, _joined(world["meeting"], "event-2", ("29:s", "aad-s")), world["settings"]
         )
     assert world["welcomed"] == []
+
+
+# -- everyone leaving -------------------------------------------------------------
+
+
+async def _in_call(world, event_id: str, *members: tuple[str, str], name: str = JOIN) -> None:  # noqa: ANN001
+    async with world["factory"]() as db:
+        await participants_changed(
+            db, _joined(world["meeting"], event_id, *members, name=name), world["settings"]
+        )
+
+
+async def test_the_class_ends_once_everyone_has_left_the_call(world) -> None:
+    settings = world["settings"].model_copy(update={"teams_empty_meeting_end_seconds": 0.01})
+    world["settings"] = settings
+    await _started_unlinked(world, _Teams(world["organiser"], f"{world['code']} Week 5"))
+    await _in_call(world, "j1", ("29:a", "aad-a"), ("29:b", "aad-b"))
+    await _in_call(world, "l1", ("29:a", "aad-a"), name=LEAVE)
+    await asyncio.sleep(0.05)
+    assert world["emptied"] == []
+
+    await _in_call(world, "l2", ("29:b", "aad-b"), name=LEAVE)
+    await asyncio.sleep(0.05)
+    assert world["emptied"] == [(world["meeting"], "everyone_left")]
+
+
+async def test_someone_rejoining_in_the_wait_keeps_the_class_running(world) -> None:
+    settings = world["settings"].model_copy(update={"teams_empty_meeting_end_seconds": 1.0})
+    world["settings"] = settings
+    await _started_unlinked(world, _Teams(world["organiser"], f"{world['code']} Week 5"))
+    await _in_call(world, "j1", ("29:a", "aad-a"))
+    await _in_call(world, "l1", ("29:a", "aad-a"), name=LEAVE)
+    await _in_call(world, "j2", ("29:a", "aad-a"))
+    await asyncio.sleep(1.3)
+    assert world["emptied"] == []
+
+
+async def test_a_leave_from_someone_never_seen_joining_ends_nothing(world) -> None:
+    settings = world["settings"].model_copy(update={"teams_empty_meeting_end_seconds": 0.01})
+    world["settings"] = settings
+    await _started_unlinked(world, _Teams(world["organiser"], f"{world['code']} Week 5"))
+    await _in_call(world, "l1", ("29:a", "aad-a"), name=LEAVE)
+    await asyncio.sleep(0.05)
+    assert world["emptied"] == []
+
+
+async def test_a_wait_of_zero_never_ends_the_class() -> None:
+    presence = MeetingPresence()
+    ended: list[str] = []
+
+    async def end(meeting_id: str, reason: str) -> None:
+        ended.append(meeting_id)
+
+    presence.joined("m", {"a"})
+    assert presence.left("m", {"a"}) is True
+    assert presence.end_after("m", uuid4(), "everyone_left", 0, end) is None
+    await asyncio.sleep(0.01)
+    assert ended == [] and presence.waits == {}
+
+
+async def _end_with_lecturer(world, on: bool) -> None:  # noqa: ANN001
+    session = await _session(world)
+    async with world["factory"]() as db:
+        row = await db.get(Session, session.session_id)
+        row.end_when_lecturer_leaves = on
+        await db.commit()
+
+
+async def test_the_lecturer_leaving_ends_the_class_when_they_chose_so(world) -> None:
+    world["settings"] = world["settings"].model_copy(
+        update={"teams_empty_meeting_end_seconds": 0.3}
+    )
+    lecturer = world["organiser"]
+    await _started_unlinked(world, _Teams(lecturer, f"{world['code']} Week 5"))
+    await _end_with_lecturer(world, True)
+    await _in_call(world, "j1", ("29:l", lecturer), ("29:a", "aad-a"))
+    await _in_call(world, "l1", ("29:l", lecturer), name=LEAVE)
+    # A student joining does not stop it: only the lecturer coming back does.
+    await _in_call(world, "j2", ("29:b", "aad-b"))
+    await asyncio.sleep(0.6)
+    assert world["emptied"] == [(world["meeting"], "lecturer_left")]
+
+
+async def test_the_lecturer_rejoining_keeps_the_class_running(world) -> None:
+    world["settings"] = world["settings"].model_copy(
+        update={"teams_empty_meeting_end_seconds": 1.0}
+    )
+    lecturer = world["organiser"]
+    await _started_unlinked(world, _Teams(lecturer, f"{world['code']} Week 5"))
+    await _end_with_lecturer(world, True)
+    await _in_call(world, "j1", ("29:l", lecturer), ("29:a", "aad-a"))
+    await _in_call(world, "l1", ("29:l", lecturer), name=LEAVE)
+    await _in_call(world, "j2", ("29:l", lecturer))
+    await asyncio.sleep(1.3)
+    assert world["emptied"] == []
+
+
+async def test_the_lecturer_leaving_ends_nothing_by_default(world) -> None:
+    world["settings"] = world["settings"].model_copy(
+        update={"teams_empty_meeting_end_seconds": 0.01}
+    )
+    lecturer = world["organiser"]
+    await _started_unlinked(world, _Teams(lecturer, f"{world['code']} Week 5"))
+    await _in_call(world, "j1", ("29:l", lecturer), ("29:a", "aad-a"))
+    await _in_call(world, "l1", ("29:l", lecturer), name=LEAVE)
+    await asyncio.sleep(0.05)
+    assert world["emptied"] == []
+
+
+# -- linking from the website -------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        "https://teams.microsoft.com/l/meetup-join/19%3ameeting_NjA1YzQ0ZjMt%40thread.v2/0"
+        "?context=%7b%22Tid%22%3a%22x%22%7d",
+        "https://teams.microsoft.com/l/meetup-join/19:meeting_NjA1YzQ0ZjMt@thread.v2/0",
+        "https://teams.microsoft.com/l/meetup-join/19%253ameeting_NjA1YzQ0ZjMt%2540thread.v2/0",
+    ],
+)
+def test_a_join_link_names_its_meeting_chat(link: str) -> None:
+    assert thread_in(link) == "19:meeting_NjA1YzQ0ZjMt@thread.v2"
+
+
+def test_a_link_that_is_not_a_teams_meeting_names_nothing() -> None:
+    assert thread_in("https://example.com/meet/abc") is None
+    assert thread_in("https://teams.microsoft.com/l/channel/19%3aabc%40thread.tacv2") is None

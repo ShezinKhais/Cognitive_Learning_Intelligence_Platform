@@ -108,6 +108,9 @@ EXPECTED_PATHS = {
     "/api/v1/meetings/{meeting_id}/class-suggestion",
     "/api/v1/meetings/{meeting_id}/class",
     "/api/v1/meetings/events",
+    "/api/v1/meetings/join-link",
+    "/api/v1/meetings/sessions/{session_id}/end-when-lecturer-leaves",
+    "/api/v1/meetings/sessions/{session_id}/keep-running",
     "/api/v1/meetings/sessions/{session_id}/updates",
     "/api/v1/teams/messages",
     # Added in Phase 5 for the tutor (General CS). Additive. The reply is a

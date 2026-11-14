@@ -247,6 +247,7 @@
             "material.progress",
             "room.status",
             "room.assigned",
+            "session.ending",
             "error"
           ],
           "title": "ServerEventType",
@@ -872,6 +873,42 @@
         "silence_seconds"
       ],
       "title": "RoomStatusPayload",
+      "type": "object"
+    },
+    "session.ending": {
+      "description": "Sent to staff only. The linked Teams call has emptied, or its lecturer\nhas left it, and the class will end on its own at ends_at unless the\nlecturer keeps it running. ends_at null means the wait is over without an\nend: someone rejoined, or the lecturer chose to keep the class running.",
+      "properties": {
+        "ends_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ends At"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "everyone_left",
+                "lecturer_left"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "title": "SessionEndingPayload",
       "type": "object"
     },
     "session.state": {

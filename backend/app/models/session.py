@@ -104,3 +104,15 @@ class Session(Base):
     # checkpoints and seconds to answer. Empty means the deployment's own.
     checkpoint_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     answer_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # When the class actually started, which may differ from its timetabled
+    # start_time. Attendance measures lateness from the later of the two.
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # End the class when its lecturer leaves the linked Teams call.
+    end_when_lecturer_leaves: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )

@@ -44,6 +44,23 @@ class MeetingLinkRequest(BaseModel):
     session_id: UUID
 
 
+MAX_JOIN_URL_LENGTH = 2048
+
+
+class TeamsEndOption(BaseModel):
+    end_when_lecturer_leaves: bool = Field(
+        description="End the class when its lecturer leaves the linked Teams call."
+    )
+
+
+class MeetingJoinLinkRequest(BaseModel):
+    """Link a session to the Teams meeting a join link opens, from the
+    C.L.I.P website rather than the meeting's side panel."""
+
+    session_id: UUID
+    join_url: str = Field(min_length=1, max_length=MAX_JOIN_URL_LENGTH)
+
+
 class TeamsActivity(BaseModel):
     """The part of a Bot Framework activity the bot reads. The rest of what
     Teams sends is accepted and ignored."""

@@ -12,7 +12,10 @@ Owner: General CS, Phase 8.
   and the organiser is read from Teams again for every press, so nothing
   the card itself carries is trusted beyond which button it was.
 - Someone joining a meeting whose class is running gets a pop-up that opens
-  C.L.I.P for them, so a student does not have to find the side panel. Joins
+  C.L.I.P for them, so a student does not have to find the side panel, and
+  counts as present in the class straight away; leaving the call takes them
+  out again. Once everyone has left, or the lecturer if they chose so, the
+  class is ended after a short wait (teams_presence). Joins
   and leaves are kept as Teams roster events (teams_roster_sync), by Teams
   identity only, with no display names. Retention removes them with the
   other roster syncs.
@@ -38,8 +41,10 @@ from app.api.deps import Principal
 from app.core.config import Settings
 from app.core.errors import ClipError
 from app.models.session import Session
+from app.models.student import Student
 from app.models.teams_meeting_reference import TeamsMeetingReference
 from app.models.teams_user_mapping import TeamsUserMapping
+from app.realtime.classroom import classroom
 from app.repositories.teams_roster_repository import (
     RosterParticipantInput,
     TeamsRosterRepository,
@@ -51,6 +56,7 @@ from app.services.course_detection import codes_in
 from app.services.course_membership import my_courses
 from app.services.meeting_directory import meetings
 from app.services.teams_notifications import connector_url, notifications
+from app.services.teams_presence import EVERYONE_LEFT, LECTURER_LEFT, end_class, presence
 
 log = logging.getLogger("clip.teams.meetings")
 
@@ -304,7 +310,7 @@ async def _start(
             title=title or session_lifecycle.MEETING_TITLE,
         ),
     )
-    notifications.enqueue_welcome(started.id)
+    # start_session tells the meeting, which opens C.L.I.P for everyone in it.
     return started
 
 
@@ -444,7 +450,68 @@ async def participants_changed(
     except ClipError as exc:
         await db.rollback()
         log.warning("a roster event for %s was not kept: %s", meeting_id, type(exc).__name__)
+    aads = {aad for _, aad in people}
+    students = await _students(db, settings, aads)
+    row = (
+        await db.execute(
+            select(Session.status, Session.instructor_id, Session.end_when_lecturer_leaves).where(
+                Session.session_id == session_id
+            )
+        )
+    ).first()
+    if row is None:
+        return
+    status, instructor_id, end_with_lecturer = row
+    active = status == SessionStatus.ACTIVE.value
     if kind == "participant_joined":
-        status = await db.scalar(select(Session.status).where(Session.session_id == session_id))
-        if status == SessionStatus.ACTIVE.value:
+        cancelled = presence.joined(meeting_id, aads)
+        if active:
+            await classroom.teams_presence(session_id, joined=students)
+            if cancelled is not None:
+                await classroom.tell_ending(session_id, None, None)
             notifications.enqueue_welcome(session_id, {aad: teams_id for teams_id, aad in people})
+        return
+    emptied = presence.left(meeting_id, aads)
+    await classroom.teams_presence(session_id, left=students)
+    if not active:
+        return
+    delay = settings.teams_empty_meeting_end_seconds
+    if emptied:
+        wait = presence.end_after(meeting_id, session_id, EVERYONE_LEFT, delay, end_class)
+    elif end_with_lecturer and (lecturer := await _teams_id(db, settings, instructor_id)) in aads:
+        if presence.waits.get(meeting_id) is not None:
+            return
+        wait = presence.end_after(
+            meeting_id, session_id, LECTURER_LEFT, delay, end_class, waiting_for={lecturer}
+        )
+    else:
+        return
+    if wait is not None:
+        log.info("meeting %s: %s; its class ends at %s", meeting_id, wait.reason, wait.ends_at)
+        await classroom.tell_ending(session_id, wait.reason, wait.ends_at)
+
+
+async def _teams_id(db: AsyncSession, settings: Settings, user_id: UUID) -> str | None:
+    """The Teams account (Entra object id, lower case) a C.L.I.P user is linked to."""
+    found = await db.scalar(
+        select(TeamsUserMapping.teams_user_id).where(
+            TeamsUserMapping.tenant_id == settings.tenant_id,
+            TeamsUserMapping.user_id == user_id,
+        )
+    )
+    return found.lower() if found else None
+
+
+async def _students(db: AsyncSession, settings: Settings, aads: set[str]) -> set[UUID]:
+    """The C.L.I.P students these Teams accounts are linked to."""
+    if not aads:
+        return set()
+    found = await db.scalars(
+        select(TeamsUserMapping.user_id)
+        .join(Student, Student.user_id == TeamsUserMapping.user_id)
+        .where(
+            TeamsUserMapping.tenant_id == settings.tenant_id,
+            func.lower(TeamsUserMapping.teams_user_id).in_(aads),
+        )
+    )
+    return set(found)

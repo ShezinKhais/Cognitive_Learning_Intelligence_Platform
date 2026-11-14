@@ -14,6 +14,9 @@ export interface SessionSummary {
   questions_delivered: number
   paused: boolean
   teams_meeting_id: string | null
+  teams_join_url?: string | null
+  end_when_lecturer_leaves?: boolean
+  started_at?: string | null
 }
 
 export interface SessionResponse {

@@ -103,6 +103,7 @@ from app.schemas.events import (
     RoomConfirmPayload,
     RoomStatusPayload,
     ServerEventType,
+    SessionEndingPayload,
     SessionStatePayload,
 )
 from app.schemas.identity import ConsentType, Role
@@ -270,6 +271,9 @@ class Classroom:
         self.lecturer_update_notifier: Callable[[UUID, str, str], None] | None = None
         # Tells the meeting a class has ended, so students can review it.
         self.class_ended_notifier: Callable[[UUID], None] | None = None
+        # Tells the linked Teams meeting a class has started, so C.L.I.P opens
+        # for everyone already in the call.
+        self.class_started_notifier: Callable[[UUID], None] | None = None
         # Adds what the stored answers say to the lecturer's checkpoint update,
         # such as the most common wrong answer. Reads the database, so it is
         # wired at startup and absent in tests that have none.
@@ -281,6 +285,10 @@ class Classroom:
         # The lecturer's AI switches, by session. A session not here has all
         # of them on.
         self._ai: dict[UUID, AiControls] = {}
+        # Students in the class's Teams call, by session. They count as
+        # present before their C.L.I.P panel has connected, and stop counting
+        # when they leave the call.
+        self._teams_present: dict[UUID, set[UUID]] = {}
 
     def _next_wait(self, session_id: UUID | None = None) -> timedelta | None:
         """A fresh random wait before the next scheduled question, or None
@@ -553,7 +561,7 @@ class Classroom:
         return SessionStatePayload(
             session_id=session_id,
             status=status,
-            participant_count=len(self._hub.student_ids(session_id)),
+            participant_count=len(self.present_students(session_id)),
             active_question_id=live.open.question.question_id if live and live.open else None,
             questions_delivered=live.delivered if live else delivered,
             paused=bool(live and live.countdown.paused),
@@ -562,6 +570,61 @@ class Classroom:
             # exists to prevent.
             ai=self.ai(session_id).model_copy(update={"checkpoint_minutes": None}),
         )
+
+    def present_students(self, session_id: UUID) -> set[UUID]:
+        """Students connected in C.L.I.P or in the class's Teams call."""
+        return self._hub.student_ids(session_id) | self._teams_present.get(session_id, set())
+
+    def anyone_connected(self, session_id: UUID) -> bool:
+        """Whether anyone, student or staff, has the class open in C.L.I.P."""
+        return bool(self._hub.student_ids(session_id) or self._hub.staff_ids(session_id))
+
+    async def teams_presence(
+        self, session_id: UUID, joined: set[UUID] = frozenset(), left: set[UUID] = frozenset()
+    ) -> None:
+        """Students joined or left the class's Teams call. A running class
+        counts them as present from the moment they join, and staff are told."""
+        if session_id in self._finished:
+            return
+        before = self.present_students(session_id)
+        here = self._teams_present.setdefault(session_id, set())
+        here |= joined
+        here -= left
+        if not here:
+            del self._teams_present[session_id]
+        if session_id in self._live and self.present_students(session_id) != before:
+            await self.announce_presence(session_id, SessionStatus.ACTIVE)
+
+    async def tell_ending(
+        self, session_id: UUID, reason: str | None, ends_at: datetime | None
+    ) -> None:
+        """Tell staff the class is about to end on its own, or that it no
+        longer is. The lecturer also gets a Teams pop-up for the warning."""
+        if session_id not in self._live:
+            return
+        await self._tell_staff(
+            session_id,
+            ServerEventType.SESSION_ENDING,
+            _json(SessionEndingPayload(reason=reason, ends_at=ends_at)),
+        )
+        if ends_at is not None and self.lecturer_update_notifier is not None:
+            who = "Everyone has" if reason == "everyone_left" else "You have"
+            try:
+                self.lecturer_update_notifier(
+                    session_id,
+                    "ending",
+                    f"{who} left the Teams call. The class ends at {ends_at:%H:%M} UTC "
+                    "unless you keep it running.",
+                )
+            except Exception:
+                log.warning("Could not tell the lecturer in Teams the class is ending")
+
+    def class_started(self, session_id: UUID) -> None:
+        if self.class_started_notifier is not None:
+            try:
+                self.class_started_notifier(session_id)
+            except Exception:
+                log.warning("Could not tell the Teams meeting the class has started")
 
     async def announce(self, session_id: UUID, status: SessionStatus, delivered: int = 0) -> None:
         """Tell the session its current state."""
@@ -846,6 +909,7 @@ class Classroom:
                     return
 
     def _class_ended(self, session_id: UUID, status: SessionStatus) -> None:
+        self._teams_present.pop(session_id, None)
         if status is SessionStatus.ENDED and self.class_ended_notifier is not None:
             try:
                 self.class_ended_notifier(session_id)
