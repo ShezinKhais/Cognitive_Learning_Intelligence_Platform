@@ -11,5 +11,6 @@ var/
 tests/
 scripts/*
 !scripts/prepare_live_speech.py
+!scripts/check_live_speech.py
 Dockerfile
 .dockerignore

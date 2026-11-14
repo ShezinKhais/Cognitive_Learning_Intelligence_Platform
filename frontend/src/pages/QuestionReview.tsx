@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react'
-import { Check } from 'lucide-react'
+import { Check, PenLine } from 'lucide-react'
 import { Link, useParams } from 'react-router'
 
 import {
@@ -7,6 +7,7 @@ import {
   bulkReviewQuestions,
   listQuestions,
   regenerateQuestion,
+  reuseQuestion,
   reviewQuestion,
   type Difficulty,
   type Question,
@@ -22,6 +23,7 @@ import { problemArt } from '../components/ui/problem'
 import { getMaterial } from '../features/materials/materialApi'
 import type { Material } from '../features/materials/types'
 import { sourceName } from '../features/materials/upload'
+import WriteQuestionForm from '../features/review/WriteQuestionForm'
 import {
   countByFilter,
   FILTERS,
@@ -66,6 +68,7 @@ export default function QuestionReview() {
   const [state, setState] = useState<LoadState>({ status: 'loading' })
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
+  const [writing, setWriting] = useState(false)
   const notify = useToast()
   const [bulkError, setBulkError] = useState<string | null>(null)
 
@@ -156,6 +159,19 @@ export default function QuestionReview() {
       const next = new Set(prev)
       next.delete(replacedId)
       return next
+    })
+  }
+
+  // A question written here, or asked again, joins the list as ready to send.
+  function addQuestion(fresh: Question, after?: string) {
+    setState((prev) => {
+      if (prev.status !== 'ready') return prev
+      const at = after ? prev.questions.findIndex((q) => q.id === after) : -1
+      const questions =
+        at >= 0
+          ? [...prev.questions.slice(0, at + 1), fresh, ...prev.questions.slice(at + 1)]
+          : [fresh, ...prev.questions]
+      return { ...prev, total: prev.total + 1, questions }
     })
   }
 
@@ -269,6 +285,14 @@ export default function QuestionReview() {
           </>
         }
         back={{ to: '/lecturer/materials', label: 'Materials' }}
+        actions={
+          state.status === 'ready' && !writing ? (
+            <button type="button" className={buttonStyles({ intent: 'secondary' })} onClick={() => setWriting(true)}>
+              <PenLine size={15} aria-hidden />
+              Write a question
+            </button>
+          ) : undefined
+        }
       >
         {counts.all > 0 && (
           <div className="mt-4 max-w-md">
@@ -326,6 +350,18 @@ export default function QuestionReview() {
             </div>
           )}
 
+          {writing && (
+            <WriteQuestionForm
+              materialId={materialId}
+              onCancel={() => setWriting(false)}
+              onSaved={(fresh) => {
+                setWriting(false)
+                addQuestion(fresh)
+                notify('Question added, ready to send')
+              }}
+            />
+          )}
+
           {bulkError && (
             <p role="alert" className="mb-4 rounded-md border border-critical/30 bg-critical/5 px-4 py-3 text-sm text-critical">
               {bulkError}
@@ -380,6 +416,7 @@ export default function QuestionReview() {
                       onToggleSelected={() => toggleSelected(question.id)}
                       onUpdated={updateQuestion}
                       onReplaced={replaceQuestion}
+                      onAdded={(fresh) => addQuestion(fresh, question.id)}
                     />
                   </li>
                 ))}
@@ -425,6 +462,7 @@ function QuestionCard({
   onToggleSelected,
   onUpdated,
   onReplaced,
+  onAdded,
 }: {
   materialId: string
   question: Question
@@ -433,6 +471,7 @@ function QuestionCard({
   onToggleSelected: () => void
   onUpdated: (q: Question) => void
   onReplaced: (replacedId: string, fresh: Question) => void
+  onAdded: (fresh: Question) => void
 }) {
   const isMcq = question.type === 'mcq'
 
@@ -476,6 +515,19 @@ function QuestionCard({
       onReplaced(question.id, fresh)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not regenerate this question.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function askAgain() {
+    setBusy(true)
+    setError(null)
+    try {
+      onAdded(await reuseQuestion(materialId, question.id))
+      notify('A copy is ready to send in your next class')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not reuse this question.')
     } finally {
       setBusy(false)
     }
@@ -590,6 +642,17 @@ function QuestionCard({
               {level}
             </button>
           ))}
+        </div>
+      )}
+
+      {!isMcq && (
+        <div className="mt-3 rounded-md bg-muted/40 p-3 text-sm">
+          <p className="font-semibold">Reference answer</p>
+          <p className="mt-1 whitespace-pre-wrap">{question.reference_answer || 'No reference answer is available. Review before using this question.'}</p>
+          {question.key_points?.length ? <>
+            <p className="mt-2 font-semibold">Marking key points</p>
+            <ul className="list-disc pl-5">{question.key_points.map((point, index) => <li key={index}>{point}</li>)}</ul>
+          </> : <p className="mt-1 text-muted-foreground">No marking key points are available.</p>}
         </div>
       )}
 
@@ -715,6 +778,28 @@ function QuestionCard({
                 className={buttonStyles()}
               >
                 Make ready to send
+              </button>
+            )}
+            {question.status === 'staged' && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => act('draft')}
+                title="Keep it out of your next class and review it again"
+                className={buttonStyles({ intent: 'quiet' })}
+              >
+                Back to review
+              </button>
+            )}
+            {question.status === 'delivered' && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={askAgain}
+                title="Stage a copy for another class. This one keeps its answers."
+                className={buttonStyles({ intent: 'secondary' })}
+              >
+                Ask again
               </button>
             )}
           </>

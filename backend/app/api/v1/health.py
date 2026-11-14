@@ -26,10 +26,12 @@ APP_VERSION = "0.1.0"
 
 
 @router.get("/health", response_model=HealthResponse)
-async def health(settings: AppSettings) -> HealthResponse:
+async def health(settings: AppSettings, response: Response) -> HealthResponse:
+    response.headers["Cache-Control"] = "no-store"
     return HealthResponse(
         env=settings.clip_env,
         version=APP_VERSION,
+        release_sha=settings.clip_release_sha,
         teams_configured=settings.teams_configured,
     )
 

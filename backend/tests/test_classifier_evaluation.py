@@ -16,6 +16,7 @@ from app.services.classifier_evaluation import (
     confusion_matrix,
     label_stats,
     macro_f1,
+    threshold_cuts,
 )
 
 EVAL_DIR = Path(__file__).parent / "eval"
@@ -128,6 +129,20 @@ def test_every_labelled_answer_belongs_to_a_question_with_a_checklist():
         assert answer["label_nour"] in ("", *LABELS)
 
 
+def test_the_fresh_held_out_set_is_on_a_lecture_the_classifier_was_not_tuned_on():
+    fresh = EVAL_DIR / "fresh"
+    old = json.loads((EVAL_DIR / "questions.json").read_text())
+    questions = {q["question_id"]: q for q in json.loads((fresh / "questions.json").read_text())}
+    assert not set(questions) & {q["question_id"] for q in old}
+    for name in ("answers_to_label.csv", "adversarial.csv"):
+        with (fresh / name).open(newline="", encoding="utf-8-sig") as f:
+            for row in csv.DictReader(f):
+                question = questions[row["question_id"]]
+                assert 2 <= len(question["key_points"]) <= 4
+                for column in ("label_a", "label_b", "label_final"):
+                    assert row.get(column, "") in ("", *LABELS)
+
+
 def test_honest_confidence_has_no_calibration_error():
     from app.services.classifier_evaluation import expected_calibration_error
 
@@ -158,3 +173,11 @@ def test_brier_score():
 
     assert brier_score([1.0, 0.0], [True, False]) == 0.0
     assert brier_score([0.5, 0.5], [True, False]) == pytest.approx(0.25)
+
+
+def test_threshold_cuts_count_hidden_and_shown_mistakes():
+    confidences = [0.3, 0.5, 0.7, 0.9]
+    correct = [False, True, False, True]
+    low, high = threshold_cuts(confidences, correct, (0.6, 0.95))
+    assert (low.flagged, low.flagged_wrong, low.shown, low.shown_wrong) == (2, 1, 2, 1)
+    assert (high.flagged, high.flagged_wrong, high.shown, high.shown_wrong) == (4, 2, 0, 0)

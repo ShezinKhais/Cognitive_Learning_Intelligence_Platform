@@ -43,4 +43,4 @@ fails CI.
 
 Deleted data persists in backups, so keep as few as recovery needs. The default is
 30 daily backups, so erased and purged data leaves them within a month, well inside the
-120-day retention period. Do not raise `--keep` past what the retention promise allows.
+90-day retention period. Do not raise `--keep` past what the retention promise allows.
