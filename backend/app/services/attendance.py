@@ -19,12 +19,13 @@ from __future__ import annotations
 import csv
 import io
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.models.course import Course
 from app.models.session import Session
 from app.models.session_participant import SessionParticipant
@@ -116,8 +117,25 @@ async def _people(db: AsyncSession, course_id: UUID, extra: set[UUID]) -> list[t
     return list(rows.tuples().all())
 
 
+def _late_after(session: Session) -> datetime | None:
+    """From when a first join counts as late: the threshold after the class
+    started, measured from the later of its timetabled and actual start."""
+    minutes = get_settings().attendance_late_minutes
+    if minutes <= 0:
+        return None
+    started = session.start_time
+    if session.started_at is not None and (started is None or session.started_at > started):
+        started = session.started_at
+    return started + timedelta(minutes=minutes) if started else None
+
+
+def _is_late(record: _Seen | None, after: datetime | None) -> bool:
+    return bool(record and record.first and after and record.first > after)
+
+
 async def session_attendance(db: AsyncSession, session: Session) -> SessionAttendanceOut:
     seen = await _seen(db, [session.session_id])
+    late_after = _late_after(session)
     attended = {student for (_, student) in seen}
     code = await db.scalar(select(Course.code).where(Course.id == session.course_id)) or ""
     students = []
@@ -136,6 +154,7 @@ async def session_attendance(db: AsyncSession, session: Session) -> SessionAtten
                 last_seen=record.last if record else None,
                 minutes=minutes,
                 sources=sorted(record.sources) if record else [],
+                late=_is_late(record, late_after),
             )
         )
     return SessionAttendanceOut(
@@ -144,6 +163,8 @@ async def session_attendance(db: AsyncSession, session: Session) -> SessionAtten
         course_code=code,
         starts_at=session.start_time,
         present=sum(row.present for row in students),
+        late=sum(row.late for row in students),
+        late_minutes=get_settings().attendance_late_minutes,
         total=len(students),
         students=students,
     )
@@ -166,8 +187,10 @@ async def course_attendance(db: AsyncSession, course: Course) -> CourseAttendanc
     seen = await _seen(db, ids)
     attended = {student for (_, student) in seen}
     students = []
+    late_after = {s.session_id: _late_after(s) for s in classes}
     for student_id, name, email in await _people(db, course.id, attended):
         marks = [(sid, student_id) in seen for sid in ids]
+        late = [_is_late(seen.get((sid, student_id)), late_after[sid]) for sid in ids]
         students.append(
             CourseAttendanceRow(
                 student_id=student_id,
@@ -175,6 +198,8 @@ async def course_attendance(db: AsyncSession, course: Course) -> CourseAttendanc
                 email=email,
                 attended=sum(marks),
                 classes=marks,
+                late=late,
+                late_count=sum(late),
             )
         )
     return CourseAttendanceOut(
@@ -194,7 +219,7 @@ def course_csv(attendance: CourseAttendanceOut) -> str:
     out = io.StringIO()
     writer = csv.writer(out)
     writer.writerow(
-        ["student", "email", "attended", "of"]
+        ["student", "email", "attended", "late", "of"]
         + [
             _safe(f"{c.starts_at:%Y-%m-%d} {c.title}" if c.starts_at else c.title)
             for c in attendance.classes
@@ -202,8 +227,13 @@ def course_csv(attendance: CourseAttendanceOut) -> str:
     )
     for row in attendance.students:
         writer.writerow(
-            [_safe(row.name), _safe(row.email), row.attended, len(row.classes)]
-            + ["present" if mark else "absent" for mark in row.classes]
+            [_safe(row.name), _safe(row.email), row.attended, row.late_count, len(row.classes)]
+            + [
+                ("late" if late else "present") if mark else "absent"
+                for mark, late in zip(
+                    row.classes, row.late or [False] * len(row.classes), strict=True
+                )
+            ]
         )
     return "﻿" + out.getvalue()
 

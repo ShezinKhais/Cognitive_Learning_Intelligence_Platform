@@ -6,6 +6,7 @@ import {
   MessagesSquare,
   RefreshCw,
   Users,
+  Video,
   XCircle,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
@@ -155,6 +156,18 @@ export function LiveSessionPanel({
                 {session.title}
               </h1>
             </div>
+
+            {!teams.context && !finished && session.teams_join_url && (
+              <a
+                href={session.teams_join_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={buttonStyles({ intent: 'secondary' })}
+              >
+                <Video aria-hidden="true" size={16} />
+                Join Teams call
+              </a>
+            )}
 
           </div>
 

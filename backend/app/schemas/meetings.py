@@ -47,6 +47,12 @@ class MeetingLinkRequest(BaseModel):
 MAX_JOIN_URL_LENGTH = 2048
 
 
+class TeamsEndOption(BaseModel):
+    end_when_lecturer_leaves: bool = Field(
+        description="End the class when its lecturer leaves the linked Teams call."
+    )
+
+
 class MeetingJoinLinkRequest(BaseModel):
     """Link a session to the Teams meeting a join link opens, from the
     C.L.I.P website rather than the meeting's side panel."""

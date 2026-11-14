@@ -34,6 +34,7 @@ import {
 } from '../features/intelligence/topicRecoveryApi'
 import AiControlsPanel from '../features/live/AiControlsPanel'
 import TeamsLinkPanel from '../features/live/TeamsLinkPanel'
+import ClassEndingBanner from '../features/live/ClassEndingBanner'
 import LiveAlertsPanel from '../features/live/LiveAlertsPanel'
 import CheckpointMonitor from '../features/live/CheckpointMonitor'
 import {
@@ -143,6 +144,8 @@ export default function LecturerLiveSessionPage() {
     sessionNotice,
     rooms,
     acknowledgeAlert,
+    ending,
+    clearEnding,
   } = useLiveSession(sessionId)
 
   // The session's title and course, for the header. The socket carries its
@@ -683,6 +686,15 @@ export default function LecturerLiveSessionPage() {
 
       <div className="mx-auto max-w-6xl px-5 py-8 sm:px-8">
 
+        {sessionId && ending && sessionState?.status === 'active' && (
+          <ClassEndingBanner
+            sessionId={sessionId}
+            ending={ending}
+            onKept={clearEnding}
+            onEndNow={() => setConfirmingEnd(true)}
+          />
+        )}
+
         <div className="grid gap-6 lg:grid-cols-2">
           <Panel
             title="Class"
@@ -806,9 +818,8 @@ export default function LecturerLiveSessionPage() {
 
           {sessionId && details && sessionState?.status !== 'ended' && sessionState?.status !== 'cancelled' && (
             <TeamsLinkPanel
-              sessionId={sessionId}
-              linked={Boolean(details.teams_meeting_id)}
-              onLinked={setDetails}
+              session={details}
+              onChange={setDetails}
             />
           )}
 

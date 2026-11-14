@@ -639,6 +639,12 @@
             ],
             "title": "Last Seen"
           },
+          "late": {
+            "default": false,
+            "description": "First seen more than late_minutes after the class started.",
+            "title": "Late",
+            "type": "boolean"
+          },
           "minutes": {
             "anyOf": [
               {
@@ -1693,6 +1699,19 @@
           "email": {
             "title": "Email",
             "type": "string"
+          },
+          "late": {
+            "description": "One per class, in the order of `classes`: present but late.",
+            "items": {
+              "type": "boolean"
+            },
+            "title": "Late",
+            "type": "array"
+          },
+          "late_count": {
+            "default": 0,
+            "title": "Late Count",
+            "type": "integer"
           },
           "name": {
             "title": "Name",
@@ -5141,6 +5160,17 @@
             "title": "Course Code",
             "type": "string"
           },
+          "late": {
+            "default": 0,
+            "title": "Late",
+            "type": "integer"
+          },
+          "late_minutes": {
+            "default": 0,
+            "description": "How late a first join is marked late. 0: nobody is.",
+            "title": "Late Minutes",
+            "type": "integer"
+          },
           "present": {
             "title": "Present",
             "type": "integer"
@@ -5369,6 +5399,12 @@
             "title": "Course Code",
             "type": "string"
           },
+          "end_when_lecturer_leaves": {
+            "default": false,
+            "description": "The class ends when its lecturer leaves the linked Teams call.",
+            "title": "End When Lecturer Leaves",
+            "type": "boolean"
+          },
           "ended_at": {
             "anyOf": [
               {
@@ -5393,7 +5429,7 @@
           },
           "participant_count": {
             "default": 0,
-            "description": "Students connected now, each counted once.",
+            "description": "Students present now, in C.L.I.P or the linked Teams call, each counted once.",
             "title": "Participant Count",
             "type": "integer"
           },
@@ -5407,6 +5443,19 @@
             "default": 0,
             "title": "Questions Delivered",
             "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the class actually started.",
+            "title": "Started At"
           },
           "starts_at": {
             "anyOf": [
@@ -5422,6 +5471,18 @@
           },
           "status": {
             "$ref": "#/components/schemas/SessionStatus"
+          },
+          "teams_join_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A link that opens the linked Teams meeting, when C.L.I.P is in it.",
+            "title": "Teams Join Url"
           },
           "teams_meeting_id": {
             "anyOf": [
@@ -5962,6 +6023,20 @@
           "serviceUrl"
         ],
         "title": "TeamsActivity",
+        "type": "object"
+      },
+      "TeamsEndOption": {
+        "properties": {
+          "end_when_lecturer_leaves": {
+            "description": "End the class when its lecturer leaves the linked Teams call.",
+            "title": "End When Lecturer Leaves",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "end_when_lecturer_leaves"
+        ],
+        "title": "TeamsEndOption",
         "type": "object"
       },
       "TeamsSignInRequest": {
@@ -9248,6 +9323,104 @@
           }
         },
         "summary": "Link Meeting By Join Link",
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/meetings/sessions/{session_id}/end-when-lecturer-leaves": {
+      "put": {
+        "description": "Whether the class ends when its lecturer leaves the linked Teams call,\nafter the same short wait as an emptied call.",
+        "operationId": "end_when_lecturer_leaves_api_v1_meetings_sessions__session_id__end_when_lecturer_leaves_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamsEndOption"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "End When Lecturer Leaves",
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/meetings/sessions/{session_id}/keep-running": {
+      "post": {
+        "description": "Cancel the wait to end a class whose Teams call has emptied, or whose\nlecturer has left it. 404 when no such wait is running.",
+        "operationId": "keep_running_api_v1_meetings_sessions__session_id__keep_running_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Keep Running",
         "tags": [
           "meetings"
         ]

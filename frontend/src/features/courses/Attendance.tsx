@@ -8,11 +8,21 @@ import { Panel, Tag } from '../../components/ui/primitives'
 interface CourseAttendance {
   course_code: string
   classes: { session_id: string; title: string; starts_at: string | null }[]
-  students: { student_id: string; name: string; email: string; attended: number; classes: boolean[] }[]
+  students: {
+    student_id: string
+    name: string
+    email: string
+    attended: number
+    classes: boolean[]
+    late?: boolean[]
+    late_count?: number
+  }[]
 }
 
 interface SessionAttendance {
   present: number
+  late?: number
+  late_minutes?: number
   total: number
   students: {
     student_id: string
@@ -22,6 +32,7 @@ interface SessionAttendance {
     first_seen: string | null
     minutes: number | null
     sources: ('clip' | 'teams')[]
+    late?: boolean
   }[]
 }
 
@@ -117,18 +128,25 @@ export function CourseAttendancePanel({ code }: { code: string }) {
                   </th>
                   <td className="px-3 py-2 text-right tabular-nums">
                     {row.attended} of {row.classes.length}
+                    {(row.late_count ?? 0) > 0 && (
+                      <span className="block text-xs text-warning">{row.late_count} late</span>
+                    )}
                   </td>
-                  {row.classes.map((present, index) => (
-                    <td key={data.classes[index].session_id} className="px-2 py-2 text-center">
-                      <span
-                        aria-label={present ? 'Present' : 'Absent'}
-                        title={`${data.classes[index].title}: ${present ? 'present' : 'absent'}`}
-                        className={present ? 'font-semibold text-success' : 'text-muted-foreground'}
-                      >
-                        {present ? '✓' : '·'}
-                      </span>
-                    </td>
-                  ))}
+                  {row.classes.map((present, index) => {
+                    const late = present && Boolean(row.late?.[index])
+                    const label = late ? 'Late' : present ? 'Present' : 'Absent'
+                    return (
+                      <td key={data.classes[index].session_id} className="px-2 py-2 text-center">
+                        <span
+                          aria-label={label}
+                          title={`${data.classes[index].title}: ${label.toLowerCase()}`}
+                          className={late ? 'font-semibold text-warning' : present ? 'font-semibold text-success' : 'text-muted-foreground'}
+                        >
+                          {late ? 'L' : present ? '✓' : '·'}
+                        </span>
+                      </td>
+                    )
+                  })}
                 </tr>
               ))}
             </tbody>
@@ -158,7 +176,7 @@ export function SessionAttendancePanel({ sessionId }: { sessionId: string }) {
   return (
     <Panel
       title="Who was there"
-      description={`${data.present} of ${data.total} students. Joined in C.L.I.P or seen joining the Teams meeting.`}
+      description={`${data.present} of ${data.total} students${data.late ? `, ${data.late} late` : ''}. Joined in C.L.I.P or seen joining the Teams meeting${data.late_minutes ? `; late means more than ${data.late_minutes} minutes after the start` : ''}.`}
       className="mb-6"
     >
       <ul className="divide-y divide-border">
@@ -171,6 +189,7 @@ export function SessionAttendancePanel({ sessionId }: { sessionId: string }) {
             {row.present ? (
               <span className="flex items-center gap-2 text-sm text-muted-foreground">
                 {row.minutes !== null && `${row.minutes} min`}
+                {row.late && <Tag tone="mixed">Late</Tag>}
                 <Tag tone="good">{row.sources.includes('clip') ? 'Present' : 'In Teams only'}</Tag>
               </span>
             ) : (

@@ -140,12 +140,12 @@ async def world(db, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN001, ANN201
     # A class started however it is tells the meeting through the classroom.
     monkeypatch.setattr(classroom, "class_started_notifier", lambda sid: welcomed.append((sid,)))
     monkeypatch.setattr(flow_module, "presence", MeetingPresence())
-    emptied: list[str] = []
+    emptied: list[tuple[str, str]] = []
 
-    async def end_empty(meeting_id: str) -> None:
-        emptied.append(meeting_id)
+    async def end_class(meeting_id: str, reason: str) -> None:
+        emptied.append((meeting_id, reason))
 
-    monkeypatch.setattr(flow_module, "end_empty_class", end_empty)
+    monkeypatch.setattr(flow_module, "end_class", end_class)
     _, factory, created = db
     tenant = f"tenant-{uuid4().hex}"
     organiser = uuid4().hex
@@ -402,7 +402,7 @@ async def test_the_class_ends_once_everyone_has_left_the_call(world) -> None:
 
     await _in_call(world, "l2", ("29:b", "aad-b"), name=LEAVE)
     await asyncio.sleep(0.05)
-    assert world["emptied"] == [world["meeting"]]
+    assert world["emptied"] == [(world["meeting"], "everyone_left")]
 
 
 async def test_someone_rejoining_in_the_wait_keeps_the_class_running(world) -> None:
@@ -429,14 +429,63 @@ async def test_a_wait_of_zero_never_ends_the_class() -> None:
     presence = MeetingPresence()
     ended: list[str] = []
 
-    async def end(meeting_id: str) -> None:
+    async def end(meeting_id: str, reason: str) -> None:
         ended.append(meeting_id)
 
     presence.joined("m", {"a"})
     assert presence.left("m", {"a"}) is True
-    presence.end_when_empty("m", 0, end)
+    assert presence.end_after("m", uuid4(), "everyone_left", 0, end) is None
     await asyncio.sleep(0.01)
-    assert ended == [] and presence.timers == {}
+    assert ended == [] and presence.waits == {}
+
+
+async def _end_with_lecturer(world, on: bool) -> None:  # noqa: ANN001
+    session = await _session(world)
+    async with world["factory"]() as db:
+        row = await db.get(Session, session.session_id)
+        row.end_when_lecturer_leaves = on
+        await db.commit()
+
+
+async def test_the_lecturer_leaving_ends_the_class_when_they_chose_so(world) -> None:
+    world["settings"] = world["settings"].model_copy(
+        update={"teams_empty_meeting_end_seconds": 0.3}
+    )
+    lecturer = world["organiser"]
+    await _started_unlinked(world, _Teams(lecturer, f"{world['code']} Week 5"))
+    await _end_with_lecturer(world, True)
+    await _in_call(world, "j1", ("29:l", lecturer), ("29:a", "aad-a"))
+    await _in_call(world, "l1", ("29:l", lecturer), name=LEAVE)
+    # A student joining does not stop it: only the lecturer coming back does.
+    await _in_call(world, "j2", ("29:b", "aad-b"))
+    await asyncio.sleep(0.6)
+    assert world["emptied"] == [(world["meeting"], "lecturer_left")]
+
+
+async def test_the_lecturer_rejoining_keeps_the_class_running(world) -> None:
+    world["settings"] = world["settings"].model_copy(
+        update={"teams_empty_meeting_end_seconds": 1.0}
+    )
+    lecturer = world["organiser"]
+    await _started_unlinked(world, _Teams(lecturer, f"{world['code']} Week 5"))
+    await _end_with_lecturer(world, True)
+    await _in_call(world, "j1", ("29:l", lecturer), ("29:a", "aad-a"))
+    await _in_call(world, "l1", ("29:l", lecturer), name=LEAVE)
+    await _in_call(world, "j2", ("29:l", lecturer))
+    await asyncio.sleep(1.3)
+    assert world["emptied"] == []
+
+
+async def test_the_lecturer_leaving_ends_nothing_by_default(world) -> None:
+    world["settings"] = world["settings"].model_copy(
+        update={"teams_empty_meeting_end_seconds": 0.01}
+    )
+    lecturer = world["organiser"]
+    await _started_unlinked(world, _Teams(lecturer, f"{world['code']} Week 5"))
+    await _in_call(world, "j1", ("29:l", lecturer), ("29:a", "aad-a"))
+    await _in_call(world, "l1", ("29:l", lecturer), name=LEAVE)
+    await asyncio.sleep(0.05)
+    assert world["emptied"] == []
 
 
 # -- linking from the website -------------------------------------------------------

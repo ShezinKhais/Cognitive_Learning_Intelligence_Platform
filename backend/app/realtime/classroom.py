@@ -103,6 +103,7 @@ from app.schemas.events import (
     RoomConfirmPayload,
     RoomStatusPayload,
     ServerEventType,
+    SessionEndingPayload,
     SessionStatePayload,
 )
 from app.schemas.identity import ConsentType, Role
@@ -593,6 +594,30 @@ class Classroom:
             del self._teams_present[session_id]
         if session_id in self._live and self.present_students(session_id) != before:
             await self.announce_presence(session_id, SessionStatus.ACTIVE)
+
+    async def tell_ending(
+        self, session_id: UUID, reason: str | None, ends_at: datetime | None
+    ) -> None:
+        """Tell staff the class is about to end on its own, or that it no
+        longer is. The lecturer also gets a Teams pop-up for the warning."""
+        if session_id not in self._live:
+            return
+        await self._tell_staff(
+            session_id,
+            ServerEventType.SESSION_ENDING,
+            _json(SessionEndingPayload(reason=reason, ends_at=ends_at)),
+        )
+        if ends_at is not None and self.lecturer_update_notifier is not None:
+            who = "Everyone has" if reason == "everyone_left" else "You have"
+            try:
+                self.lecturer_update_notifier(
+                    session_id,
+                    "ending",
+                    f"{who} left the Teams call. The class ends at {ends_at:%H:%M} UTC "
+                    "unless you keep it running.",
+                )
+            except Exception:
+                log.warning("Could not tell the lecturer in Teams the class is ending")
 
     def class_started(self, session_id: UUID) -> None:
         if self.class_started_notifier is not None:
