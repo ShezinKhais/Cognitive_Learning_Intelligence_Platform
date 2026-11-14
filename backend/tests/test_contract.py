@@ -80,6 +80,8 @@ EXPECTED_PATHS = {
     "/api/v1/sessions/{session_id}/question-plan/candidates",
     "/api/v1/sessions/{session_id}/questions",
     "/api/v1/sessions/{session_id}/start",
+    "/api/v1/sessions/{session_id}/breakdown",
+    "/api/v1/sessions/{session_id}/results.csv",
     "/api/v1/sessions/{session_id}/end",
     "/api/v1/sessions/{session_id}/copy",
     "/api/v1/sessions/{session_id}/attendance",

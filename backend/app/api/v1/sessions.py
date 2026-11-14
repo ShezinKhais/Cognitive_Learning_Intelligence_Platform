@@ -40,6 +40,7 @@ from app.schemas.session import (
     DeliverableQuestionOut,
     EngagementOut,
     ResponseOut,
+    SessionBreakdownOut,
     SessionCopyRequest,
     SessionCreateRequest,
     SessionOut,
@@ -54,6 +55,7 @@ from app.services import (
     attendance,
     breakout,
     question_plan,
+    session_breakdown,
     session_lifecycle,
     session_reads,
 )
@@ -387,6 +389,43 @@ async def session_attendance(
     await require_analytics_access(db, principal, session_id)
     row = await SessionRepository(db).get(session_id)
     return await attendance.session_attendance(db, row)
+
+
+@router.get("/{session_id}/breakdown", response_model=SessionBreakdownOut, dependencies=_staff)
+async def session_breakdown_view(
+    session_id: UUID, principal: CurrentUser, db: DbSession
+) -> SessionBreakdownOut:
+    """Each question asked, with how the choices split, and each student's
+    answers, right answers and misses."""
+    await require_analytics_access(db, principal, session_id)
+    return await session_breakdown.build(db, session_id)
+
+
+@router.get(
+    "/{session_id}/results.csv",
+    dependencies=_staff,
+    response_class=Response,
+    responses={200: {"content": {"text/csv": {}}}},
+)
+@audit_action("SESSION_RESULTS_EXPORTED")
+async def session_results_csv(
+    session_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> Response:
+    """Every answer in the session as a CSV, one row per answer."""
+    await require_analytics_access(db, principal, session_id)
+    body = await session_breakdown.csv_rows(db, session_id)
+    return Response(
+        content="\ufeff" + body,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="session-{session_id}.csv"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.get(

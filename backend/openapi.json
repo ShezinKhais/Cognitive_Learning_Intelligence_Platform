@@ -3291,6 +3291,120 @@
         "title": "PrivateTranscriptDraft",
         "type": "object"
       },
+      "QuestionBreakdown": {
+        "description": "How the class answered one question, in the order they were asked.",
+        "properties": {
+          "answers": {
+            "title": "Answers",
+            "type": "integer"
+          },
+          "correct": {
+            "title": "Correct",
+            "type": "integer"
+          },
+          "correct_option": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correct Option"
+          },
+          "eligible": {
+            "description": "Students connected when it was asked.",
+            "title": "Eligible",
+            "type": "integer"
+          },
+          "marked": {
+            "description": "Answers marked right or wrong. Some written answers are not.",
+            "title": "Marked",
+            "type": "integer"
+          },
+          "median_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Seconds"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "option_counts": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How many chose each option, for multiple choice.",
+            "title": "Option Counts"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "question_id": {
+            "format": "uuid",
+            "title": "Question Id",
+            "type": "string"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "number",
+          "question_id",
+          "prompt",
+          "type",
+          "eligible",
+          "answers",
+          "correct",
+          "marked"
+        ],
+        "title": "QuestionBreakdown",
+        "type": "object"
+      },
       "QuestionBulkReviewRequest": {
         "properties": {
           "question_ids": {
@@ -4606,6 +4720,36 @@
         "title": "SessionAttendanceOut",
         "type": "object"
       },
+      "SessionBreakdownOut": {
+        "properties": {
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/QuestionBreakdown"
+            },
+            "title": "Questions",
+            "type": "array"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "students": {
+            "items": {
+              "$ref": "#/components/schemas/StudentBreakdown"
+            },
+            "title": "Students",
+            "type": "array"
+          }
+        },
+        "required": [
+          "session_id",
+          "questions",
+          "students"
+        ],
+        "title": "SessionBreakdownOut",
+        "type": "object"
+      },
       "SessionCopyRequest": {
         "description": "Prepare a new session for the same course. The title defaults to the\noriginal's, and the start to now.",
         "properties": {
@@ -5023,6 +5167,46 @@
           }
         },
         "title": "SessionUpdateRequest",
+        "type": "object"
+      },
+      "StudentBreakdown": {
+        "description": "How one student did across the session.",
+        "properties": {
+          "answered": {
+            "default": 0,
+            "title": "Answered",
+            "type": "integer"
+          },
+          "correct": {
+            "default": 0,
+            "title": "Correct",
+            "type": "integer"
+          },
+          "marked": {
+            "default": 0,
+            "title": "Marked",
+            "type": "integer"
+          },
+          "missed": {
+            "default": 0,
+            "title": "Missed",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "student_id": {
+            "format": "uuid",
+            "title": "Student Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "student_id",
+          "name"
+        ],
+        "title": "StudentBreakdown",
         "type": "object"
       },
       "StudentDataExport": {
@@ -9176,6 +9360,50 @@
         ]
       }
     },
+    "/api/v1/sessions/{session_id}/breakdown": {
+      "get": {
+        "description": "Each question asked, with how the choices split, and each student's\nanswers, right answers and misses.",
+        "operationId": "session_breakdown_view_api_v1_sessions__session_id__breakdown_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionBreakdownOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Session Breakdown View",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
     "/api/v1/sessions/{session_id}/chat": {
       "post": {
         "description": "Ask about session materials or lecturer-published discussion minutes.\n\nThe reply streams as it is written. To stop it, close the connection.",
@@ -10541,6 +10769,46 @@
           }
         },
         "summary": "List Responses",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/results.csv": {
+      "get": {
+        "description": "Every answer in the session as a CSV, one row per answer.",
+        "operationId": "session_results_csv_api_v1_sessions__session_id__results_csv_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/csv": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Session Results Csv",
         "tags": [
           "sessions"
         ]
