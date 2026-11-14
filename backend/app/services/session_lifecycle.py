@@ -35,6 +35,7 @@ from app.realtime.hub import hub
 from app.repositories.course_repository import CourseRepository
 from app.repositories.session_repository import SessionRepository
 from app.schemas.common import Page
+from app.schemas.events import AiControls
 from app.schemas.identity import ConsentType, Role
 from app.schemas.meetings import MeetingEventIn, MeetingEventKind
 from app.schemas.session import (
@@ -75,6 +76,7 @@ async def create_session(
     if starts_at.tzinfo is None:
         starts_at = starts_at.replace(tzinfo=UTC)
 
+    defaults = AiControls.of(course)
     row = await SessionRepository(db).create(
         instructor_id=principal.user_id,
         course_id=course.id,
@@ -82,6 +84,14 @@ async def create_session(
         start_time=starts_at,
         status=SessionStatus.PREPARED.value,
         mode=MODE_IN_PERSON,
+        # The course's saved AI switches, so a lecturer who chose once for the
+        # course does not choose again for every class.
+        ai_auto_checkpoints=defaults.auto_checkpoints,
+        ai_learning_assistant=defaults.learning_assistant,
+        ai_refocus_nudges=defaults.refocus_nudges,
+        ai_engagement_estimates=defaults.engagement_estimates,
+        checkpoint_minutes=defaults.checkpoint_minutes,
+        answer_seconds=defaults.answer_seconds,
     )
     return await session_out(db, row)
 
@@ -167,6 +177,7 @@ async def start_session(db: AsyncSession, principal: Principal, session_id: UUID
     row.status = SessionStatus.ACTIVE.value
     await db.commit()
 
+    classroom.remember_ai(row.session_id, AiControls.of(row))
     classroom.activate(row.session_id)
     await classroom.announce(row.session_id, SessionStatus.ACTIVE)
     log.info("session %s started by %s", session_id, principal.user_id)

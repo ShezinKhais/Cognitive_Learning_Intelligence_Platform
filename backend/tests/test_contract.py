@@ -85,6 +85,7 @@ EXPECTED_PATHS = {
     # Added in Phase 3 for the pause deliverable. Additive: no existing route
     # or field changed.
     "/api/v1/sessions/{session_id}/pause",
+    "/api/v1/sessions/{session_id}/ai-controls",
     "/api/v1/sessions/{session_id}/resume",
     # Added in Phase 4 for the content-readiness gate (AI 1). Additive.
     "/api/v1/sessions/{session_id}/readiness",

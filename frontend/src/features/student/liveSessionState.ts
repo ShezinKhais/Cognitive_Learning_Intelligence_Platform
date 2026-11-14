@@ -11,11 +11,22 @@ import type {
   QuestionClosedEvent,
   SessionStateEvent,
 } from './liveSessionTypes'
+import type { AiControls } from './liveSessionTypes'
+
+// Every switch on, as the server has it until the lecturer turns one off.
+const ALL_AI_ON: AiControls = {
+  auto_checkpoints: true,
+  learning_assistant: true,
+  refocus_nudges: true,
+  engagement_estimates: true,
+}
 
 export interface LiveSessionState {
   connection: LiveConnectionStatus
   sessionStatus: SessionStatus
   paused: boolean
+  /** The lecturer's AI switches for the class. */
+  ai: AiControls
   participantCount: number
   questionsDelivered: number
   /** Questions this student's answer was stored for, this session. */
@@ -61,6 +72,7 @@ export function initialLiveSessionState(
     connection: 'connecting',
     sessionStatus: status,
     paused,
+    ai: ALL_AI_ON,
     participantCount: 0,
     questionsDelivered: 0,
     answeredIds: [],
@@ -189,6 +201,7 @@ export function liveSessionReducer(
         ...state,
         sessionStatus: action.payload.status,
         paused: sessionEnded ? false : action.payload.paused,
+        ai: action.payload.ai,
         participantCount:
           sessionEnded ? 0 : action.payload.participant_count,
         questionsDelivered: action.payload.questions_delivered,

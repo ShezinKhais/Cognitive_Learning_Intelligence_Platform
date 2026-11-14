@@ -56,6 +56,7 @@ from app.realtime.hub import CLOSE_TRY_AGAIN_LATER, Connection, hub
 from app.realtime.rooms import Refusal
 from app.realtime.signals import Throttle
 from app.schemas.events import (
+    AiControls,
     AnswerSubmitPayload,
     AttentionSignalPayload,
     AuthPayload,
@@ -306,6 +307,9 @@ async def session_socket(
                 row = await joinable_session(db, user_id, role, session_id)
                 refused = "not_a_session_member"
                 if row is not None:
+                    if row.status != SessionStatus.ENDED.value:
+                        # A class not yet running still shows its switches.
+                        classroom.remember_ai(row.session_id, AiControls.of(row))
                     await classroom.restore(db, row)
                     if role is Role.STUDENT:
                         standing = await has_accommodation(db, user_id)
