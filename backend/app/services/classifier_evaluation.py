@@ -188,3 +188,38 @@ def cohen_kappa(a: Sequence[str], b: Sequence[str], labels: Sequence[str] = LABE
     if chance == 1:
         return 1.0
     return (observed - chance) / (1 - chance)
+
+
+@dataclass(frozen=True)
+class ThresholdCut:
+    threshold: float
+    # Answers below the threshold: shown as "Uncertain, ask your lecturer".
+    flagged: int
+    # How many of those the classifier had wrong.
+    flagged_wrong: int
+    # Answers at or above it: shown with their label.
+    shown: int
+    # How many of those the classifier had wrong (mistakes students see).
+    shown_wrong: int
+
+
+def threshold_cuts(
+    confidences: Sequence[float], correct: Sequence[bool], thresholds: Sequence[float]
+) -> list[ThresholdCut]:
+    """What each uncertainty threshold would do on these results.
+
+    For each threshold, how many labels it would hide as uncertain and how
+    many wrong labels it would still show, so the review threshold can be
+    chosen from data rather than guessed.
+    """
+    _checked(confidences, correct)
+    cuts = []
+    for t in thresholds:
+        below = [ok for c, ok in zip(confidences, correct, strict=True) if c < t]
+        above = [ok for c, ok in zip(confidences, correct, strict=True) if c >= t]
+        cuts.append(
+            ThresholdCut(
+                t, len(below), len(below) - sum(below), len(above), len(above) - sum(above)
+            )
+        )
+    return cuts
