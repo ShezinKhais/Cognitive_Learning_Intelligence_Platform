@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import random
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -618,21 +619,42 @@ def screened(chunks: Sequence[RetrievedChunk]) -> list[RetrievedChunk]:
     return [chunk for chunk in chunks if not contains_embedded_instruction(chunk.chunk_text)]
 
 
-def build_prompt(
-    chunks: list[RetrievedChunk], count: int, question_type: QuestionType = QuestionType.MCQ
-) -> str:
-    # Every chunk of a 60-slide deck is far past the model's context window,
-    # and it truncates silently rather than erroring - so questions would be
-    # generated from whatever happened to fit.
-    if len(chunks) <= MAX_PROMPT_CHUNKS:
-        used = chunks
-    else:
-        last_index = len(chunks) - 1
-        indexes = [
-            round(i * last_index / (MAX_PROMPT_CHUNKS - 1)) for i in range(MAX_PROMPT_CHUNKS)
-        ]
-        used = [chunks[index] for index in indexes]
+def prompt_chunks(
+    chunks: Sequence[RetrievedChunk], rng: random.Random | None = None
+) -> list[RetrievedChunk]:
+    """The chunks one prompt shows: all of them, or MAX_PROMPT_CHUNKS spread
+    across the material.
 
+    Every chunk of a 60-slide deck is far past the model's context window, and
+    it truncates silently rather than erroring, so questions would come from
+    whatever happened to fit. The material is cut into MAX_PROMPT_CHUNKS equal
+    stretches and one chunk is shown from each, so a prompt always spans the
+    whole material. With `rng`, which chunk of each stretch is random, so
+    repeated generations reach every part of a long document; without it, the
+    same evenly spaced chunks every time (#283).
+    """
+    if len(chunks) <= MAX_PROMPT_CHUNKS:
+        return list(chunks)
+    if rng is None:
+        last_index = len(chunks) - 1
+        return [
+            chunks[round(i * last_index / (MAX_PROMPT_CHUNKS - 1))]
+            for i in range(MAX_PROMPT_CHUNKS)
+        ]
+    n = len(chunks)
+    return [
+        chunks[rng.randrange(i * n // MAX_PROMPT_CHUNKS, (i + 1) * n // MAX_PROMPT_CHUNKS)]
+        for i in range(MAX_PROMPT_CHUNKS)
+    ]
+
+
+def build_prompt(
+    chunks: list[RetrievedChunk],
+    count: int,
+    question_type: QuestionType = QuestionType.MCQ,
+    rng: random.Random | None = None,
+) -> str:
+    used = prompt_chunks(chunks, rng)
     excerpts = "\n\n".join(f"[page {chunk.source_page}]\n{chunk.chunk_text}" for chunk in used)
     template = (
         FREE_TEXT_PROMPT_TEMPLATE if question_type == QuestionType.FREE_TEXT else PROMPT_TEMPLATE
@@ -832,8 +854,13 @@ class QuestionGenerator:
         count: int = 5,
         free_text: bool = False,
         verify: bool = False,
+        rng: random.Random | None = None,
     ) -> None:
         self._client = client
+        # Which chunk of each stretch a prompt shows (prompt_chunks). Random by
+        # default, so generating again asks about other parts of a long
+        # material; tests pass a seeded one.
+        self._rng = rng or random.Random()
         # Public: the pipeline records which model wrote a material's drafts.
         self.model = model
         self._count = count
@@ -928,7 +955,7 @@ class QuestionGenerator:
                 {
                     "role": "user",
                     "content": build_prompt(
-                        shown, self._count if count is None else count, question_type
+                        shown, self._count if count is None else count, question_type, self._rng
                     ),
                 }
             ],
