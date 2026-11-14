@@ -22,6 +22,7 @@ from app.schemas.meetings import (
     MeetingClassStart,
     MeetingClassSuggestion,
     MeetingEventIn,
+    MeetingJoinLinkRequest,
     MeetingLinkRequest,
     TeamsUpdatesMute,
     TeamsUpdatesOut,
@@ -38,6 +39,26 @@ router = APIRouter(
         Depends(require_roles(Role.LECTURER, Role.ADMIN)),
     ],
 )
+
+
+@router.post("/join-link", response_model=SessionOut)
+@audit_action("MEETING_LINKED")
+async def link_meeting_by_join_link(
+    payload: MeetingJoinLinkRequest,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> SessionOut:
+    """Hold a session in the Teams meeting a join link opens, from the
+    C.L.I.P website. The meeting must have C.L.I.P added to it, and with
+    Teams live a lecturer must be its organiser. Once linked, the meeting
+    starting starts the class, the class starting opens C.L.I.P for everyone
+    in the call, and the class ends with the meeting or once everyone has
+    left it."""
+    meeting_id = await meeting_organiser.meeting_for_join_link(db, payload.join_url, settings)
+    await meeting_organiser.require_organiser(db, principal, meeting_id, settings)
+    return await session_lifecycle.link_meeting(db, principal, meeting_id, payload.session_id)
 
 
 @router.get("/{meeting_id}", response_model=SessionOut)

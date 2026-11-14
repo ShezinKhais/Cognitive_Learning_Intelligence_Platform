@@ -3133,6 +3133,28 @@
         "title": "MeetingEventKind",
         "type": "string"
       },
+      "MeetingJoinLinkRequest": {
+        "description": "Link a session to the Teams meeting a join link opens, from the\nC.L.I.P website rather than the meeting's side panel.",
+        "properties": {
+          "join_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Join Url",
+            "type": "string"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "join_url"
+        ],
+        "title": "MeetingJoinLinkRequest",
+        "type": "object"
+      },
       "MeetingLinkRequest": {
         "properties": {
           "session_id": {
@@ -9184,6 +9206,48 @@
           }
         },
         "summary": "Meeting Event",
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/meetings/join-link": {
+      "post": {
+        "description": "Hold a session in the Teams meeting a join link opens, from the\nC.L.I.P website. The meeting must have C.L.I.P added to it, and with\nTeams live a lecturer must be its organiser. Once linked, the meeting\nstarting starts the class, the class starting opens C.L.I.P for everyone\nin the call, and the class ends with the meeting or once everyone has\nleft it.",
+        "operationId": "link_meeting_by_join_link_api_v1_meetings_join_link_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeetingJoinLinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Link Meeting By Join Link",
         "tags": [
           "meetings"
         ]

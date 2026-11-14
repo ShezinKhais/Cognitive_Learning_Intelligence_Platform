@@ -33,6 +33,7 @@ import {
   getSessionTopics,
 } from '../features/intelligence/topicRecoveryApi'
 import AiControlsPanel from '../features/live/AiControlsPanel'
+import TeamsLinkPanel from '../features/live/TeamsLinkPanel'
 import LiveAlertsPanel from '../features/live/LiveAlertsPanel'
 import CheckpointMonitor from '../features/live/CheckpointMonitor'
 import {
@@ -783,7 +784,7 @@ export default function LecturerLiveSessionPage() {
               sessionState?.status === 'prepared'
                 ? 'Connected and waiting for the session to start'
                 : sessionState?.status === 'active'
-                  ? 'Currently connected students'
+                  ? 'Students in the class or its Teams call'
                   : sessionState?.status === 'ended'
                     ? 'Session ended'
                     : sessionState?.status === 'cancelled'
@@ -801,6 +802,14 @@ export default function LecturerLiveSessionPage() {
 
           {sessionId && sessionState?.status !== 'ended' && sessionState?.status !== 'cancelled' && (
             <AiControlsPanel sessionId={sessionId} courseCode={details?.course_code} />
+          )}
+
+          {sessionId && details && sessionState?.status !== 'ended' && sessionState?.status !== 'cancelled' && (
+            <TeamsLinkPanel
+              sessionId={sessionId}
+              linked={Boolean(details.teams_meeting_id)}
+              onLinked={setDetails}
+            />
           )}
 
           <LecturerAttentionPanel

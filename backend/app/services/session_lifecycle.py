@@ -203,6 +203,9 @@ async def start_session(db: AsyncSession, principal: Principal, session_id: UUID
     classroom.remember_ai(row.session_id, AiControls.of(row))
     classroom.activate(row.session_id)
     await classroom.announce(row.session_id, SessionStatus.ACTIVE)
+    # However it was started, from C.L.I.P or by the Teams meeting starting,
+    # the meeting is told, and C.L.I.P opens for everyone already in the call.
+    classroom.class_started(row.session_id)
     log.info("session %s started by %s", session_id, principal.user_id)
     return await session_out(db, row)
 

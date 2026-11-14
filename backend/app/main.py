@@ -123,6 +123,7 @@ async def lifespan(app: FastAPI):
     classroom.alert_notifier = notifications.enqueue_alert
     classroom.lecturer_update_notifier = notifications.update_lecturer
     classroom.class_ended_notifier = notifications.enqueue_class_ended
+    classroom.class_started_notifier = notifications.enqueue_welcome
     classroom.last_call_notifier = notifications.enqueue_last_call
     classroom.checkpoint_detail = class_glance.checkpoint_detail
     meetings.directory = DatabaseMeetingDirectory()

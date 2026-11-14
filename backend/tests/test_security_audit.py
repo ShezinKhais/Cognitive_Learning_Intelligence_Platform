@@ -124,6 +124,7 @@ AUDIENCE = {
     ("POST", "/api/v1/materials/{material_id}/questions"): STAFF,
     ("POST", "/api/v1/materials/{material_id}/questions/{question_id}:reuse"): STAFF,
     ("POST", "/api/v1/meetings/events"): STAFF,
+    ("POST", "/api/v1/meetings/join-link"): STAFF,
     ("GET", "/api/v1/meetings/{meeting_id}"): STAFF,
     ("PUT", "/api/v1/meetings/{meeting_id}"): STAFF,
     ("GET", "/api/v1/meetings/{meeting_id}/class-suggestion"): STAFF,
