@@ -409,3 +409,13 @@ test('spoof clips count for face presence but not for looking at the screen', ()
   assert.equal(s.looking.tp + s.looking.fp + s.looking.fn + s.looking.tn, 10)
   assert.equal(s.face.fp, 10)
 })
+
+test('the gaze model can be tuned for a classroom with no calibration step', () => {
+  // Glances and screen looks, and no calibrate clip at all.
+  const frames = [
+    ...Array.from({ length: 6 }, (_, i) => ({ ...frame('P1', 's', 'screen', 0), features: pose(0, 0, 0, 0.5) , t: i })),
+    ...Array.from({ length: 6 }, (_, i) => ({ ...frame('P1', 'g', 'away_left', 0), features: pose(0, 0, 0, 0.75), t: i })),
+  ]
+  const { balancedAccuracy: value } = tuneGaze(frames, CALIBRATED_THRESHOLDS, DEFAULT_THRESHOLDS, false)
+  assert.equal(value, 1)
+})
