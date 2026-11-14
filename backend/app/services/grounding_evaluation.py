@@ -25,6 +25,7 @@ REASON_KINDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("verifier: not exactly one right option", ("verifier:",)),
     ("safety: instructions or links", ("instructions", "links to")),
     ("citation: missing or wrong page", ("citation", "cites page")),
+    ("table lookup: a number from a table of numbers", ("table of numbers",)),
     # The MCQ answer, or a free-text reference answer or key point.
     ("answer not supported by the excerpt", ("has little overlap with the cited excerpt",)),
     ("question off the cited page", ("question has little overlap",)),

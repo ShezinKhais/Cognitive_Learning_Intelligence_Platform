@@ -455,3 +455,38 @@ def test_surplus_csv_column_is_ignored():
 
     assert count == 1
     assert rows[0].course_code == "CSIT321"
+
+
+@pytest.mark.parametrize("field", ['"Unclosed room', "x" * (128 * 1024 + 1)])
+def test_bad_csv_fields_are_reported_as_validation_errors(field):
+    raw = _csv(TIMETABLE_HEADER, "", f"CSIT321,Dr. A,Monday,09:00,11:00,{field}")
+    with pytest.raises(ValidationError, match="Row 3: malformed CSV"):
+        parse_timetable("timetable.csv", raw)
+
+
+def test_csv_roster_preserves_row_numbers_across_blank_and_multiline_records():
+    raw = _csv(
+        ROSTER_HEADER,
+        'a.student@uni.test,"A\nStudent",CSIT321',
+        "",
+        "b.student@uni.test,B Student,CSIT321",
+    )
+    rows, count = parse_roster("roster.csv", raw)
+    assert count == 2
+    assert [row.row_number for row in rows] == [2, 5]
+
+
+def test_xlsx_timetable_accepts_numeric_times_and_preserves_source_row():
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.append(TIMETABLE_HEADER.strip().split(","))
+    sheet.append([None] * 6)
+    sheet.append(["CSIT321", "Dr. A", "Monday", 9 / 24, 11.5 / 24, "Room 1"])
+    with io.BytesIO() as raw:
+        workbook.save(raw)
+        rows, count = parse_timetable("timetable.xlsx", raw.getvalue())
+    workbook.close()
+    assert count == 1
+    assert rows[0].row_number == 3
+    assert rows[0].start_time.isoformat() == "09:00:00"
+    assert rows[0].end_time.isoformat() == "11:30:00"

@@ -156,3 +156,16 @@ test('a processing backlog stops capture with an explicit gap warning', async ({
   await expect(page.getByRole('alert')).toContainText('cannot keep up')
   await allStopped(page)
 })
+
+test('an already-hidden page cannot request a microphone', async ({ page }) => {
+  const confirmed = page.getByRole('checkbox', { name: 'I confirm participants have been informed', exact: false })
+  await confirmed.check()
+  const button = page.getByRole('button', { name: 'Start live transcription' })
+  await expect(button).toBeEnabled()
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+  })
+  await button.click()
+  await expect(button).toBeVisible()
+  expect(await page.evaluate(() => (window as any).liveProbe.requests)).toBe(0)
+})

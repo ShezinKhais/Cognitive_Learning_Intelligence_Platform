@@ -1,0 +1,55 @@
+name: Dependency audit
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Audit locked frontend dependencies (including build tools)
+        working-directory: frontend
+        run: npm audit --audit-level=moderate --json > npm-audit.json
+      - name: Audit production frontend dependencies separately
+        if: always()
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=moderate --json > npm-audit-production.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-dependency-audit
+          path: frontend/npm-audit*.json
+
+  backend-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Resolve backend runtime and test dependencies
+        run: python -m pip install -e 'backend[dev]' 'pip-audit==2.10.1'
+      - name: Export exact resolved versions
+        # The local editable app has no advisory entry. Include all its installed
+        # dependencies and the scanner, then audit this fully resolved snapshot.
+        run: python -m pip freeze --exclude-editable > backend/audit-resolved.txt
+      - name: Audit resolved Python dependencies
+        run: >-
+          pip-audit --cache-dir "$RUNNER_TEMP/pip-audit" --strict
+          --disable-pip --no-deps -r backend/audit-resolved.txt
+          --format=json --output=backend/pip-audit.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-dependency-audit
+          path: |
+            backend/audit-resolved.txt
+            backend/pip-audit.json

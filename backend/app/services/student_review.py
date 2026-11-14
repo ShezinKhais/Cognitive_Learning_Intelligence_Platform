@@ -1,8 +1,7 @@
 """Read only the caller's ended-session answers and their bounded source context.
 
-No new scoring or model calls. The legacy engagement table has neither confidence
-nor missing-signal metadata, so it cannot safely populate a verified review score.
-Cyber 1 can supply that contract later without conflating it with comprehension.
+Show the availability of consented historical readings alongside answers.
+The stored summaries carry no validated confidence for an engagement score.
 """
 
 from uuid import UUID
@@ -11,7 +10,9 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
+from app.models.attention_signal_summary import AttentionSignalSummary
 from app.models.comprehension_result import ComprehensionResult
+from app.models.consent import Consent
 from app.models.course import Course
 from app.models.delivered_question import DeliveredQuestion
 from app.models.material import Material
@@ -22,8 +23,11 @@ from app.models.session import Session
 from app.models.student import Student
 from app.models.student_response import StudentResponse
 from app.schemas.common import Page
+from app.schemas.identity import ConsentType
 from app.schemas.student_review import (
+    MissedQuestion,
     ReviewAnswer,
+    ReviewEngagement,
     ReviewSession,
     ReviewSource,
     ReviewSources,
@@ -85,6 +89,129 @@ def answer_text(response: StudentResponse, question: Question) -> str:
     return "Answer text unavailable"
 
 
+def correct_answer(question: Question) -> str | None:
+    if question.question_type == "mcq":
+        index = question.correct_option
+        if index is not None and question.options and 0 <= index < len(question.options):
+            return question.options[index]
+        return None
+    return question.reference_answer or None
+
+
+def missed_query(session_id: UUID, student_id: UUID):
+    return (
+        select(MissedResponse, Question)
+        .join(DeliveredQuestion, DeliveredQuestion.delivery_id == MissedResponse.delivery_id)
+        .join(Question, Question.question_id == DeliveredQuestion.question_id)
+        .where(DeliveredQuestion.session_id == session_id, MissedResponse.student_id == student_id)
+    )
+
+
+async def read_missed(db: AsyncSession, user_id: UUID, session_id: UUID, limit: int, offset: int):
+    _, _, student_id = await own_session(db, user_id, session_id)
+    query = missed_query(session_id, student_id)
+    total = await db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    rows = (
+        await db.execute(
+            query.order_by(DeliveredQuestion.delivered_at, MissedResponse.missed_response_id)
+            .limit(limit)
+            .offset(offset)
+        )
+    ).all()
+    return Page[MissedQuestion](
+        items=[
+            MissedQuestion(
+                id=m.missed_response_id,
+                question=q.question_text,
+                topic=q.topic,
+                correct_answer=correct_answer(q),
+                key_points=q.key_points or [],
+            )
+            for m, q in rows
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+async def read_missed_sources(db: AsyncSession, user_id: UUID, session_id: UUID, missed_id: UUID):
+    session, _, student_id = await own_session(db, user_id, session_id)
+    row = (
+        await db.execute(
+            missed_query(session_id, student_id).where(
+                MissedResponse.missed_response_id == missed_id
+            )
+        )
+    ).one_or_none()
+    if row is None:
+        raise NotFoundError("Unanswered question was not found.")
+    return await question_sources(db, session, row[1])
+
+
+async def read_engagement(
+    db: AsyncSession, user_id: UUID, student_id: UUID, session_id: UUID
+) -> ReviewEngagement:
+    """Count only persisted windows covered by the latest grants."""
+    grants = dict(
+        (
+            await db.execute(
+                select(Consent.consent_type, Consent.recorded_at).where(
+                    Consent.user_id == user_id,
+                    Consent.granted.is_(True),
+                    Consent.consent_type.in_(
+                        (
+                            ConsentType.ENGAGEMENT_MONITORING,
+                            ConsentType.CAMERA,
+                            ConsentType.MICROPHONE,
+                        )
+                    ),
+                )
+            )
+        )
+        .tuples()
+        .all()
+    )
+    monitoring = grants.get(ConsentType.ENGAGEMENT_MONITORING)
+    if monitoring is None:
+        return ReviewEngagement()
+
+    summary = AttentionSignalSummary
+    counts = {}
+    for sensor, present in (
+        (
+            ConsentType.CAMERA,
+            or_(summary.gaze_on_screen_ratio.is_not(None), summary.face_present_ratio.is_not(None)),
+        ),
+        (ConsentType.MICROPHONE, summary.speaking_ratio.is_not(None)),
+    ):
+        granted_at = grants.get(sensor)
+        if granted_at is not None:
+            counts[sensor] = await db.scalar(
+                select(func.count())
+                .select_from(summary)
+                .where(
+                    summary.student_id == student_id,
+                    summary.session_id == session_id,
+                    summary.window_start >= max(granted_at, monitoring),
+                    present,
+                )
+            )
+    camera = counts.get(ConsentType.CAMERA)
+    microphone = counts.get(ConsentType.MICROPHONE)
+    if not camera and not microphone:
+        return ReviewEngagement()
+    return ReviewEngagement(
+        status="readings_available",
+        camera_windows=camera or None,
+        microphone_windows=microphone or None,
+        explanation=(
+            "These counts show when optional device readings were available. "
+            "The readings do not measure how well you understood the lesson."
+        ),
+    )
+
+
 async def read_review(db: AsyncSession, user_id: UUID, session_id: UUID, limit: int, offset: int):
     session, code, student_id = await own_session(db, user_id, session_id)
     scope = (StudentResponse.session_id == session_id, StudentResponse.student_id == student_id)
@@ -118,6 +245,8 @@ async def read_review(db: AsyncSession, user_id: UUID, session_id: UUID, limit: 
             label=c.label if c else None,
             confidence=c.confidence_score if c else None,
             submitted_at=r.submitted_at,
+            correct_answer=correct_answer(q),
+            key_points=q.key_points or [],
         )
         for r, q, c in rows
     ]
@@ -125,6 +254,7 @@ async def read_review(db: AsyncSession, user_id: UUID, session_id: UUID, limit: 
         session=session_out(session, code),
         questions_attempted=total,
         questions_missed=missed or 0,
+        engagement=await read_engagement(db, user_id, student_id, session_id),
         answers=answers,
         total=total,
         limit=limit,
@@ -147,6 +277,10 @@ async def read_sources(db: AsyncSession, user_id: UUID, session_id: UUID, respon
     ).scalar_one_or_none()
     if question is None:
         raise NotFoundError("Answer was not found.")
+    return await question_sources(db, session, question)
+
+
+async def question_sources(db: AsyncSession, session: Session, question: Question):
     excerpt = (question.source_excerpt or "").strip()
     if question.source_slide is None and not excerpt:
         return ReviewSources(items=[])

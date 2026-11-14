@@ -22,8 +22,12 @@ ENV VITE_MATERIAL_PIPELINE_ENABLED=$VITE_MATERIAL_PIPELINE_ENABLED \
 
 COPY . .
 RUN npm run build
+ARG CLIP_RELEASE_SHA=unknown
+RUN CLIP_RELEASE_SHA="$CLIP_RELEASE_SHA" node scripts/write-release.mjs
 
 FROM nginx:alpine
+ARG CLIP_RELEASE_SHA=unknown
+LABEL org.opencontainers.image.revision=$CLIP_RELEASE_SHA
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 

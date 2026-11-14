@@ -100,15 +100,30 @@ class SessionRepository:
     def _deliverable(self, live: Session):  # noqa: ANN202 - a select
         """Staged questions this session may deliver.
 
-        A question is staged at review, before any session exists, so it is
-        claimed by the session that delivers it. Until then it belongs to
-        whichever session of its uploader asks first, as long as the material
-        is for this session's course or for no course in particular.
+        The legacy course bank claims unassigned questions on delivery. An
+        opt-in lesson instead uses only its prepared copies, including when
+        that selection is empty or exhausted.
         """
+        scope = Question.session_id == live.session_id
+        if not getattr(live, "question_selection_enabled", False):
+            scope = or_(
+                scope,
+                (Question.session_id.is_(None))
+                & (Material.uploaded_by_user_id == live.instructor_id)
+                & or_(Material.course_id.is_(None), Material.course_id == live.course_id),
+            )
+        selected_scope = []
+        if getattr(live, "question_selection_enabled", False):
+            selected_scope = [
+                Material.uploaded_by_user_id == live.instructor_id,
+                or_(Material.course_id.is_(None), Material.course_id == live.course_id),
+                Material.status == "completed",
+            ]
         return (
             select(Question)
             .join(Material, Material.id == Question.source_material_id)
             .where(
+                *selected_scope,
                 Question.status == QuestionStatus.STAGED.value,
                 # A multiple choice question with no choices cannot be
                 # answered, so it is not deliverable. Sending it would put a
@@ -117,12 +132,7 @@ class SessionRepository:
                     Question.question_type != QuestionType.MCQ.value,
                     func.cardinality(Question.options) > 0,
                 ),
-                or_(
-                    Question.session_id == live.session_id,
-                    (Question.session_id.is_(None))
-                    & (Material.uploaded_by_user_id == live.instructor_id)
-                    & or_(Material.course_id.is_(None), Material.course_id == live.course_id),
-                ),
+                scope,
             )
         )
 
@@ -138,9 +148,17 @@ class SessionRepository:
         The same rule _deliverable uses for unclaimed questions: uploaded by
         this session's lecturer, for its course or for no course in particular.
         """
+        selected_materials = select(Question.source_material_id).where(
+            Question.session_id == live.session_id
+        )
         result = await self.session.execute(
             select(Material)
             .where(
+                *(
+                    [Material.id.in_(selected_materials)]
+                    if getattr(live, "question_selection_enabled", False)
+                    else []
+                ),
                 Material.uploaded_by_user_id == live.instructor_id,
                 or_(Material.course_id.is_(None), Material.course_id == live.course_id),
             )

@@ -35,6 +35,13 @@ class Question(Base):
         default=uuid.uuid4,
     )
 
+    source_question_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("question.question_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     source_material_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("source_material.id"),

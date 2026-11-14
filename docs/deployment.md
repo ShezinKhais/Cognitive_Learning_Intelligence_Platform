@@ -83,6 +83,9 @@ scheduled jobs (a purge in progress is cancelled, having deleted only whole batc
 the session timers, and waits for running material jobs and reports before exiting.
 Sessions stay active in the database and carry on when the backend is next used.
 
+What a restart keeps and what it loses, per piece of state, is in
+[restart-behaviour.md](restart-behaviour.md).
+
 ## The proxy
 
 `frontend/nginx.conf` does the following.
@@ -160,7 +163,8 @@ Session reports are built in memory and kept for an hour, so they need no volume
 not survive a restart (see [reports.md](reports.md)). Reportlab, which draws the PDF, is a
 normal dependency of the backend, so the image already includes it.
 
-The backend deletes upload files older than `DATA_RETENTION_DAYS` once a day (see
+The backend starts the automatic purge one minute after startup by default and repeats
+it daily. The purge deletes upload files older than `DATA_RETENTION_DAYS` (see
 [the retention purge](reports.md#the-retention-purge)), which is why the uploads sit on a
 volume the backend can write to. The same run purges the database tables (see [governance.md](governance.md)).
 

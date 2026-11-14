@@ -27,7 +27,9 @@ _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "rejected": {"rejected"},
     # Reached only from session delivery; the review routes cannot request
     # it (see ReviewDecision).
-    "staged": {"staged", "delivered"},
+    # Back to draft takes a staged question out of the next class before
+    # any session has claimed it; see apply_review.
+    "staged": {"staged", "delivered", "draft"},
     "delivered": set(),  # terminal: a delivered question is never rewritten
 }
 
@@ -100,6 +102,16 @@ def _validate_prompt(prompt: str | None) -> None:
     """
     if prompt is not None and not prompt.strip():
         raise ValidationError("The question prompt cannot be blank.", {})
+
+
+def validate_question_shape(
+    prompt: str, options: list[str] | None, correct_option: int | None
+) -> None:
+    """The checks an approved question passes, for a question written by hand."""
+    _validate_prompt(prompt)
+    if not prompt.strip():
+        raise ValidationError("The question prompt cannot be blank.", {})
+    _validate_option_shape(None, options, None, correct_option)
 
 
 class QuestionRepository:
@@ -268,6 +280,23 @@ class QuestionRepository:
             raise ConflictError(
                 f"Cannot move a question from '{current}' to '{status}'.",
                 {"current_status": current, "requested_status": status},
+            )
+
+        if current == "staged" and status == "draft":
+            # A class may claim the question while this request runs. Read
+            # it again under a row lock, so a delivered question is never
+            # written back to draft.
+            await self.session.refresh(question, with_for_update=True)
+            current = question.status
+            if current != "staged":
+                raise ConflictError(
+                    f"Cannot move a question from '{current}' to 'draft'.",
+                    {"current_status": current, "requested_status": status},
+                )
+        if current == "staged" and status == "draft" and question.session_id is not None:
+            raise ConflictError(
+                "This question was claimed by a class, so it stays ready to send.",
+                {"current_status": current},
             )
 
         editing = prompt is not None or options is not None or correct_option is not None

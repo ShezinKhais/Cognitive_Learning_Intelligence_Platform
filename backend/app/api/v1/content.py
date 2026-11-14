@@ -33,10 +33,12 @@ from app.schemas.content import (
     MaterialUpdateRequest,
     QuestionBulkReviewRequest,
     QuestionBulkReviewResult,
+    QuestionCreateRequest,
     QuestionOut,
     QuestionReviewRequest,
 )
 from app.schemas.identity import ConsentType, Role
+from app.services import question_bank
 from app.services.extraction import CONTENT_TYPES
 from app.services.material_edits import (
     course_codes,
@@ -81,6 +83,8 @@ def _to_question_out(question) -> QuestionOut:  # noqa: ANN001 - app.models.Ques
         options=question.options,
         correct_option=question.correct_option,
         topic=question.topic,
+        reference_answer=question.reference_answer,
+        key_points=question.key_points,
         source_slide=question.source_slide,
         source_excerpt=question.source_excerpt,
     )
@@ -289,6 +293,46 @@ async def review_question(
     )
 
     return _to_question_out(updated)
+
+
+@router.post(
+    "/{material_id}/questions",
+    response_model=QuestionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+@audit_action("QUESTION_WRITTEN")
+async def write_question(
+    material_id: UUID,
+    payload: QuestionCreateRequest,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> QuestionOut:
+    """Add a question of the lecturer's own to one of their materials. It is
+    ready to send straight away."""
+    return _to_question_out(await question_bank.write_question(db, principal, material_id, payload))
+
+
+@router.post(
+    "/{material_id}/questions/{question_id}:reuse",
+    response_model=QuestionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+@audit_action("QUESTION_REUSED")
+async def reuse_question(
+    material_id: UUID,
+    question_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> QuestionOut:
+    """Stage a copy of a question that has been asked, for another class
+    (409 for one that has not been asked)."""
+    repo = QuestionRepository(db)
+    question = await get_owned_question(question_id, principal, repo, material_id=material_id)
+    return _to_question_out(await question_bank.reuse_question(db, principal, question))
 
 
 @router.post(

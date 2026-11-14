@@ -1,8 +1,10 @@
-import { Camera, Crosshair, Info, Mic, Power, ShieldCheck } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Camera, ChevronDown, Crosshair, Info, Mic, Power, ShieldCheck } from 'lucide-react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { getCurrentUser, recordConsent } from '../../api'
 import { calibrateCamera, startCamera, startMicrophone, type CalibrationResult } from './localSensors'
 import { awayDurationSeconds, nextAwayStart } from './awayDuration'
+import { readCaptureConsent } from './captureConsent'
+import { useCameraPolicy } from './useCameraPolicy'
 import { useAttentionReporter } from './useAttentionReporter'
 import { useLocalSensor } from './useLocalSensor'
 import type { AttentionSummary, FaceObservation } from './signals'
@@ -19,6 +21,10 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
   const [savedConsent, setSavedConsent] = useState({ monitoring: false, camera: false, microphone: false })
   const [savingConsent, setSavingConsent] = useState(false)
   const [message, setMessage] = useState('')
+  // The panel is one line until the student opens it. A student who chose
+  // the indicators at sign-in never needs to: they start by themselves.
+  const [open, setOpen] = useState(false)
+  const optionsId = useId()
   const awayStart = useRef<number | null>(null)
   const lastFaceObservationAt = useRef<number | null>(null)
   const lastForward = useRef<boolean | null>(null)
@@ -26,13 +32,13 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
   const [calibration, setCalibration] = useState<'none' | 'running' | CalibrationResult>('none')
   const {
     status: cameraStatus, latest: face, start: enableCamera, stop: stopCamera,
-    drain: drainCamera, isActive: cameraActive, isStartingOrActive: cameraStartingOrActive,
-    startedAt: cameraStartedAt,
+    drain: drainCamera, isActive: cameraActive,
+    startedAt: cameraStartedAt, isStartingOrActive: cameraStartingOrActive,
   } = useLocalSensor('Camera', startCamera, unknownFace, 40, setMessage)
   const {
     status: microphoneStatus, latest: speaking, start: enableMicrophone, stop: stopMicrophone,
-    drain: drainMicrophone, isActive: microphoneActive, isStartingOrActive: microphoneStartingOrActive,
-    startedAt: microphoneStartedAt,
+    drain: drainMicrophone, isActive: microphoneActive,
+    startedAt: microphoneStartedAt, isStartingOrActive: microphoneStartingOrActive,
   } = useLocalSensor<boolean | null>('Microphone', startMicrophone, null, 200, setMessage)
   // Local-only timer. Missing or stale observations never count as away.
   useEffect(() => {
@@ -78,7 +84,16 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
 
     return () => window.clearInterval(timer)
   }, [enabled, cameraStatus])
-  const stopAll = useCallback(() => { stopCamera(); stopMicrophone() }, [stopCamera, stopMicrophone])
+  const enabledNow = useRef(enabled)
+  enabledNow.current = enabled
+  const stopped = useRef(0)
+  const invalidatePending = useCallback(() => { enabledNow.current = false; ++stopped.current }, [])
+  useEffect(() => {
+    enabledNow.current = enabled
+    return invalidatePending
+  }, [enabled, invalidatePending])
+  const { policy: cameraPolicy, current: policyRef, check: checkCameraPolicy } = useCameraPolicy(stopCamera)
+  const stopAll = useCallback(() => { ++stopped.current; stopCamera(); stopMicrophone() }, [stopCamera, stopMicrophone])
   const refuseSignal = useCallback(() => {
     stopAll()
     setMessage('This session is not accepting indicators. Local sensing has stopped.')
@@ -87,6 +102,31 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
     enabled, cameraActive, cameraStartedAt, drainCamera,
     microphoneActive, microphoneStartedAt, drainMicrophone, onSignal, refuseSignal,
   )
+
+  const enable = useCallback(async (sensor: Sensor) => {
+    if (!enabled || !savedConsent.monitoring || !savedConsent[sensor]) return
+    const attempt = stopped.current
+    setMessage('')
+    try {
+      const [user, cameraAllowed] = await Promise.all([
+        readCaptureConsent(), sensor === 'camera' ? checkCameraPolicy() : Promise.resolve(true),
+      ])
+      if (!enabledNow.current || document.hidden || attempt !== stopped.current) return
+      if (!user.consents.includes('engagement_monitoring') || !user.consents.includes(sensor)) {
+        stopAll()
+        setSavedConsent(previous => ({ ...previous, monitoring: false }))
+        setMessage('Consent is no longer available. Sensors remain off.')
+        return
+      }
+      if (sensor === 'camera' && (!cameraAllowed || policyRef.current !== 'allowed')) return
+      if (sensor === 'camera') await enableCamera()
+      else await enableMicrophone()
+    } catch {
+      if (!enabledNow.current || document.hidden || attempt !== stopped.current) return
+      stopAll()
+      setMessage('Consent could not be verified. Sensors remain off.')
+    }
+  }, [enabled, savedConsent, checkCameraPolicy, policyRef, enableCamera, enableMicrophone, stopAll])
 
   // A student who agreed on the consent page, or here in an earlier class,
   // is not asked again: their choices are ticked and saved, and the devices
@@ -97,32 +137,35 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
   const autoStarted = useRef(false)
   useEffect(() => {
     let cancelled = false
-    getCurrentUser().then(
-      (user) => {
+    // Cached identity only pre-fills choices; enable() verifies fresh consent before capture.
+    Promise.all([getCurrentUser(), checkCameraPolicy()]).then(
+      ([user, cameraAllowed]) => {
         if (cancelled) return
         const consents = {
           monitoring: user.consents.includes('engagement_monitoring'),
           camera: user.consents.includes('camera'),
           microphone: user.consents.includes('microphone'),
         }
-        if (!consents.monitoring) return
         setSavedConsent(consents)
-        setChoice({ camera: consents.camera, microphone: consents.microphone })
-        setGiven({ camera: consents.camera, microphone: consents.microphone })
+        const devices = { camera: consents.monitoring && consents.camera && cameraAllowed,
+          microphone: consents.monitoring && consents.microphone }
+        setChoice(devices)
+        setGiven(devices)
       },
       () => {},
     )
     return () => { cancelled = true }
-  }, [])
+  }, [checkCameraPolicy])
   useEffect(() => {
-    if (!enabled || !given || autoStarted.current || document.hidden) return
+    if (!enabled || !given || autoStarted.current || document.hidden || cameraPolicy === 'checking') return
     autoStarted.current = true
-    if (given.camera) void enableCamera()
-    if (given.microphone) void enableMicrophone()
-  }, [enabled, given, enableCamera, enableMicrophone])
+    if (given.camera) void enable('camera')
+    if (given.microphone) void enable('microphone')
+  }, [enabled, given, enable, cameraPolicy])
 
   useEffect(() => {
     if (!consentRejected) return
+    autoStarted.current = true
     stopAll()
     setSavedConsent(previous => ({ ...previous, monitoring: false }))
     setMessage('The session did not accept monitoring consent. Local sensing has stopped. Save your opt-in again before retrying.')
@@ -130,7 +173,7 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
 
   useEffect(() => {
     if (!enabled) stopAll()
-    const hide = () => { if (document.hidden) stopAll() }
+    const hide = () => { if (document.hidden) { autoStarted.current = true; stopAll() } }
     document.addEventListener('visibilitychange', hide)
     window.addEventListener('pagehide', stopAll)
     return () => {
@@ -143,13 +186,17 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
     if (!enabled) return
     let disposed = false
     let checking = false
+    const capturing = () => cameraStartingOrActive() || microphoneStartingOrActive()
     const timer = setInterval(async () => {
-      if (checking || (!cameraStartingOrActive() && !microphoneStartingOrActive())) return
+      void checkCameraPolicy()
+      if (checking || !capturing()) return
       checking = true
+      const attempt = stopped.current
       try {
-        const user = await getCurrentUser()
-        if (disposed) return
+        const user = await readCaptureConsent()
+        if (disposed || attempt !== stopped.current || !capturing()) return
         if (!user.consents.includes('engagement_monitoring')) {
+          autoStarted.current = true
           setSavedConsent(previous => ({ ...previous, monitoring: false }))
           stopAll(); setMessage('Monitoring consent is unavailable. Sensors have stopped.'); return
         }
@@ -161,7 +208,8 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
           }
         }
       } catch {
-        if (!disposed) {
+        if (!disposed && attempt === stopped.current && capturing()) {
+          autoStarted.current = true
           stopAll()
           setSavedConsent(previous => ({ ...previous, monitoring: false }))
           setMessage('Consent could not be verified. Sensors have stopped; save your opt-in again before retrying.')
@@ -169,7 +217,13 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
       } finally { checking = false }
     }, 5000)
     return () => { disposed = true; clearInterval(timer) }
-  }, [enabled, cameraStartingOrActive, microphoneStartingOrActive, stopCamera, stopMicrophone, stopAll])
+  }, [enabled, stopCamera, stopMicrophone, stopAll, checkCameraPolicy, cameraStartingOrActive, microphoneStartingOrActive])
+
+  useEffect(() => {
+    if (cameraPolicy === 'allowed' || cameraPolicy === 'checking') return
+    setChoice(previous => ({ ...previous, camera: false }))
+    setGiven(previous => previous ? { ...previous, camera: false } : null)
+  }, [cameraPolicy])
 
   async function saveOptIn() {
     if (!enabled || savingConsent || (!choice.camera && !choice.microphone)) return
@@ -177,7 +231,7 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
     setMessage('')
     try {
       await recordConsent('engagement_monitoring', true)
-      if (choice.camera) await recordConsent('camera', true)
+      if (choice.camera && policyRef.current === 'allowed') await recordConsent('camera', true)
       if (choice.microphone) await recordConsent('microphone', true)
       setSavedConsent(previous => ({
         monitoring: true,
@@ -192,12 +246,7 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
     }
   }
 
-  async function enable(sensor: Sensor) {
-    if (!enabled || !savedConsent.monitoring || !savedConsent[sensor]) return
-    setMessage('')
-    if (sensor === 'camera') await enableCamera()
-    else await enableMicrophone()
-  }
+
 
   // A new camera start forgets the old calibration, as the worker does.
   useEffect(() => { if (cameraStatus !== 'on') setCalibration('none') }, [cameraStatus])
@@ -208,32 +257,63 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
   const running = cameraStatus === 'on' || microphoneStatus === 'on'
   const pending = cameraStatus === 'starting' || microphoneStatus === 'starting'
   const selectedConsented = savedConsent.monitoring &&
+    (!choice.camera || cameraPolicy === 'allowed') &&
     (!choice.camera || savedConsent.camera) &&
     (!choice.microphone || savedConsent.microphone)
   const sensing = running ? 'Local sensing active — raw media is not uploaded'
     : pending ? 'Starting — your device may be active while models load' : 'Local sensing off'
   const statusOf = (sensor: Sensor) => sensor === 'camera' ? cameraStatus : microphoneStatus
+  const agreed = savedConsent.monitoring && (savedConsent.camera || savedConsent.microphone)
+  function startAgreed() {
+    if (savedConsent.camera) void enable('camera')
+    if (savedConsent.microphone) void enable('microphone')
+  }
   return (
     <section aria-label="Optional local indicators"
-      className="mt-5 rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)] sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <span aria-hidden="true" className="grid size-10 shrink-0 place-items-center rounded-full bg-info/10 text-info">
-            <ShieldCheck size={20} />
-          </span>
-          <div className="min-w-0">
-            <h2 className="text-lg font-semibold">Optional local indicators</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Your camera and microphone stay on this device. Only a short summary is shared every
-              five seconds. Neither is required.
-            </p>
-          </div>
-        </div>
-        <p role="status" className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground">
+      className="mt-5 rounded-xl border border-border bg-card px-4 py-3 shadow-[var(--shadow-card)]">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <ShieldCheck aria-hidden="true" size={18} className="shrink-0 text-info" />
+        <h2 className="text-sm font-semibold">Camera and microphone indicators</h2>
+        <p role="status" className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground">
           <span aria-hidden="true" className={`size-2 rounded-full ${running ? 'bg-success' : pending ? 'bg-warning' : 'bg-muted-foreground'}`} />
           {sensing}
         </p>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {(running || pending) ? (
+            <button type="button" onClick={stopAll}
+              className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold hover:bg-muted">
+              Stop indicators
+            </button>
+          ) : agreed && (
+            <button type="button" disabled={!enabled} onClick={startAgreed}
+              className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold hover:bg-muted disabled:opacity-50">
+              Start indicators
+            </button>
+          )}
+          <button type="button" aria-expanded={open} aria-controls={optionsId} onClick={() => setOpen(value => !value)}
+            className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground">
+            {open ? 'Hide options' : 'Show options'}
+            <ChevronDown aria-hidden="true" size={15} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
       </div>
+      {cameraPolicy !== 'allowed' && <p role="status" className="mt-2 text-sm text-muted-foreground">
+        {cameraPolicy === 'blocked' ? 'Your approved camera-off accommodation is active. The camera stays off.'
+          : cameraPolicy === 'checking' ? 'Checking camera permission policy before using the camera…'
+          : 'Camera policy could not be verified. The camera stays off until a fresh check succeeds.'}
+      </p>}
+      {message && (
+        <p role="alert" className="mt-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm">
+          <Info aria-hidden="true" size={16} className="mt-0.5 shrink-0 text-warning" />
+          <span>{message}</span>
+        </p>
+      )}
+
+      <div id={optionsId} hidden={!open} className="mt-3 border-t border-border pt-3">
+      <p className="text-sm text-muted-foreground">
+        Optional. Your camera and microphone stay on this device; only a short summary is shared every
+        five seconds. Neither device is required. Saved choices may start automatically when the class is live.
+      </p>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {(['camera', 'microphone'] as const).map(sensor => {
@@ -243,7 +323,7 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
             <label key={sensor}
               className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-muted/50 has-[:checked]:border-info has-[:checked]:bg-info/5">
               <input type="checkbox" className="mt-1 size-4 shrink-0 accent-[var(--info)]" checked={choice[sensor]}
-                disabled={savingConsent || deviceStatus === 'on' || deviceStatus === 'starting'}
+                disabled={savingConsent || deviceStatus === 'on' || deviceStatus === 'starting' || (sensor === 'camera' && cameraPolicy !== 'allowed')}
                 onChange={event => setChoice(previous => ({ ...previous, [sensor]: event.target.checked }))} />
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-2 text-sm font-medium">
@@ -274,10 +354,10 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
           <Power aria-hidden="true" size={15} />
           Turn on
         </button>
-        <button type="button" onClick={stopAll}
+        <button type="button" onClick={() => { autoStarted.current = true; stopAll() }}
           className="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted">Turn everything off</button>
         {running && (['camera', 'microphone'] as const).filter(sensor => statusOf(sensor) === 'on').map(sensor => (
-          <button key={sensor} type="button" onClick={() => sensor === 'camera' ? stopCamera() : stopMicrophone()}
+          <button key={sensor} type="button" onClick={() => { ++stopped.current; if (sensor === 'camera') stopCamera(); else stopMicrophone() }}
             className="rounded-lg border border-border px-3 py-2 text-sm hover:bg-muted">Stop {sensor}</button>
         ))}
       </div>
@@ -338,13 +418,8 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
           <li>Sensing stops when you leave, hide this page, or disconnect, and never restarts on its own. Turning it off does not change your saved choice.</li>
         </ul>
       </details>
+      </div>
       {!enabled && <p className="mt-3 text-sm text-muted-foreground">Available while connected to an active, unpaused session.</p>}
-      {message && (
-        <p role="alert" className="mt-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm">
-          <Info aria-hidden="true" size={16} className="mt-0.5 shrink-0 text-warning" />
-          <span>{message}</span>
-        </p>
-      )}
     </section>
   )
 }

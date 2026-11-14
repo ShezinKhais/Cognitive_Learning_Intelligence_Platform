@@ -1,6 +1,6 @@
 """Own-student review authorization, persistence and neutral missing-data handling."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -222,6 +222,7 @@ async def test_database_review_is_own_ended_session_only(database, question):  #
         assert result.questions_attempted == 1
         assert result.answers[0].answer == "Incorrect"
         assert result.answers[0].is_correct is False
+        assert result.answers[0].correct_answer == "Correct"
         assert result.engagement.score is None
         assert result.total == 1
         with pytest.raises(NotFoundError):
@@ -274,3 +275,192 @@ async def test_database_review_is_own_ended_session_only(database, question):  #
         )
         assert unrelated_sources.items == []
         await db.rollback()
+
+
+@pytest.mark.parametrize(
+    "index,expected", [(0, "A"), (1, "B"), (-1, None), (2, None), (None, None)]
+)
+def test_reference_mcq_option_is_bounded(index, expected):
+    assert (
+        service.correct_answer(
+            SimpleNamespace(
+                question_type="mcq",
+                correct_option=index,
+                options=["A", "B"],
+                reference_answer="Unrelated free-text reference",
+            )
+        )
+        == expected
+    )
+
+
+def test_free_text_reference_uses_saved_answer():
+    assert (
+        service.correct_answer(
+            SimpleNamespace(
+                question_type="free_text",
+                reference_answer="Approved explanation",
+            )
+        )
+        == "Approved explanation"
+    )
+
+
+async def test_missed_source_denies_missing_or_other_students_record(monkeypatch):
+    user, session_id, student_id, missed_id = [uuid4() for _ in range(4)]
+    monkeypatch.setattr(
+        service, "own_session", AsyncMock(return_value=(object(), "CS101", student_id))
+    )
+    db = AsyncMock()
+    db.execute.return_value = SimpleNamespace(one_or_none=lambda: None)
+    with pytest.raises(NotFoundError):
+        await service.read_missed_sources(db, user, session_id, missed_id)
+    query = db.execute.call_args.args[0].compile()
+    assert {student_id, session_id, missed_id} <= set(query.params.values())
+    assert "missed_response.student_id =" in str(query)
+
+
+async def test_database_missed_review_paginates_and_resolves_own_source(database, question):  # noqa: F811
+    from app.models.delivered_question import DeliveredQuestion
+    from app.models.missed_response import MissedResponse
+
+    async with database() as db:
+        session = await db.get(Session, question.session)
+        session.status = "ended"
+        student = (
+            await db.execute(select(Student).where(Student.user_id == question.user))
+        ).scalar_one()
+        q = await db.get(Question, question.question)
+        q.source_slide = 4
+        q.key_points = ["A stored teaching point"]
+        delivery = DeliveredQuestion(
+            session_id=question.session,
+            question_id=question.question,
+            closes_at=datetime.now(UTC),
+            window_seconds=30,
+        )
+        db.add(delivery)
+        await db.flush()
+        missed = MissedResponse(delivery_id=delivery.delivery_id, student_id=student.student_id)
+        db.add(missed)
+        db.add(
+            RagChunk(
+                source_material_id=question.material,
+                chunk_index=0,
+                source_page=4,
+                chunk_text="Relevant missed-question source",
+            )
+        )
+        await db.flush()
+        other_user = User(
+            name="Other missed student", role="student", email=f"{uuid4()}@example.test"
+        )
+        db.add(other_user)
+        await db.flush()
+        other_student = Student(
+            user_id=other_user.user_id,
+            course_id=session.course_id,
+            consent_status="granted",
+            enrolled_at=date.today(),
+        )
+        db.add(other_student)
+        await db.flush()
+        other_miss = MissedResponse(
+            delivery_id=delivery.delivery_id, student_id=other_student.student_id
+        )
+        db.add(other_miss)
+        await db.flush()
+        with pytest.raises(NotFoundError):
+            await service.read_missed_sources(
+                db, question.user, question.session, other_miss.missed_response_id
+            )
+        result = await service.read_missed(db, question.user, question.session, 1, 0)
+        assert result.total == 1
+        assert result.items[0].id == missed.missed_response_id
+        assert result.items[0].correct_answer == "Correct"
+        assert result.items[0].key_points == ["A stored teaching point"]
+        assert not (await service.read_missed(db, question.user, question.session, 1, 1)).items
+        review = await service.read_review(db, question.user, question.session, 20, 0)
+        assert review.questions_attempted == 0 and review.questions_missed == 1
+        assert review.answers == []
+        sources = await service.read_missed_sources(
+            db, question.user, question.session, missed.missed_response_id
+        )
+        assert [s.text for s in sources.items] == ["Relevant missed-question source"]
+        with pytest.raises(NotFoundError):
+            await service.read_missed_sources(db, question.user, question.session, uuid4())
+        session.status = "active"
+        await db.flush()
+        with pytest.raises(NotFoundError):
+            await service.read_missed(db, question.user, question.session, 20, 0)
+        await db.rollback()
+
+
+async def test_review_readings_follow_latest_sensor_grants(database, question):  # noqa: F811
+    from datetime import timedelta
+
+    from app.models.attention_signal_summary import AttentionSignalSummary
+    from app.models.consent import Consent
+    from app.schemas.identity import ConsentType
+
+    async with database() as db:
+        session = await db.get(Session, question.session)
+        session.status = "ended"
+        student_id = await db.scalar(
+            select(Student.student_id).where(Student.user_id == question.user)
+        )
+        at = datetime.now(UTC)
+        monitoring = Consent(
+            user_id=question.user,
+            consent_type=ConsentType.ENGAGEMENT_MONITORING,
+            granted=True,
+            recorded_at=at - timedelta(minutes=2),
+        )
+        camera = Consent(
+            user_id=question.user,
+            consent_type=ConsentType.CAMERA,
+            granted=True,
+            recorded_at=at - timedelta(minutes=1),
+        )
+        db.add_all(
+            [
+                monitoring,
+                camera,
+                AttentionSignalSummary(
+                    session_id=question.session,
+                    student_id=student_id,
+                    window_start=at,
+                    window_seconds=60,
+                    sample_count=3,
+                    gaze_on_screen_ratio=0,
+                    speaking_ratio=1,
+                ),
+                AttentionSignalSummary(
+                    session_id=question.session,
+                    student_id=student_id,
+                    window_start=at - timedelta(minutes=2),
+                    window_seconds=60,
+                    sample_count=3,
+                    gaze_on_screen_ratio=1,
+                ),
+            ]
+        )
+        await db.flush()
+        review = await service.read_review(db, question.user, question.session, 20, 0)
+        assert review.engagement.status == "readings_available"
+        assert review.engagement.camera_windows == 1
+        assert review.engagement.microphone_windows is None
+        assert review.engagement.score is None
+
+        camera.granted = False
+        await db.flush()
+        assert (
+            await service.read_review(db, question.user, question.session, 20, 0)
+        ).engagement.status == "unavailable"
+
+        camera.granted = True
+        camera.recorded_at = at + timedelta(minutes=1)
+        await db.flush()
+        assert (
+            await service.read_review(db, question.user, question.session, 20, 0)
+        ).engagement.status == "unavailable"
