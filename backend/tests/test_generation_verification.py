@@ -17,6 +17,9 @@ from app.services.grounding_evaluation import reason_kind
 
 from .test_generation import CHUNK_TEXT, chunks, draft
 
+# The options of the standard test draft: frozen, deleted, doubled, shuffled.
+OPTIONS = draft().options
+
 
 class TurnTakingChat:
     """Replies with each of `replies` in turn and records every prompt."""
@@ -80,7 +83,7 @@ def drafts_reply(*drafts) -> str:
     ],
 )
 def test_the_reply_names_options_by_letter(raw, found):
-    assert parse_verification(raw, 4) == found
+    assert parse_verification(raw, OPTIONS) == found
 
 
 @pytest.mark.parametrize(
@@ -88,7 +91,35 @@ def test_the_reply_names_options_by_letter(raw, found):
 )
 def test_an_unusable_reply_is_an_error(raw):
     with pytest.raises(ValueError):
-        parse_verification(raw, 4)
+        parse_verification(raw, OPTIONS)
+
+
+ROULETTE = ("FairRoulette", "EuRoulette", "AmRoulette", "-28.0%")
+
+
+@pytest.mark.parametrize(
+    ("named", "found"),
+    [
+        # The four replies the #235 practice round could not read (#268).
+        ("EuRoulette", {1}),
+        ("-28.0%", {3}),
+        ("  euroulette ", {1}),
+        ("(B)", {1}),
+        ("b)", {1}),
+    ],
+)
+def test_an_option_named_by_its_text_is_read_as_that_option(named, found):
+    assert parse_verification(json.dumps({"correct": [named]}), ROULETTE) == found
+
+
+def test_text_starting_with_a_letter_is_not_read_as_that_letter():
+    """ "Base layers" was read as option B, whatever B was (#268)."""
+    options = ("They are frozen", "They are deleted", "Base layers", "Dropout")
+    assert parse_verification('{"correct": ["Base layers"]}', options) == {2}
+    with pytest.raises(ValueError, match="does not exist"):
+        parse_verification('{"correct": ["Basically all of them"]}', options)
+    with pytest.raises(ValueError, match="does not exist"):
+        parse_verification('{"correct": ["50% reds"]}', ROULETTE)
 
 
 # -- what the verdict means ---------------------------------------------------
