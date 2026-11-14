@@ -44,7 +44,12 @@ const tuned = rounds.map(fold => {
   const plain = tune(fold.tune, false)
   const calibrated = tune(fold.tune, true, plain.thresholds)
   // #166: k and the gaze limits, fitted on the same people, never the held-out one.
-  return { ...fold, plain, calibrated, gaze: tuneGaze(fold.tune, calibrated.thresholds, plain.thresholds) }
+  return {
+    ...fold, plain, calibrated, gaze: tuneGaze(fold.tune, calibrated.thresholds, plain.thresholds),
+    // The same, for a classroom with no calibration step: every student judged
+    // from straight ahead, with gaze limits tuned that way.
+    gazeNoCalibration: tuneGaze(fold.tune, plain.thresholds, plain.thresholds, false),
+  }
 })
 const testFrames = tuned.flatMap(fold => fold.test)
 const foldOf = (f: Frame) => by === 'participant' ? tuned.find(fold => fold.held === f.participant)! : tuned[0]
@@ -56,6 +61,11 @@ const adaptation = ADAPTATION ?? SUGGESTED_ADAPTATION
 const withGaze: Settings = f => ({ thresholds: foldOf(f).gaze.thresholds, calibrated: true, uncalibrated: foldOf(f).plain.thresholds, gaze: foldOf(f).gaze.gaze })
 const withAdaptation: Settings = f => ({ ...(tunedCalibrated(f)), adaptation })
 const withBoth: Settings = f => ({ ...(withGaze(f)), adaptation })
+// Without calibration, adaptation still learns from the calibrate clips: the
+// recordings' only sure "looking at the screen" moments, standing in for the
+// moments the classroom learns from while a student types an answer.
+const withGazeNoCalibration: Settings = f => ({ thresholds: foldOf(f).gazeNoCalibration.thresholds, calibrated: false, gaze: foldOf(f).gazeNoCalibration.gaze })
+const withBothNoCalibration: Settings = f => ({ ...(withGazeNoCalibration(f)), adaptation })
 
 interface Row { name: string; frames: Frame[]; setting: Settings }
 const rows: Row[] = [
@@ -66,12 +76,15 @@ const rows: Row[] = [
   { name: '#166: + combined head and eye gaze', frames: testFrames, setting: withGaze },
   { name: '#166: + adaptive limits', frames: testFrames, setting: withAdaptation },
   { name: '#166: + both', frames: testFrames, setting: withBoth },
+  { name: '#166 without calibration: combined gaze', frames: testFrames, setting: withGazeNoCalibration },
+  { name: '#166 without calibration: + adaptive limits', frames: testFrames, setting: withBothNoCalibration },
 ]
 
 // What ships: the limits tuned on every recording.
 const finalPlain = tune(frames, false)
 const finalCalibrated = tune(frames, true, finalPlain.thresholds)
 const finalGaze = tuneGaze(frames, finalCalibrated.thresholds, finalPlain.thresholds)
+const finalGazeNoCalibration = tuneGaze(frames, finalPlain.thresholds, finalPlain.thresholds, false)
 
 const gazeK = (g: GazeModel) => `${g.kYaw} / ${g.kPitch}`
 const pct = (value: number | null) => value === null ? 'n/a' : `${(value * 100).toFixed(1)}%`
@@ -130,16 +143,17 @@ if (by === 'participant') {
     gaze: ba(fold.test, withGaze),
     adaptive: ba(fold.test, withAdaptation),
     both: ba(fold.test, withBoth),
+    bothNoCalibration: ba(fold.test, withBothNoCalibration),
     fold,
   }))
   say('## Per participant')
   say()
   say('Balanced accuracy on each person, with the limits tuned on everyone else. Yaw / pitch / roll are those limits, so the spread shows how much they depend on who is in the tuning set.')
   say()
-  say('| Held out | Clips | Before | After | After + calibration | + gaze | + adaptive | + both | Tuned limits (yaw / pitch / roll) | With calibration | Gaze k (yaw / pitch) |')
-  say('|---|---|---|---|---|---|---|---|---|---|---|')
+  say('| Held out | Clips | Before | After | After + calibration | + gaze | + adaptive | + both | Both, no calibration | Tuned limits (yaw / pitch / roll) | With calibration | Gaze k (yaw / pitch) |')
+  say('|---|---|---|---|---|---|---|---|---|---|---|---|')
   for (const p of perPerson) {
-    say(`| ${p.held} | ${clipsOf(p.fold.test)} | ${pct(p.before)} | ${pct(p.after)} | ${pct(p.calibrated)} | ${pct(p.gaze)} | ${pct(p.adaptive)} | ${pct(p.both)} | ${limits(p.fold.plain.thresholds)} | ${limits(p.fold.calibrated.thresholds)} | ${gazeK(p.fold.gaze.gaze)} |`)
+    say(`| ${p.held} | ${clipsOf(p.fold.test)} | ${pct(p.before)} | ${pct(p.after)} | ${pct(p.calibrated)} | ${pct(p.gaze)} | ${pct(p.adaptive)} | ${pct(p.both)} | ${pct(p.bothNoCalibration)} | ${limits(p.fold.plain.thresholds)} | ${limits(p.fold.calibrated.thresholds)} | ${gazeK(p.fold.gaze.gaze)} |`)
   }
   say()
   const worst = (pick: (p: typeof perPerson[number]) => number | null) => {
@@ -148,12 +162,14 @@ if (by === 'participant') {
     const p = scored.reduce((a, b) => pick(b)! < pick(a)! ? b : a)
     return `${pct(pick(p))} (${p.held})`
   }
-  say(`Worst participant: before ${worst(p => p.before)}, after ${worst(p => p.after)}, after + calibration ${worst(p => p.calibrated)}, + gaze ${worst(p => p.gaze)}, + adaptive ${worst(p => p.adaptive)}, + both ${worst(p => p.both)}.`)
+  say(`Worst participant: before ${worst(p => p.before)}, after ${worst(p => p.after)}, after + calibration ${worst(p => p.calibrated)}, + gaze ${worst(p => p.gaze)}, + adaptive ${worst(p => p.adaptive)}, + both ${worst(p => p.both)}, both without calibration ${worst(p => p.bothNoCalibration)}.`)
   say()
 }
 
-// Both tuned rows ship: one for students who calibrate, one for those who do not.
-for (const chosen of [rows[2], rows[3]]) {
+// The tuned rows, then what ships, so the fairness review sees each condition
+// for what students get: combined gaze and adaptation for a student who
+// calibrates (rows[6]) and for one who skips the optional calibration (rows[8]).
+for (const chosen of [rows[2], rows[3], rows[6], rows[8]]) {
   say(`## What each label was read as (${chosen.name})`)
   say()
   say('| Label | On screen | Away | No reading |')
@@ -302,6 +318,7 @@ say(`- Starting limits (#63): \`${show(ORIGINAL_THRESHOLDS)}\``)
 say(`- Tuned on every recording, without calibration: \`${show(finalPlain.thresholds)}\` (balanced accuracy on those recordings ${pct(finalPlain.balancedAccuracy)})`)
 say(`- Tuned on every recording, with calibration: \`${show(finalCalibrated.thresholds)}\` (${pct(finalCalibrated.balancedAccuracy)})`)
 say(`- #166 gaze model tuned on every recording: \`kYaw: ${finalGaze.gaze.kYaw}, kPitch: ${finalGaze.gaze.kPitch}\`, gaze limits \`${show(finalGaze.thresholds)}\` (${pct(finalGaze.balancedAccuracy)}). Shipped \`GAZE_MODEL\`: ${GAZE_MODEL ? `\`${JSON.stringify(GAZE_MODEL)}\`` : 'off'}.`)
+say(`- #166 gaze model tuned on every recording, without calibration: \`kYaw: ${finalGazeNoCalibration.gaze.kYaw}, kPitch: ${finalGazeNoCalibration.gaze.kPitch}\`, gaze limits \`${show(finalGazeNoCalibration.thresholds)}\` (${pct(finalGazeNoCalibration.balancedAccuracy)}).`)
 say()
 say('These are the limits to ship. The held-out results above estimate how they do on a new person, since each round tuned the same way without that person.')
 say()
@@ -311,7 +328,7 @@ say('If the tuned values above differ from the shipped ones, copy them into `sig
 say()
 say('## Limits')
 say()
-say(`- ${people.length} participants, all team members: a small sample of similar people, so the intervals are wide and the numbers may not hold for a whole class.`)
+say(`- ${people.length} participants: a small sample, so the intervals are wide and the numbers may not hold for a whole class.`)
 say('- Acted, not natural: people were told what to do for 10 seconds at a time.')
 say('- "Looking at the screen" is a camera-facing proxy, not eye tracking, and never a measure of attention or understanding.')
 say('- Fairness of the tuned thresholds across people is for Cyber 1 to sign off; devices and Teams are tested by Cyber 2.')
