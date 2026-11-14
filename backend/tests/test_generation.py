@@ -1,16 +1,21 @@
 """Validator tests. No model involved — we hand it deliberately broken
 drafts and check each one is caught."""
 
+import asyncio
+import random
+import re
 import uuid
 
 import pytest
 
 from app.schemas.content import Difficulty, QuestionType
+from app.services.extraction import ContentChunk
 from app.services.generation import (
     MAX_PROMPT_CHUNKS,
     QuestionGenerator,
     build_prompt,
     parse_drafts,
+    prompt_chunks,
     rejection_reasons,
 )
 from app.services.material_seams import DraftQuestion
@@ -467,3 +472,75 @@ def test_a_large_request_is_asked_for_in_small_calls_over_different_pages() -> N
     assert batches(pages, 5) == [(pages, 5)]
     # Never more calls than pages.
     assert len(batches(pages[:2], 15)) == 2
+
+
+def _chunks(n: int) -> list[RetrievedChunk]:
+    return [
+        RetrievedChunk(
+            chunk_id=uuid.uuid4(),
+            chunk_index=i,
+            chunk_text=f"Content from page {i + 1}",
+            source_page=i + 1,
+            distance=0.1,
+        )
+        for i in range(n)
+    ]
+
+
+def test_a_prompt_shows_one_chunk_from_each_stretch_of_the_material():
+    chunks = _chunks(612)
+    for seed in range(20):
+        shown = prompt_chunks(chunks, random.Random(seed))
+        assert len(shown) == MAX_PROMPT_CHUNKS
+        # Chunk k comes from the k-th twelfth of the material, so the prompt
+        # still spans all of it.
+        for k, chunk in enumerate(shown):
+            assert (
+                k * 612 // MAX_PROMPT_CHUNKS
+                <= chunk.chunk_index
+                < (k + 1) * 612 // MAX_PROMPT_CHUNKS
+            )
+
+
+def test_repeated_generations_reach_every_part_of_a_long_material():
+    chunks = _chunks(612)
+    fixed = {c.chunk_index for c in prompt_chunks(chunks)}
+    assert fixed == {c.chunk_index for c in prompt_chunks(chunks)}, "without rng: always the same"
+    rng = random.Random(1)
+    seen: set[int] = set()
+    for _ in range(300):
+        seen |= {c.chunk_index for c in prompt_chunks(chunks, rng)}
+    assert len(fixed) == MAX_PROMPT_CHUNKS
+    assert len(seen) > 500
+
+
+def test_a_short_material_is_shown_whole_whatever_the_rng():
+    chunks = _chunks(MAX_PROMPT_CHUNKS)
+    assert prompt_chunks(chunks, random.Random(3)) == chunks
+
+
+def test_the_generator_shows_different_chunks_on_each_call():
+    shown_pages: list[str] = []
+
+    class Client:
+        class chat:  # noqa: N801
+            class completions:  # noqa: N801
+                @staticmethod
+                async def create(model, messages):
+                    shown_pages.append(re.findall(r"\[page (\d+)\]", messages[0]["content"]))
+
+                    class Reply:
+                        choices = [type("C", (), {"message": type("M", (), {"content": "[]"})})]
+
+                    return Reply
+
+    generator = QuestionGenerator(Client, "m", count=3, rng=random.Random(5))
+    chunks = [
+        ContentChunk(uuid.uuid4(), i, uuid.uuid4(), f"Plain lecture text number {i}.", i + 1)
+        for i in range(100)
+    ]
+    for _ in range(2):
+        asyncio.run(generator.generate(uuid.uuid4(), chunks))
+    assert len(shown_pages) == 2
+    assert all(len(pages) == MAX_PROMPT_CHUNKS for pages in shown_pages)
+    assert shown_pages[0] != shown_pages[1]

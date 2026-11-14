@@ -22,6 +22,16 @@ How often labels were right at each confidence level:
 | qwen2.5:3b v4 | 9 of 12 right | 8 of 12 right | 14 of 16 right |
 | qwen2.5:3b v5 | 9 of 11 right | 8 of 13 right | 15 of 16 right |
 
+What each review threshold would do: labels below it are shown as "Uncertain, ask your lecturer" (hidden), the rest with their label (shown); wrong counts in brackets:
+
+| Run | Below 0.35: hidden (wrong) / shown (wrong) | Below 0.60: hidden (wrong) / shown (wrong) | Below 0.85: hidden (wrong) / shown (wrong) |
+|---|---|---|---|
+| qwen2.5:3b v3 run 2 | 0 (0) / 33 (6) | 12 (4) / 21 (2) | 22 (6) / 11 (0) |
+| qwen2.5:7b v3 run 1 | 0 (0) / 34 (7) | 9 (2) / 25 (5) | 22 (6) / 12 (1) |
+| qwen2.5:7b v3 run 2 | 0 (0) / 37 (6) | 11 (2) / 26 (4) | 24 (5) / 13 (1) |
+| qwen2.5:3b v4 | 0 (0) / 40 (9) | 12 (3) / 28 (6) | 24 (7) / 16 (2) |
+| qwen2.5:3b v5 | 0 (0) / 40 (8) | 11 (2) / 29 (6) | 24 (7) / 16 (1) |
+
 ## Consistency
 
 | Runs compared | Answers both read | Same label | Cohen's kappa |

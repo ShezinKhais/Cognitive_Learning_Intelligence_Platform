@@ -1,0 +1,8 @@
+{
+  "agreed_by": [],
+  "agreed_on": null,
+  "min_usable_share_of_passed": 0.8,
+  "max_incorrect_share_of_passed": 0.15,
+  "min_usable_per_material": 5,
+  "max_median_review_seconds": 90
+}

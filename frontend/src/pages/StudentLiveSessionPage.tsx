@@ -30,6 +30,7 @@ import type {
   CheckpointState,
   LiveConnectionStatus,
 } from '../features/student/liveSessionTypes'
+import { sourcePlace } from '../features/student/liveSessionTypes'
 import type { StudentSession } from '../features/student/types'
 import ParticipationGauge from '../features/student/ParticipationGauge'
 import AssignedRoom from '../features/student/AssignedRoom'
@@ -38,6 +39,7 @@ import { useLiveSession } from '../features/student/useLiveSession'
 import { AttentionControls } from '../features/attention/AttentionControls'
 import { markLookingAtScreen } from '../features/attention/localSensors'
 import { useTeams } from '../teams/TeamsProvider'
+import { closeTeamsDialog } from '../teams/teamsClient'
 
 const SOCRATIC_CHAT_ENABLED =
   import.meta.env.VITE_SOCRATIC_CHAT_ENABLED === 'true'
@@ -88,9 +90,13 @@ export default function StudentLiveSessionPage() {
 export function LiveSessionPanel({
   session,
   compact = false,
+  dialog = false,
 }: {
   session: StudentSession
   compact?: boolean
+  /** Shown in the checkpoint pop-up over a Teams meeting: the question only,
+   * with no camera controls, tutor or notes, and a way back to the lecture. */
+  dialog?: boolean
 }) {
   const [activeView, setActiveView] = useState<'class' | 'chat'>('class')
   const teams = useTeams()
@@ -115,6 +121,9 @@ export function LiveSessionPanel({
   const finished =
     state.sessionStatus === 'ended' ||
     state.sessionStatus === 'cancelled'
+  // The learning assistant is offered while the class runs, unless the
+  // lecturer has turned it off for this class.
+  const assistant = SOCRATIC_CHAT_ENABLED && !finished && state.ai.learning_assistant
 
   const secondsRemaining = state.checkpoint
     ? remainingResponseSeconds(
@@ -144,7 +153,7 @@ export function LiveSessionPanel({
 
           </div>
 
-          <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 border-t border-border pt-4 text-sm text-muted-foreground">
+          {!dialog && (<div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 border-t border-border pt-4 text-sm text-muted-foreground">
             {!finished && (
               <span className="inline-flex items-center gap-2">
                 <Users aria-hidden="true" size={17} />
@@ -162,8 +171,8 @@ export function LiveSessionPanel({
             <span className="ml-auto">
               <ParticipationGauge answered={state.answeredIds.length} delivered={state.questionsDelivered} />
             </span>
-          </div>
-          {state.sessionStatus === 'active' && state.assignedRoom ? (
+          </div>)}
+          {dialog ? null : state.sessionStatus === 'active' && state.assignedRoom ? (
             <AssignedRoom label={state.assignedRoom.label} />
           ) : state.sessionStatus === 'active' && !compact && (
             <RoomConfirm onConfirm={confirmRoom} serverError={state.error}
@@ -173,19 +182,24 @@ export function LiveSessionPanel({
 
         {!finished && <ConnectionNotice status={state.connection} />}
 
-        {LOCAL_ATTENTION_ENABLED && teams.context?.mobile && (
+        {LOCAL_ATTENTION_ENABLED && !dialog && teams.context?.mobile && (
           <p className="mt-5 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
             Teams on a phone does not let apps use the camera or microphone, so the optional indicators are off
             here. Checkpoints and the tutor work as usual. Join from Teams on a computer to use them.
           </p>
         )}
-        {LOCAL_ATTENTION_ENABLED && !teams.context?.mobile && (
+        {LOCAL_ATTENTION_ENABLED && !dialog && !teams.context?.mobile && (state.ai.engagement_estimates ? (
           <AttentionControls key={`attention-${session.id}`} onSignal={sendAttention}
             consentRejected={attentionConsentRejected}
             enabled={state.connection === 'connected' && state.sessionStatus === 'active' && !state.paused} />
-        )}
+        ) : !finished && (
+          // Unmounting the controls stops the camera and microphone at once.
+          <p className="mt-5 rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+            Your lecturer has turned the camera and microphone indicators off for this class.
+          </p>
+        ))}
 
-        {SOCRATIC_CHAT_ENABLED && !finished && (
+        {assistant && !dialog && (
           <SegmentedTabs
             label="Student session tools"
             value={activeView}
@@ -235,7 +249,7 @@ export function LiveSessionPanel({
         <section
           className="mt-5"
           aria-live="polite"
-          hidden={SOCRATIC_CHAT_ENABLED && !finished && activeView !== 'class' && !state.checkpoint}
+              hidden={!dialog && assistant && activeView !== 'class' && !state.checkpoint}
         >
           {/* Terminal session state must remain visible even when feedback is
               retained. Otherwise the last checkpoint hides the review link. */}
@@ -292,9 +306,20 @@ export function LiveSessionPanel({
           )}
         </section>
 
-        <DiscussionPanel key={`discussion-${session.id}`} sessionId={session.id} />
+        {!dialog && <DiscussionPanel key={`discussion-${session.id}`} sessionId={session.id} />}
+        {dialog && !state.checkpoint && (
+          <button
+            type="button"
+            className={`${buttonStyles()} mt-5 w-full`}
+            onClick={() => {
+              if (!closeTeamsDialog()) window.history.back()
+            }}
+          >
+            Back to the lecture
+          </button>
+        )}
 
-        {SOCRATIC_CHAT_ENABLED && !finished && (
+        {assistant && !dialog && (
           <div className="mt-5" hidden={activeView !== 'chat'}>
             <SocraticChatPanel
               key={session.id}
@@ -441,7 +466,7 @@ function CheckpointCard({
 
           {question.source_slide !== null && (
             <p className="mt-1 text-xs text-muted-foreground">
-              Based on slide {question.source_slide}
+              Based on {sourcePlace(question.source_label, question.source_slide).toLowerCase()}
             </p>
           )}
         </div>
@@ -695,7 +720,7 @@ function CheckpointOutcome({
       {feedback?.source_slide !== null &&
         feedback?.source_slide !== undefined && (
           <p className="mt-2 text-xs font-medium text-info">
-            Review slide {feedback.source_slide}
+            Review {sourcePlace(feedback.source_label, feedback.source_slide).toLowerCase()}
           </p>
         )}
     </div>

@@ -217,6 +217,194 @@
         "title": "ActionItem",
         "type": "object"
       },
+      "AiControls": {
+        "description": "The lecturer's AI switches for one class. Each is on unless turned off.",
+        "properties": {
+          "answer_seconds": {
+            "anyOf": [
+              {
+                "maximum": 300.0,
+                "minimum": 10.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How long students have to answer a checkpoint. Empty: the deployment's usual window.",
+            "title": "Answer Seconds"
+          },
+          "auto_checkpoints": {
+            "default": true,
+            "description": "Checkpoints go out on C.L.I.P's own timer. Off: only the lecturer sends them.",
+            "title": "Auto Checkpoints",
+            "type": "boolean"
+          },
+          "checkpoint_minutes": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": 3.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Roughly how many minutes between automatic checkpoints. Empty: the deployment's usual spacing.",
+            "title": "Checkpoint Minutes"
+          },
+          "engagement_estimates": {
+            "default": true,
+            "description": "Camera and microphone indicators, and engagement scoring, for the class.",
+            "title": "Engagement Estimates",
+            "type": "boolean"
+          },
+          "learning_assistant": {
+            "default": true,
+            "description": "Students may ask the learning assistant (tutor chat).",
+            "title": "Learning Assistant",
+            "type": "boolean"
+          },
+          "refocus_nudges": {
+            "default": true,
+            "description": "Students may get private prompts when they seem to have drifted off.",
+            "title": "Refocus Nudges",
+            "type": "boolean"
+          }
+        },
+        "title": "AiControls",
+        "type": "object"
+      },
+      "AiControlsOut": {
+        "properties": {
+          "answer_seconds": {
+            "anyOf": [
+              {
+                "maximum": 300.0,
+                "minimum": 10.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How long students have to answer a checkpoint. Empty: the deployment's usual window.",
+            "title": "Answer Seconds"
+          },
+          "auto_checkpoints": {
+            "default": true,
+            "description": "Checkpoints go out on C.L.I.P's own timer. Off: only the lecturer sends them.",
+            "title": "Auto Checkpoints",
+            "type": "boolean"
+          },
+          "checkpoint_minutes": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": 3.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Roughly how many minutes between automatic checkpoints. Empty: the deployment's usual spacing.",
+            "title": "Checkpoint Minutes"
+          },
+          "course_defaults": {
+            "$ref": "#/components/schemas/AiControls",
+            "description": "What every new class of this course starts with."
+          },
+          "engagement_estimates": {
+            "default": true,
+            "description": "Camera and microphone indicators, and engagement scoring, for the class.",
+            "title": "Engagement Estimates",
+            "type": "boolean"
+          },
+          "learning_assistant": {
+            "default": true,
+            "description": "Students may ask the learning assistant (tutor chat).",
+            "title": "Learning Assistant",
+            "type": "boolean"
+          },
+          "refocus_nudges": {
+            "default": true,
+            "description": "Students may get private prompts when they seem to have drifted off.",
+            "title": "Refocus Nudges",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "course_defaults"
+        ],
+        "title": "AiControlsOut",
+        "type": "object"
+      },
+      "AiControlsUpdate": {
+        "properties": {
+          "answer_seconds": {
+            "anyOf": [
+              {
+                "maximum": 300.0,
+                "minimum": 10.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How long students have to answer a checkpoint. Empty: the deployment's usual window.",
+            "title": "Answer Seconds"
+          },
+          "apply_to_course": {
+            "default": false,
+            "description": "Also make these the course's defaults for every new class. Only a lecturer of the course, or an admin, may.",
+            "title": "Apply To Course",
+            "type": "boolean"
+          },
+          "auto_checkpoints": {
+            "default": true,
+            "description": "Checkpoints go out on C.L.I.P's own timer. Off: only the lecturer sends them.",
+            "title": "Auto Checkpoints",
+            "type": "boolean"
+          },
+          "checkpoint_minutes": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": 3.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Roughly how many minutes between automatic checkpoints. Empty: the deployment's usual spacing.",
+            "title": "Checkpoint Minutes"
+          },
+          "engagement_estimates": {
+            "default": true,
+            "description": "Camera and microphone indicators, and engagement scoring, for the class.",
+            "title": "Engagement Estimates",
+            "type": "boolean"
+          },
+          "learning_assistant": {
+            "default": true,
+            "description": "Students may ask the learning assistant (tutor chat).",
+            "title": "Learning Assistant",
+            "type": "boolean"
+          },
+          "refocus_nudges": {
+            "default": true,
+            "description": "Students may get private prompts when they seem to have drifted off.",
+            "title": "Refocus Nudges",
+            "type": "boolean"
+          }
+        },
+        "title": "AiControlsUpdate",
+        "type": "object"
+      },
       "AlertOut": {
         "description": "An alert kept for the lecturer: what was raised, why, what to do about it,\nand whether anyone has seen it.\n\nServed from the stored alert, so it is there after a refresh and after the\nsession. The three figures at the end are those of a topic difficulty alert,\nnull for any other kind.",
         "properties": {
@@ -387,6 +575,115 @@
           "raised_at"
         ],
         "title": "AlertOut",
+        "type": "object"
+      },
+      "AttendanceClass": {
+        "properties": {
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "title",
+          "starts_at"
+        ],
+        "title": "AttendanceClass",
+        "type": "object"
+      },
+      "AttendanceRow": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "first_seen": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Seen"
+          },
+          "last_seen": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen"
+          },
+          "minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "From first seen to last seen, rounded down. None if absent.",
+            "title": "Minutes"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "present": {
+            "title": "Present",
+            "type": "boolean"
+          },
+          "sources": {
+            "description": "clip: joined the class in C.L.I.P. teams: seen joining the Teams meeting.",
+            "items": {
+              "enum": [
+                "clip",
+                "teams"
+              ],
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "student_id": {
+            "format": "uuid",
+            "title": "Student Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "student_id",
+          "name",
+          "email",
+          "present"
+        ],
+        "title": "AttendanceRow",
         "type": "object"
       },
       "AuditEntryOut": {
@@ -628,6 +925,121 @@
         "title": "Body_upload_material_api_v1_materials_post",
         "type": "object"
       },
+      "BulkRosterIn": {
+        "description": "A pasted or uploaded list of students for a course: one per line, an\nemail or `name,email`, with an optional header row.",
+        "properties": {
+          "confirm": {
+            "default": false,
+            "description": "False previews what each line will do; true applies it.",
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "create_missing": {
+            "default": false,
+            "description": "Admin only: create the student accounts that do not exist yet.",
+            "title": "Create Missing",
+            "type": "boolean"
+          },
+          "text": {
+            "maxLength": 200000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "BulkRosterIn",
+        "type": "object"
+      },
+      "BulkRosterLine": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "line": {
+            "title": "Line",
+            "type": "integer"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/BulkRosterOutcome"
+          }
+        },
+        "required": [
+          "line",
+          "email",
+          "outcome"
+        ],
+        "title": "BulkRosterLine",
+        "type": "object"
+      },
+      "BulkRosterOut": {
+        "properties": {
+          "applied": {
+            "title": "Applied",
+            "type": "boolean"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/BulkRosterLine"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "roster": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CourseRoster"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The course after the change, when it was applied."
+          }
+        },
+        "required": [
+          "applied",
+          "lines",
+          "counts"
+        ],
+        "title": "BulkRosterOut",
+        "type": "object"
+      },
+      "BulkRosterOutcome": {
+        "enum": [
+          "add",
+          "create",
+          "already",
+          "no_account",
+          "not_student",
+          "inactive",
+          "invalid",
+          "duplicate"
+        ],
+        "title": "BulkRosterOutcome",
+        "type": "string"
+      },
       "CapturePolicyOut": {
         "description": "Minimal own-student capture policy, without request notes or diagnoses.",
         "properties": {
@@ -728,6 +1140,135 @@
           "answer"
         ],
         "title": "ChatTurn",
+        "type": "object"
+      },
+      "ClassEngagement": {
+        "properties": {
+          "course_code": {
+            "title": "Course Code",
+            "type": "string"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "participation": {
+            "$ref": "#/components/schemas/ClassParticipation"
+          },
+          "readings": {
+            "$ref": "#/components/schemas/ClassReadings"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "title",
+          "course_code",
+          "ended_at",
+          "participation",
+          "readings"
+        ],
+        "title": "ClassEngagement",
+        "type": "object"
+      },
+      "ClassParticipation": {
+        "properties": {
+          "answered": {
+            "title": "Answered",
+            "type": "integer"
+          },
+          "checkpoints": {
+            "description": "Checkpoints sent to the class.",
+            "title": "Checkpoints",
+            "type": "integer"
+          },
+          "joined": {
+            "description": "The student connected to the class at least once.",
+            "title": "Joined",
+            "type": "boolean"
+          },
+          "missed": {
+            "description": "Sent while connected, closed without an answer.",
+            "title": "Missed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "joined",
+          "checkpoints",
+          "answered",
+          "missed"
+        ],
+        "title": "ClassParticipation",
+        "type": "object"
+      },
+      "ClassReadings": {
+        "description": "Whether optional device readings exist for this class. Counts of\none-minute windows, not a measure of attention or understanding.",
+        "properties": {
+          "camera": {
+            "enum": [
+              "available",
+              "none_recorded",
+              "not_consented"
+            ],
+            "title": "Camera",
+            "type": "string"
+          },
+          "camera_windows": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera Windows"
+          },
+          "microphone": {
+            "enum": [
+              "available",
+              "none_recorded",
+              "not_consented"
+            ],
+            "title": "Microphone",
+            "type": "string"
+          },
+          "microphone_windows": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Microphone Windows"
+          }
+        },
+        "required": [
+          "camera",
+          "microphone"
+        ],
+        "title": "ClassReadings",
         "type": "object"
       },
       "ClientErrorIn": {
@@ -1103,6 +1644,74 @@
           "decision_note"
         ],
         "title": "ConsiderationOut",
+        "type": "object"
+      },
+      "CourseAttendanceOut": {
+        "properties": {
+          "classes": {
+            "description": "Finished classes, oldest first.",
+            "items": {
+              "$ref": "#/components/schemas/AttendanceClass"
+            },
+            "title": "Classes",
+            "type": "array"
+          },
+          "course_code": {
+            "title": "Course Code",
+            "type": "string"
+          },
+          "students": {
+            "items": {
+              "$ref": "#/components/schemas/CourseAttendanceRow"
+            },
+            "title": "Students",
+            "type": "array"
+          }
+        },
+        "required": [
+          "course_code",
+          "classes",
+          "students"
+        ],
+        "title": "CourseAttendanceOut",
+        "type": "object"
+      },
+      "CourseAttendanceRow": {
+        "properties": {
+          "attended": {
+            "title": "Attended",
+            "type": "integer"
+          },
+          "classes": {
+            "description": "One per class, in the order of `classes`.",
+            "items": {
+              "type": "boolean"
+            },
+            "title": "Classes",
+            "type": "array"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "student_id": {
+            "format": "uuid",
+            "title": "Student Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "student_id",
+          "name",
+          "email",
+          "attended",
+          "classes"
+        ],
+        "title": "CourseAttendanceRow",
         "type": "object"
       },
       "CourseCreate": {
@@ -1943,6 +2552,31 @@
           "detail"
         ],
         "title": "ImportRow",
+        "type": "object"
+      },
+      "LecturerUpdateOut": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "kind": {
+            "description": "alert, checkpoint or attention.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "kind",
+          "text"
+        ],
+        "title": "LecturerUpdateOut",
         "type": "object"
       },
       "LessonQuestionOut": {
@@ -3089,6 +3723,120 @@
         "title": "PrivateTranscriptDraft",
         "type": "object"
       },
+      "QuestionBreakdown": {
+        "description": "How the class answered one question, in the order they were asked.",
+        "properties": {
+          "answers": {
+            "title": "Answers",
+            "type": "integer"
+          },
+          "correct": {
+            "title": "Correct",
+            "type": "integer"
+          },
+          "correct_option": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correct Option"
+          },
+          "eligible": {
+            "description": "Students connected when it was asked.",
+            "title": "Eligible",
+            "type": "integer"
+          },
+          "marked": {
+            "description": "Answers marked right or wrong. Some written answers are not.",
+            "title": "Marked",
+            "type": "integer"
+          },
+          "median_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Seconds"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "option_counts": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How many chose each option, for multiple choice.",
+            "title": "Option Counts"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "question_id": {
+            "format": "uuid",
+            "title": "Question Id",
+            "type": "string"
+          },
+          "topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "number",
+          "question_id",
+          "prompt",
+          "type",
+          "eligible",
+          "answers",
+          "correct",
+          "marked"
+        ],
+        "title": "QuestionBreakdown",
+        "type": "object"
+      },
       "QuestionBulkReviewRequest": {
         "properties": {
           "question_ids": {
@@ -3632,6 +4380,12 @@
           "ready": {
             "title": "Ready",
             "type": "boolean"
+          },
+          "server_error_spike": {
+            "default": false,
+            "description": "At least ten server errors a minute for the last two minutes on this process. Reported for an outside alert; it does not change readiness.",
+            "title": "Server Error Spike",
+            "type": "boolean"
           }
         },
         "required": [
@@ -4152,6 +4906,16 @@
             "title": "Material Title",
             "type": "string"
           },
+          "source_label": {
+            "default": "Page",
+            "enum": [
+              "Page",
+              "Slide",
+              "Section"
+            ],
+            "title": "Source Label",
+            "type": "string"
+          },
           "source_page": {
             "anyOf": [
               {
@@ -4347,6 +5111,91 @@
           "email"
         ],
         "title": "RosterStudentAdd",
+        "type": "object"
+      },
+      "SessionAttendanceOut": {
+        "properties": {
+          "course_code": {
+            "title": "Course Code",
+            "type": "string"
+          },
+          "present": {
+            "title": "Present",
+            "type": "integer"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "students": {
+            "items": {
+              "$ref": "#/components/schemas/AttendanceRow"
+            },
+            "title": "Students",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "title",
+          "course_code",
+          "starts_at",
+          "present",
+          "total",
+          "students"
+        ],
+        "title": "SessionAttendanceOut",
+        "type": "object"
+      },
+      "SessionBreakdownOut": {
+        "properties": {
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/QuestionBreakdown"
+            },
+            "title": "Questions",
+            "type": "array"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "students": {
+            "items": {
+              "$ref": "#/components/schemas/StudentBreakdown"
+            },
+            "title": "Students",
+            "type": "array"
+          }
+        },
+        "required": [
+          "session_id",
+          "questions",
+          "students"
+        ],
+        "title": "SessionBreakdownOut",
         "type": "object"
       },
       "SessionCopyRequest": {
@@ -4768,6 +5617,46 @@
         "title": "SessionUpdateRequest",
         "type": "object"
       },
+      "StudentBreakdown": {
+        "description": "How one student did across the session.",
+        "properties": {
+          "answered": {
+            "default": 0,
+            "title": "Answered",
+            "type": "integer"
+          },
+          "correct": {
+            "default": 0,
+            "title": "Correct",
+            "type": "integer"
+          },
+          "marked": {
+            "default": 0,
+            "title": "Marked",
+            "type": "integer"
+          },
+          "missed": {
+            "default": 0,
+            "title": "Missed",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "student_id": {
+            "format": "uuid",
+            "title": "Student Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "student_id",
+          "name"
+        ],
+        "title": "StudentBreakdown",
+        "type": "object"
+      },
       "StudentDataExport": {
         "properties": {
           "account": {
@@ -4862,6 +5751,42 @@
           "history"
         ],
         "title": "StudentDataExport",
+        "type": "object"
+      },
+      "StudentEngagementHistory": {
+        "properties": {
+          "classes": {
+            "items": {
+              "$ref": "#/components/schemas/ClassEngagement"
+            },
+            "title": "Classes",
+            "type": "array"
+          },
+          "explanation": {
+            "default": "What was recorded in each finished class. Answers and missed checkpoints come from the class itself. Camera and microphone counts appear only for readings you agreed to, and only from when you agreed. A class with no reading says so; it is not counted as zero, and none of this measures how well you understood.",
+            "title": "Explanation",
+            "type": "string"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "classes",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "StudentEngagementHistory",
         "type": "object"
       },
       "StudentReview": {
@@ -5030,6 +5955,58 @@
           "token"
         ],
         "title": "TeamsSignInRequest",
+        "type": "object"
+      },
+      "TeamsUpdatesMute": {
+        "properties": {
+          "muted": {
+            "default": true,
+            "description": "False turns the pop-ups back on.",
+            "title": "Muted",
+            "type": "boolean"
+          }
+        },
+        "title": "TeamsUpdatesMute",
+        "type": "object"
+      },
+      "TeamsUpdatesOut": {
+        "description": "What the lecturer's Teams update pop-up shows: the latest updates for\nthe class, newest first, whether they are muted, and how many of the\ncourse's students C.L.I.P can reach in Teams.",
+        "properties": {
+          "muted": {
+            "title": "Muted",
+            "type": "boolean"
+          },
+          "students_in_teams": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Students who have opened C.L.I.P in Teams, so checkpoints pop up for them. None when Teams notifications are off.",
+            "title": "Students In Teams"
+          },
+          "students_on_course": {
+            "title": "Students On Course",
+            "type": "integer"
+          },
+          "updates": {
+            "items": {
+              "$ref": "#/components/schemas/LecturerUpdateOut"
+            },
+            "title": "Updates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "muted",
+          "updates",
+          "students_on_course",
+          "students_in_teams"
+        ],
+        "title": "TeamsUpdatesOut",
         "type": "object"
       },
       "TimetableImportResult": {
@@ -5957,6 +6934,45 @@
         ]
       }
     },
+    "/api/v1/admin/errors/synthetic": {
+      "post": {
+        "description": "Record server errors on purpose, to check the dashboard and alerts\n(#173). Ten or more a minute for two minutes trips the spike alert. The\nerrors carry no request data and name themselves as synthetic.",
+        "operationId": "synthetic_error_api_v1_admin_errors_synthetic_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "count",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "maximum": 30,
+              "minimum": 1,
+              "title": "Count",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Synthetic Error",
+        "tags": [
+          "monitoring"
+        ]
+      }
+    },
     "/api/v1/admin/roster": {
       "post": {
         "description": "Preview or confirm additional enrolments by student account email.",
@@ -6299,6 +7315,88 @@
         ]
       }
     },
+    "/api/v1/courses/{code}/attendance": {
+      "get": {
+        "description": "Who attended each finished class of the course, oldest first.",
+        "operationId": "course_attendance_api_v1_courses__code__attendance_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseAttendanceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Course Attendance",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/v1/courses/{code}/attendance.csv": {
+      "get": {
+        "description": "The same as a CSV, one row per student and one column per class.",
+        "operationId": "course_attendance_csv_api_v1_courses__code__attendance_csv_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/csv": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Course Attendance Csv",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
     "/api/v1/courses/{code}/lecturers": {
       "put": {
         "description": "Admin only: who teaches this course.",
@@ -6496,6 +7594,59 @@
           }
         },
         "summary": "Remove Student",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/v1/courses/{code}/students:bulk": {
+      "post": {
+        "description": "Preview, then apply, a list of students for this course (#293). Each\nline is reported on its own; one bad line never fails the list. Only an\nadmin may create the accounts that do not exist yet.",
+        "operationId": "add_students_in_bulk_api_v1_courses__code__students_bulk_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkRosterIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkRosterOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Students In Bulk",
         "tags": [
           "courses"
         ]
@@ -7938,6 +9089,64 @@
         ]
       }
     },
+    "/api/v1/me/engagement-history": {
+      "get": {
+        "description": "What was recorded in each of the caller's finished classes, newest first.\nNo score; readings only where consented, and never as zero when missing.",
+        "operationId": "my_engagement_history_api_v1_me_engagement_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentEngagementHistory"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "My Engagement History",
+        "tags": [
+          "student review"
+        ]
+      }
+    },
     "/api/v1/meetings/events": {
       "post": {
         "description": "Start or end the meeting's session, creating one for a meeting that\nstarts with none linked when the course is named.",
@@ -7975,6 +9184,102 @@
           }
         },
         "summary": "Meeting Event",
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/meetings/sessions/{session_id}/updates": {
+      "get": {
+        "description": "The latest Teams updates for the lecturer's class, for the pop-up\nthey open, and how many of its students C.L.I.P can reach in Teams.",
+        "operationId": "teams_updates_api_v1_meetings_sessions__session_id__updates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamsUpdatesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Teams Updates",
+        "tags": [
+          "meetings"
+        ]
+      },
+      "put": {
+        "description": "Mute, or unmute, the lecturer's Teams pop-ups for the rest of the class.\nThe updates are still listed.",
+        "operationId": "mute_teams_updates_api_v1_meetings_sessions__session_id__updates_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamsUpdatesMute"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamsUpdatesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mute Teams Updates",
         "tags": [
           "meetings"
         ]
@@ -8521,6 +9826,102 @@
         ]
       }
     },
+    "/api/v1/sessions/{session_id}/ai-controls": {
+      "get": {
+        "description": "The lecturer's AI switches for this class, and the course's defaults.",
+        "operationId": "read_ai_controls_api_v1_sessions__session_id__ai_controls_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiControlsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Ai Controls",
+        "tags": [
+          "sessions"
+        ]
+      },
+      "put": {
+        "description": "Turn the class's AI features on or off. Applied at once, and the class is\ntold. With apply_to_course, every new class of the course starts this way.",
+        "operationId": "update_ai_controls_api_v1_sessions__session_id__ai_controls_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiControlsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiControlsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Ai Controls",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
     "/api/v1/sessions/{session_id}/alerts": {
       "get": {
         "description": "The alerts raised in a session, oldest first, with why, what to do about\nthem and whether a lecturer has acknowledged them.\n\nRead from the stored alerts, so it works during and after a session and\nafter a refresh.",
@@ -8640,6 +10041,94 @@
           }
         },
         "summary": "Acknowledge Session Alert",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/attendance": {
+      "get": {
+        "description": "Which of the course's students were in this class: joined it in C.L.I.P\nor were seen joining its Teams meeting.",
+        "operationId": "session_attendance_api_v1_sessions__session_id__attendance_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionAttendanceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Session Attendance",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/breakdown": {
+      "get": {
+        "description": "Each question asked, with how the choices split, and each student's\nanswers, right answers and misses.",
+        "operationId": "session_breakdown_view_api_v1_sessions__session_id__breakdown_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionBreakdownOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Session Breakdown View",
         "tags": [
           "sessions"
         ]
@@ -10010,6 +11499,46 @@
           }
         },
         "summary": "List Responses",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/results.csv": {
+      "get": {
+        "description": "Every answer in the session as a CSV, one row per answer.",
+        "operationId": "session_results_csv_api_v1_sessions__session_id__results_csv_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/csv": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Session Results Csv",
         "tags": [
           "sessions"
         ]

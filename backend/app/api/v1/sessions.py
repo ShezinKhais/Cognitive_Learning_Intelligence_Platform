@@ -30,6 +30,8 @@ from app.realtime.classroom import classroom
 from app.repositories.session_repository import SessionRepository
 from app.repositories.student_repository import StudentRepository
 from app.repositories.topic_difficulty_repository import DatabaseTopicAnswers
+from app.schemas.ai_controls import AiControlsOut, AiControlsUpdate
+from app.schemas.attendance import SessionAttendanceOut
 from app.schemas.breakout import RoomPlanIn, RoomPlanOut
 from app.schemas.common import Page
 from app.schemas.identity import ConsentType, Role
@@ -39,6 +41,7 @@ from app.schemas.session import (
     DeliverableQuestionOut,
     EngagementOut,
     ResponseOut,
+    SessionBreakdownOut,
     SessionCopyRequest,
     SessionCreateRequest,
     SessionOut,
@@ -48,7 +51,16 @@ from app.schemas.session import (
     StudentSessionSummary,
     TopicDifficultyOut,
 )
-from app.services import alert_store, breakout, question_plan, session_lifecycle, session_reads
+from app.services import (
+    ai_controls,
+    alert_store,
+    attendance,
+    breakout,
+    question_plan,
+    session_breakdown,
+    session_lifecycle,
+    session_reads,
+)
 from app.services.engagement_view import staff_confidence, staff_score, staff_signals
 from app.services.session_access import may_view_session_analytics
 from app.services.student_report import build_student_summary, record_staff_view
@@ -201,6 +213,29 @@ async def start_session(
 ) -> SessionOut:
     """Blocked until the session is ready. GET /readiness says why it is not."""
     return await session_lifecycle.start_session(db, principal, session_id)
+
+
+@router.get("/{session_id}/ai-controls", response_model=AiControlsOut, dependencies=_staff)
+async def read_ai_controls(
+    session_id: UUID, principal: CurrentUser, db: DbSession
+) -> AiControlsOut:
+    """The lecturer's AI switches for this class, and the course's defaults."""
+    return await ai_controls.read(db, principal, session_id)
+
+
+@router.put("/{session_id}/ai-controls", response_model=AiControlsOut, dependencies=_staff)
+@audit_action("SESSION_AI_CONTROLS_CHANGED")
+async def update_ai_controls(
+    session_id: UUID,
+    payload: AiControlsUpdate,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> AiControlsOut:
+    """Turn the class's AI features on or off. Applied at once, and the class is
+    told. With apply_to_course, every new class of the course starts this way."""
+    return await ai_controls.update(db, principal, session_id, payload)
 
 
 @router.post("/{session_id}/pause", response_model=SessionOut, dependencies=_staff)
@@ -368,6 +403,54 @@ async def require_analytics_access(db: DbSession, principal: CurrentUser, sessio
         row, user_id=principal.user_id, role=principal.role
     ):
         raise NotFoundError("Session was not found.", {"session_id": str(session_id)})
+
+
+@router.get("/{session_id}/attendance", response_model=SessionAttendanceOut, dependencies=_staff)
+async def session_attendance(
+    session_id: UUID, principal: CurrentUser, db: DbSession
+) -> SessionAttendanceOut:
+    """Which of the course's students were in this class: joined it in C.L.I.P
+    or were seen joining its Teams meeting."""
+    await require_analytics_access(db, principal, session_id)
+    row = await SessionRepository(db).get(session_id)
+    return await attendance.session_attendance(db, row)
+
+
+@router.get("/{session_id}/breakdown", response_model=SessionBreakdownOut, dependencies=_staff)
+async def session_breakdown_view(
+    session_id: UUID, principal: CurrentUser, db: DbSession
+) -> SessionBreakdownOut:
+    """Each question asked, with how the choices split, and each student's
+    answers, right answers and misses."""
+    await require_analytics_access(db, principal, session_id)
+    return await session_breakdown.build(db, session_id)
+
+
+@router.get(
+    "/{session_id}/results.csv",
+    dependencies=_staff,
+    response_class=Response,
+    responses={200: {"content": {"text/csv": {}}}},
+)
+@audit_action("SESSION_RESULTS_EXPORTED")
+async def session_results_csv(
+    session_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> Response:
+    """Every answer in the session as a CSV, one row per answer."""
+    await require_analytics_access(db, principal, session_id)
+    body = await session_breakdown.csv_rows(db, session_id)
+    return Response(
+        content="\ufeff" + body,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="session-{session_id}.csv"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.get(

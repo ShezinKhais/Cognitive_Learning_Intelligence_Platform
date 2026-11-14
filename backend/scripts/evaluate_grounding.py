@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import random
 import uuid
 from pathlib import Path
 
@@ -40,6 +41,7 @@ from app.services.generation import (
     ask_verifier,
     build_prompt,
     parse_drafts,
+    prompt_chunks,
     rejection_reasons,
     screened,
     verification_reason,
@@ -78,10 +80,23 @@ async def main(args: argparse.Namespace) -> None:
     print(f"model {settings.ollama_model}, {len(chunks)} chunks, {args.rounds} rounds\n")
 
     tally = GroundingTally()
+    # Which pages (sections, for Word and text) the model was shown, and which
+    # the accepted drafts cite: how much of the material questions can reach (#283).
+    pages_shown: set[int] = set()
     for round_number in range(1, args.rounds + 1):
+        # As the generator does: a different chunk from each stretch every
+        # round. --fixed shows the same evenly spaced chunks every round.
+        def seeded(seed: int = round_number) -> random.Random | None:
+            return None if args.fixed else random.Random(seed)
+
+        # The same seed twice, so the pages counted are the pages the prompt shows.
+        pages_shown |= {c.source_page for c in prompt_chunks(shown, seeded())}
+        rng = seeded()
         response = await client.chat.completions.create(
             model=settings.ollama_model,
-            messages=[{"role": "user", "content": build_prompt(shown, args.count, question_type)}],
+            messages=[
+                {"role": "user", "content": build_prompt(shown, args.count, question_type, rng)}
+            ],
         )
         try:
             drafts = parse_drafts(response.choices[0].message.content or "", question_type)
@@ -99,7 +114,13 @@ async def main(args: argparse.Namespace) -> None:
         kept = sum(not reasons for _, reasons in outcomes)
         print(f"round {round_number}: {kept} of {len(outcomes)} drafts accepted")
 
-    summary = summary_markdown(tally, settings.ollama_model, args.material)
+    pages = sorted({c.source_page for c in chunks if c.source_page is not None})
+    cited = {d.source_slide for d in tally.accepted if d.source_slide is not None}
+    summary = summary_markdown(tally, settings.ollama_model, args.material) + (
+        f"\nPages or sections shown to the model: {len(pages_shown)} of {len(pages)}"
+        f"{' (the same evenly spaced chunks every round)' if args.fixed else ''}. "
+        f"Cited by accepted drafts: {len(cited)} distinct.\n"
+    )
     print("\n" + summary)
     args.out.write_text(summary)
     write_accepted(args.accepted, tally.accepted)
@@ -170,6 +191,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--verify", action="store_true", help="also run the option verifier, as uploads do"
+    )
+    parser.add_argument(
+        "--fixed",
+        action="store_true",
+        help="show the same evenly spaced chunks every round, as before #283",
     )
     parser.add_argument(
         "--check-accepted",

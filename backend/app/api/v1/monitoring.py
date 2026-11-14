@@ -10,19 +10,24 @@ the same report anyway.
 
 from __future__ import annotations
 
+import logging
 import time
 from collections import defaultdict, deque
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
-from app.api.deps import CurrentUser, require_consents, require_roles
+from app.api.deps import AppSettings, CurrentUser, DbSession, require_consents, require_roles
 from app.api.v1.health import APP_VERSION
+from app.core.audit import audit_action
 from app.core.error_log import error_log
 from app.schemas.identity import ConsentType, Role
+
+synthetic_log = logging.getLogger("clip.monitoring.synthetic")
+MAX_SYNTHETIC_ERRORS = 30
 
 REPORTS_PER_WINDOW = 10
 WINDOW_SECONDS = 60.0
@@ -96,6 +101,38 @@ async def report_client_error(payload: ClientErrorIn, principal: CurrentUser) ->
             where=f"{page} ({payload.kind}, {principal.role.value})",
             message=CLIENT_SUMMARIES[payload.kind],
         )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class SyntheticMonitoringFailure(Exception):
+    """Raised on purpose to check that monitoring sees a server failure."""
+
+
+@router.post(
+    "/admin/errors/synthetic",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    dependencies=[
+        Depends(require_roles(Role.ADMIN)),
+        Depends(require_consents(ConsentType.TERMS)),
+    ],
+)
+@audit_action("MONITORING_SYNTHETIC_ERROR")
+async def synthetic_error(
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+    count: int = Query(default=1, ge=1, le=MAX_SYNTHETIC_ERRORS),
+) -> Response:
+    """Record server errors on purpose, to check the dashboard and alerts
+    (#173). Ten or more a minute for two minutes trips the spike alert. The
+    errors carry no request data and name themselves as synthetic."""
+    for _ in range(count):
+        try:
+            raise SyntheticMonitoringFailure("synthetic monitoring check")
+        except SyntheticMonitoringFailure:
+            synthetic_log.exception("synthetic monitoring check")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

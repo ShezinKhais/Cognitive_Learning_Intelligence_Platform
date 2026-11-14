@@ -235,6 +235,8 @@ function Exchange({
               {exchange.citations.map((citation) => {
                 const location = citation.source_slide !== null
                   ? `Slide ${citation.source_slide}`
+                  : citation.source_section != null
+                    ? `Section ${citation.source_section}`
                   : citation.source_page !== null
                     ? `Page ${citation.source_page}`
                     : citation.source_note_id ? 'Session record' : 'Lecture material'

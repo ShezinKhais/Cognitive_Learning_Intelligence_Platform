@@ -451,6 +451,9 @@ export function classifyAdaptive(
   return !measurable && seen.forward === false ? { ...seen, forward: null } : seen
 }
 
+/** A voice-detection frame at or above this speech probability counts as speaking. */
+export const SPEECH_THRESHOLD = 0.6
+
 /** Null is absence, not a negative signal. Only the frozen wire shape leaves. */
 export function summary(
   samples: FaceObservation[],

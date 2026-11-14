@@ -10,6 +10,7 @@ paths start and end sessions the same way.
 from __future__ import annotations
 
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Path, Request
 
@@ -22,9 +23,12 @@ from app.schemas.meetings import (
     MeetingClassSuggestion,
     MeetingEventIn,
     MeetingLinkRequest,
+    TeamsUpdatesMute,
+    TeamsUpdatesOut,
 )
 from app.schemas.session import SessionOut
 from app.services import meeting_organiser, session_lifecycle, unscheduled_class
+from app.services import teams_updates as teams_updates_service
 
 router = APIRouter(
     prefix="/meetings",
@@ -105,3 +109,25 @@ async def meeting_event(
     """Start or end the meeting's session, creating one for a meeting that
     starts with none linked when the course is named."""
     return await session_lifecycle.handle_meeting_event(db, principal, event)
+
+
+@router.get("/sessions/{session_id}/updates", response_model=TeamsUpdatesOut)
+async def teams_updates(
+    session_id: UUID, principal: CurrentUser, settings: AppSettings, db: DbSession
+) -> TeamsUpdatesOut:
+    """The latest Teams updates for the lecturer's class, for the pop-up
+    they open, and how many of its students C.L.I.P can reach in Teams."""
+    return await teams_updates_service.updates(db, principal, session_id, settings)
+
+
+@router.put("/sessions/{session_id}/updates", response_model=TeamsUpdatesOut)
+async def mute_teams_updates(
+    session_id: UUID,
+    payload: TeamsUpdatesMute,
+    principal: CurrentUser,
+    settings: AppSettings,
+    db: DbSession,
+) -> TeamsUpdatesOut:
+    """Mute, or unmute, the lecturer's Teams pop-ups for the rest of the class.
+    The updates are still listed."""
+    return await teams_updates_service.mute(db, principal, session_id, payload.muted, settings)

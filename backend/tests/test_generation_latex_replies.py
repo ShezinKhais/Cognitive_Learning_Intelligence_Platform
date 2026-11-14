@@ -94,6 +94,26 @@ def test_a_real_line_break_before_a_capital_is_kept():
     assert drafts[0].prompt == "First line.\nSecond line?"
 
 
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        r"Which is true?\na) the loss falls\nb) the loss rises",
+        r"Read the code:\nfor x in data:\n    print(x)",
+        r"Two lines,\nboth in lower case.",
+    ],
+)
+def test_a_real_line_break_before_a_lower_case_word_is_kept(prompt):
+    # Valid JSON with real new lines. None follows a LaTeX command, so the
+    # reply is not read again and the new lines stay new lines.
+    assert parse_drafts(reply(prompt))[0].prompt == json.loads(f'"{prompt}"')
+
+
+@pytest.mark.parametrize("latex", [r"\nabla f", r"a \ne b", r"\not\in", r"\neg p", r"\newline"])
+def test_latex_commands_that_start_with_n_are_still_repaired(latex):
+    prompt = f"Is {latex} defined here?"
+    assert parse_drafts(reply(prompt))[0].prompt == prompt
+
+
 def test_a_reply_broken_another_way_is_still_rejected():
     with pytest.raises(ValueError, match="valid JSON"):
         parse_drafts(r'[{"prompt": "What is \(x\)?", "options": ["a", "b"')

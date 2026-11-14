@@ -104,3 +104,19 @@ tests/eval/SUMMARIES.md` counts how summaries end. From
 per topic as JSON, each checked against its own topic, and only a sentence
 that fails twice shows its topic's facts instead, so the table also gives the
 share of sentences that are the model's.
+
+**Retrieval across courses (#252).** `python -m scripts.evaluate_course_retrieval
+--materials <folder>` searches each course's lectures together, as the tutor
+does, and reports where the right page ranks by kind of question (diagram,
+table, formula, picture, student wording, Arabic) and whether the tutor would
+correctly say "not in the material". It also chooses the tutor's distance
+cutoff on dev questions and scores it on held-out ones.
+`retrieval_courses/README.md` has the steps.
+
+**Question yield (#235).** `python -m scripts.evaluate_question_yield` writes
+questions for real course material as an upload does, has independent judges
+mark each one that passed the checks (usable, usable after a correction, or
+not usable, with the fault and the seconds it took), and reports the usable
+yield, the questions that passed but are wrong, and review time against
+thresholds agreed before the run. `yield/README.md` has the steps and the
+judging rules.

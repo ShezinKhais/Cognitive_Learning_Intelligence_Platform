@@ -10,13 +10,17 @@ import { difficultyLabel, type TopicDifficulty } from '../features/intelligence/
 import { getSessionTopics } from '../features/intelligence/topicRecoveryApi'
 import SessionStrip, { StripLegend } from '../features/sessions/SessionStrip'
 import { formatWhen, statusLabel, statusTone } from '../features/sessions/format'
+import { DownloadResults, QuestionTable, StudentTable } from '../features/sessions/SessionBreakdown'
 import {
+  getBreakdown,
   getSession,
   listAllResponses,
+  type SessionBreakdown,
   type SessionResponse,
   type SessionSummary,
 } from '../features/sessions/sessionsApi'
 import { stripFromResponses } from '../features/sessions/strip'
+import { SessionAttendancePanel } from '../features/courses/Attendance'
 
 
 export default function SessionReportPage() {
@@ -24,6 +28,7 @@ export default function SessionReportPage() {
   const [session, setSession] = useState<SessionSummary | null>(null)
   const [responses, setResponses] = useState<SessionResponse[] | null>(null)
   const [topics, setTopics] = useState<TopicDifficulty[] | null>(null)
+  const [breakdown, setBreakdown] = useState<SessionBreakdown | null>(null)
   const [error, setError] = useState<Problem | null>(null)
 
   useEffect(() => {
@@ -38,6 +43,8 @@ export default function SessionReportPage() {
       .catch((caught: unknown) => {
         if (!cancelled) setError(problemOf(caught, 'This session could not be loaded.'))
       })
+    // The breakdown is extra detail: the page works without it.
+    getBreakdown(sessionId).then((found) => !cancelled && setBreakdown(found), () => {})
     return () => {
       cancelled = true
     }
@@ -79,6 +86,7 @@ export default function SessionReportPage() {
                 Open live view
               </Link>
             )}
+            {responses.length > 0 && <DownloadResults sessionId={session.id} title={session.title} />}
             <Link to={`/lecturer/sessions/${session.id}/report`} className={buttonStyles()}>
               <FileText size={16} aria-hidden />
               Session report
@@ -110,6 +118,18 @@ export default function SessionReportPage() {
             </div>
           )}
         </Panel>
+
+        {breakdown && (
+          <>
+            <Panel title="Question by question" description="In the order they were asked. The right answer is in green." className="mb-6">
+              <QuestionTable questions={breakdown.questions} />
+            </Panel>
+            <Panel title="Students" description="Everyone who answered or missed a question." className="mb-6">
+              <StudentTable students={breakdown.students} />
+            </Panel>
+          </>
+        )}
+        <SessionAttendancePanel sessionId={session.id} />
 
         <Panel title="Topics" description="Hardest first, from how each answer was marked.">
           <TopicTable topics={topics} />

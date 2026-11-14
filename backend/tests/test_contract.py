@@ -49,16 +49,21 @@ EXPECTED_PATHS = {
     "/api/v1/admin/courses",
     "/api/v1/courses/mine",
     "/api/v1/courses/{code}/roster",
+    "/api/v1/courses/{code}/attendance",
+    "/api/v1/courses/{code}/attendance.csv",
     "/api/v1/courses/{code}/students",
+    "/api/v1/courses/{code}/students:bulk",
     "/api/v1/courses/{code}/students/{user_id}",
     "/api/v1/courses/{code}/lecturers",
     "/api/v1/engagement-history",
     "/api/v1/sessions/{session_id}/rooms",
     "/api/v1/client-errors",
     "/api/v1/admin/errors",
+    "/api/v1/admin/errors/synthetic",
     # Phase 8 General CS: special consideration, asked by a student, decided by an admin.
     "/api/v1/me/consideration",
     "/api/v1/me/consideration/policy",
+    "/api/v1/me/engagement-history",
     "/api/v1/me/consideration/withdraw",
     "/api/v1/me/consideration/with-evidence",
     "/api/v1/admin/consideration-requests/{request_id}/evidence",
@@ -78,11 +83,15 @@ EXPECTED_PATHS = {
     "/api/v1/sessions/{session_id}/question-plan/candidates",
     "/api/v1/sessions/{session_id}/questions",
     "/api/v1/sessions/{session_id}/start",
+    "/api/v1/sessions/{session_id}/breakdown",
+    "/api/v1/sessions/{session_id}/results.csv",
     "/api/v1/sessions/{session_id}/end",
     "/api/v1/sessions/{session_id}/copy",
+    "/api/v1/sessions/{session_id}/attendance",
     # Added in Phase 3 for the pause deliverable. Additive: no existing route
     # or field changed.
     "/api/v1/sessions/{session_id}/pause",
+    "/api/v1/sessions/{session_id}/ai-controls",
     "/api/v1/sessions/{session_id}/resume",
     # Added in Phase 4 for the content-readiness gate (AI 1). Additive.
     "/api/v1/sessions/{session_id}/readiness",
@@ -99,6 +108,7 @@ EXPECTED_PATHS = {
     "/api/v1/meetings/{meeting_id}/class-suggestion",
     "/api/v1/meetings/{meeting_id}/class",
     "/api/v1/meetings/events",
+    "/api/v1/meetings/sessions/{session_id}/updates",
     "/api/v1/teams/messages",
     # Added in Phase 5 for the tutor (General CS). Additive. The reply is a
     # stream of NDJSON events, so it has no response model.

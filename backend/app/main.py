@@ -20,6 +20,7 @@ from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, monitoring_request_id_var, request_id_var
 from app.realtime.classroom import classroom
 from app.repositories.teams_meeting_repository import DatabaseMeetingDirectory
+from app.services import class_glance
 from app.services.ai_gateway import get_ai_gateway
 from app.services.live_wiring import install_live_store
 from app.services.material_recovery import SWEEP_EVERY, sweep_stranded
@@ -120,6 +121,10 @@ async def lifespan(app: FastAPI):
     install_live_store(classroom)
     classroom.checkpoint_notifier = notifications.enqueue
     classroom.alert_notifier = notifications.enqueue_alert
+    classroom.lecturer_update_notifier = notifications.update_lecturer
+    classroom.class_ended_notifier = notifications.enqueue_class_ended
+    classroom.last_call_notifier = notifications.enqueue_last_call
+    classroom.checkpoint_detail = class_glance.checkpoint_detail
     meetings.directory = DatabaseMeetingDirectory()
     classroom.check_wiring()
     meetings.check_wiring()

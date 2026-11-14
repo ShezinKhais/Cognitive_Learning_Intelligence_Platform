@@ -49,6 +49,7 @@ from app.services.material_edits import (
 from app.services.material_pages import page_previews
 from app.services.question_ownership import filter_owned_questions, get_owned_question
 from app.services.regeneration import regenerate
+from app.services.source_labels import source_label
 from app.services.uploads import accept_upload, get_material_storage, get_question_generator
 
 # Every route here, the review actions included, is lecturer and admin work,
@@ -169,7 +170,10 @@ async def get_material(
 
     # The page preview is only on the single-material read. Built for every
     # row of a list it would load the full text of every upload a lecturer has.
-    pages = page_previews(await repository.list_elements(material.id))
+    pages = page_previews(
+        await repository.list_elements(material.id),
+        sections=source_label(material.filename) == "Section",
+    )
     codes = await course_codes(db, {material.course_id} if material.course_id else set())
     return _material_out(material, codes).model_copy(update={"pages": pages})
 

@@ -400,3 +400,37 @@ def test_startup_registers_the_persistent_directory(app, monkeypatch: pytest.Mon
 
     with TestClient(app):
         assert isinstance(meetings.directory, Registered)
+
+
+# -- the lecturer update pop-up -------------------------------------------------
+
+
+async def test_the_lecturer_reads_and_mutes_their_teams_updates(db, app) -> None:
+    from app.services.teams_notifications import notifications
+
+    client, factory, created = db
+    course = await add_course(factory, created)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    session = create_session(client, course)
+    path = f"/api/v1/meetings/sessions/{session['id']}/updates"
+    notifications.update_lecturer(UUID(session["id"]), "checkpoint", "Checkpoint closed: 1 of 2.")
+    try:
+        read = client.get(path)
+        assert read.status_code == 200, read.text
+        body = read.json()
+        assert body["muted"] is False
+        assert [u["text"] for u in body["updates"]] == ["Checkpoint closed: 1 of 2."]
+        assert body["students_on_course"] == 0
+        # Teams notifications are off here, so nobody is counted as reachable.
+        assert body["students_in_teams"] is None
+
+        assert client.put(path, json={"muted": True}).json()["muted"] is True
+        assert client.get(path).json()["muted"] is True
+
+        sign_in_as(app, await add_lecturer(factory, created), Role.LECTURER)
+        assert client.get(path).status_code == 404
+        assert client.put(path, json={"muted": False}).status_code == 404
+        sign_in_as(app, STUDENT_ID, Role.STUDENT)
+        assert client.get(path).status_code == 403
+    finally:
+        notifications.forget(UUID(session["id"]))

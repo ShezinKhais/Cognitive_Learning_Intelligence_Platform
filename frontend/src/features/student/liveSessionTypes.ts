@@ -16,6 +16,14 @@ export type QuestionCloseReason =
   | 'lecturer_closed'
   | 'session_ended'
 
+/** The lecturer's AI switches for the class. Each is on unless turned off. */
+export interface AiControls {
+  auto_checkpoints: boolean
+  learning_assistant: boolean
+  refocus_nudges: boolean
+  engagement_estimates: boolean
+}
+
 export interface SessionStateEvent {
   session_id: string
   status: SessionStatus
@@ -23,6 +31,15 @@ export interface SessionStateEvent {
   active_question_id: string | null
   questions_delivered: number
   paused: boolean
+  ai: AiControls
+}
+
+/** Word and text files are numbered by section, PowerPoint by slide. */
+export type SourceLabel = 'Page' | 'Slide' | 'Section'
+
+/** "Section 3", or "Slide 3" when the server did not say. */
+export function sourcePlace(label: SourceLabel | null | undefined, number: number): string {
+  return `${label ?? 'Slide'} ${number}`
 }
 
 export interface LiveQuestion {
@@ -32,6 +49,8 @@ export interface LiveQuestion {
   closes_at: string
   window_seconds: number
   source_slide: number | null
+  /** What source_slide numbers. Older servers leave it out. */
+  source_label?: SourceLabel | null
 }
 
 export interface QuestionClosedEvent {
@@ -53,6 +72,7 @@ export interface FeedbackResult {
   correct: boolean | null
   explanation: string | null
   source_slide: number | null
+  source_label?: SourceLabel | null
 }
 
 export interface AttentionPrompt {

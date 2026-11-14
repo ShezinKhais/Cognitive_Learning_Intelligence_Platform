@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useState, type FormEvent } from 'react'
-import { UserMinus, UserPlus } from 'lucide-react'
+import { UserMinus, UserPlus, Users } from 'lucide-react'
 
 import { ApiError, getCurrentUser, type Role } from '../api'
 import { buttonStyles } from '../components/ui/button'
@@ -7,6 +7,7 @@ import { EmptyState, PageBody, PageHeader, Panel, SkeletonRows, Tag } from '../c
 import { ProblemState } from '../components/ui/ProblemState'
 import { problemArt, problemOf, type Problem } from '../components/ui/problem'
 import { useToast } from '../components/ui/toast'
+import { CourseAttendancePanel } from '../features/courses/Attendance'
 import {
   addStudent,
   getRoster,
@@ -15,6 +16,7 @@ import {
   setLecturers,
   type CourseRoster,
 } from '../features/courses/coursesApi'
+import BulkRosterPanel from '../features/courses/BulkRosterPanel'
 import { listAccounts, type Account, type Course } from '../features/governance/accountsApi'
 
 const FIELD = 'w-full rounded-md border border-input bg-background px-3 py-2 text-sm'
@@ -35,6 +37,7 @@ export default function CourseRostersPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [email, setEmail] = useState('')
+  const [bulk, setBulk] = useState(false)
   const [lecturers, setLecturerAccounts] = useState<Account[]>([])
   const [students, setStudentAccounts] = useState<Account[]>([])
   const notify = useToast()
@@ -224,7 +227,26 @@ export default function CourseRostersPage() {
                       <UserPlus size={15} aria-hidden />
                       Add
                     </button>
+                    {!bulk && (
+                      <button type="button" className={buttonStyles({ intent: 'secondary' })} onClick={() => setBulk(true)}>
+                        <Users size={15} aria-hidden />
+                        Add many
+                      </button>
+                    )}
                   </form>
+                  {bulk && code && (
+                    <BulkRosterPanel
+                      key={code}
+                      code={code}
+                      isAdmin={isAdmin}
+                      onClose={() => setBulk(false)}
+                      onDone={(next, added) => {
+                        setRoster(next)
+                        setBulk(false)
+                        notify(`${added} ${added === 1 ? 'student' : 'students'} added`)
+                      }}
+                    />
+                  )}
 
                   {roster.students.length === 0 ? (
                     <p className="mt-4 text-sm text-muted-foreground">No students on this course yet.</p>
@@ -257,6 +279,7 @@ export default function CourseRostersPage() {
                 </Panel>
               </div>
             )}
+            {code && <CourseAttendancePanel key={code} code={code} />}
           </div>
         )}
       </PageBody>
