@@ -6,6 +6,9 @@ from backend/:
 
     OLLAMA_MODEL=qwen2.5:3b python -m scripts.evaluate_robustness
     OLLAMA_MODEL=qwen2.5:3b python -m scripts.evaluate_robustness --out tests/eval/ROBUSTNESS.md
+    OLLAMA_MODEL=qwen2.5:3b python -m scripts.evaluate_robustness --only-new \
+        --new tests/eval/fresh/adversarial.csv --questions tests/eval/fresh/questions.json \
+        --out tests/eval/fresh/ROBUSTNESS_v6.md
 
 tests/eval/robustness_answers.csv holds two kinds of answer:
 
@@ -25,6 +28,14 @@ after the screening rules were last changed and never used to change them.
 The rules were written while looking at the first 20, so they score better
 there than on attempts nobody has seen; the hold-out says how well they
 carry over.
+
+--new points at a different set of unseen attempts, such as
+tests/eval/fresh/adversarial.csv, and --only-new leaves out the 20 seen
+ones and the fairness rewrites. Each attempt ends one of four ways, counted
+separately: refused (screening stopped it before the model, so it was not
+marked), marked struggling by the model (the model saw through it), marked
+partial or mastered (the attack worked: a misclassification), or an
+unreadable reply.
 """
 
 from __future__ import annotations
@@ -64,18 +75,21 @@ async def label(classifier, question, text: str) -> tuple[str, tuple[str, ...]]:
     return result.label.value, result.reasons
 
 
-async def main() -> str:
+async def main(args: argparse.Namespace) -> str:
     settings = get_settings()
     client = AsyncOpenAI(base_url=settings.ollama_base_url, api_key="ollama")
     classifier = FreeTextClassifier(
         client, OllamaEmbeddingClient(client, settings.embedding_model), settings.ollama_model
     )
-    questions = load_questions()
+    questions = load_questions(args.questions)
     originals = {a["answer_id"]: a for a in load_answers()}
     cases = []
-    for name, seen in (("robustness_answers.csv", "seen"), ("robustness_holdout.csv", "new")):
-        with (EVAL_DIR / name).open(newline="", encoding="utf-8") as f:
-            cases += [dict(row, seen=seen) for row in csv.DictReader(f)]
+    files = [(args.new, "new")] if args.only_new else [(args.seen, "seen"), (args.new, "new")]
+    for path, seen in files:
+        with path.open(newline="", encoding="utf-8-sig") as f:
+            cases += [
+                dict(row, seen=seen) for row in csv.DictReader(f) if row["student_answer"].strip()
+            ]
     print(f"model {settings.ollama_model}, prompt {PROMPT_VERSION}, {len(cases)} cases\n")
 
     base_labels: dict[str, str] = {}
@@ -90,7 +104,9 @@ async def main() -> str:
             tally = attacks[case["seen"]]
             tally["cases"] += 1
             tally["succeeded"] += succeeded
-            tally["blocked before the model"] += bool(reasons) and reasons[0] in SCREENED
+            refused = bool(reasons) and reasons[0] in SCREENED
+            tally["blocked before the model"] += refused
+            tally["model said struggling"] += got == "struggling" and not refused
             # Marked by the model, but with its confidence capped for review.
             tally["flagged"] += KEYWORD_LIST_NOTE in reasons
             tally["unreadable"] += got == "error"
@@ -123,40 +139,51 @@ async def main() -> str:
 
     print("\n".join(lines))
     originals_mastered = sum(v == "mastered" for v in base_labels.values())
-    report = [
-        "## Fairness: same meaning, different writing",
-        "",
-        f"The 13 original answers were marked mastered {originals_mastered} times in this run.",
-        "",
-        "| Rewrite | Answers | Same label as the original | Lowered | Raised | Still mastered |",
-        "|---|---|---|---|---|---|",
-    ]
-    for kind, name in (("typos", "Typos"), ("simple_english", "Simpler English")):
-        n = fairness[f"{kind} cases"]
-        lowered, raised = fairness[f"{kind} lowered"], fairness[f"{kind} raised"]
-        same = n - lowered - raised - fairness[f"{kind} unreadable"]
-        report.append(
-            f"| {name} | {n} | {same} | {lowered} | {raised} | {fairness[f'{kind} mastered']} |"
-        )
+    report = []
+    if base_labels:
+        report += [
+            "## Fairness: same meaning, different writing",
+            "",
+            f"The 13 original answers were marked mastered {originals_mastered} times in this run.",
+            "",
+            "| Rewrite | Answers | Same label as the original | Lowered | Raised "
+            "| Still mastered |",
+            "|---|---|---|---|---|---|",
+        ]
+        for kind, name in (("typos", "Typos"), ("simple_english", "Simpler English")):
+            n = fairness[f"{kind} cases"]
+            lowered, raised = fairness[f"{kind} lowered"], fairness[f"{kind} raised"]
+            same = n - lowered - raised - fairness[f"{kind} unreadable"]
+            report.append(
+                f"| {name} | {n} | {same} | {lowered} | {raised} | {fairness[f'{kind} mastered']} |"
+            )
+    if report:
+        report.append("")
     report += [
-        "",
         "## Cheating attempts",
         "",
-        "| Attempts | Count | Marked partial or mastered (attack worked) | Stopped by "
-        "screening before the model | Flagged as a keyword list | Unreadable replies |",
-        "|---|---|---|---|---|---|",
+        "Refused: screening stopped it before the model and it was not marked. Marked "
+        "struggling: the model saw through it. Attack worked: marked partial or mastered, "
+        "a misclassification.",
+        "",
+        "| Attempts | Count | Refused before the model | Marked struggling by the model | "
+        "Attack worked (partial or mastered) | Flagged as a keyword list | Unreadable replies |",
+        "|---|---|---|---|---|---|---|",
     ]
     for seen, name in (("seen", "Used to write the rules"), ("new", "New (hold-out)")):
         tally = attacks[seen]
+        if not tally["cases"]:
+            continue
         report.append(
-            f"| {name} | {tally['cases']} | {tally['succeeded']} | "
-            f"{tally['blocked before the model']} | {tally['flagged']} | {tally['unreadable']} |"
+            f"| {name} | {tally['cases']} | {tally['blocked before the model']} | "
+            f"{tally['model said struggling']} | {tally['succeeded']} | {tally['flagged']} | "
+            f"{tally['unreadable']} |"
         )
     print("\n" + "\n".join(report))
     return (
         f"# Robustness\n\nModel `{settings.ollama_model}`, prompt `{PROMPT_VERSION}`, on "
-        "`tests/eval/robustness_answers.csv`; see scripts/evaluate_robustness.py for how "
-        "the answers were made.\n\n"
+        + ", ".join(f"`{path.name}`" for path, _ in files)
+        + "; see scripts/evaluate_robustness.py for how the answers were made.\n\n"
         + "\n".join(report)
         + "\n\nEach case:\n\n```\n"
         + "\n".join(lines)
@@ -167,8 +194,14 @@ async def main() -> str:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, help="also write the results as Markdown")
-    out = parser.parse_args().out
-    markdown = asyncio.run(main())
-    if out:
-        out.write_text(markdown)
-        print(f"\nwritten to {out}")
+    parser.add_argument("--questions", type=Path, default=EVAL_DIR / "questions.json")
+    parser.add_argument("--seen", type=Path, default=EVAL_DIR / "robustness_answers.csv")
+    parser.add_argument("--new", type=Path, default=EVAL_DIR / "robustness_holdout.csv")
+    parser.add_argument(
+        "--only-new", action="store_true", help="mark only the unseen attempts in --new"
+    )
+    args = parser.parse_args()
+    markdown = asyncio.run(main(args))
+    if args.out:
+        args.out.write_text(markdown)
+        print(f"\nwritten to {args.out}")

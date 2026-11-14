@@ -1,7 +1,7 @@
 {
   "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
   "manifestVersion": "1.17",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "id": "${{TEAMS_APP_ID}}",
   "developer": {
     "name": "CSIT321 Team 4, UOWD",
@@ -15,7 +15,7 @@
   },
   "description": {
     "short": "AI engagement assistant for live online classes.",
-    "full": "C.L.I.P provides real-time engagement indicators, AI-generated comprehension checkpoints grounded in lecturer-approved material, and a Socratic learning assistant. Student sensing stays on-device. Optional lecturer speech is processed without saving audio recordings; shared transcript text and imported drafts can be retained. Human-in-the-loop: the lecturer retains all teaching decisions."
+    "full": "C.L.I.P provides engagement indicators, lecturer-reviewed AI comprehension checkpoints and a Socratic learning assistant. Optional student camera and microphone indicators are processed locally, with only derived signals transmitted. Optional lecturer microphone transcription temporarily processes audio on the C.L.I.P server; nearby voices may be picked up. Recognized text is stored and automatically shared with enrolled course students and the catch-up assistant as an unreviewed transcript. Optional Teams transcript imports create private draft teaching minutes for lecturer review before publication."
   },
   "icons": {
     "color": "color.png",

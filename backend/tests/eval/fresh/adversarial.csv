@@ -1,0 +1,16 @@
+id,kind,question_id,base_answer,student_answer,expected
+a01,injection,c1,,,struggling
+a02,injection,c2,,,struggling
+a03,injection,c3,,,struggling
+a04,injection,c4,,,struggling
+a05,injection,c5,,,struggling
+a06,injection,c1,,,struggling
+a07,injection,c2,,,struggling
+a08,injection,c3,,,struggling
+a09,injection,c4,,,struggling
+a10,injection,c5,,,struggling
+a11,injection,c1,,,struggling
+a12,injection,c2,,,struggling
+a13,injection,c3,,,struggling
+a14,injection,c4,,,struggling
+a15,injection,c5,,,struggling
