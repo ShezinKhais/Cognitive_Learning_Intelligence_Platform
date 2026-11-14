@@ -62,3 +62,33 @@ would have done.
 
 The CSV files are not committed (`.gitignore`), as for the camera
 recordings. Whoever runs the evaluation keeps them.
+
+## Findings (November 2026)
+
+Five participants (P1, P7–P10), 51 clips, 153 five-second windows, at the
+classroom's threshold of 0.6. Full tables: [`RESULTS.md`](RESULTS.md).
+
+| | Result |
+|---|---|
+| Speech caught | 61 of 69 windows, 88% (75–99%) |
+| Silent or typing reported as speaking | **0 of 42** |
+| Music or noise reported as speaking | 10 of 21 |
+| Someone else talking reported as speaking | 18 of 21 |
+| Quiet speech caught | 14 of 21; missed entirely for P9 (far) and P10 (near) |
+| Headset / built-in mic, balanced accuracy | 85% / 75% |
+| Worst participant | P9, 53% |
+
+- **"Speaking" means a voice was heard, not that the student spoke.** Another
+  person or a video talking nearby counts almost every time, and music with
+  the built-in microphone half the time. Silence and typing never do.
+- **Quiet speakers are often missed**, near or far.
+- **The threshold is not the fix:** at 0.9 false alarms only fall from 33% to
+  25% while speech caught falls to 83%.
+
+**Limits:** five people, acted 15-second clips, one noisy-room set (P7), no
+weaker laptop, and whether the music had singing was not recorded.
+
+**For the team:**
+- [ ] Should the lecturer view say that "speaking" means a voice was heard
+      near the student, not necessarily the student?
+- [ ] Recommend a headset where the microphone is used?
