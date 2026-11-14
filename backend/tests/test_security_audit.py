@@ -84,6 +84,8 @@ AUDIENCE = {
     ("DELETE", "/api/v1/sessions/{session_id}/discussion/{note_id}"): STAFF,
     ("GET", "/api/v1/student-reviews"): STUDENT_ONLY,
     ("GET", "/api/v1/student-reviews/{session_id}"): STUDENT_ONLY,
+    ("GET", "/api/v1/student-reviews/{session_id}/missed"): STUDENT_ONLY,
+    ("GET", "/api/v1/student-reviews/{session_id}/missed/{missed_id}/sources"): STUDENT_ONLY,
     ("GET", "/api/v1/student-reviews/{session_id}/responses/{response_id}/sources"): STUDENT_ONLY,
     ("POST", "/api/v1/auth/consent"): ANY_USER,
     ("GET", "/api/v1/auth/me"): ANY_USER,
@@ -115,6 +117,8 @@ AUDIENCE = {
     ("PATCH", "/api/v1/materials/{material_id}/questions/{question_id}"): STAFF,
     ("POST", "/api/v1/materials/{material_id}/questions/{question_id}:regenerate"): STAFF,
     ("POST", "/api/v1/materials/{material_id}/questions:bulk"): STAFF,
+    ("POST", "/api/v1/materials/{material_id}/questions"): STAFF,
+    ("POST", "/api/v1/materials/{material_id}/questions/{question_id}:reuse"): STAFF,
     ("POST", "/api/v1/meetings/events"): STAFF,
     ("GET", "/api/v1/meetings/{meeting_id}"): STAFF,
     ("PUT", "/api/v1/meetings/{meeting_id}"): STAFF,
@@ -127,8 +131,14 @@ AUDIENCE = {
     ("POST", "/api/v1/sessions/{session_id}/alerts/{alert_id}/acknowledge"): STAFF,
     ("POST", "/api/v1/sessions/{session_id}/chat"): STUDENT_ONLY,
     ("POST", "/api/v1/sessions/{session_id}/end"): STAFF,
+    ("POST", "/api/v1/sessions/{session_id}/copy"): STAFF,
+    ("PATCH", "/api/v1/sessions/{session_id}"): STAFF,
+    ("DELETE", "/api/v1/sessions/{session_id}"): STAFF,
     ("GET", "/api/v1/sessions/{session_id}/engagement"): STAFF,
     ("POST", "/api/v1/sessions/{session_id}/pause"): STAFF,
+    ("GET", "/api/v1/sessions/{session_id}/question-plan"): STAFF,
+    ("GET", "/api/v1/sessions/{session_id}/question-plan/candidates"): STAFF,
+    ("PUT", "/api/v1/sessions/{session_id}/question-plan"): STAFF,
     ("GET", "/api/v1/sessions/{session_id}/questions"): STAFF,
     ("POST", "/api/v1/sessions/{session_id}/questions/{question_id}:deliver"): STAFF,
     ("GET", "/api/v1/sessions/{session_id}/readiness"): STAFF,
@@ -141,7 +151,10 @@ AUDIENCE = {
     ("GET", "/api/v1/reports/{report_id}"): STAFF,
     ("GET", "/api/v1/reports/{report_id}/pdf"): STAFF,
     ("GET", "/api/v1/me/consideration"): STUDENT_ONLY,
+    ("GET", "/api/v1/me/consideration/policy"): STUDENT_ONLY,
     ("POST", "/api/v1/me/consideration"): STUDENT_ONLY,
+    ("POST", "/api/v1/me/consideration/with-evidence"): STUDENT_ONLY,
+    ("GET", "/api/v1/admin/consideration-requests/{request_id}/evidence"): ADMIN_ONLY,
     ("POST", "/api/v1/me/consideration/withdraw"): STUDENT_ONLY,
     ("GET", "/api/v1/admin/consideration-requests"): ADMIN_ONLY,
     ("POST", "/api/v1/admin/consideration-requests/{request_id}/approve"): ADMIN_ONLY,
@@ -183,6 +196,8 @@ def filled(path: str, **ids: UUID) -> str:
 
 def call(client: TestClient, method: str, path: str, **ids: UUID):  # noqa: ANN201
     body = {} if method != "GET" else None
+    if method == "PUT" and path.endswith("/question-plan"):
+        body = {"selected_only": False, "reviewed_confirmed": True}
     return client.request(method, filled(path, **ids), json=body)
 
 

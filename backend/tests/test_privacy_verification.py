@@ -1,7 +1,7 @@
 """Cyber 1, Phase 6: privacy verification for attention data.
 
 The promise: the server receives derived numbers about a student's attention,
-never the media they came from, keeps no media, and logs no readings. Each
+never the media they came from, keeps no attention media, and logs no readings. Each
 test here is a way that promise could quietly stop being true.
 """
 
@@ -150,15 +150,15 @@ def test_a_frame_at_the_limit_is_still_read(client: TestClient) -> None:
 # -- what is kept ------------------------------------------------------------------------
 
 
-def test_no_table_has_a_binary_column() -> None:
-    """Nothing in the schema can hold an image, a frame or audio."""
-    binary = [
+def test_binary_storage_is_limited_to_consideration_evidence() -> None:
+    """Only explicitly submitted consideration attachments use binary storage."""
+    binary = {
         f"{table.name}.{column.name}"
         for table in Base.metadata.tables.values()
         for column in table.columns
         if isinstance(column.type, LargeBinary) or column.type.__class__.__name__ in {"BYTEA"}
-    ]
-    assert binary == []
+    }
+    assert binary == {"consideration_request.evidence"}
 
 
 def test_no_table_stores_a_raw_attention_reading() -> None:

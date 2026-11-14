@@ -96,3 +96,35 @@ def test_an_icon_of_the_wrong_size_is_refused(
     monkeypatch.setattr(package, "TEAMS_APP", tmp_path)
 
     assert package.file_problems("{}") == ["color.png must be 192x192"]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://clip.example.com/subpath",
+        "https://clip.example.com?x=1",
+        "https://user@clip.example.com",
+        "https://clip.example.com:8088",
+    ],
+)
+def test_app_base_is_a_public_https_origin(package, url):
+    _, problems = package.values({**GOOD, "BASE_URL": url})
+    assert problems
+
+
+def test_filled_package_needs_consistent_sso_and_meeting_permissions(package):
+    filled, _ = package.values(GOOD)
+    data = package.resolved_manifest(_manifest(package), filled)
+    assert package.deployment_problems(data, filled) == []
+    data["webApplicationInfo"]["resource"] = "api://different.example.com"
+    data["authorization"]["permissions"]["resourceSpecific"].pop()
+    assert len(package.deployment_problems(data, filled)) == 2
+
+
+def test_package_update_requires_higher_version_and_same_app_id(package):
+    installed = {"version": "0.3.2", "id": GOOD["TEAMS_APP_ID"]}
+    assert package.update_problems({**installed, "version": "0.3.3"}, installed) == []
+    assert package.update_problems(installed, installed)
+    assert package.update_problems(
+        {**installed, "version": "1.0.0", "id": GOOD["BOT_ID"]}, installed
+    )

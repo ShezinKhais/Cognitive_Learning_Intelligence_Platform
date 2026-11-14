@@ -9,6 +9,7 @@ import SegmentedTabs from '../components/ui/SegmentedTabs'
 import { useToast } from '../components/ui/toast'
 import {
   decideRequest,
+  downloadEvidence,
   listRequests,
   NEED_LABEL,
   untilLabel,
@@ -112,7 +113,19 @@ function RequestRow({
 }) {
   const notify = useToast()
   const [note, setNote] = useState('')
+  const [downloading, setDownloading] = useState(false)
   const [busy, setBusy] = useState<'approve' | 'reject' | null>(null)
+
+  async function download() {
+    setDownloading(true)
+    try {
+      await downloadEvidence(request.id)
+    } catch {
+      notify('Supporting evidence could not be downloaded. Refresh and try again.', { tone: 'problem' })
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   function decide(approve: boolean) {
     setBusy(approve ? 'approve' : 'reject')
@@ -147,6 +160,12 @@ function RequestRow({
       <p className="mt-2 text-sm text-muted-foreground">{untilLabel(request.until)}</p>
       {request.note && (
         <p className="mt-3 rounded-md border-l-2 border-primary bg-muted/40 px-4 py-2 text-sm">{request.note}</p>
+      )}
+      {request.status === 'pending' && request.has_evidence && (
+        <button type="button" className={buttonStyles({ intent: 'secondary' })}
+          disabled={downloading || busy !== null} onClick={() => void download()}>
+          {downloading ? 'Downloading…' : 'Download supporting file'}
+        </button>
       )}
       {request.decision_note && request.status !== 'pending' && (
         <p className="mt-3 text-sm">
