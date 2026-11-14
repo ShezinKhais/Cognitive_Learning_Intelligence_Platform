@@ -250,9 +250,35 @@ The same overall, and the worst-off participant does better (P7: 73.8% to
   photo or video: no flag, alert or message goes to the lecturer, and nothing
   is stored about it.
 
-**Still needed before merging:** Cyber 1 (Hunain) fairness sign-off on
-`LIVENESS` and `ADAPTATION`, as #165 and #166 require, and a spoof check added
-to Cyber 2's device checklist (#160).
+**Accepted limits of what is switched on** (review of #298):
+- **Anti-spoofing catches about half the spoofs:** 56% (40–71%) of photo and
+  video clips, from six people; printed photos and weaker laptops were not
+  tested. It is a deterrent, not a guarantee, and nothing is decided from it:
+  a missed spoof counts as a face, a caught one as no face.
+- **No calibration, and cameras off to one side.** Off-centre clips (P1, P6,
+  P8; 24 clips, so wide intervals) read "looking" as well without calibration
+  as with it: 87.2% against 86.9% recall with the tuned pose limits (`cv/RESULTS.md`, by
+  condition). Adaptation then learns each student's own centre from the moments
+  they type an answer. A head tilt is ignored up to 45°. Students whose camera
+  or posture still reads poorly can leave the camera off: it is optional and
+  needs its own consent.
+- **Weak spots that remain:** glasses ("looking" right 49% of the time),
+  sitting far back (47%) and looking down at notes (read as on screen 43% of
+  the time), as listed above.
+- "Looking at the screen" stays a camera-facing proxy, never a measure of
+  attention or understanding, and the camera alone never triggers a prompt.
+
+**What is switched on, and where:** the settings above are in the code, but
+the camera indicators as a whole stay behind `VITE_LOCAL_ATTENTION_ENABLED`,
+which is `false` in `frontend/.env.example` and the demo deployment. No
+classroom runs them until that is turned on.
+
+**Still needed before that, and before merging:**
+- Cyber 1 (Hunain) fairness sign-off on `LIVENESS` and `ADAPTATION`, as #165
+  and #166 require, including whether dropping calibration is acceptable for
+  students with different camera positions and physical needs.
+- Cyber 2's device acceptance checklist (#160), with a spoof check, camera
+  performance, glasses, lighting and a weaker device.
 
 ## Next: adaptive limits and combined gaze (#166)
 
