@@ -311,7 +311,7 @@ say('If the tuned values above differ from the shipped ones, copy them into `sig
 say()
 say('## Limits')
 say()
-say(`- ${people.length} participants, all team members: a small sample of similar people, so the intervals are wide and the numbers may not hold for a whole class.`)
+say(`- ${people.length} participants: a small sample, so the intervals are wide and the numbers may not hold for a whole class.`)
 say('- Acted, not natural: people were told what to do for 10 seconds at a time.')
 say('- "Looking at the screen" is a camera-facing proxy, not eye tracking, and never a measure of attention or understanding.')
 say('- Fairness of the tuned thresholds across people is for Cyber 1 to sign off; devices and Teams are tested by Cyber 2.')
