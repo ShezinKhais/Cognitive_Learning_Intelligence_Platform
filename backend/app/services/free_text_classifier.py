@@ -541,6 +541,32 @@ def is_keyword_list(answer: str) -> bool:
     return len(words) >= KEYWORD_LIST_LONG and not linking
 
 
+# A reference answer that is itself a short list ("Precision, recall and F1."):
+# the question asks the student to name things, so a list is the right shape
+# of answer and is not held against them.
+_ENUMERATION_SPLIT = re.compile(r"\s*(?:[,;]|\band\b|\bor\b)\s*")
+ENUMERATION_ITEM_WORDS = 3
+ENUMERATION_MAX_WORDS = 20
+
+
+def is_enumeration(text: str) -> bool:
+    """Whether the text is only a short list of items: "Precision, recall
+    and F1.", "Stack, queue, heap." Each item is a few words, with nothing
+    explaining them."""
+    body = text.strip().rstrip(".")
+    if not body or len(body.split()) > ENUMERATION_MAX_WORDS or _EXPLAINING_SYMBOLS.search(body):
+        return False
+    items = [item for item in _ENUMERATION_SPLIT.split(body) if item.strip()]
+    return len(items) >= 2 and all(len(item.split()) <= ENUMERATION_ITEM_WORDS for item in items)
+
+
+def list_is_expected(question: FreeTextQuestion) -> bool:
+    """Whether the question's own reference answer is a list, so a student's
+    list is not marked down as keyword stuffing."""
+    reference = question.reference_answer or ""
+    return is_enumeration(reference) or is_keyword_list(reference)
+
+
 def contains_grading_directive(answer: str) -> bool:
     """Whether the answer tells its marker how to mark it."""
     return _GRADING_DIRECTIVE.search(normalise_for_screening(answer)) is not None
@@ -680,7 +706,7 @@ class FreeTextClassifier:
         label = label_for(coverage, wrong_claim)
         score = coverage_score(coverage)
         confidence = confidence_for(score, similarity)
-        if is_keyword_list(answer):
+        if is_keyword_list(answer) and not list_is_expected(question):
             confidence = min(confidence, KEYWORD_LIST_CONFIDENCE)
             notes = (*notes, KEYWORD_LIST_NOTE)
         return Classification(
