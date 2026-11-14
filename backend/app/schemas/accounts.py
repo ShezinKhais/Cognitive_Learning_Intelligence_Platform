@@ -7,6 +7,7 @@ one, so this is where an organisation's people are added.
 
 from __future__ import annotations
 
+from enum import StrEnum
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -110,6 +111,47 @@ class CourseRoster(BaseModel):
 
 class RosterStudentAdd(BaseModel):
     email: str = Field(min_length=3, max_length=255, pattern=EMAIL_PATTERN)
+
+
+class BulkRosterIn(BaseModel):
+    """A pasted or uploaded list of students for a course: one per line, an
+    email or `name,email`, with an optional header row."""
+
+    text: str = Field(min_length=1, max_length=200_000)
+    confirm: bool = Field(
+        default=False, description="False previews what each line will do; true applies it."
+    )
+    create_missing: bool = Field(
+        default=False,
+        description="Admin only: create the student accounts that do not exist yet.",
+    )
+
+
+class BulkRosterOutcome(StrEnum):
+    ADD = "add"
+    CREATE = "create"
+    ALREADY = "already"
+    NO_ACCOUNT = "no_account"
+    NOT_STUDENT = "not_student"
+    INACTIVE = "inactive"
+    INVALID = "invalid"
+    DUPLICATE = "duplicate"
+
+
+class BulkRosterLine(BaseModel):
+    line: int
+    email: str
+    name: str | None = None
+    outcome: BulkRosterOutcome
+
+
+class BulkRosterOut(BaseModel):
+    applied: bool
+    lines: list[BulkRosterLine]
+    counts: dict[str, int]
+    roster: CourseRoster | None = Field(
+        default=None, description="The course after the change, when it was applied."
+    )
 
 
 class CourseLecturersSet(BaseModel):

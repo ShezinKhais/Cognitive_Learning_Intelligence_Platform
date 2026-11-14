@@ -180,10 +180,11 @@ joins late is shown the question that is open.
 
 Multiple-choice answers are scored deterministically against the lecturer-approved answer
 key, and the feedback cites the slide the question came from. A right answer is labelled
-**mastered** and a wrong one **struggling**. Free-text answers are stored
-and can be classified into **mastered**, **partial** or **struggling** by the
-local language model when free-text marking is enabled. Each student receives private feedback on their own answer,
-and the correct answer is revealed when the window closes.
+**mastered** and a wrong one **struggling**. Free-text answers are marked in the
+background against the question's reference answer and key points, as **mastered**,
+**partial** or **struggling** with a confidence; a low-confidence mark is shown as
+uncertain rather than as a verdict. Each student receives private feedback on their own
+answer, and the correct answer is revealed when the window closes.
 
 ### Phase 5 - Engagement scoring and alerts
 
@@ -293,7 +294,10 @@ See [docs/governance.md](docs/governance.md).
 ### Administrator
 
 - Import the timetable and student rosters from CSV or XLSX: clashes are found and
-  names matched against existing accounts. Storing what was imported is not built yet
+  names matched against existing accounts. Saving the imported sessions and enrolments
+  is in review (#240, in #278)
+- Add a class list to a course at once, pasted or from a CSV, with a preview first,
+  and create the missing student accounts (#293)
 - System status: database and model availability
 - An audit record of every change made on a user's behalf, filterable in governance
 - Data retention: preview what is due for deletion and run the purge
@@ -303,8 +307,9 @@ See [docs/governance.md](docs/governance.md).
 ## API Endpoints
 
 All routes are under `/api/v1`. Interactive documentation is served at `/docs` in
-development. A route marked **501** has an agreed contract and names the workstream that
-will implement it.
+development, and the full contract is in `backend/openapi.json`, which CI checks against
+the code. The table below lists the main routes; every route in the contract is
+implemented.
 
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
@@ -347,7 +352,7 @@ will implement it.
 | POST | `/sessions/{session_id}/reports` | lecturer, admin | Build the session report |
 | GET | `/reports/{report_id}` | lecturer, admin | The report, once built |
 | GET | `/reports/{report_id}/pdf` | lecturer, admin | The report as a PDF |
-| GET | `/sessions/{session_id}/summary/{student_id}` | student, staff | Performance summary (**501**, Cyber 1, Phase 7) |
+| GET | `/sessions/{session_id}/summary/{student_id}` | student, staff | A student's performance summary: their own, or for the session's staff |
 | POST | `/governance/deletion-requests` | admin | Ask for a session's or student's data to be erased |
 | GET | `/governance/deletion-requests` | admin | List deletion requests, by status |
 | GET | `/governance/deletion-requests/{request_id}` | admin | One deletion request |
@@ -559,7 +564,7 @@ rather than a component, so every phase ends with something that runs end to end
 | 5 | AI intelligence layer: free-text classification, Socratic chatbot | Done |
 | 6 | Attention signals and breakout groups | Done |
 | 7 | Reporting, retention and governance | Done |
-| 8 | Hardening, load testing and delivery | In progress |
+| 8 | Hardening, load testing and delivery | In progress: release acceptance in the real tenant (#234, #239), load on target hardware (#254) and submission documents (#257) remain |
 
 ![Project timeline](docs/images/gantt.png)
 
@@ -572,6 +577,24 @@ rather than a component, so every phase ends with something that runs end to end
 | Release validation | [Teams release acceptance](docs/teams-release-acceptance.md) |
 | Test plan and execution evidence | [Evidence tracker](https://github.com/ShezinKhais/Cognitive_Learning_Intelligence_Platform/issues/175), [student browser test report](docs/phase8-ai2-test-report.md) and [database recovery evidence](docs/database-integrity-and-recovery.md) |
 | Security and privacy reviews | [Review index](docs/security/README.md) |
+
+### Submitted documents
+
+> The submitted documents are held outside the repository. Each link is added once
+> the document is published (compiled by Nour, #257; master test plan and traceability
+> matrix, #175).
+
+| Document | Link |
+|---|---|
+| Proposal | Not yet linked |
+| Planning and Feasibility Report | Not yet linked |
+| Requirements Analysis (SRS) | Not yet linked |
+| Design Document | Not yet linked |
+| Test Plan and traceability matrix | Not yet linked (#175) |
+| Security and privacy reviews | [docs/security](docs/security/README.md) |
+| Final Report | Not yet linked |
+| Poster | Not yet linked |
+| Third-party licences | [docs/licenses.md](docs/licenses.md) |
 
 ### Reference documents
 
@@ -592,6 +615,13 @@ Written alongside the code, in `docs/`:
 | [Backup and restore](docs/backup-restore.md) | Taking and restoring a database backup |
 | [Load and recovery](docs/load-and-recovery.md) | The load-test harness and how the system behaves under failure: historical baseline of 67 checks with 40 students on 21 October 2026 |
 | [Teams frontend security](docs/teams-frontend-security.md) | Deployment security requirements for the Teams tab |
+| [Monitoring](docs/monitoring.md) | Error groups, the outage and error-spike alerts, triage and the synthetic check |
+| [Student engagement history](docs/student-engagement-history.md) | What a student is shown about their own engagement, and what they never are |
+
+Older audits and phase reports in `docs/` (`integration-audit-*`, `integration-candidate`,
+`phase-integration`, `phase6-*` to `phase8-*`) are dated snapshots. They record what was
+true when written; where they list a feature as missing, this README and the code are
+current.
 
 ## Team
 
