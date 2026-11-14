@@ -55,6 +55,8 @@ backend/var/
 # Database backups hold personal data
 backend/backups/
 
+# Demo backups from deploy/backup.sh. They hold personal data.
+backups/
 # Question-yield judging sheets hold judge names, lecture text and verdicts.
 # Add one with git add -f only with the judge's permission.
 backend/tests/eval/yield/**/*.csv
