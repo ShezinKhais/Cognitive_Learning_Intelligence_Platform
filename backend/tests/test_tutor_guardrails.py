@@ -1136,6 +1136,14 @@ class TestWholeAnswerFirst:
         assert shown(events) == ""
 
 
+class TestDoubledCitation:
+    async def test_a_doubled_citation_is_shown_as_a_single_one(self) -> None:
+        harness = Harness(replies=("Frozen layers keep general features. [[1]] Why?",))
+        events = await harness.run()
+        assert shown(events) == "Frozen layers keep general features. [1] Why?"
+        assert types(events).count("citation") == 1
+
+
 class TestConversation:
     """With converse set, a message no excerpt is near is talked about, not refused."""
 
