@@ -854,10 +854,10 @@ async def guarded_chat(
     title). The events are accepted, then delta, citation and follow_up events
     and completed, or one of unsupported, empty_retrieval and error.
 
-    overview, when given, supplies excerpts from across the session's material
-    for a question that names no topic (names_no_topic), which no excerpt is
-    near enough to by meaning. A question that names something unrelated is
-    still refused.
+    overview, when given, replaces retrieve for a question that names no topic
+    (names_no_topic), supplying excerpts from across the session's material,
+    since no excerpt is near such a question by meaning. A question that names
+    something unrelated is still searched, and refused.
 
     Nothing a failure raises reaches the student: an exception becomes the
     fixed error detail, and is logged with its type only.
@@ -879,26 +879,21 @@ async def guarded_chat(
     search = admission.question
     if context_turns:
         search = f"{context_turns[-1].question} {admission.question}"
+    # A question that names no topic has no nearest excerpt worth the name:
+    # whichever scrap scores closest (a housekeeping note, say) sits just
+    # inside the cutoff often enough, and the tutor then refuses from it. So
+    # it is answered from across the session's material instead of searched.
+    whole_session = overview is not None and names_no_topic(search)
     try:
-        found = await retrieve(search)
+        found = await (overview if whole_session else retrieve)(search)
     except Exception as exc:
         log.warning("tutor retrieval failed: %s", type(exc).__name__)
         yield event("error", detail=ERROR_DETAIL)
         return
 
-    context = screen_context(found, max_distance=max_distance)
-    whole_session = False
-    if context.empty and overview is not None and names_no_topic(search):
-        try:
-            spread = await overview(search)
-        except Exception as exc:
-            log.warning("tutor overview retrieval failed: %s", type(exc).__name__)
-            yield event("error", detail=ERROR_DETAIL)
-            return
-        # Chosen for coverage, not closeness, so no distance applies; the
-        # instruction screen still does.
-        context = screen_context(spread, max_distance=float("inf"))
-        whole_session = True
+    # An overview is chosen for coverage, not closeness, so no distance
+    # applies to it; the instruction screen still does.
+    context = screen_context(found, max_distance=float("inf") if whole_session else max_distance)
     if context.empty:
         yield event("empty_retrieval")
         return
