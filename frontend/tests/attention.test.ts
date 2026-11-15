@@ -224,7 +224,7 @@ test('bootstrap intervals resample whole clips and repeat with the same seed', (
 // -- #166: combined gaze and adaptive limits ------------------------------------
 
 import {
-  ADAPTATION, GAZE_MODEL, SUGGESTED_ADAPTATION, adaptedThresholds, classifyAdaptive, learn, startAdaptation,
+  ADAPTATION, GAZE_MODEL, SUGGESTED_ADAPTATION, adaptedThresholds, classifyAdaptive, gazeFor, learn, startAdaptation,
   type AdaptiveState, type GazeModel,
 } from '../src/features/attention/signals.ts'
 import { GAZE_LABELS, lookingTruth, seeded, tuneGaze } from '../eval/evaluation.ts'
@@ -240,9 +240,24 @@ function pose(yaw: number, pitch = 0, roll = 0, irisX = 0.5, irisY = 0.5, gapX =
 const GAZE: GazeModel = { kYaw: -100, kPitch: 0, maxEyeDisagreement: 0.15, maxRollDegrees: 45 }
 const centre = { yaw: 0, pitch: 0, roll: 0, irisX: 0.5, irisY: 0.5 }
 
-test('the combined gaze and adaptation ship with the settings fitted on the ten-participant recordings', () => {
+test('the combined gaze ships with the settings fitted on the ten-participant recordings; adaptation is off until #299', () => {
   assert.deepEqual(GAZE_MODEL, { kYaw: 150, kPitch: 0, maxEyeDisagreement: 0.15, maxRollDegrees: 45 })
-  assert.equal(ADAPTATION, SUGGESTED_ADAPTATION)
+  assert.equal(ADAPTATION, null)
+  assert.ok(SUGGESTED_ADAPTATION.minFrames > 0, 'the suggested settings are kept for switching it on')
+})
+
+test('before calibration succeeds, a student is judged by the head rule, not the combined gaze', () => {
+  // Eyes resting a little off centre (0.35), head straight at the screen.
+  const resting = pose(0, 0, 0, 0.35)
+  assert.equal(gazeFor(null, GAZE_MODEL), null)
+  const uncalibrated = classifyFace(resting, DEFAULT_THRESHOLDS, null, gazeFor(null, GAZE_MODEL))
+  assert.equal(uncalibrated.forward, true, 'not read as looking away')
+  // With the combined gaze and no centre it would be: 150 x 0.15 = 22.5 degrees.
+  assert.equal(classifyFace(resting, SHIPPED_DEFAULT, null, GAZE_MODEL).forward, false)
+  // Once calibrated to where those eyes rest, the combined gaze is used.
+  const own = { ...centre, irisX: 0.35 }
+  assert.equal(gazeFor(own, GAZE_MODEL), GAZE_MODEL)
+  assert.equal(classifyFace(resting, SHIPPED_CALIBRATED, own, gazeFor(own, GAZE_MODEL)).forward, true)
 })
 
 test('with a gaze model, the eyes can rescue a turned head as well as veto a still one', () => {

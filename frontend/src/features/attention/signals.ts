@@ -101,6 +101,15 @@ export const thresholdsFor = (calibration: Calibration | null): Thresholds =>
   calibration ? CALIBRATED_THRESHOLDS : DEFAULT_THRESHOLDS
 
 /**
+ * The combined gaze needs the student's own centre: without one, eyes that
+ * rest a little off centre read as looking away (kYaw 150 turns an iris at 0.40
+ * into 15 degrees). So a student who has not calibrated yet, or whose
+ * calibration failed, is judged by #159's head rule until it succeeds.
+ */
+export const gazeFor = (calibration: Calibration | null, gaze: GazeModel | null): GazeModel | null =>
+  calibration ? gaze : null
+
+/**
  * One student's own "looking at the screen": the head angles and iris
  * position they hold while doing so. Kept in the browser only.
  */
@@ -357,7 +366,11 @@ export const SUGGESTED_ADAPTATION: AdaptationSettings = {
   maxLimits: { yaw: 25, pitch: 30, roll: 25 },
   minFrames: 12,
 }
-export const ADAPTATION: AdaptationSettings | null = SUGGESTED_ADAPTATION
+/**
+ * What ships: off until Cyber 1's fairness sign-off (#299). Null keeps the
+ * fixed limits. Switching it on is setting this to SUGGESTED_ADAPTATION.
+ */
+export const ADAPTATION: AdaptationSettings | null = null
 
 export interface AdaptiveState {
   /** Good frames learned from so far. */

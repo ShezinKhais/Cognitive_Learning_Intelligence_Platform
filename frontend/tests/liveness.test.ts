@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import {
-  LIVENESS, MODEL_INPUT, SUGGESTED_LIVENESS, applyLiveness, cropBox, dueForCheck, faceBox, forCalibration, isSpoof, livenessFrame,
+  LIVENESS, MODEL_INPUT, SUGGESTED_LIVENESS, TUNED_LIVENESS, applyLiveness, cropBox, dueForCheck, faceBox, forCalibration, isSpoof, livenessFrame,
   loadInBackground, mayLearn, noteFrame, recordCheck, startLiveness, wantsLivenessModel,
   type LiveCheck, type LivenessSettings, type LivenessState,
 } from '../src/features/attention/liveness.ts'
@@ -22,9 +22,10 @@ function step(state: LivenessState, ms: number, live: number, faces = 1): Livene
   return faces === 1 && dueForCheck(state, ms, s) ? recordCheck(state, live, ms, s) : state
 }
 
-test('on, with the settings tuned on the recordings (#165, #253)', () => {
-  assert.deepEqual(LIVENESS, { everyMs: 1000, window: 2, spoofBelow: 0.5 })
-  assert.equal(wantsLivenessModel(LIVENESS, false), true, 'the classroom loads the model')
+test('off until the sign-offs, with the tuned settings kept ready (#165, #253, #299)', () => {
+  assert.equal(LIVENESS, null)
+  assert.equal(wantsLivenessModel(LIVENESS, false), false, 'the classroom does not load the model')
+  assert.deepEqual(TUNED_LIVENESS, { everyMs: 1000, window: 2, spoofBelow: 0.5 })
 })
 
 test('a face is rejected only when every check in a full window says not live', () => {

@@ -17,7 +17,7 @@ holds only `gaze_on_screen_ratio`, `face_present`, `speaking` and
 |---|---|---|
 | Head pose | `frontend/src/features/attention/signals.ts` | Reads real yaw, pitch and roll from MediaPipe's facial transformation matrix, so looking down at notes is not "forward". Falls back to #63's landmark proxies when there is no matrix. |
 | Features, then judgement | `signals.ts` (`faceFeatures`, `classifyFace`) | Each frame is turned into a few numbers first and judged second, so recordings can be replayed through exactly the judgement the browser makes. |
-| Calibration | `signals.ts` (`calibrate`), `face.worker.ts`, `AttentionControls.tsx` | Optional 3 seconds of looking at the screen sets the student's own centre. Kept in the browser only. |
+| Calibration | `signals.ts` (`calibrate`), `face.worker.ts`, `AttentionControls.tsx` | 3 seconds of looking at the screen sets the student's own centre. Since #298 it runs for every student when the camera starts. Kept in the browser only. |
 | Two sets of limits | `signals.ts` (`DEFAULT_THRESHOLDS`, `CALIBRATED_THRESHOLDS`, `thresholdsFor`) | Tuned limits for a student who has calibrated and one who has not. |
 | Recorder | `frontend/eval/attention-recorder.html`, `eval/recorder.ts` | Dev-only page (`npm run dev`) that records labelled 10-second clips as numbers per frame, never video, and downloads a CSV. |
 | Evaluation | `frontend/eval/evaluation.ts`, `scripts/evaluate-attention.ts` | Leave-one-participant-out tuning and testing, precision, recall, balanced accuracy, clip-level bootstrap intervals. |
@@ -242,13 +242,20 @@ The same overall. But this does not show the classroom can do without
 calibration: the "without" rows still let adaptation learn each person's
 centre from their calibrate clips, which is close to what calibration does.
 
-**Decided by AI 1 (Luna), November 2026, and switched on in PR #298:**
-- `LIVENESS` on, with the tuned settings `everyMs 1000, window 2, spoofBelow 0.5` (#165).
-- `GAZE_MODEL` on (`kYaw 150, kPitch 0`, fitted with calibration) and
-  `ADAPTATION` on with the suggested settings (#166).
+**Decided by AI 1 (Luna), November 2026, in PR #298:**
+- `LIVENESS` and `ADAPTATION` stay **off** until Cyber 1's fairness sign-off
+  (#299) and Cyber 2's device checks (#160). Their tuned settings are kept
+  ready: `TUNED_LIVENESS` (`everyMs 1000, window 2, spoofBelow 0.5`, #165) and
+  `SUGGESTED_ADAPTATION` (#166). Switching either on is a one-line change.
+- `GAZE_MODEL` on (`kYaw 150, kPitch 0`, fitted with calibration), and used
+  only for a calibrated student (`gazeFor`, below).
 - The tuned limits: `DEFAULT_THRESHOLDS` yaw 15° / pitch 30° / roll 30°,
   iris 0.3–0.7; `CALIBRATED_THRESHOLDS` the gaze limits yaw 20° / pitch 25°.
-- **Calibration is kept**, as an optional step in the student's camera panel.
+- **Calibration is for every student.** It starts by itself as soon as the
+  camera is on. If it fails (no clear face) or times out, the student is
+  offered "Try again", and until it succeeds they are judged by #159's head
+  rule, not the combined gaze: without their own centre, eyes that rest a
+  little off centre would read as looking away (`gazeFor` in `signals.ts`).
   It was removed for a while in this PR and put back, because without it a
   student's own normal is learned late or not at all:
   - every student starts from a centre of "straight at the camera";
@@ -265,14 +272,14 @@ centre from their calibrate clips, which is close to what calibration does.
   photo or video: no flag, alert or message goes to the lecturer, and nothing
   is stored about it.
 
-**Accepted limits of what is switched on** (review of #298):
+**Accepted limits** (review of #298):
 - **Anti-spoofing catches about half the spoofs:** 56% (40–71%) of photo and
   video clips, from six people; printed photos and weaker laptops were not
   tested. It is a deterrent, not a guarantee, and nothing is decided from it:
   a missed spoof counts as a face, a caught one as no face.
-- **Students who skip calibration.** It is optional, so some will. They are
-  judged from a straight-ahead centre with `DEFAULT_THRESHOLDS` until
-  adaptation has learned from typed answers. Off-centre clips (P1, P6, P8; 24
+- **Students whose calibration has not succeeded yet.** They are judged by the
+  head rule with `DEFAULT_THRESHOLDS`, from a straight-ahead centre, until a
+  retry works. Off-centre clips (P1, P6, P8; 24
   clips, so wide intervals) read "looking" about as well without calibration
   as with it using the tuned pose limits (87.2% against 86.9% recall,
   `cv/RESULTS.md`, by condition); sitting far back is the weak case. A head
@@ -290,18 +297,19 @@ which is `false` in `frontend/.env.example` and the demo deployment. No
 classroom runs them until that is turned on.
 
 **Still needed before that, and before merging:**
-- Cyber 1 (Hunain) fairness sign-off on `LIVENESS` and `ADAPTATION`, as #165
-  and #166 require, including how students who skip the optional calibration
-  are judged, across camera positions and physical needs.
+- Cyber 1 (Hunain) fairness sign-off (#299) on `LIVENESS` and `ADAPTATION`,
+  as #165 and #166 require, before either is switched on, including how
+  students whose calibration fails are judged, across camera positions and
+  physical needs.
 - Cyber 2's device acceptance checklist (#160), with a spoof check, camera
   performance, glasses, lighting and a weaker device.
 
 ## Next: adaptive limits and combined gaze (#166)
 
-**Status: measured on ten participants and switched on in PR #298** (see the
-second round above). `GAZE_MODEL` and `ADAPTATION` in `signals.ts` now hold the
-settings fitted there; setting either back to `null` returns the browser to
-#159's rule. The plan below is kept as the record of how it was built.
+**Status: measured on ten participants** (see the second round above).
+`GAZE_MODEL` in `signals.ts` holds the fitted settings and is used for
+calibrated students; `ADAPTATION` is `null` until #299, with
+`SUGGESTED_ADAPTATION` kept ready. Null returns the browser to #159's rule. The plan below is kept as the record of how it was built.
 
 | Part | File | What it does |
 |---|---|---|
@@ -344,11 +352,11 @@ improves and the existing labels do not get worse.
 
 ## Next: anti-spoofing (#165)
 
-**Status: measured on six participants' spoof clips and switched on in PR #298**
+**Status: measured on six participants' spoof clips; off until #299 and #160**
 (see the second round above). `LIVENESS` in
-`frontend/src/features/attention/liveness.ts` holds the tuned settings; setting
-it back to `null` turns the check off, and the model is then not even
-downloaded in the classroom.
+`frontend/src/features/attention/liveness.ts` is `null`, so the classroom
+never downloads the model; `TUNED_LIVENESS` holds the tuned settings for
+switching it on.
 
 **What a rejection does, and does not do (G34: anti-spoofing without
 proctoring).** A rejected face only changes the student's own signal in the
