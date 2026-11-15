@@ -16,6 +16,11 @@ Owner: General CS, Phase 8.
 - Teams' own meeting end usually arrives first when everyone leaves and ends
   the class anyway. This covers a meeting whose end is not delivered, and the
   case where everyone has left but the meeting is still open in Teams.
+- People who go to a Teams breakout room leave the main call. While the class
+  has breakout rooms open, neither wait starts; it is held instead, and
+  starts when the lecturer closes the rooms if the call is still empty (or
+  the lecturer still out of it). Anyone the hold is waiting for rejoining the
+  main call drops it.
 - A process that restarted mid-meeting has not seen the joins before it. So
   an emptied call leaves the class running if anyone still has it open in
   C.L.I.P, and a leave from someone it never saw join is ignored.
@@ -66,15 +71,28 @@ class Wait:
     sleeping: bool = True
 
 
+@dataclass(frozen=True)
+class Held:
+    """A wait not started because the class had breakout rooms open."""
+
+    session_id: UUID
+    reason: str
+    waiting_for: frozenset[str] | None
+
+
 class MeetingPresence:
     def __init__(self) -> None:
         self.present: dict[str, set[str]] = {}
         self.waits: dict[str, Wait] = {}
+        self.held: dict[str, Held] = {}
 
     def joined(self, meeting_id: str, people: Iterable[str]) -> Wait | None:
         """Put people in the call. Returns the wait their joining cancelled."""
         people = set(people)
         self.present.setdefault(meeting_id, set()).update(people)
+        held = self.held.get(meeting_id)
+        if held is not None and (held.waiting_for is None or held.waiting_for & people):
+            del self.held[meeting_id]
         wait = self.waits.get(meeting_id)
         if wait is not None and (wait.waiting_for is None or wait.waiting_for & people):
             return self.cancel(meeting_id)
@@ -111,6 +129,7 @@ class MeetingPresence:
         registered while end runs, so it can still be cancelled; end checks
         pending() before acting."""
         self.cancel(meeting_id)
+        self.held.pop(meeting_id, None)
         if delay <= 0:
             return None
         wait = Wait(
@@ -148,8 +167,24 @@ class MeetingPresence:
             wait.task.cancel()
         return wait
 
+    def hold(
+        self,
+        meeting_id: str,
+        session_id: UUID,
+        reason: str,
+        waiting_for: Iterable[str] | None = None,
+    ) -> Wait | None:
+        """Keep a wait to start once the class's breakout rooms close, in
+        place of any wait running now. Returns the wait it cancelled."""
+        cancelled = self.cancel(meeting_id)
+        self.held[meeting_id] = Held(
+            session_id, reason, frozenset(waiting_for) if waiting_for is not None else None
+        )
+        return cancelled
+
     def forget(self, meeting_id: str) -> None:
         self.present.pop(meeting_id, None)
+        self.held.pop(meeting_id, None)
         self.cancel(meeting_id)
 
 
@@ -173,6 +208,13 @@ async def end_class(meeting_id: str, wait: Wait) -> None:
         async with get_session_factory()() as db:
             if await meetings.directory.session_for(meeting_id) != session_id or called_off():
                 return
+            if classroom.rooms_open(session_id):
+                # Rooms opened during the wait: the call is empty because
+                # people are in them. Start again once the rooms close.
+                presence.hold(meeting_id, session_id, reason, wait.waiting_for)
+                log.info("meeting %s: breakout rooms are open; %s held", meeting_id, reason)
+                await classroom.tell_ending(session_id, None, None)
+                return
             if reason == EVERYONE_LEFT and classroom.anyone_connected(session_id):
                 log.info(
                     "meeting %s is empty in Teams but its class still has people connected; "
@@ -193,6 +235,29 @@ async def end_class(meeting_id: str, wait: Wait) -> None:
         log.warning("meeting %s: its class was not ended (%s): %s", meeting_id, reason, exc)
     except Exception:
         log.exception("meeting %s: ending its class failed (%s)", meeting_id, reason)
+
+
+async def rooms_closed(session_id: UUID) -> Wait | None:
+    """The class's breakout rooms closed: start any wait they held. People
+    coming back to the main call in the wait cancel it as usual."""
+    meeting_id = (await meetings.directory.meetings_for([session_id])).get(session_id)
+    held = presence.held.get(meeting_id) if meeting_id else None
+    if held is None or held.session_id != session_id:
+        return None
+    wait = presence.end_after(
+        meeting_id,
+        session_id,
+        held.reason,
+        get_settings().teams_empty_meeting_end_seconds,
+        end_class,
+        waiting_for=held.waiting_for,
+    )
+    if wait is not None:
+        log.info(
+            "meeting %s: rooms closed; %s, class ends at %s", meeting_id, wait.reason, wait.ends_at
+        )
+        await classroom.tell_ending(session_id, wait.reason, wait.ends_at)
+    return wait
 
 
 # -- what the lecturer can do about it -------------------------------------------
@@ -223,6 +288,9 @@ async def set_end_when_lecturer_leaves(
     await db.commit()
     if not on:
         meeting_id = (await meetings.directory.meetings_for([session_id])).get(session_id)
+        held = presence.held.get(meeting_id) if meeting_id else None
+        if held is not None and held.reason == LECTURER_LEFT:
+            del presence.held[meeting_id]
         wait = presence.waits.get(meeting_id) if meeting_id else None
         if wait is not None and wait.reason == LECTURER_LEFT:
             presence.cancel(meeting_id)

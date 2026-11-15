@@ -1,6 +1,7 @@
 """Ending a class after its Teams call empties: a rejoin or Keep running that
 arrives while the end is looking things up still stops it, and only the class
-the wait was started for is ended."""
+the wait was started for is ended. While breakout rooms are open the end is
+held, and starts again once they close."""
 
 from __future__ import annotations
 
@@ -38,6 +39,9 @@ class _Directory:
         await self.release.wait()
         return self.session_id
 
+    async def meetings_for(self, session_ids: list[UUID]) -> dict[UUID, str]:
+        return {sid: MEETING for sid in session_ids if sid == self.session_id}
+
 
 @pytest.fixture
 def ending(monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
@@ -47,6 +51,10 @@ def ending(monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
     owner_reached, owner_release = asyncio.Event(), asyncio.Event()
     owner_release.set()
     ended: list[UUID] = []
+    rooms = {"open": False}
+    settings = teams_presence.get_settings().model_copy(
+        update={"teams_empty_meeting_end_seconds": 0.01}
+    )
 
     async def meeting_owner(*_args: object) -> object:
         owner_reached.set()
@@ -60,6 +68,8 @@ def ending(monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
     monkeypatch.setattr(teams_presence.meetings, "directory", directory)
     monkeypatch.setattr(teams_presence, "get_session_factory", lambda: _Db)
     monkeypatch.setattr(teams_presence.classroom, "anyone_connected", lambda _sid: False)
+    monkeypatch.setattr(teams_presence.classroom, "rooms_open", lambda _sid: rooms["open"])
+    monkeypatch.setattr(teams_presence, "get_settings", lambda: settings)
     monkeypatch.setattr(teams_presence.session_lifecycle, "meeting_owner", meeting_owner)
     monkeypatch.setattr(teams_presence.session_lifecycle, "end_session", end_session)
     return {
@@ -69,6 +79,7 @@ def ending(monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
         "owner_reached": owner_reached,
         "owner_release": owner_release,
         "ended": ended,
+        "rooms": rooms,
     }
 
 
@@ -131,3 +142,35 @@ async def test_a_new_wait_during_the_end_is_left_in_place(ending) -> None:  # no
     assert ending["ended"] == []
     assert ending["presence"].waits == {MEETING: newer}
     ending["presence"].cancel(MEETING)
+
+
+async def test_rooms_opened_in_the_wait_hold_the_end_until_they_close(ending) -> None:  # noqa: ANN001
+    wait = _start(ending)
+    ending["rooms"]["open"] = True
+    await asyncio.wait_for(wait.task, 2)
+    assert ending["ended"] == []
+    assert MEETING in ending["presence"].held and ending["presence"].waits == {}
+
+    ending["rooms"]["open"] = False
+    again = await teams_presence.rooms_closed(ending["session_id"])
+    assert again is not None and MEETING not in ending["presence"].held
+    await asyncio.wait_for(again.task, 2)
+    assert ending["ended"] == [ending["session_id"]]
+
+
+async def test_a_rejoin_while_held_drops_the_hold(ending) -> None:  # noqa: ANN001
+    presence: MeetingPresence = ending["presence"]
+    presence.hold(MEETING, ending["session_id"], EVERYONE_LEFT)
+    presence.joined(MEETING, {"student"})
+    assert presence.held == {}
+    assert await teams_presence.rooms_closed(ending["session_id"]) is None
+    assert ending["ended"] == []
+
+
+async def test_a_held_lecturer_wait_waits_for_the_lecturer_only(ending) -> None:  # noqa: ANN001
+    presence: MeetingPresence = ending["presence"]
+    presence.hold(MEETING, ending["session_id"], LECTURER_LEFT, waiting_for={"lecturer"})
+    presence.joined(MEETING, {"student"})
+    assert MEETING in presence.held
+    presence.joined(MEETING, {"lecturer"})
+    assert presence.held == {}

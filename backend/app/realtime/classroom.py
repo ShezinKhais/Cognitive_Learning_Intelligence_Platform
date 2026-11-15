@@ -1228,6 +1228,12 @@ class Classroom:
             await self._raise_room_alert(alert)
         return None
 
+    def rooms_open(self, session_id: UUID) -> bool:
+        """Whether the class is split into breakout rooms, by the lecturer's
+        plan or by a student naming the room they are in."""
+        live = self._live.get(session_id)
+        return live is not None and bool(live.plan or live.rooms)
+
     def room_plan(self, session_id: UUID) -> dict[UUID, str] | None:
         """The lecturer's room assignments, or None when the class is not running here."""
         live = self._live.get(session_id)

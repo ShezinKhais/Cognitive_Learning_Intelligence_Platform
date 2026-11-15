@@ -25,6 +25,7 @@ from app.realtime.classroom import classroom
 from app.realtime.hub import hub
 from app.realtime.rooms import room_key, shown_label
 from app.schemas.breakout import PlannedRoom, RoomMember, RoomPlanIn, RoomPlanOut
+from app.services import teams_presence
 from app.services.course_membership import students_on
 
 
@@ -99,10 +100,13 @@ async def assign(
     plan = validate_plan(payload, students, settings.max_rooms_per_session)
     if not await classroom.assign_rooms(row.session_id, plan):
         raise ConflictError("Start the class before splitting it into rooms.")
+    if not classroom.rooms_open(row.session_id):
+        await teams_presence.rooms_closed(row.session_id)
     return describe(row, students)
 
 
 async def close(db: AsyncSession, row: Session) -> RoomPlanOut:
     if not await classroom.close_rooms(row.session_id):
         raise ConflictError("The class is not running.")
+    await teams_presence.rooms_closed(row.session_id)
     return describe(row, await roster(db, row))

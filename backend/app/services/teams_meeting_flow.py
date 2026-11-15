@@ -476,10 +476,20 @@ async def participants_changed(
     if not active:
         return
     delay = settings.teams_empty_meeting_end_seconds
+    rooms_open = classroom.rooms_open(session_id)
     if emptied:
+        if rooms_open:
+            if presence.hold(meeting_id, session_id, EVERYONE_LEFT) is not None:
+                await classroom.tell_ending(session_id, None, None)
+            log.info("meeting %s: call empty with breakout rooms open; held", meeting_id)
+            return
         wait = presence.end_after(meeting_id, session_id, EVERYONE_LEFT, delay, end_class)
     elif end_with_lecturer and (lecturer := await _teams_id(db, settings, instructor_id)) in aads:
-        if presence.waits.get(meeting_id) is not None:
+        if presence.waits.get(meeting_id) is not None or meeting_id in presence.held:
+            return
+        if rooms_open:
+            presence.hold(meeting_id, session_id, LECTURER_LEFT, waiting_for={lecturer})
+            log.info("meeting %s: lecturer left with breakout rooms open; held", meeting_id)
             return
         wait = presence.end_after(
             meeting_id, session_id, LECTURER_LEFT, delay, end_class, waiting_for={lecturer}

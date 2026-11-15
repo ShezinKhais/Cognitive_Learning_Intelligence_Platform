@@ -416,6 +416,35 @@ async def test_someone_rejoining_in_the_wait_keeps_the_class_running(world) -> N
     assert world["emptied"] == []
 
 
+async def test_everyone_leaving_for_breakout_rooms_ends_nothing(world, monkeypatch) -> None:  # noqa: ANN001
+    world["settings"] = world["settings"].model_copy(
+        update={"teams_empty_meeting_end_seconds": 0.01}
+    )
+    monkeypatch.setattr(classroom, "rooms_open", lambda _sid: True)
+    await _started_unlinked(world, _Teams(world["organiser"], f"{world['code']} Week 5"))
+    await _in_call(world, "j1", ("29:a", "aad-a"))
+    await _in_call(world, "l1", ("29:a", "aad-a"), name=LEAVE)
+    await asyncio.sleep(0.05)
+    assert world["emptied"] == []
+    held = flow_module.presence.held[world["meeting"]]
+    assert held.reason == "everyone_left" and flow_module.presence.waits == {}
+
+
+async def test_the_lecturer_leaving_for_a_breakout_room_ends_nothing(world, monkeypatch) -> None:  # noqa: ANN001
+    world["settings"] = world["settings"].model_copy(
+        update={"teams_empty_meeting_end_seconds": 0.01}
+    )
+    monkeypatch.setattr(classroom, "rooms_open", lambda _sid: True)
+    lecturer = world["organiser"]
+    await _started_unlinked(world, _Teams(lecturer, f"{world['code']} Week 5"))
+    await _end_with_lecturer(world, True)
+    await _in_call(world, "j1", ("29:l", lecturer), ("29:a", "aad-a"))
+    await _in_call(world, "l1", ("29:l", lecturer), name=LEAVE)
+    await asyncio.sleep(0.05)
+    assert world["emptied"] == []
+    assert flow_module.presence.held[world["meeting"]].reason == "lecturer_left"
+
+
 async def test_a_leave_from_someone_never_seen_joining_ends_nothing(world) -> None:
     settings = world["settings"].model_copy(update={"teams_empty_meeting_end_seconds": 0.01})
     world["settings"] = settings
