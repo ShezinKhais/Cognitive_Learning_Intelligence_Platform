@@ -942,8 +942,22 @@ class QuestionGenerator:
         # material, until enough pass the same checks or it stops helping.
         dry = 0
         while len(accepted) < wanted and calls < self._max_calls and dry < TOP_UP_DRY_CALLS:
-            added = keep(await self._draft(chunks, DRAFTS_PER_CALL, usable))
             calls += 1
+            try:
+                outcome = await self._draft(chunks, DRAFTS_PER_CALL, usable)
+            except Exception:
+                # A timeout or model error on a top-up call ends the top-up,
+                # not the material: the drafts already kept passed every
+                # check, and losing them would leave fewer than before (#307).
+                logger.warning(
+                    "material %s: asking again failed after %d calls; keeping the %d kept",
+                    material_id,
+                    calls,
+                    len(accepted),
+                    exc_info=True,
+                )
+                break
+            added = keep(outcome)
             dry = 0 if added else dry + 1
         logger.info(
             "material %s: kept %d of %d wanted from %d drafts in %d calls; rejected by %s",

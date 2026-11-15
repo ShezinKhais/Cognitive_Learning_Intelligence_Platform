@@ -608,6 +608,31 @@ def test_asking_again_stops_when_calls_add_nothing():
     assert client.calls == 1 + 3
 
 
+def test_a_failed_call_while_asking_again_keeps_what_passed():
+    """Review of #307: a timeout on a top-up call stops asking again, and the
+    drafts already kept are returned rather than lost with the error."""
+
+    class _FailsOnThird(_Replies):
+        def __init__(self) -> None:
+            super().__init__([f"[{_mcq(0)}]", f"[{_mcq(1)}]"])
+            completions = self.chat.completions
+            first = completions.create
+
+            async def create(model, messages):
+                if self.calls == 2:
+                    self.calls += 1
+                    raise TimeoutError("the model did not answer in time")
+                return await first(model, messages)
+
+            completions.create = create
+
+    client = _FailsOnThird()
+    generator = QuestionGenerator(client, "m", count=5, rng=random.Random(1))
+    drafts = asyncio.run(generator.generate(uuid.uuid4(), _chunks_with_text()))
+    assert [d.prompt for d in drafts] == [json.loads(_mcq(i))["prompt"] for i in (0, 1)]
+    assert client.calls == 3
+
+
 def test_never_more_than_wanted_and_no_repeats():
     same = f"[{_mcq(0)}, {_mcq(0)}, {_mcq(1)}, {_mcq(2)}]"
     client = _Replies([same, same, f"[{_mcq(3)}]"])
