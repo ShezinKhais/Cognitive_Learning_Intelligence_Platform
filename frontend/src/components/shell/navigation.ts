@@ -46,6 +46,7 @@ export const NAVIGATION: Record<Role, readonly NavItem[]> = {
     { to: '/student/progress', label: 'Progress over time', icon: TrendingUp },
     { to: '/student/consideration', label: 'Special consideration', icon: HeartHandshake },
     { to: '/student/my-data', label: 'My data', icon: Database },
+    { to: '/consent', label: 'Privacy choices', icon: ShieldCheck },
   ],
   admin: [
     { to: '/admin/accounts', label: 'Accounts', icon: UserCog },
