@@ -313,15 +313,23 @@ async def test_the_question_and_the_reply_go_through_the_gateway_as_live_work(
     assert EXCERPT in messages[0]["content"] + messages[1]["content"]
 
 
-async def test_a_class_with_no_material_is_told_there_is_nothing_to_draw_on(db, app, tutor) -> None:
+async def test_a_class_with_no_material_is_talked_to_without_excerpts(db, app, tutor) -> None:
     client, factory, _ = db
     live = await _running_class(db, app)
     async with factory() as remove:
         await remove.execute(delete(RagChunk).where(RagChunk.chunk_id == live.chunk_id))
         await remove.commit()
+    tutor.model.reply = (
+        "Frozen layers keep what the network already learned. Why might that help?",
+    )
 
-    assert _types(_events(_ask(client, live.id))) == ["accepted", "empty_retrieval"]
-    assert tutor.model.prompts == []
+    events = _events(_ask(client, live.id))
+
+    assert _types(events)[-1] == "completed"
+    assert not [event for event in events if event["type"] == "citation"]
+    [(_, messages)] = tutor.model.prompts
+    assert EXCERPT not in messages[0]["content"] + messages[1]["content"]
+    assert "no excerpts" in messages[0]["content"]
 
 
 async def test_only_this_lecturers_finished_material_is_searched(db, app, tutor) -> None:

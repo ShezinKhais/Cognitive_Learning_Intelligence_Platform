@@ -353,6 +353,7 @@ class TutorExchange:
             describe=self._describe,
             earlier=earlier,
             overview=self._overview if self._context.discussion is None else None,
+            converse=self._context.discussion is None,
         )
         try:
             # Closed on the way out, so a reader that stops early still ends
