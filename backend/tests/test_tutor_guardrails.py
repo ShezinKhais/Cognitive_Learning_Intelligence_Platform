@@ -892,6 +892,12 @@ class TestGuardedChat:
         assert "week 9" not in harness.prompts[0].user
         assert "Recursion needs a base case." in harness.prompts[0].user
 
+    async def test_a_question_naming_a_number_is_searched_not_overviewed(self) -> None:
+        harness = Harness(chunks=[chunk(distance=0.5)], overview=[chunk(distance=0.0)])
+        events = await harness.run("Explain 404")
+        assert types(events) == ["accepted", "empty_retrieval"]
+        assert harness.retrieved and harness.overviewed == []
+
     async def test_an_unrelated_question_is_still_refused_with_an_overview(self) -> None:
         harness = Harness(chunks=[chunk(distance=0.5)], overview=[chunk(distance=0.0)])
         events = await harness.run("Give me a recipe for chocolate cake")
@@ -1174,6 +1180,10 @@ class TestNamesNoTopic:
             "Why are the base layers frozen?",
             "Give me a recipe for chocolate cake",
             "Ask me a question about recursion",
+            "Explain 404",
+            "Give me a hint about 3NF",
+            "Explain the \u5149\u5408\u4f5c\u7528 slide",
+            "Can you explain photosynth\u00e8se?",
             "",
         ):
             assert not names_no_topic(question), question

@@ -823,7 +823,10 @@ _NO_TOPIC_WORDS = frozenset(
 def names_no_topic(text: str) -> bool:
     """True when a question asks about the class as a whole and names nothing
     to search for, like the panel's starter prompts."""
-    words = re.findall(r"[a-z]+", text.lower())
+    # Every run of letters or digits in any script is a token, so a number
+    # ("Explain 404") or an accented or non-Latin word still
+    # counts as naming something. Apostrophes split, so "today's" is "today" + "s".
+    words = re.findall(r"[^\W_]+", text.casefold())
     return bool(words) and all(word in _NO_TOPIC_WORDS for word in words)
 
 
