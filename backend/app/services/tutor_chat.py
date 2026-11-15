@@ -60,6 +60,9 @@ from app.services.tutor_guardrails import EarlierTurn, OpenQuestion, TutorPrompt
 
 log = logging.getLogger("clip.tutor")
 
+# How many of a session's excerpts an overview question picks its spread from.
+OVERVIEW_SCAN_LIMIT = 2000
+
 NDJSON = "application/x-ndjson"
 RATE_WINDOW_SECONDS = 60.0
 # How much of an excerpt a citation shows. Enough to recognise the passage.
@@ -349,6 +352,7 @@ class TutorExchange:
             generate=self._generate,
             describe=self._describe,
             earlier=earlier,
+            overview=self._overview if self._context.discussion is None else None,
         )
         try:
             # Closed on the way out, so a reader that stops early still ends
@@ -405,6 +409,38 @@ class TutorExchange:
                     chunk_text=chunk.chunk_text,
                     source_page=chunk.source_page,
                     distance=row.distance,
+                )
+            )
+        return found
+
+    async def _overview(self, question: str) -> Sequence[RetrievedChunk]:
+        """Excerpts spread evenly across the session's material, in order, for
+        a question about the class as a whole ("ask me a question that checks
+        my understanding"), which names nothing a search could match."""
+        if not self._context.materials:
+            return []
+        statement = (
+            select(RagChunk)
+            .where(RagChunk.source_material_id.in_(self._context.materials))
+            .order_by(RagChunk.source_material_id, RagChunk.chunk_index)
+            .limit(OVERVIEW_SCAN_LIMIT)
+        )
+        async with self._sessions()() as db:
+            chunks = list((await db.execute(statement)).scalars().all())
+        want = self._settings.chat_retrieved_chunks
+        if len(chunks) > want:
+            last = len(chunks) - 1
+            chunks = [chunks[round(i * last / max(want - 1, 1))] for i in range(want)]
+        found = []
+        for chunk in chunks:
+            self._found_in[chunk.chunk_id] = chunk.source_material_id
+            found.append(
+                RetrievedChunk(
+                    chunk_id=chunk.chunk_id,
+                    chunk_index=chunk.chunk_index,
+                    chunk_text=chunk.chunk_text,
+                    source_page=chunk.source_page,
+                    distance=0.0,
                 )
             )
         return found
