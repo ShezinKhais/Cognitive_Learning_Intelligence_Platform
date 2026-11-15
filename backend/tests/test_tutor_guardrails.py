@@ -880,6 +880,18 @@ class TestGuardedChat:
         assert WHOLE_SESSION_NOTE in harness.prompts[0].user
         assert all(panel_accepts(e) for e in events)
 
+    async def test_a_starter_prompt_skips_a_scrap_that_lands_inside_the_cutoff(self) -> None:
+        # On the demo material a housekeeping note scored 0.429 against the
+        # hint starter, inside the cutoff, and the tutor refused from it.
+        scrap = chunk("Please attend the week 9 lecture.", distance=0.42)
+        spread = [chunk("Recursion needs a base case.", distance=0.0)]
+        harness = Harness(chunks=[scrap], overview=spread)
+        events = await harness.run("Can you give me a hint about the topic we just covered?")
+        assert types(events)[-1] == "completed"
+        assert harness.retrieved == [] and harness.overviewed
+        assert "week 9" not in harness.prompts[0].user
+        assert "Recursion needs a base case." in harness.prompts[0].user
+
     async def test_an_unrelated_question_is_still_refused_with_an_overview(self) -> None:
         harness = Harness(chunks=[chunk(distance=0.5)], overview=[chunk(distance=0.0)])
         events = await harness.run("Give me a recipe for chocolate cake")
