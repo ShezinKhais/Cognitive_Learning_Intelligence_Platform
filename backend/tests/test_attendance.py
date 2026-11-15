@@ -153,5 +153,5 @@ async def test_the_course_view_has_one_column_per_finished_class(db, world) -> N
     assert rows["Cat"].classes == [False, False] and rows["Cat"].attended == 0
 
     csv_text = attendance.course_csv(out)
-    assert csv_text.startswith("﻿student,email,attended,of,")
+    assert csv_text.startswith("﻿student,email,attended,late,of,")
     assert "Ann," in csv_text and ",present," in csv_text + ","

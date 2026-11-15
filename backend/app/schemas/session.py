@@ -69,8 +69,20 @@ class SessionOut(BaseModel):
     starts_at: datetime | None = None
     ended_at: datetime | None = None
     teams_meeting_id: str | None = None
+    teams_join_url: str | None = Field(
+        default=None,
+        description="A link that opens the linked Teams meeting, when C.L.I.P is in it.",
+    )
+    end_when_lecturer_leaves: bool = Field(
+        default=False,
+        description="The class ends when its lecturer leaves the linked Teams call.",
+    )
+    started_at: datetime | None = Field(
+        default=None, description="When the class actually started."
+    )
     participant_count: int = Field(
-        default=0, description="Students connected now, each counted once."
+        default=0,
+        description="Students present now, in C.L.I.P or the linked Teams call, each counted once.",
     )
     questions_delivered: int = 0
     paused: bool = Field(

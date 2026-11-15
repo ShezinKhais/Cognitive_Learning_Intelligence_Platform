@@ -22,15 +22,21 @@ skipped.
 from __future__ import annotations
 
 import logging
-from urllib.parse import quote
+import re
+from urllib.parse import quote, unquote
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import Principal
 from app.core.config import Settings
-from app.core.errors import ConflictError, PermissionError_, ServiceUnavailableError
+from app.core.errors import (
+    ConflictError,
+    PermissionError_,
+    ServiceUnavailableError,
+    ValidationError,
+)
 from app.models.teams_meeting_reference import TeamsMeetingReference
 from app.repositories.teams_user_mapping_repository import TeamsUserMappingRepository
 from app.schemas.identity import Role
@@ -100,3 +106,44 @@ async def require_organiser(
             meeting_id,
         )
         raise PermissionError_("Only the meeting's organiser can link a session to it.")
+
+
+# A Teams join link carries the meeting chat's thread, which is the
+# conversation the bot posts into once it is in the meeting.
+_THREAD = re.compile(r"19:meeting_[A-Za-z0-9_\-]+@thread\.v2")
+
+
+def thread_in(join_url: str) -> str | None:
+    """The meeting chat thread a Teams join link names, or None."""
+    found = _THREAD.search(unquote(unquote(join_url)))
+    return found.group(0) if found else None
+
+
+async def meeting_for_join_link(db: AsyncSession, join_url: str, settings: Settings) -> str:
+    """The meeting id the bot knows for the meeting this join link opens.
+
+    The bot learns a meeting's id when it is added to the meeting, so the
+    link is matched against the meetings it is in. A link to a meeting it
+    has not been added to is refused with what to do about it.
+    """
+    thread = thread_in(join_url)
+    if thread is None:
+        raise ValidationError(
+            "That is not a Teams meeting link. Copy it from the meeting's "
+            "invitation: Join the meeting now."
+        )
+    meeting_id = await db.scalar(
+        select(TeamsMeetingReference.meeting_id)
+        .where(
+            func.lower(TeamsMeetingReference.conversation_id).startswith(thread.lower()),
+            func.lower(TeamsMeetingReference.tenant_id) == settings.tenant_id.lower(),
+        )
+        .order_by(TeamsMeetingReference.seen_at.desc())
+        .limit(1)
+    )
+    if meeting_id is None:
+        raise ConflictError(
+            "C.L.I.P is not in this meeting yet. Open the meeting in Teams, add C.L.I.P "
+            "from Apps, then link it here."
+        )
+    return meeting_id
