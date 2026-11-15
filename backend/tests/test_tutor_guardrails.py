@@ -34,6 +34,7 @@ from app.services.tutor_guardrails import (
     SYSTEM_PROMPT,
     TUTOR_PROMPT_VERSION,
     UNSUPPORTED_MARKER,
+    WHOLE_SESSION_NOTE,
     Admitted,
     AnswerPolicy,
     AnswerViolation,
@@ -876,6 +877,7 @@ class TestGuardedChat:
         assert types(events)[-1] == "completed"
         assert harness.overviewed and len(harness.prompts) == 1
         assert "Recursion needs a base case." in harness.prompts[0].user
+        assert WHOLE_SESSION_NOTE in harness.prompts[0].user
         assert all(panel_accepts(e) for e in events)
 
     async def test_an_unrelated_question_is_still_refused_with_an_overview(self) -> None:
