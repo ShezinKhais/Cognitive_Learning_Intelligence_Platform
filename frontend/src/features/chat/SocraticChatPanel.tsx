@@ -75,12 +75,12 @@ export function SocraticChatPanel({
               {discussion ? 'Ask about the discussion' : 'Socratic learning assistant'}
             </h2>
             <p className="text-sm text-muted-foreground">
-              {discussion ? 'Catch up from published, timestamped meeting notes' : 'Guided hints grounded in your lecturer’s material'}
+              {discussion ? 'Catch up from published, timestamped meeting notes' : 'Explains your lecturer’s material and checks your understanding'}
             </p>
           </div>
         </div>
         <p className="mt-3 rounded-lg bg-muted px-3 py-2 text-xs text-foreground">
-          This assistant helps you reason through a topic. It will guide you instead of giving a final answer.
+          Ask about the lecture or about studying. Answers from the material show their sources, and quiz answers are never given away.
         </p>
       </header>
 
@@ -224,6 +224,12 @@ function Exchange({
         )}
         {exchange.phase === 'failed' && (
           <StateNote title="Response interrupted" detail="Please try asking again." />
+        )}
+
+        {exchange.phase === 'completed' && exchange.answer && exchange.citations.length === 0 && (
+          <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
+            General answer, not from your lecturer’s material. Check it against the lecture.
+          </p>
         )}
 
         {exchange.citations.length > 0 && (
