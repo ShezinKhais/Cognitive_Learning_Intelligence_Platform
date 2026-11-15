@@ -70,7 +70,7 @@ from app.services.text_screening import (
 
 log = logging.getLogger("clip.tutor")
 
-TUTOR_PROMPT_VERSION = "tutor-guard-2"
+TUTOR_PROMPT_VERSION = "tutor-guard-3"
 
 # The student panel stops typing at 2000 characters; the server holds the same line.
 MAX_QUESTION_CHARS = 2000
@@ -453,6 +453,12 @@ CITE_REMINDER = (
     "rely on as [1], [2] and so on."
 )
 
+WHOLE_SESSION_NOTE = (
+    "The student is asking about the session as a whole and names no topic. The excerpts are "
+    "spread across the session's material: choose one idea from them and reply about that, "
+    "citing it."
+)
+
 HINT_ONLY_NOTE = (
     "The student asked for the answer outright. Do not give it. Offer a hint and one guiding "
     "question instead."
@@ -514,6 +520,7 @@ def build_tutor_prompt(
     hint_only: bool = False,
     earlier: Sequence[EarlierTurn] = (),
     remind_to_cite: bool = False,
+    whole_session: bool = False,
 ) -> TutorPrompt:
     """The prompt for one admitted question and its screened excerpts.
 
@@ -535,6 +542,8 @@ def build_tutor_prompt(
         )
         parts.append(f"<earlier-{tag}>\n{conversation}\n</earlier-{tag}>")
     parts.append(f"<student-message-{tag}>\n{_escape(question)}\n</student-message-{tag}>")
+    if whole_session:
+        parts.append(WHOLE_SESSION_NOTE)
     if hint_only:
         parts.append(HINT_ONLY_NOTE)
     if remind_to_cite:
@@ -878,6 +887,7 @@ async def guarded_chat(
         return
 
     context = screen_context(found, max_distance=max_distance)
+    whole_session = False
     if context.empty and overview is not None and names_no_topic(search):
         try:
             spread = await overview(search)
@@ -888,6 +898,7 @@ async def guarded_chat(
         # Chosen for coverage, not closeness, so no distance applies; the
         # instruction screen still does.
         context = screen_context(spread, max_distance=float("inf"))
+        whole_session = True
     if context.empty:
         yield event("empty_retrieval")
         return
@@ -902,6 +913,7 @@ async def guarded_chat(
             hint_only=admission.hint_only,
             earlier=context_turns,
             remind_to_cite=attempt > 0,
+            whole_session=whole_session,
         )
         vetter = StreamVetter(
             AnswerPolicy(
