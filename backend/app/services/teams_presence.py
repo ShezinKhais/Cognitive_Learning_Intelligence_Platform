@@ -229,8 +229,14 @@ async def end_class(meeting_id: str, wait: Wait) -> None:
             owner = await session_lifecycle.meeting_owner(db, meeting_id, settings)
             if owner is None or called_off():
                 return
-            await session_lifecycle.end_session(db, owner, session_id)
+            # end_session waits for the session row lock, so it asks again
+            # once it holds the lock, right before the status changes.
+            await session_lifecycle.end_session(
+                db, owner, session_id, still_wanted=lambda: not called_off()
+            )
             log.info("session %s ended: %s meeting %s", session_id, reason, meeting_id)
+    except session_lifecycle.EndCalledOff:
+        log.info("meeting %s: the end was called off while it waited for the class", meeting_id)
     except ClipError as exc:
         log.warning("meeting %s: its class was not ended (%s): %s", meeting_id, reason, exc)
     except Exception:

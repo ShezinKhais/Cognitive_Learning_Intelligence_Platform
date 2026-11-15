@@ -61,7 +61,15 @@ def ending(monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
         await owner_release.wait()
         return object()
 
-    async def end_session(_db: object, _owner: object, sid: UUID) -> None:
+    lock_reached, lock_release = asyncio.Event(), asyncio.Event()
+    lock_release.set()
+
+    async def end_session(_db: object, _owner: object, sid: UUID, still_wanted=None) -> None:  # noqa: ANN001
+        # The real one waits for the session row lock, then asks still_wanted.
+        lock_reached.set()
+        await lock_release.wait()
+        if still_wanted is not None and not still_wanted():
+            raise teams_presence.session_lifecycle.EndCalledOff("called off")
         ended.append(sid)
 
     monkeypatch.setattr(teams_presence, "presence", presence)
@@ -79,6 +87,8 @@ def ending(monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
         "owner_reached": owner_reached,
         "owner_release": owner_release,
         "ended": ended,
+        "lock_reached": lock_reached,
+        "lock_release": lock_release,
         "rooms": rooms,
     }
 
@@ -119,6 +129,16 @@ async def test_keep_running_during_the_owner_lookup_stops_the_end(ending) -> Non
     # What keep_running does once it has found the wait.
     assert ending["presence"].cancel(MEETING) is wait
     ending["owner_release"].set()
+    await asyncio.wait_for(wait.task, 2)
+    assert ending["ended"] == []
+
+
+async def test_a_rejoin_while_waiting_for_the_row_lock_stops_the_end(ending) -> None:  # noqa: ANN001
+    ending["lock_release"].clear()
+    wait = _start(ending)
+    await asyncio.wait_for(ending["lock_reached"].wait(), 2)
+    assert ending["presence"].joined(MEETING, {"student"}) is wait
+    ending["lock_release"].set()
     await asyncio.wait_for(wait.task, 2)
     assert ending["ended"] == []
 

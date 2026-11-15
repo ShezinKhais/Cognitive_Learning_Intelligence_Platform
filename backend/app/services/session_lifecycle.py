@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from urllib.parse import quote
 from uuid import UUID
@@ -57,6 +58,11 @@ from app.services.session_access import session_membership_allowed
 from app.services.session_readiness import evaluate_readiness
 
 log = logging.getLogger("clip.sessions")
+
+
+class EndCalledOff(ConflictError):
+    """An automatic end was called off while it waited for the session row."""
+
 
 # How the class is held. A session linked to a Teams meeting is held in it.
 MODE_IN_PERSON = "in_person"
@@ -235,10 +241,23 @@ async def resume_session(db: AsyncSession, principal: Principal, session_id: UUI
     return await session_out(db, row)
 
 
-async def end_session(db: AsyncSession, principal: Principal, session_id: UUID) -> SessionOut:
-    """End a running session, or cancel one that never started."""
+async def end_session(
+    db: AsyncSession,
+    principal: Principal,
+    session_id: UUID,
+    still_wanted: Callable[[], bool] | None = None,
+) -> SessionOut:
+    """End a running session, or cancel one that never started.
+
+    still_wanted is asked once the row is locked, just before the status
+    changes. An automatic end that was called off while it waited for the
+    lock raises EndCalledOff and changes nothing.
+    """
     repo = SessionRepository(db)
     row = await owned_session(repo, principal, session_id)
+    if still_wanted is not None and not still_wanted():
+        await db.rollback()
+        raise EndCalledOff("The end was called off.", {"session_id": str(session_id)})
     if row.status == SessionStatus.PREPARED.value:
         ended = SessionStatus.CANCELLED
     else:

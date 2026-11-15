@@ -363,6 +363,34 @@ async def test_ending_a_running_session(db, app) -> None:
     assert client.post(f"/api/v1/sessions/{session['id']}/start").status_code == 409
 
 
+async def test_an_end_called_off_while_waiting_for_the_row_changes_nothing(db, app) -> None:
+    from app.api.deps import Principal
+    from app.services import session_lifecycle
+
+    client, factory, created = db
+    course = await add_course(factory, created)
+    await add_question(db, course, LECTURER_ID)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    session = create_session(client, course)
+    client.post(f"/api/v1/sessions/{session['id']}/start")
+    lecturer = Principal(LECTURER_ID, Role.LECTURER, "lecturer@clip.example.com")
+    asked: list[bool] = []
+
+    def still_wanted() -> bool:
+        asked.append(True)
+        return False
+
+    async with factory() as s:
+        with pytest.raises(session_lifecycle.EndCalledOff):
+            await session_lifecycle.end_session(
+                s, lecturer, UUID(session["id"]), still_wanted=still_wanted
+            )
+
+    assert asked == [True]
+    assert client.get(f"/api/v1/sessions/{session['id']}").json()["status"] == "active"
+    client.post(f"/api/v1/sessions/{session['id']}/end")
+
+
 async def test_ending_a_session_that_never_started_cancels_it(db, app) -> None:
     client, factory, created = db
     course = await add_course(factory, created)
