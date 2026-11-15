@@ -530,7 +530,9 @@ async def change_password(
             "change one.",
             {},
         )
-    user = await db.get(User, principal.user_id)
+    # Locked from reading the hash to the update, so two changes at once are
+    # taken in turn and the second is checked against the first one's password.
+    user = await db.get(User, principal.user_id, with_for_update=True, populate_existing=True)
     if user is None or not user.password_hash:
         raise ConflictError(
             "This account signs in through Microsoft, so it has no password here.", {}
