@@ -24,8 +24,10 @@ export function PolicyLayout({
       <article className="mx-auto w-full max-w-2xl">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <Wordmark />
+          {/* "/" takes a signed-in user to their home page and anyone else
+              to sign-in; "/login" showed the sign-in form to both. */}
           <Link
-            to="/login"
+            to="/"
             className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground"
           >
             <ArrowLeft size={15} aria-hidden />
