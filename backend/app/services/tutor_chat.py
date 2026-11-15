@@ -61,7 +61,7 @@ from app.services.tutor_guardrails import EarlierTurn, OpenQuestion, TutorPrompt
 log = logging.getLogger("clip.tutor")
 
 # How many of a session's excerpts an overview question picks its spread from.
-OVERVIEW_SCAN_LIMIT = 2000
+OVERVIEW_SCAN_LIMIT = 20000
 
 NDJSON = "application/x-ndjson"
 RATE_WINDOW_SECONDS = 60.0
@@ -419,18 +419,34 @@ class TutorExchange:
         my understanding"), which names nothing a search could match."""
         if not self._context.materials:
             return []
-        statement = (
-            select(RagChunk)
-            .where(RagChunk.source_material_id.in_(self._context.materials))
+        # The same excerpts a search could reach: embedded, by this model.
+        reachable = (
+            RagChunk.source_material_id.in_(self._context.materials),
+            RagChunk.embedding_vector.isnot(None),
+            RagChunk.embedding_model == self._settings.embedding_model,
+        )
+        # Only the ids are scanned, so the spread is chosen without loading
+        # every excerpt's text and vector to keep a handful of them.
+        listing = (
+            select(RagChunk.chunk_id)
+            .where(*reachable)
             .order_by(RagChunk.source_material_id, RagChunk.chunk_index)
             .limit(OVERVIEW_SCAN_LIMIT)
         )
         async with self._sessions()() as db:
-            chunks = list((await db.execute(statement)).scalars().all())
-        want = self._settings.chat_retrieved_chunks
-        if len(chunks) > want:
-            last = len(chunks) - 1
-            chunks = [chunks[round(i * last / max(want - 1, 1))] for i in range(want)]
+            ids = list((await db.execute(listing)).scalars().all())
+            want = self._settings.chat_retrieved_chunks
+            if len(ids) > want:
+                last = len(ids) - 1
+                ids = [ids[round(i * last / max(want - 1, 1))] for i in range(want)]
+            if not ids:
+                return []
+            picked = (
+                select(RagChunk)
+                .where(RagChunk.chunk_id.in_(ids))
+                .order_by(RagChunk.source_material_id, RagChunk.chunk_index)
+            )
+            chunks = list((await db.execute(picked)).scalars().all())
         found = []
         for chunk in chunks:
             self._found_in[chunk.chunk_id] = chunk.source_material_id
