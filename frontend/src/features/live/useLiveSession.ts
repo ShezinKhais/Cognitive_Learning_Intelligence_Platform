@@ -107,6 +107,8 @@ interface UseLiveSessionResult {
     alertId: string,
   ) => Promise<void>
   rooms: RoomStatus[]
+  ending: SessionEnding | null
+  clearEnding: () => void
 }
 
 function liveSocketUrl(): string {
@@ -317,6 +319,11 @@ function isReadyPayload(
   )
 }
 
+export interface SessionEnding {
+  reason: 'everyone_left' | 'lecturer_left'
+  ends_at: string
+}
+
 export function useLiveSession(
   sessionId: string | undefined,
 ): UseLiveSessionResult {
@@ -361,6 +368,9 @@ export function useLiveSession(
   )
 
   const [rooms, setRooms] = useState<RoomStatus[]>([])
+  // The linked Teams call emptied, or its lecturer left it: the class ends
+  // at ends_at unless the lecturer keeps it running.
+  const [ending, setEnding] = useState<SessionEnding | null>(null)
 
   useEffect(() => {
     if (!sessionId) {
@@ -626,11 +636,23 @@ setAlerts((current) => {
               message.data,
             )
           ) {
-            setActiveQuestion(
-              message.data,
-            )
+            const delivered = message.data
+
+            setActiveQuestion(delivered)
 
             setClosedQuestion(null)
+
+            // The server sends no fresh session.state on a delivery, so the
+            // count is kept here until the next one arrives.
+            setSessionState((current) =>
+              current && current.active_question_id !== delivered.question_id
+                ? {
+                    ...current,
+                    active_question_id: delivered.question_id,
+                    questions_delivered: current.questions_delivered + 1,
+                  }
+                : current,
+            )
 
             return
           }
@@ -687,6 +709,16 @@ setAlerts((current) => {
               },
             )
 
+            return
+          }
+
+          if (message.type === 'session.ending') {
+            const data = message.data as Partial<SessionEnding> | undefined
+            setEnding(
+              data && typeof data.ends_at === 'string' && (data.reason === 'everyone_left' || data.reason === 'lecturer_left')
+                ? { reason: data.reason, ends_at: data.ends_at }
+                : null,
+            )
             return
           }
 
@@ -846,5 +878,7 @@ setAlerts((current) => {
     sessionNotice,
     rooms,
     acknowledgeAlert,
+    ending,
+    clearEnding: () => setEnding(null),
   }
 }

@@ -209,6 +209,13 @@ class Settings(BaseSettings):
     # A pop-up a few seconds before a checkpoint closes, for students who
     # have not answered. Needs teams_notifications_enabled.
     teams_last_call_enabled: bool = True
+    # How long a linked class keeps running once everyone C.L.I.P saw join
+    # its Teams meeting has left. 0 leaves it running until Teams ends the
+    # meeting or the lecturer ends the class.
+    teams_empty_meeting_end_seconds: int = Field(default=90, ge=0)
+    # A student first seen this many minutes after a class started is marked
+    # late in attendance. 0 marks nobody late.
+    attendance_late_minutes: int = Field(default=20, ge=0)
     teams_app_base_url: str = ""
     teams_app_id: str = ""
     # Where the bot gets its token to post into Teams. A single-tenant bot

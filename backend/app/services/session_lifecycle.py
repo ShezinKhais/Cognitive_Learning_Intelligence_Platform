@@ -19,19 +19,24 @@ database does not have.
 
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
+from urllib.parse import quote
 from uuid import UUID
 
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import Principal
 from app.auth.service import active_user, granted_consents
 from app.core.config import Settings
 from app.core.errors import ConflictError, NotFoundError, PermissionError_, ValidationError
+from app.models.question import Question
 from app.models.session import Session
+from app.models.teams_meeting_reference import TeamsMeetingReference
 from app.realtime.classroom import classroom
-from app.realtime.hub import hub
 from app.repositories.course_repository import CourseRepository
 from app.repositories.session_repository import SessionRepository
 from app.schemas.common import Page
@@ -53,6 +58,11 @@ from app.services.session_access import session_membership_allowed
 from app.services.session_readiness import evaluate_readiness
 
 log = logging.getLogger("clip.sessions")
+
+
+class EndCalledOff(ConflictError):
+    """An automatic end was called off while it waited for the session row."""
+
 
 # How the class is held. A session linked to a Teams meeting is held in it.
 MODE_IN_PERSON = "in_person"
@@ -139,9 +149,22 @@ async def copy_session(
         start_time=_aware(payload.starts_at) if payload.starts_at else datetime.now(UTC),
         status=SessionStatus.PREPARED.value,
         mode=MODE_IN_PERSON,
+        # The class is prepared the way the source was run.
+        **_ai_columns(AiControls.of(source)),
     )
     await db.commit()
     return await session_out(db, row)
+
+
+def _ai_columns(controls: AiControls) -> dict[str, bool | int | None]:
+    return {
+        "ai_auto_checkpoints": controls.auto_checkpoints,
+        "ai_learning_assistant": controls.learning_assistant,
+        "ai_refocus_nudges": controls.refocus_nudges,
+        "ai_engagement_estimates": controls.engagement_estimates,
+        "checkpoint_minutes": controls.checkpoint_minutes,
+        "answer_seconds": controls.answer_seconds,
+    }
 
 
 async def delete_session(db: AsyncSession, principal: Principal, session_id: UUID) -> None:
@@ -154,6 +177,14 @@ async def delete_session(db: AsyncSession, principal: Principal, session_id: UUI
         raise ConflictError(
             "This session delivered questions, so it is kept.", {"session_id": str(session_id)}
         )
+    # The class's own copies of bank questions go with it; left behind they
+    # would show in the bank twice. None was delivered, checked above.
+    await db.execute(
+        delete(Question).where(
+            Question.session_id == row.session_id,
+            Question.source_question_id.is_not(None),
+        )
+    )
     await db.delete(row)
     await db.commit()
     log.info("session %s deleted by %s", session_id, principal.user_id)
@@ -175,11 +206,15 @@ async def start_session(db: AsyncSession, principal: Principal, session_id: UUID
         )
 
     row.status = SessionStatus.ACTIVE.value
+    row.started_at = datetime.now(UTC)
     await db.commit()
 
     classroom.remember_ai(row.session_id, AiControls.of(row))
     classroom.activate(row.session_id)
     await classroom.announce(row.session_id, SessionStatus.ACTIVE)
+    # However it was started, from C.L.I.P or by the Teams meeting starting,
+    # the meeting is told, and C.L.I.P opens for everyone already in the call.
+    classroom.class_started(row.session_id)
     log.info("session %s started by %s", session_id, principal.user_id)
     return await session_out(db, row)
 
@@ -206,10 +241,23 @@ async def resume_session(db: AsyncSession, principal: Principal, session_id: UUI
     return await session_out(db, row)
 
 
-async def end_session(db: AsyncSession, principal: Principal, session_id: UUID) -> SessionOut:
-    """End a running session, or cancel one that never started."""
+async def end_session(
+    db: AsyncSession,
+    principal: Principal,
+    session_id: UUID,
+    still_wanted: Callable[[], bool] | None = None,
+) -> SessionOut:
+    """End a running session, or cancel one that never started.
+
+    still_wanted is asked once the row is locked, just before the status
+    changes. An automatic end that was called off while it waited for the
+    lock raises EndCalledOff and changes nothing.
+    """
     repo = SessionRepository(db)
     row = await owned_session(repo, principal, session_id)
+    if still_wanted is not None and not still_wanted():
+        await db.rollback()
+        raise EndCalledOff("The end was called off.", {"session_id": str(session_id)})
     if row.status == SessionStatus.PREPARED.value:
         ended = SessionStatus.CANCELLED
     else:
@@ -321,6 +369,7 @@ async def sessions_out(db: AsyncSession, rows: list[Session]) -> list[SessionOut
     codes = await repo.course_codes({row.course_id for row in rows})
     delivered = await repo.count_delivered_by_session(ids)
     meeting_ids = await meetings.directory.meetings_for(ids)
+    joins = await _join_urls(db, set(meeting_ids.values()))
     return [
         SessionOut(
             id=row.session_id,
@@ -331,12 +380,43 @@ async def sessions_out(db: AsyncSession, rows: list[Session]) -> list[SessionOut
             starts_at=row.start_time,
             ended_at=row.ended_at,
             teams_meeting_id=meeting_ids.get(row.session_id),
-            participant_count=len(hub.student_ids(row.session_id)),
+            teams_join_url=joins.get(meeting_ids.get(row.session_id) or ""),
+            end_when_lecturer_leaves=row.end_when_lecturer_leaves,
+            started_at=row.started_at,
+            participant_count=len(classroom.present_students(row.session_id)),
             questions_delivered=delivered.get(row.session_id, 0),
             paused=row.status == SessionStatus.ACTIVE.value and row.paused_at is not None,
         )
         for row in rows
     ]
+
+
+async def _join_urls(db: AsyncSession, meeting_ids: set[str]) -> dict[str, str]:
+    """meeting id -> a link that opens it in Teams, for the meetings C.L.I.P is in.
+
+    A meeting's chat thread is the conversation the bot posts into, and a
+    Teams join link is that thread under /l/meetup-join/.
+    """
+    if not meeting_ids:
+        return {}
+    rows = await db.execute(
+        select(
+            TeamsMeetingReference.meeting_id,
+            TeamsMeetingReference.conversation_id,
+            TeamsMeetingReference.tenant_id,
+        ).where(TeamsMeetingReference.meeting_id.in_(meeting_ids))
+    )
+    found = {}
+    for meeting_id, conversation, tenant in rows.tuples().all():
+        thread = conversation.split(";", 1)[0]
+        if not thread.startswith("19:meeting_"):
+            continue
+        context = quote(json.dumps({"Tid": tenant}, separators=(",", ":")), safe="")
+        found[meeting_id] = (
+            f"https://teams.microsoft.com/l/meetup-join/{quote(thread, safe='')}/0"
+            f"?context={context}"
+        )
+    return found
 
 
 # -- Teams meetings ---------------------------------------------------------------

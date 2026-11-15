@@ -395,7 +395,7 @@ export default function CourseRostersPage() {
                 </Panel>
               </div>
             )}
-            {code && <CourseAttendancePanel key={code} code={code} />}
+            {code && roster && <CourseAttendancePanel key={code} code={code} />}
           </div>
         )}
       </PageBody>

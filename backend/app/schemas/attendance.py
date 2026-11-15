@@ -25,6 +25,10 @@ class AttendanceRow(BaseModel):
         default_factory=list,
         description="clip: joined the class in C.L.I.P. teams: seen joining the Teams meeting.",
     )
+    late: bool = Field(
+        default=False,
+        description="First seen more than late_minutes after the class started.",
+    )
 
 
 class SessionAttendanceOut(BaseModel):
@@ -33,6 +37,10 @@ class SessionAttendanceOut(BaseModel):
     course_code: str
     starts_at: datetime | None
     present: int
+    late: int = 0
+    late_minutes: int = Field(
+        default=0, description="How late a first join is marked late. 0: nobody is."
+    )
     total: int
     students: list[AttendanceRow]
 
@@ -49,6 +57,11 @@ class CourseAttendanceRow(BaseModel):
     email: str
     attended: int
     classes: list[bool] = Field(description="One per class, in the order of `classes`.")
+    late: list[bool] = Field(
+        default_factory=list,
+        description="One per class, in the order of `classes`: present but late.",
+    )
+    late_count: int = 0
 
 
 class CourseAttendanceOut(BaseModel):
