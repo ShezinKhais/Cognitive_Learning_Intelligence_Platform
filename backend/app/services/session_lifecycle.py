@@ -23,12 +23,14 @@ import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import Principal
 from app.auth.service import active_user, granted_consents
 from app.core.config import Settings
 from app.core.errors import ConflictError, NotFoundError, PermissionError_, ValidationError
+from app.models.question import Question
 from app.models.session import Session
 from app.realtime.classroom import classroom
 from app.realtime.hub import hub
@@ -139,9 +141,22 @@ async def copy_session(
         start_time=_aware(payload.starts_at) if payload.starts_at else datetime.now(UTC),
         status=SessionStatus.PREPARED.value,
         mode=MODE_IN_PERSON,
+        # The class is prepared the way the source was run.
+        **_ai_columns(AiControls.of(source)),
     )
     await db.commit()
     return await session_out(db, row)
+
+
+def _ai_columns(controls: AiControls) -> dict[str, bool | int | None]:
+    return {
+        "ai_auto_checkpoints": controls.auto_checkpoints,
+        "ai_learning_assistant": controls.learning_assistant,
+        "ai_refocus_nudges": controls.refocus_nudges,
+        "ai_engagement_estimates": controls.engagement_estimates,
+        "checkpoint_minutes": controls.checkpoint_minutes,
+        "answer_seconds": controls.answer_seconds,
+    }
 
 
 async def delete_session(db: AsyncSession, principal: Principal, session_id: UUID) -> None:
@@ -154,6 +169,14 @@ async def delete_session(db: AsyncSession, principal: Principal, session_id: UUI
         raise ConflictError(
             "This session delivered questions, so it is kept.", {"session_id": str(session_id)}
         )
+    # The class's own copies of bank questions go with it; left behind they
+    # would show in the bank twice. None was delivered, checked above.
+    await db.execute(
+        delete(Question).where(
+            Question.session_id == row.session_id,
+            Question.source_question_id.is_not(None),
+        )
+    )
     await db.delete(row)
     await db.commit()
     log.info("session %s deleted by %s", session_id, principal.user_id)

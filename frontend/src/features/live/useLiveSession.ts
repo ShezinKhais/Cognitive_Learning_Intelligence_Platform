@@ -626,11 +626,23 @@ setAlerts((current) => {
               message.data,
             )
           ) {
-            setActiveQuestion(
-              message.data,
-            )
+            const delivered = message.data
+
+            setActiveQuestion(delivered)
 
             setClosedQuestion(null)
+
+            // The server sends no fresh session.state on a delivery, so the
+            // count is kept here until the next one arrives.
+            setSessionState((current) =>
+              current && current.active_question_id !== delivered.question_id
+                ? {
+                    ...current,
+                    active_question_id: delivered.question_id,
+                    questions_delivered: current.questions_delivered + 1,
+                  }
+                : current,
+            )
 
             return
           }

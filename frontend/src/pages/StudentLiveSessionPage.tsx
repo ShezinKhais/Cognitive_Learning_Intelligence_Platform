@@ -124,6 +124,11 @@ export function LiveSessionPanel({
   // The learning assistant is offered while the class runs, unless the
   // lecturer has turned it off for this class.
   const assistant = SOCRATIC_CHAT_ENABLED && !finished && state.ai.learning_assistant
+  // Back to the class view when the lecturer turns the assistant off, so
+  // turning it on again does not open on an empty tab.
+  useEffect(() => {
+    if (!assistant) setActiveView('class')
+  }, [assistant])
 
   const secondsRemaining = state.checkpoint
     ? remainingResponseSeconds(
@@ -307,7 +312,10 @@ export function LiveSessionPanel({
         </section>
 
         {!dialog && <DiscussionPanel key={`discussion-${session.id}`} sessionId={session.id} />}
-        {dialog && !state.checkpoint && (
+        {dialog &&
+          (!state.checkpoint ||
+            secondsRemaining <= 0 ||
+            !['answering', 'submitting', 'rejected'].includes(state.checkpoint.phase)) && (
           <button
             type="button"
             className={`${buttonStyles()} mt-5 w-full`}
