@@ -428,5 +428,8 @@ def test_the_manifest_asks_only_for_what_the_app_uses() -> None:
         ("OnlineMeeting.ReadBasic.Chat", "Application"),
         ("OnlineMeetingParticipant.Read.Chat", "Application"),
         ("OnlineMeetingNotification.Send.Chat", "Application"),
+        # The lecturer shares the class to the meeting stage. It lets the app put
+        # one of its own pages there for the signed-in lecturer, nothing more.
+        ("MeetingStage.Write.Chat", "Delegated"),
     }
     assert manifest["validDomains"] == ["${{BASE_DOMAIN}}"]

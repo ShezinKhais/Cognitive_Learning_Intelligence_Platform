@@ -8,9 +8,10 @@ they teach. Every change is audited.
 
 from __future__ import annotations
 
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import Response
 
 from app.api.deps import AppSettings, CurrentUser, DbSession, require_consents, require_roles
@@ -24,8 +25,9 @@ from app.schemas.accounts import (
     RosterStudentAdd,
 )
 from app.schemas.attendance import CourseAttendanceOut
+from app.schemas.course_requests import CourseRequestCreate, CourseRequestOut, CourseRequestStatus
 from app.schemas.identity import ConsentType, Role
-from app.services import attendance, course_membership, roster_bulk
+from app.services import attendance, course_membership, course_requests, roster_bulk
 
 router = APIRouter(
     prefix="/courses",
@@ -35,6 +37,29 @@ router = APIRouter(
         Depends(require_consents(ConsentType.TERMS)),
     ],
 )
+
+
+@router.post("/requests", response_model=CourseRequestOut, status_code=status.HTTP_201_CREATED)
+@audit_action("COURSE_REQUESTED")
+async def request_course(
+    payload: CourseRequestCreate,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> CourseRequestOut:
+    """Ask an admin for a course that does not exist yet."""
+    return await course_requests.create(db, principal, payload)
+
+
+@router.get("/requests", response_model=list[CourseRequestOut])
+async def list_course_requests(
+    principal: CurrentUser,
+    db: DbSession,
+    status_filter: Annotated[CourseRequestStatus | None, Query(alias="status")] = None,
+) -> list[CourseRequestOut]:
+    """A lecturer's own requests, or every request for an admin, newest first."""
+    return await course_requests.list_for(db, principal, status_filter)
 
 
 @router.get("/mine", response_model=list[CourseOut])
