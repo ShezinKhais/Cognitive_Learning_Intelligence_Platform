@@ -791,6 +791,33 @@ def safe_follow_ups(
 
 # -- The event stream ----------------------------------------------------------------
 
+# Words that ask for something about the class without naming what. "Ask me a
+# question that checks my understanding" is made only of these, so its nearest
+# excerpt is no nearer than one about anything else, and the cutoff refused it
+# (#274 measured 0.46 to 0.53 for the panel's starter prompts).
+_NO_TOPIC_WORDS = frozenset(
+    """
+    a about again an and any are ask asking at be been can check checking checks
+    class clue concept concepts could cover covered covering did do does explain
+    few for from give go going have help hint hints how i idea ideas important in
+    is it its just key know learn learned learning lecture lesson lessons let main
+    material materials me more my now of on one or our over overview please point
+    points practice question questions quiz recap session simple simpler simply
+    slide slides so some summarise summarize summary teach tell test that the
+    these this those to today topic topics understand understanding understood
+    up us was we went were what which with would you your
+    d ll m re s t ve
+    """.split()
+)
+
+
+def names_no_topic(text: str) -> bool:
+    """True when a question asks about the class as a whole and names nothing
+    to search for, like the panel's starter prompts."""
+    words = re.findall(r"[a-z]+", text.lower())
+    return bool(words) and all(word in _NO_TOPIC_WORDS for word in words)
+
+
 Retrieve = Callable[[str], Awaitable[Sequence[RetrievedChunk]]]
 Generate = Callable[[TutorPrompt], AsyncIterator[str]]
 Describe = Callable[[RetrievedChunk, int], dict[str, Any]]
@@ -808,6 +835,7 @@ async def guarded_chat(
     suggest_follow_ups: SuggestFollowUps | None = None,
     max_distance: float = RETRIEVAL_MAX_DISTANCE,
     earlier: Sequence[EarlierTurn] = (),
+    overview: Retrieve | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """One tutor exchange, as the events the student panel reads.
 
@@ -816,6 +844,11 @@ async def guarded_chat(
     number into the citation event's body (the endpoint knows the material
     title). The events are accepted, then delta, citation and follow_up events
     and completed, or one of unsupported, empty_retrieval and error.
+
+    overview, when given, supplies excerpts from across the session's material
+    for a question that names no topic (names_no_topic), which no excerpt is
+    near enough to by meaning. A question that names something unrelated is
+    still refused.
 
     Nothing a failure raises reaches the student: an exception becomes the
     fixed error detail, and is logged with its type only.
@@ -845,6 +878,16 @@ async def guarded_chat(
         return
 
     context = screen_context(found, max_distance=max_distance)
+    if context.empty and overview is not None and names_no_topic(search):
+        try:
+            spread = await overview(search)
+        except Exception as exc:
+            log.warning("tutor overview retrieval failed: %s", type(exc).__name__)
+            yield event("error", detail=ERROR_DETAIL)
+            return
+        # Chosen for coverage, not closeness, so no distance applies; the
+        # instruction screen still does.
+        context = screen_context(spread, max_distance=float("inf"))
     if context.empty:
         yield event("empty_retrieval")
         return
