@@ -157,7 +157,11 @@ async def test_a_lecturer_is_not_told_the_name_behind_an_address(db, world) -> N
     out = await roster_bulk.run(
         db, _as(w["lecturer"], Role.LECTURER), w["course"].code, BulkRosterIn(text=_text(w))
     )
-    named = {line.email: line.name for line in out.lines}
+    # The last line repeats the first address in capitals, so keep the first
+    # answer for each: the repeat is reported as a duplicate and names no one.
+    named: dict[str, str | None] = {}
+    for line in out.lines:
+        named.setdefault(line.email, line.name)
 
     # The accounts this course may take are named, from the file or the record.
     assert named[w["elsewhere"].email] == w["elsewhere"].name
@@ -175,7 +179,9 @@ async def test_an_admin_still_sees_why_a_line_cannot_be_added(db, world) -> None
     out = await roster_bulk.run(
         db, _as(w["admin"], Role.ADMIN), w["course"].code, BulkRosterIn(text=_text(w))
     )
-    outcomes = {line.email: line.outcome.value for line in out.lines}
+    outcomes: dict[str, str] = {}
+    for line in out.lines:
+        outcomes.setdefault(line.email, line.outcome.value)
 
     assert outcomes[w["gone"].email] == "inactive"
     assert outcomes[w["staff"].email] == "not_student"
