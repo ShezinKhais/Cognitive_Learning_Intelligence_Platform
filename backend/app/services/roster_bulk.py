@@ -54,8 +54,18 @@ def parse(text: str) -> list[tuple[int, str, str | None]]:
         dialect = csv.excel_tab
     elif ";" in sample and "," not in sample:
         dialect = type("semi", (csv.excel,), {"delimiter": ";"})
-    for number, cells in enumerate(csv.reader(io.StringIO(text), dialect), start=1):
-        cells = [cell.strip() for cell in cells if cell.strip()]
+    try:
+        records = list(enumerate(csv.reader(io.StringIO(text), dialect), start=1))
+    except csv.Error as error:
+        # csv refuses a field past its 128k limit, which a 200k paste can
+        # reach on one line. Report it as the bad input it is, not a crash.
+        raise ValidationError(
+            "This list could not be read. Check it is one student per line.",
+            {"field": "text"},
+        ) from error
+    for number, cells in records:
+        cells = [_printable(cell) for cell in cells if cell.strip()]
+        cells = [cell for cell in cells if cell]
         if not cells:
             continue
         if number == 1 and all(cell.lower() in _HEADER_WORDS for cell in cells):
@@ -66,6 +76,29 @@ def parse(text: str) -> list[tuple[int, str, str | None]]:
         name = others[0][:100] if others else None
         rows.append((number, email, name))
     return rows
+
+
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _printable(cell: str) -> str:
+    """A cell with control characters removed, then trimmed.
+
+    csv keeps a NUL that was pasted into a cell. PostgreSQL rejects one in
+    text, so a name carrying it previews cleanly and then fails the whole
+    import at commit, long after the lecturer could have fixed the line.
+    """
+    return _CONTROL.sub("", cell).strip()
+
+
+# Outcomes that concern a student the caller may put on this course, and so
+# the only ones whose stored name the caller is shown.
+NAMEABLE = frozenset({BulkRosterOutcome.ADD, BulkRosterOutcome.ALREADY})
+
+
+def _stored_name(users: dict[str, User], email: str) -> str | None:
+    user = users.get(email)
+    return user.name if user is not None else None
 
 
 def _name_from(email: str) -> str:
@@ -104,6 +137,12 @@ async def run(
     }
     on_course = set(await db.scalars(course_membership.students_on(course.id)))
 
+    # Managing this course's roster does not grant a lecturer a lookup of every
+    # account in the deployment. A lecturer is told only what they could do
+    # anyway: add this student, or not. An admin, who may already read every
+    # account on the Accounts page, keeps the precise reason.
+    detailed = principal.is_(Role.ADMIN)
+
     lines: list[BulkRosterLine] = []
     seen: set[str] = set()
     for number, email, name in rows:
@@ -116,9 +155,9 @@ async def run(
                 BulkRosterOutcome.CREATE if payload.create_missing else BulkRosterOutcome.NO_ACCOUNT
             )
         elif user.role != Role.STUDENT.value:
-            outcome = BulkRosterOutcome.NOT_STUDENT
+            outcome = BulkRosterOutcome.NOT_STUDENT if detailed else BulkRosterOutcome.NO_ACCOUNT
         elif not user.active:
-            outcome = BulkRosterOutcome.INACTIVE
+            outcome = BulkRosterOutcome.INACTIVE if detailed else BulkRosterOutcome.NO_ACCOUNT
         elif (student := students.get(user.user_id)) is not None and (
             student.student_id in on_course
         ):
@@ -130,7 +169,10 @@ async def run(
             BulkRosterLine(
                 line=number,
                 email=email[:255],
-                name=name or (users[email].name if email in users else None),
+                # The stored name only for a student of this course's roster.
+                # Echoing it for any address would turn the preview into a
+                # directory: paste 500 addresses, read back 500 real names.
+                name=name or (_stored_name(users, email) if outcome in NAMEABLE else None),
                 outcome=outcome,
             )
         )

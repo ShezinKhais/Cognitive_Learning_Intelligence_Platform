@@ -100,7 +100,7 @@ async def add_student(
 
 
 @router.post("/{code}/students:bulk", response_model=BulkRosterOut)
-@audit_action("COURSE_STUDENTS_BULK")
+@audit_action("COURSE_STUDENTS_BULK", require_field=("payload", "confirm"))
 async def add_students_in_bulk(
     code: str,
     payload: BulkRosterIn,
