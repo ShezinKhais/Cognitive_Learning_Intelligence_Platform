@@ -1,5 +1,5 @@
-import { groupOf } from '../sessions/format'
-import type { StudentSession } from './types'
+import { groupOf } from '../sessions/format.ts'
+import type { StudentSession } from './types.ts'
 
 /**
  * The session a Teams meeting panel should show.
@@ -15,6 +15,10 @@ import type { StudentSession } from './types'
  * meeting's own session wins. The finished one is still returned when the
  * meeting has nothing else, so the student is told their class is over rather
  * than shown an empty panel.
+ *
+ * The student's list is not refetched when a class ends, so the finished class
+ * can still carry the meeting's id beside the next one. Of the sessions the
+ * meeting matches, an unfinished one wins whatever the list order.
  */
 export function panelSession(
   sessions: readonly StudentSession[],
@@ -30,8 +34,9 @@ export function panelSession(
   }
 
   const ofMeeting = meetingId
-    ? sessions.find((candidate) => candidate.teams_meeting_id === meetingId)
-    : undefined
+    ? sessions.filter((candidate) => candidate.teams_meeting_id === meetingId)
+    : []
+  const current = ofMeeting.find((candidate) => groupOf(candidate.status) !== 'finished')
 
-  return ofMeeting ?? requested
+  return current ?? requested ?? ofMeeting[0]
 }

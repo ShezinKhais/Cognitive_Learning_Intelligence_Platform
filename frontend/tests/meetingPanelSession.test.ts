@@ -64,3 +64,17 @@ test('a cancelled requested session also gives way to the meeting', () => {
     'next',
   )
 })
+
+test('the next class wins over a finished one still carrying the meeting id', () => {
+  // The cached list is not refetched when a class ends, so both carry the
+  // meeting's id, and the finished one is listed first.
+  const finished = session('finished', 'ended', 'meeting-42')
+  const next = session('next', 'active', 'meeting-42')
+  assert.equal(panelSession([finished, next], null, 'meeting-42')?.id, 'next')
+  assert.equal(panelSession([finished, next], 'finished', 'meeting-42')?.id, 'next')
+})
+
+test('a finished meeting session is still shown when it is all there is', () => {
+  const finished = session('finished', 'ended', 'meeting-42')
+  assert.equal(panelSession([finished], null, 'meeting-42')?.id, 'finished')
+})
