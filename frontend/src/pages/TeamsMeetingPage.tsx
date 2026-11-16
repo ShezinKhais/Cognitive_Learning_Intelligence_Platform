@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import { groupOf } from '../features/sessions/format'
 import { useStudentApp } from '../features/student/StudentAppContext'
 import type { StudentSession } from '../features/student/types'
 import { useTeams } from '../teams/TeamsProvider'
@@ -27,9 +28,19 @@ export default function TeamsMeetingPage() {
       ),
   ) ?? breakoutFallback(sessions, meetingId)
 
-  // The lecturer may link the session after this panel opened. Until a
-  // session appears, keep asking, so nobody has to close and reopen it.
-  const waiting = teams.status === 'ready' && Boolean(meetingId) && !session
+  /*
+   * The lecturer may link the session after this panel opened. Until a
+   * session appears, keep asking, so nobody has to close and reopen it.
+   *
+   * Keep asking once the class has finished too. The lecturer starts the next
+   * one in the same meeting and link_meeting moves the meeting's link, but
+   * this panel matched a session once and nothing refreshes the list again:
+   * the finished session still carries this teams_meeting_id locally, so it
+   * goes on matching and the student sits on a class that is over.
+   */
+  const sessionOver = session !== undefined && groupOf(session.status) === 'finished'
+  const waiting =
+    teams.status === 'ready' && Boolean(meetingId) && (!session || sessionOver)
   useEffect(() => {
     if (!waiting) {
       return
