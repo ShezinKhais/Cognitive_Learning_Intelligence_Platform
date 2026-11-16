@@ -133,18 +133,53 @@ async def test_a_preview_reports_each_line_and_changes_nothing(db, world) -> Non
     )
 
     assert not out.applied and out.roster is None
+    # A lecturer is told only what they could act on. The inactive account and
+    # the staff account both read as no_account, so managing one course cannot
+    # be used to find out whether an address has an account, or what kind.
     assert [line.outcome.value for line in out.lines] == [
         "add",
         "already",
         "add",
-        "inactive",
-        "not_student",
+        "no_account",
+        "no_account",
         "no_account",
         "invalid",
         "duplicate",
     ]
     assert out.counts["add"] == 2
     assert await db.scalar(select(Student).where(Student.user_id == w["no_record"].user_id)) is None
+
+
+async def test_a_lecturer_is_not_told_the_name_behind_an_address(db, world) -> None:
+    """The preview must not read back the account directory: a lecturer may
+    paste any address, so only a student this course can take is named."""
+    w = world
+    out = await roster_bulk.run(
+        db, _as(w["lecturer"], Role.LECTURER), w["course"].code, BulkRosterIn(text=_text(w))
+    )
+    named = {line.email: line.name for line in out.lines}
+
+    # The accounts this course may take are named, from the file or the record.
+    assert named[w["elsewhere"].email] == w["elsewhere"].name
+    assert named[w["here"].email] == w["here"].name
+    # Everyone else keeps their name, whatever the lecturer pasted.
+    assert named[w["gone"].email] is None
+    assert named[w["staff"].email] is None
+    assert named["nobody@new.test"] is None
+
+
+async def test_an_admin_still_sees_why_a_line_cannot_be_added(db, world) -> None:
+    """An admin may already read every account on the Accounts page, so the
+    precise reason tells them nothing new and makes a bad list fixable."""
+    w = world
+    out = await roster_bulk.run(
+        db, _as(w["admin"], Role.ADMIN), w["course"].code, BulkRosterIn(text=_text(w))
+    )
+    outcomes = {line.email: line.outcome.value for line in out.lines}
+
+    assert outcomes[w["gone"].email] == "inactive"
+    assert outcomes[w["staff"].email] == "not_student"
+    assert outcomes["nobody@new.test"] == "no_account"
 
 
 async def test_confirm_adds_exactly_what_the_preview_showed(db, world) -> None:
