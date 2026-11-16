@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { groupOf } from '../features/sessions/format'
+import { panelSession } from '../features/student/meetingSession'
 import { useStudentApp } from '../features/student/StudentAppContext'
 import type { StudentSession } from '../features/student/types'
 import { useTeams } from '../teams/TeamsProvider'
@@ -17,16 +18,9 @@ export default function TeamsMeetingPage() {
   const meetingId = teams.context?.meetingId ?? null
   const [recheckFailed, setRecheckFailed] = useState(false)
 
-  const session = sessions.find(
-    (candidate) =>
-      (
-        requestedSessionId &&
-        candidate.id === requestedSessionId
-      ) || (
-        meetingId &&
-        candidate.teams_meeting_id === meetingId
-      ),
-  ) ?? breakoutFallback(sessions, meetingId)
+  const session =
+    panelSession(sessions, requestedSessionId, meetingId) ??
+    breakoutFallback(sessions, meetingId)
 
   /*
    * The lecturer may link the session after this panel opened. Until a
