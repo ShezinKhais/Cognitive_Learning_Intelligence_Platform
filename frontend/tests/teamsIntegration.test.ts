@@ -14,6 +14,8 @@ import { applyTeamsTheme } from '../src/teams/teamsTheme.ts'
 import {
   lecturerLiveSessionPath,
   meetingSessionPath,
+  shouldAdoptMeetingSession,
+  shouldWatchMeetingSession,
 } from '../src/teams/lecturerMeeting.ts'
 
 test('normalizes supported Teams themes and safely falls back', () => {
@@ -136,4 +138,30 @@ test('Teams on a phone is recognised by its web view, a browser is not', () => {
   assert.equal(isMobileClient('android'), true)
   assert.equal(isMobileClient('desktop'), false)
   assert.equal(isMobileClient(undefined), false)
+})
+
+test('an open lecturer panel keeps asking its meeting for the session', () => {
+  // It asks whether or not it already holds one: the meeting can be re-linked
+  // to the next class while the panel sits on the finished one.
+  assert.equal(shouldWatchMeetingSession(true, 'meeting-42'), true)
+
+  // Nothing to ask about outside a meeting, or before Teams is ready.
+  assert.equal(shouldWatchMeetingSession(true, null), false)
+  assert.equal(shouldWatchMeetingSession(false, 'meeting-42'), false)
+})
+
+test('the panel moves to the meeting session only when it is a different one', () => {
+  // The class ended and the next one was started from the app, so the meeting
+  // now holds a different session. That is the one to show.
+  assert.equal(shouldAdoptMeetingSession('session-old', 'session-new'), true)
+
+  // First session after the picker.
+  assert.equal(shouldAdoptMeetingSession(null, 'session-new'), true)
+
+  // The same answer as last poll must not remount the panel.
+  assert.equal(shouldAdoptMeetingSession('session-7', 'session-7'), false)
+
+  // No session to move to.
+  assert.equal(shouldAdoptMeetingSession('session-7', null), false)
+  assert.equal(shouldAdoptMeetingSession(null, undefined), false)
 })
