@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { ApiError, apiAuthenticatedGet } from '../api'
 import LecturerMeetingPanel from '../features/live/LecturerMeetingPanel'
@@ -35,6 +35,11 @@ export default function TeamsLecturerMeetingPage() {
     new URLSearchParams(window.location.search).get('sessionId')
 
   const [sessionId, setSessionId] = useState<string | null>(null)
+  // What the recheck below compares against, read outside a state updater.
+  const shownSessionId = useRef<string | null>(null)
+  useEffect(() => {
+    shownSessionId.current = sessionId
+  }, [sessionId])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   // The meeting has no session of the lecturer's yet: offer to link one.
@@ -150,14 +155,13 @@ export default function TeamsLecturerMeetingPage() {
           if (stopped) {
             return
           }
-          setSessionId((current) => {
-            if (!shouldAdoptMeetingSession(current, session.id)) {
-              return current
-            }
-            setUnlinked(false)
-            setError(null)
-            return session.id
-          })
+          if (!shouldAdoptMeetingSession(shownSessionId.current, session.id)) {
+            return
+          }
+          shownSessionId.current = session.id
+          setUnlinked(false)
+          setError(null)
+          setSessionId(session.id)
         },
         // Still unlinked, or the lookup failed. Keep what is on screen and ask
         // again; the first resolve already reported anything worse.
