@@ -10,8 +10,8 @@ import { problemArt, problemOf, type Problem } from '../components/ui/problem'
 import SegmentedTabs from '../components/ui/SegmentedTabs'
 import { revisitFirst, topicProgress, type Mastery, type TopicProgress } from '../features/review/progress'
 import EngagementHistory from '../features/review/EngagementHistory'
-import { allReviews } from '../features/review/readAll'
-import type { StudentReview } from '../features/review/reviewTypes'
+import { allReviews, type ReviewsLoaded } from '../features/review/readAll'
+import type { ReviewSession } from '../features/review/reviewTypes'
 
 const WORD: Record<Mastery, string> = { mastered: 'Mastered', partial: 'Partly there', struggling: 'Revisit this' }
 const TONE: Record<Mastery, Tone> = { mastered: 'good', partial: 'mixed', struggling: 'poor' }
@@ -26,23 +26,45 @@ type Order = 'revisit' | 'name'
 
 /** A student's topics across every finished session, from their own answers. */
 export default function StudentProgressPage() {
-  const [reviews, setReviews] = useState<StudentReview[] | null>(null)
+  const [result, setResult] = useState<ReviewsLoaded | null>(null)
+  const [request, setRequest] = useState<{ sessions?: ReviewSession[] }>({})
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Problem | null>(null)
   const [order, setOrder] = useState<Order>('revisit')
   const [open, setOpen] = useState<string | null>(null)
 
   useEffect(() => {
-    let cancelled = false
-    allReviews(apiAuthenticatedRequest).then(
-      (loaded) => !cancelled && setReviews(loaded),
-      (caught: unknown) =>
-        !cancelled && setError(problemOf(caught, 'Your sessions could not be loaded. Check your connection and try again.')),
-    )
-    return () => {
-      cancelled = true
-    }
-  }, [])
+    const controller = new AbortController()
+    const { signal } = controller
+    allReviews(
+      (path) => apiAuthenticatedRequest(path, { signal, cache: 'no-store' }),
+      request.sessions,
+      signal,
+    ).then(
+      (loaded) => {
+        if (signal.aborted) return
+        setResult((previous) => ({
+          reviews: request.sessions ? [...(previous?.reviews ?? []), ...loaded.reviews] : loaded.reviews,
+          unavailable: loaded.unavailable,
+        }))
+      },
+      (caught: unknown) => {
+        if (!signal.aborted) setError(problemOf(caught, 'Your sessions could not be loaded. Check your connection and try again.'))
+      },
+    ).finally(() => {
+      if (!signal.aborted) setLoading(false)
+    })
+    return () => controller.abort()
+  }, [request])
 
+  function retry(sessions?: ReviewSession[]) {
+    setLoading(true)
+    setError(null)
+    setRequest({ sessions })
+  }
+
+  const reviews = result?.reviews
+  const unavailable = result?.unavailable ?? []
   const topics = reviews ? topicProgress(reviews) : []
   const shown = order === 'revisit' ? revisitFirst(topics) : [...topics].sort((a, b) => a.topic.localeCompare(b.topic))
   const toRevisit = topics.filter((topic) => topic.latest !== 'mastered').length
@@ -51,23 +73,34 @@ export default function StudentProgressPage() {
     <>
       <PageHeader
         title="Progress over time"
-        description="Your topics across every session you have finished, so you know what to revisit before an exam."
+        description="Your topics by subject, based on the completed sessions still available for review."
       />
       <PageBody>
+        {unavailable.length > 0 && (
+          <Panel title="Some lessons could not be loaded" className="mb-4">
+            <p role="status" className="text-sm text-muted-foreground">
+              {unavailable.length} {unavailable.length === 1 ? 'lesson is' : 'lessons are'} missing from the results below.
+            </p>
+            <button type="button" disabled={loading} className={buttonStyles({ intent: 'secondary', className: 'mt-3' })} onClick={() => retry(unavailable)}>
+              {loading ? 'Retrying…' : 'Retry missing lessons'}
+            </button>
+          </Panel>
+        )}
         {error ? (
-          <ProblemState art={problemArt(error.cause)} title="Your progress could not be loaded">
+          <ProblemState art={problemArt(error.cause)} title="Your progress could not be loaded" retry={() => retry()}>
             {error.message}
           </ProblemState>
         ) : !reviews ? (
           <SkeletonRows label="Loading your topics" />
-        ) : topics.length === 0 ? (
+        ) : topics.length === 0 && unavailable.length > 0 ? null
+          : topics.length === 0 ? (
           <EmptyState art="lecture" title="Nothing to chart yet">
             Topics appear here once a session you answered in has ended and your answers are marked.
           </EmptyState>
         ) : (
           <Panel
             title={toRevisit === 0 ? 'Every topic is going well' : `${toRevisit} of ${topics.length} topics to revisit`}
-            description={`Each mark is one of your ${reviews.length} finished sessions, oldest first. Only your answers count.`}
+            description="Each mark is one finished session in the topic’s subject, oldest first. Only your answers count."
             actions={
               <SegmentedTabs
                 label="Order"
@@ -84,10 +117,10 @@ export default function StudentProgressPage() {
             <motion.ul layout className="-mx-5 -my-4 divide-y divide-border">
               {shown.map((topic) => (
                 <TopicRow
-                  key={topic.topic}
+                  key={topic.id}
                   topic={topic}
-                  expanded={open === topic.topic}
-                  onToggle={() => setOpen(open === topic.topic ? null : topic.topic)}
+                  expanded={open === topic.id}
+                  onToggle={() => setOpen(open === topic.id ? null : topic.id)}
                 />
               ))}
             </motion.ul>
@@ -116,7 +149,10 @@ function TopicRow({ topic, expanded, onToggle }: { topic: TopicProgress; expande
         aria-expanded={expanded}
         className="grid w-full grid-cols-[1fr_auto] items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-muted/60 sm:grid-cols-[16rem_1fr_auto]"
       >
-        <span className="font-semibold">{topic.topic}</span>
+        <span>
+          <span className="block font-semibold">{topic.topic}</span>
+          <span className="block text-xs text-muted-foreground">{topic.courseCode}</span>
+        </span>
         <span
           className="col-span-2 row-start-2 flex gap-1 sm:col-span-1 sm:row-start-auto"
           aria-label={`Across ${topic.marks.length} sessions`}

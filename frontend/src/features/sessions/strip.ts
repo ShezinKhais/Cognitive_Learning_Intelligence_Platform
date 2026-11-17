@@ -1,4 +1,4 @@
-import type { SessionResponse } from './sessionsApi'
+import type { QuestionBreakdown, SessionResponse } from './sessionsApi'
 
 /** One delivered question as the session strip draws it. */
 export interface StripQuestion {
@@ -39,6 +39,17 @@ export function stripFromResponses(responses: readonly SessionResponse[]): Strip
       wrong: entry.wrong,
       unmarked: entry.unmarked,
     }))
+}
+
+/** Preserve the recorded delivery order, including questions nobody answered. */
+export function stripFromDeliveries(questions: readonly QuestionBreakdown[]): StripQuestion[] {
+  return questions.map((question) => ({
+    questionId: question.question_id,
+    position: question.number,
+    right: question.correct,
+    wrong: question.marked - question.correct,
+    unmarked: question.answers - question.marked,
+  }))
 }
 
 export function describeQuestion(question: StripQuestion): string {

@@ -10,6 +10,8 @@ export interface TopicMark {
 }
 
 export interface TopicProgress {
+  id: string
+  courseCode: string
   topic: string
   marks: TopicMark[]
   /** The most recent session's word on it: a topic struggled with in week 3
@@ -42,29 +44,37 @@ function level(scores: number[]): Mastery | null {
  */
 export function topicProgress(reviews: readonly StudentReview[]): TopicProgress[] {
   const sessions = [...reviews].sort(
-    (a, b) => Date.parse(a.session.ended_at ?? '') - Date.parse(b.session.ended_at ?? ''),
+    (a, b) => (Date.parse(a.session.ended_at ?? '') || 0) - (Date.parse(b.session.ended_at ?? '') || 0),
   )
-  const topics = new Map<string, Map<string, number[]>>()
+  const topics = new Map<string, { courseCode: string; topic: string; scores: Map<string, number[]> }>()
+  const courseSessions = new Map<string, StudentReview[]>()
   for (const review of sessions) {
+    const { id: sessionId, course_code: courseCode } = review.session
+    const history = courseSessions.get(courseCode) ?? []
+    history.push(review)
+    courseSessions.set(courseCode, history)
     for (const answer of review.answers) {
       const score = answerScore(answer)
       if (score === null || !answer.topic?.trim()) continue
       const topic = answer.topic.trim()
-      const bySession = topics.get(topic) ?? new Map<string, number[]>()
-      bySession.set(review.session.id, [...(bySession.get(review.session.id) ?? []), score])
-      topics.set(topic, bySession)
+      const id = JSON.stringify([courseCode, topic])
+      const entry = topics.get(id) ?? { courseCode, topic, scores: new Map<string, number[]>() }
+      const scores = entry.scores.get(sessionId) ?? []
+      scores.push(score)
+      entry.scores.set(sessionId, scores)
+      topics.set(id, entry)
     }
   }
 
-  return [...topics].map(([topic, bySession]) => {
-    const marks = sessions.map((review) => ({
+  return [...topics].map(([id, { courseCode, topic, scores }]) => {
+    const marks = (courseSessions.get(courseCode) ?? []).map((review) => ({
       sessionId: review.session.id,
       title: review.session.title,
-      level: level(bySession.get(review.session.id) ?? []),
+      level: level(scores.get(review.session.id) ?? []),
     }))
     const latest = [...marks].reverse().find((mark) => mark.level !== null)?.level ?? 'partial'
-    const answered = [...bySession.values()].reduce((sum, scores) => sum + scores.length, 0)
-    return { topic, marks, latest, answered }
+    const answered = [...scores.values()].reduce((sum, marks) => sum + marks.length, 0)
+    return { id, courseCode, topic, marks, latest, answered }
   })
 }
 
