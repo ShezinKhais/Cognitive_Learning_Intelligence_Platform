@@ -52,6 +52,7 @@ from app.models.rag_chunk import RagChunk
 from app.models.session import Session
 from app.repositories.session_repository import SessionRepository
 from app.schemas.content import MaterialStatus
+from app.services import student_review
 from app.services.ai_gateway import AiGateway, AiRequest, Priority, get_ai_gateway
 from app.services.discussion import notes_for
 from app.services.retrieval import RetrievedChunk
@@ -318,24 +319,72 @@ _REVISION_QUESTIONS = frozenset(
 )
 
 
-def wants_revision(question: str) -> bool:
-    return " ".join(question.casefold().split()).rstrip("?.!") in _REVISION_QUESTIONS
+_SUBJECT_QUESTION = "Which subject would you like to revise?"
+_SUBJECT_PREFIX = "Revise "
 
 
-async def revision_events(
-    request_id: str, items: Sequence[RevisionItem]
-) -> AsyncIterator[dict[str, Any]]:
+def _normalized(text: str) -> str:
+    return " ".join(text.casefold().split()).rstrip("?.!")
+
+
+@dataclass(frozen=True)
+class RevisionReply:
+    text: str
+    subjects: tuple[str, ...] = ()
+    items: Sequence[RevisionItem] = ()
+
+
+async def prepare_revision(
+    db: AsyncSession, user_id: UUID, question: str, earlier: Sequence[EarlierTurn]
+) -> RevisionReply | None:
+    ask_for_subject = _normalized(question) in _REVISION_QUESTIONS
+    choosing = bool(earlier and earlier[-1].answer.startswith(_SUBJECT_QUESTION))
+    explicit_choice = (
+        question.casefold().startswith(_SUBJECT_PREFIX.casefold()) and " — " in question
+    )
+    if not (ask_for_subject or choosing or explicit_choice):
+        return None
+    subjects = await student_review.revision_subjects(db, user_id)
+    if not subjects:
+        return RevisionReply("There are no subjects available for revision yet.")
+    if not ask_for_subject:
+        choice = question[len(_SUBJECT_PREFIX) :] if explicit_choice else question
+        selected = [
+            subject
+            for subject in subjects
+            if _normalized(choice)
+            in {
+                _normalized(subject.code),
+                _normalized(subject.name),
+                _normalized(f"{subject.code} — {subject.name}"),
+            }
+        ]
+        if len(selected) == 1:
+            subject = selected[0]
+            items = await student_review.revision_items(db, user_id, subject)
+            return RevisionReply(
+                f"Revision plan for {subject.code} — {subject.name}."
+                if items
+                else f"I don’t have any marked answers to flag in {subject.code} — {subject.name} "
+                "from completed lessons. You can still ask me about a topic in the current lesson.",
+                items=items,
+            )
+    text = _SUBJECT_QUESTION
+    if not ask_for_subject:
+        text += " Choose a subject below or enter its course code."
+    return RevisionReply(
+        text, tuple(f"{_SUBJECT_PREFIX}{subject.code} — {subject.name}" for subject in subjects)
+    )
+
+
+async def revision_events(request_id: str, reply: RevisionReply) -> AsyncIterator[dict[str, Any]]:
     """Use recorded facts and source excerpts without sending answers to the model."""
     yield {"type": "accepted", "request_id": request_id}
-    if not items:
-        yield {
-            "type": "delta",
-            "request_id": request_id,
-            "text": "I don’t have any marked answers to flag for revision in this subject’s "
-            "completed lessons. You can still ask me about a topic in the lesson.",
-        }
+    yield {"type": "delta", "request_id": request_id, "text": reply.text}
+    for subject in reply.subjects:
+        yield {"type": "follow_up", "request_id": request_id, "prompt": subject}
     last_lesson = None
-    for number, item in enumerate(items, start=1):
+    for number, item in enumerate(reply.items, start=1):
         question = " ".join(item.question.split())[:240]
         topic = " ".join((item.topic or "").split())[:100]
         heading = f"Revisit {topic}" if topic else "Revisit this concept"
@@ -346,7 +395,7 @@ async def revision_events(
             else "A lesson excerpt isn’t available for this question. "
             "Use the question to find the topic in your notes or ask your lecturer."
         )
-        separator = "\n\n" if number > 1 else ""
+        separator = "\n\n"
         if item.session_id != last_lesson:
             lesson = " ".join(item.lesson.split())[:160]
             separator += f"{lesson} ({item.lesson_date:%Y-%m-%d})\n"
@@ -405,7 +454,7 @@ class TutorExchange:
         question: str,
         earlier: Sequence[EarlierTurn] = (),
         *,
-        revision: Sequence[RevisionItem] | None = None,
+        revision: RevisionReply | None = None,
     ) -> AsyncIterator[bytes]:
         """The reply as NDJSON: one event to a line, as the panel reads it.
 

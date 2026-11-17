@@ -51,9 +51,17 @@ class RevisionItem:
     source: ReviewSource | None
 
 
-async def revision_items(db: AsyncSession, user_id: UUID, session_id: UUID) -> list[RevisionItem]:
-    """Find up to three marked answers per finished lesson in the caller's course."""
-    entry, code, student_id = await own_session(db, user_id, session_id)
+async def revision_subjects(db: AsyncSession, user_id: UUID) -> list[Course]:
+    """List subjects the student can currently access, even before results exist."""
+    return list(
+        await db.scalars(
+            select(Course).where(Course.id.in_(courses_of_user(user_id))).order_by(Course.code)
+        )
+    )
+
+
+async def revision_items(db: AsyncSession, user_id: UUID, course: Course) -> list[RevisionItem]:
+    """Find up to three marked answers per finished lesson in the caller's subject."""
     wrong = StudentResponse.is_correct.is_(False)
     ranked = (
         select(
@@ -74,14 +82,16 @@ async def revision_items(db: AsyncSession, user_id: UUID, session_id: UUID) -> l
             .label("rank"),
         )
         .join(Session, Session.session_id == StudentResponse.session_id)
+        .join(Student, Student.student_id == StudentResponse.student_id)
         .outerjoin(
             ComprehensionResult, ComprehensionResult.response_id == StudentResponse.response_id
         )
         .where(
-            Session.course_id == entry.course_id,
+            Session.course_id == course.id,
+            Session.course_id.in_(courses_of_user(user_id)),
             Session.status == "ended",
             Session.ai_learning_assistant.is_(True),
-            StudentResponse.student_id == student_id,
+            Student.user_id == user_id,
             or_(
                 wrong,
                 and_(
@@ -119,7 +129,7 @@ async def revision_items(db: AsyncSession, user_id: UUID, session_id: UUID) -> l
         items.append(
             RevisionItem(
                 session.session_id,
-                session.title or code,
+                session.title or course.code,
                 session.start_time.date(),
                 question.question_text,
                 question.topic,

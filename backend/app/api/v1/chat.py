@@ -26,7 +26,7 @@ from app.realtime.classroom import classroom
 from app.schemas.chat import ChatRequest
 from app.schemas.identity import ConsentType, Role
 from app.schemas.session import SessionStatus
-from app.services import discussion, session_lifecycle, student_review, tutor_chat
+from app.services import discussion, session_lifecycle, tutor_chat
 from app.services.tutor_guardrails import EarlierTurn
 
 router = APIRouter(
@@ -105,11 +105,10 @@ async def session_chat(
         context = await tutor_chat.with_discussion(
             db, context, payload.discussion_since, payload.discussion_until
         )
+    earlier = [EarlierTurn(question=turn.question, answer=turn.answer) for turn in payload.history]
     revision = (
-        await student_review.revision_items(db, principal.user_id, session_id)
-        if payload.source == "materials"
-        and live.status == SessionStatus.ENDED.value
-        and tutor_chat.wants_revision(payload.question)
+        await tutor_chat.prepare_revision(db, principal.user_id, payload.question, earlier)
+        if payload.source == "materials" and live.status == SessionStatus.ENDED.value
         else None
     )
     # The request's session is not closed until the response has been sent,
@@ -125,7 +124,7 @@ async def session_chat(
         tutor_chat.TutorExchange(context).lines(
             payload.request_id,
             payload.question,
-            [EarlierTurn(question=turn.question, answer=turn.answer) for turn in payload.history],
+            earlier,
             revision=revision,
         ),
         media_type=tutor_chat.NDJSON,

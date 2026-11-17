@@ -30,6 +30,7 @@ from app.core.config import get_settings
 from app.core.errors import ConflictError, RateLimitedError
 from app.models.comprehension_result import ComprehensionResult
 from app.models.course import Course
+from app.models.course_enrollment import CourseEnrollment
 from app.models.material import Material
 from app.models.question import Question
 from app.models.rag_chunk import RagChunk
@@ -678,21 +679,34 @@ async def test_revision_tutor_uses_only_your_marked_answers_across_completed_les
     sign_in_as(app, LECTURER_ID, Role.LECTURER)
     assert client.post(f"/api/v1/sessions/{live.id}/end").status_code == 200
     sign_in_as(app, STUDENT_ID, Role.STUDENT)
-    response = _ask(client, live.id, "What should I revise?")
+    choices = _events(_ask(client, live.id, "What should I revise?"))
+    assert _types(choices) == ["accepted", "delta", "follow_up", "completed"]
+    assert choices[1]["text"] == "Which subject would you like to revise?"
+    option = choices[2]["prompt"]
+    assert option == f"Revise {live.course.code} — {live.course.name}"
+    response = client.post(
+        f"/api/v1/sessions/{live.id}/chat",
+        json={
+            "request_id": "req-1",
+            "question": live.course.code,
+            "history": [{"question": "What should I revise?", "answer": choices[1]["text"]}],
+        },
+    )
     events = _events(response)
     assert response.headers["cache-control"] == "no-store"
-    assert _types(events) == ["accepted", "delta", "delta", "citation", "completed"]
-    assert "Week 1 (" in events[1]["text"]
-    assert "Revisit Orbital motion" in events[1]["text"]
-    assert "partially understood" in events[1]["text"]
-    assert "A lesson excerpt isn’t available" in events[1]["text"]
-    assert "Week 10 (" in events[2]["text"]
-    assert "Revisit Planet size" in events[2]["text"]
-    assert "Which planet is largest?" in events[2]["text"]
-    assert "lesson excerpt [2]" in events[2]["text"]
-    assert events[3]["citation"]["source_page"] == 3
-    assert events[3]["citation"]["material_title"] == "week1.pdf"
-    assert events[3]["citation"]["source_session_id"] == live.id
+    assert _types(events) == ["accepted", "delta", "delta", "delta", "citation", "completed"]
+    assert live.course.code in events[1]["text"]
+    assert "Week 1 (" in events[2]["text"]
+    assert "Revisit Orbital motion" in events[2]["text"]
+    assert "partially understood" in events[2]["text"]
+    assert "A lesson excerpt isn’t available" in events[2]["text"]
+    assert "Week 10 (" in events[3]["text"]
+    assert "Revisit Planet size" in events[3]["text"]
+    assert "Which planet is largest?" in events[3]["text"]
+    assert "lesson excerpt [2]" in events[3]["text"]
+    assert events[4]["citation"]["source_page"] == 3
+    assert events[4]["citation"]["material_title"] == "week1.pdf"
+    assert events[4]["citation"]["source_session_id"] == live.id
     assert "Another subject" not in response.text
     assert "Unfinished lesson" not in response.text
     assert "A partial answer" not in response.text
@@ -701,23 +715,39 @@ async def test_revision_tutor_uses_only_your_marked_answers_across_completed_les
     assert "Private topic" not in response.text
     assert tutor.model.prompts == tutor.model.embedded == []
 
-    from_earlier = _ask(client, str(earlier.session_id), "What should I revise in this subject?")
+    from_earlier = _ask(client, str(earlier.session_id), option)
     assert _events(from_earlier) == events
 
     await enrol(factory, await add_course(factory, created))
     assert _ask(client, live.id, "What should I revise?").status_code == 404
 
 
-async def test_revision_tutor_handles_an_ended_class_without_marked_answers(db, app, tutor) -> None:
-    client, _, _ = db
+async def test_revision_tutor_selects_another_enrolled_subject_and_rejects_unknown_subjects(
+    db, app, tutor
+) -> None:
+    client, factory, created = db
     live = await _running_class(db, app)
+    other = await add_course(factory, created)
+    async with factory() as seed:
+        student_id = await seed.scalar(
+            select(Student.student_id).where(Student.user_id == STUDENT_ID)
+        )
+        seed.add(CourseEnrollment(student_id=student_id, course_id=other.id))
+        await seed.commit()
     sign_in_as(app, LECTURER_ID, Role.LECTURER)
     assert client.post(f"/api/v1/sessions/{live.id}/end").status_code == 200
     sign_in_as(app, STUDENT_ID, Role.STUDENT)
 
-    events = _events(_ask(client, live.id, "  What should I REVIEW?  "))
+    choices = _events(_ask(client, live.id, "  What should I REVIEW?  "))
+    options = {e["prompt"] for e in choices if e["type"] == "follow_up"}
+    option = f"Revise {other.code} — {other.name}"
+    assert options == {option, f"Revise {live.course.code} — {live.course.name}"}
+    events = _events(_ask(client, live.id, option))
     assert _types(events) == ["accepted", "delta", "completed"]
-    assert "don’t have any marked answers to flag" in events[1]["text"]
+    assert f"don’t have any marked answers to flag in {other.code}" in events[1]["text"]
+    unavailable = _events(_ask(client, live.id, "Revise MISSING — Another subject"))
+    assert unavailable[1]["text"].startswith("Which subject would you like to revise?")
+    assert {e["prompt"] for e in unavailable if e["type"] == "follow_up"} == options
     assert tutor.model.prompts == tutor.model.embedded == []
 
 

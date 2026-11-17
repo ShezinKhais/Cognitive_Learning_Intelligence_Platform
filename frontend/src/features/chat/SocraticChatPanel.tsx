@@ -89,10 +89,10 @@ export function SocraticChatPanel({
           <button
             type="button"
             disabled={active}
-            onClick={() => void submit('What should I revise in this subject?')}
+            onClick={() => void submit('What should I revise?')}
             className="mt-3 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
           >
-            What should I revise in this subject?
+            What should I revise?
           </button>
         )}
       </header>
