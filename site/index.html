@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="C.L.I.P. is a university capstone that brings live checkpoints, guided study and session review into one learning workflow.">
+  <title>C.L.I.P. | Learning during and after class</title>
+  <link rel="icon" href="clip-brand.jpg">
+  <link rel="stylesheet" href="styles.css">
+  <script src="checkpoint.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap nav">
+      <a class="brand" href="./"><img src="clip-brand.jpg" width="1024" height="1024" alt="C.L.I.P. Cognitive Learning Intelligence Platform"></a>
+      <nav aria-label="Main navigation">
+        <a href="#workflow">How it works</a>
+        <a href="#privacy">Privacy</a>
+        <a class="nav-guide" href="guide.html">User guides <span aria-hidden="true">↗</span></a>
+      </nav>
+    </div>
+  </header>
+  <main id="main">
+    <section class="hero">
+      <div class="wrap hero-grid">
+        <div>
+          <p class="eyebrow"><span></span> UOWD · CSIT321 Capstone</p>
+          <h1>See what clicked.<br><em>Know what to revisit.</em></h1>
+          <p class="hero-copy">C.L.I.P. helps lecturers check understanding during class and gives students a place to review their answers, revisit lesson sources and ask for a hint.</p>
+          <div class="hero-actions">
+            <a class="button primary" href="guide.html">Read the user guides <span aria-hidden="true">↗</span></a>
+            <a class="button light" href="#checkpoint">Try a sample checkpoint <span aria-hidden="true">↓</span></a>
+          </div>
+          <p class="hero-note">Cognitive Learning Intelligence Platform</p>
+        </div>
+        <div class="demo" id="checkpoint">
+          <div class="demo-header"><span><i></i> SAMPLE CHECKPOINT</span><span>Illustrative demo</span></div>
+          <div class="demo-body">
+            <p class="demo-topic">ASTRONOMY · THE SOLAR SYSTEM</p>
+            <h2>Which planet is largest?</h2>
+            <form id="sample">
+              <fieldset>
+                <legend class="sr-only">Choose one planet</legend>
+                <label class="choice"><input required type="radio" name="planet" value="Mars"> <span>Mars</span></label>
+                <label class="choice"><input type="radio" name="planet" value="Jupiter"> <span>Jupiter</span></label>
+                <label class="choice"><input type="radio" name="planet" value="Venus"> <span>Venus</span></label>
+              </fieldset>
+              <button class="button primary" type="submit">Check answer <span aria-hidden="true">→</span></button>
+              <p id="sample-feedback" class="feedback" role="status"></p>
+            </form>
+          </div>
+          <div class="demo-footer">Try the student flow. The sample runs locally in your browser.</div>
+        </div>
+      </div>
+    </section>
+    <section class="wrap workflow" id="workflow" aria-labelledby="workflow-heading">
+      <h2 id="workflow-heading">How a lesson works</h2>
+      <div class="flow">
+        <article><span class="step">01</span><h3>Prepare</h3><p>The lecturer uploads materials and reviews generated questions before making them available for class.</p></article>
+        <article><span class="step">02</span><h3>Check understanding</h3><p>Students answer checkpoints in the Teams meeting side panel. The lecturer can see response trends during class.</p></article>
+        <article><span class="step">03</span><h3>Review and study</h3><p>Students revisit their answers, open the related lesson excerpts and ask the Socratic tutor for guided help.</p></article>
+      </div>
+    </section>
+    <section class="privacy" id="privacy">
+      <div class="wrap privacy-grid">
+        <h2>Understanding and engagement are separate.</h2>
+        <div><p>Checkpoint answers help students see what they understood. Optional camera and microphone indicators give limited signals about participation. They require separate consent, are processed on the student’s device, and send only derived signals to C.L.I.P.</p><p>Lecturer microphone transcription is a separate, optional feature. When enabled, short audio chunks go to the server for processing. Read the in-app Privacy notice for how text is shared and retained.</p></div>
+      </div>
+    </section>
+    <section class="wrap resources" aria-labelledby="resources-heading">
+      <div><h2 id="resources-heading">Get started with C.L.I.P.</h2><p>Follow the steps for joining a Teams meeting, running a lesson or managing courses and accounts.</p></div>
+      <div class="hero-actions">
+        <a class="button primary" href="guide.html#students">Student guide ↗</a>
+        <a class="button light" href="guide.html#lecturers">Lecturer guide ↗</a>
+        <a class="button light" href="guide.html#administrators">Administrator guide ↗</a>
+      </div>
+    </section>
+  </main>
+  <footer><div class="wrap footer"><a class="brand" href="./"><img src="clip-brand.jpg" width="1024" height="1024" alt="C.L.I.P. Cognitive Learning Intelligence Platform"></a><p>University of Wollongong in Dubai · CSIT321 · Team 4</p><a href="https://github.com/ShezinKhais/Cognitive_Learning_Intelligence_Platform">Project repository ↗</a></div></footer>
+</body>
+</html>
