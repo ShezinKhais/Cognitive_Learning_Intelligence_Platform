@@ -17,6 +17,7 @@ import asyncio
 import contextlib
 import json
 from collections.abc import AsyncIterator, Sequence
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 from uuid import UUID, uuid4
@@ -537,7 +538,7 @@ async def test_ended_session_retains_material_tutor_for_current_members(db, app,
     assert _ask(client, live.id).status_code == 404
 
 
-async def test_revision_tutor_uses_only_your_marked_answers_from_the_ended_class(
+async def test_revision_tutor_uses_only_your_marked_answers_across_completed_lessons_in_the_subject(
     db, app, tutor
 ) -> None:
     client, factory, created = db
@@ -545,6 +546,8 @@ async def test_revision_tutor_uses_only_your_marked_answers_from_the_ended_class
     partial_id = await add_question(db, live.course, LECTURER_ID, question_type="free_text")
     uncertain_id = await add_question(db, live.course, LECTURER_ID)
     other_id = await add_question(db, live.course, LECTURER_ID)
+    unrelated_course = await add_course(factory, created)
+    excluded_id = await add_question(db, unrelated_course, LECTURER_ID)
     other_user = uuid4()
     async with factory() as seed:
         seed.add(
@@ -563,6 +566,38 @@ async def test_revision_tutor_uses_only_your_marked_answers_from_the_ended_class
                 )
             ).all()
         )
+        entry = await seed.get(SessionModel, UUID(live.id))
+        assert entry is not None
+        entry.title = "Week 10"
+        lesson_date = datetime.now(UTC) - timedelta(days=63)
+        earlier = SessionModel(
+            instructor_id=LECTURER_ID,
+            course_id=live.course.id,
+            title="Week 1",
+            start_time=lesson_date,
+            ended_at=lesson_date + timedelta(hours=1),
+            mode=entry.mode,
+            status="ended",
+        )
+        unrelated = SessionModel(
+            instructor_id=LECTURER_ID,
+            course_id=unrelated_course.id,
+            title="Another subject",
+            start_time=lesson_date,
+            ended_at=lesson_date + timedelta(hours=1),
+            mode=entry.mode,
+            status="ended",
+        )
+        in_progress = SessionModel(
+            instructor_id=LECTURER_ID,
+            course_id=live.course.id,
+            title="Unfinished lesson",
+            start_time=lesson_date,
+            mode=entry.mode,
+            status="active",
+        )
+        seed.add_all((earlier, unrelated, in_progress))
+        await seed.flush()
         for question_id, topic in (
             (live.question_id, "Planet size"),
             (partial_id, "Orbital motion"),
@@ -580,7 +615,7 @@ async def test_revision_tutor_uses_only_your_marked_answers_from_the_ended_class
             free_text="An unverified answer",
         )
         partial = StudentResponse(
-            session_id=session_id,
+            session_id=earlier.session_id,
             student_id=students[STUDENT_ID],
             question_id=partial_id,
             free_text="A partial answer",
@@ -589,6 +624,20 @@ async def test_revision_tutor_uses_only_your_marked_answers_from_the_ended_class
             [
                 uncertain,
                 partial,
+                StudentResponse(
+                    session_id=unrelated.session_id,
+                    student_id=students[STUDENT_ID],
+                    question_id=excluded_id,
+                    selected_option=0,
+                    is_correct=False,
+                ),
+                StudentResponse(
+                    session_id=in_progress.session_id,
+                    student_id=students[STUDENT_ID],
+                    question_id=partial_id,
+                    selected_option=0,
+                    is_correct=False,
+                ),
                 StudentResponse(
                     session_id=session_id,
                     student_id=students[STUDENT_ID],
@@ -632,20 +681,28 @@ async def test_revision_tutor_uses_only_your_marked_answers_from_the_ended_class
     response = _ask(client, live.id, "What should I revise?")
     events = _events(response)
     assert response.headers["cache-control"] == "no-store"
-    assert _types(events) == ["accepted", "delta", "citation", "delta", "completed"]
-    assert "Revisit Planet size" in events[1]["text"]
-    assert "Which planet is largest?" in events[1]["text"]
-    assert "lesson excerpt [1]" in events[1]["text"]
-    assert events[2]["citation"]["source_page"] == 3
-    assert events[2]["citation"]["material_title"] == "week1.pdf"
-    assert "Revisit Orbital motion" in events[3]["text"]
-    assert "partially understood" in events[3]["text"]
-    assert "A lesson excerpt isn’t available" in events[3]["text"]
+    assert _types(events) == ["accepted", "delta", "delta", "citation", "completed"]
+    assert "Week 1 (" in events[1]["text"]
+    assert "Revisit Orbital motion" in events[1]["text"]
+    assert "partially understood" in events[1]["text"]
+    assert "A lesson excerpt isn’t available" in events[1]["text"]
+    assert "Week 10 (" in events[2]["text"]
+    assert "Revisit Planet size" in events[2]["text"]
+    assert "Which planet is largest?" in events[2]["text"]
+    assert "lesson excerpt [2]" in events[2]["text"]
+    assert events[3]["citation"]["source_page"] == 3
+    assert events[3]["citation"]["material_title"] == "week1.pdf"
+    assert events[3]["citation"]["source_session_id"] == live.id
+    assert "Another subject" not in response.text
+    assert "Unfinished lesson" not in response.text
     assert "A partial answer" not in response.text
     assert "Jupiter" not in response.text
     assert "Uncertain topic" not in response.text
     assert "Private topic" not in response.text
     assert tutor.model.prompts == tutor.model.embedded == []
+
+    from_earlier = _ask(client, str(earlier.session_id), "What should I revise in this subject?")
+    assert _events(from_earlier) == events
 
     await enrol(factory, await add_course(factory, created))
     assert _ask(client, live.id, "What should I revise?").status_code == 404

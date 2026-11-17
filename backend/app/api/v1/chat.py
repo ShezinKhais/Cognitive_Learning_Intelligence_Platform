@@ -44,7 +44,8 @@ _EVENTS = (
     "One JSON object per line, each with `type` and `request_id`. `accepted` comes "
     "first. Then either `delta` events carrying `text`, `citation` events carrying a "
     "`citation` (`id`, `material_title`, `source_page`, `source_slide`, `excerpt`, "
-    "optional `number` and `source_note_id` for discussion notes), "
+    "optional `number`, `source_note_id` for discussion notes, and `source_session_id` for "
+    "revision sources), "
     "`follow_up` events carrying a `prompt`, and `completed`; or one of `unsupported` "
     "(with a `reason`), `empty_retrieval` and `error` (with a `detail`)."
 )

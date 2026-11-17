@@ -45,6 +45,8 @@ function citation(value: unknown): ChatCitation | null {
     id,
     ...(typeof item.source_note_id === 'string' && /^[0-9a-f-]{36}$/i.test(item.source_note_id)
       ? { source_note_id: item.source_note_id } : {}),
+    ...(typeof item.source_session_id === 'string' && /^[0-9a-f-]{36}$/i.test(item.source_session_id)
+      ? { source_session_id: item.source_session_id } : {}),
     ...(number === undefined ? {} : { number }),
     material_title: materialTitle,
     source_page: sourcePage,

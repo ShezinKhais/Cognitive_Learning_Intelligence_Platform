@@ -309,7 +309,12 @@ async def prepare(
 
 
 _REVISION_QUESTIONS = frozenset(
-    {"what should i revise", "what should i review", "what should i study from this lesson"}
+    {
+        "what should i revise",
+        "what should i revise in this subject",
+        "what should i review",
+        "what should i study for this course",
+    }
 )
 
 
@@ -326,9 +331,10 @@ async def revision_events(
         yield {
             "type": "delta",
             "request_id": request_id,
-            "text": "I don’t have any marked answers to flag for revision in this session. "
-            "You can still ask me about a topic in the lesson.",
+            "text": "I don’t have any marked answers to flag for revision in this subject’s "
+            "completed lessons. You can still ask me about a topic in the lesson.",
         }
+    last_lesson = None
     for number, item in enumerate(items, start=1):
         question = " ".join(item.question.split())[:240]
         topic = " ".join((item.topic or "").split())[:100]
@@ -341,6 +347,10 @@ async def revision_events(
             "Use the question to find the topic in your notes or ask your lecturer."
         )
         separator = "\n\n" if number > 1 else ""
+        if item.session_id != last_lesson:
+            lesson = " ".join(item.lesson.split())[:160]
+            separator += f"{lesson} ({item.lesson_date:%Y-%m-%d})\n"
+            last_lesson = item.session_id
         yield {
             "type": "delta",
             "request_id": request_id,
@@ -354,6 +364,7 @@ async def revision_events(
                     "id": f"{source.chunk_id}-{number}",
                     "number": number,
                     "material_title": source.material_title,
+                    "source_session_id": str(item.session_id),
                     "source_page": source.source_page if source.source_label == "Page" else None,
                     "source_slide": source.source_page if source.source_label == "Slide" else None,
                     "source_section": source.source_page

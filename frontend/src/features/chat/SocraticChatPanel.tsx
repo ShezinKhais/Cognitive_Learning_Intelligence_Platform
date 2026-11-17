@@ -11,6 +11,7 @@ import {
   useId,
   useRef,
 } from 'react'
+import { Link } from 'react-router'
 
 import { MAX_CHAT_QUESTION_LENGTH } from './chatApi'
 import { splitCitations } from './chatState'
@@ -88,10 +89,10 @@ export function SocraticChatPanel({
           <button
             type="button"
             disabled={active}
-            onClick={() => void submit('What should I revise?')}
+            onClick={() => void submit('What should I revise in this subject?')}
             className="mt-3 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
           >
-            What should I revise?
+            What should I revise in this subject?
           </button>
         )}
       </header>
@@ -263,6 +264,11 @@ function Exchange({
                       {citation.material_title} · {location}
                     </p>
                     {citation.source_note_id && <a className="text-xs underline" href={`#discussion-${citation.source_note_id}`}>Read full discussion note</a>}
+                    {citation.source_session_id && (
+                      <Link className="text-xs underline" to={`/student/reviews/${citation.source_session_id}`}>
+                        Open lesson review
+                      </Link>
+                    )}
                     {citation.excerpt && (
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">{citation.excerpt}</p>
                     )}

@@ -5,6 +5,7 @@ The stored summaries carry no validated confidence for an engagement score.
 """
 
 from dataclasses import dataclass
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select
@@ -41,6 +42,9 @@ from app.services.source_labels import source_label
 
 @dataclass(frozen=True)
 class RevisionItem:
+    session_id: UUID
+    lesson: str
+    lesson_date: date
     question: str
     topic: str | None
     reason: str
@@ -48,41 +52,62 @@ class RevisionItem:
 
 
 async def revision_items(db: AsyncSession, user_id: UUID, session_id: UUID) -> list[RevisionItem]:
-    """Find up to three marked answers to revisit in the caller's finished session."""
-    session, _, student_id = await own_session(db, user_id, session_id)
+    """Find up to three marked answers per finished lesson in the caller's course."""
+    entry, code, student_id = await own_session(db, user_id, session_id)
     wrong = StudentResponse.is_correct.is_(False)
-    rows = (
-        await db.execute(
-            select(Question, StudentResponse.is_correct, ComprehensionResult.label)
-            .join(StudentResponse, StudentResponse.question_id == Question.question_id)
-            .outerjoin(
-                ComprehensionResult, ComprehensionResult.response_id == StudentResponse.response_id
-            )
-            .where(
-                StudentResponse.session_id == session_id,
-                StudentResponse.student_id == student_id,
-                or_(
-                    wrong,
-                    and_(
-                        StudentResponse.is_correct.is_(None),
-                        ComprehensionResult.label.in_(
-                            (ComprehensionLabel.STRUGGLING, ComprehensionLabel.PARTIAL)
-                        ),
-                        ComprehensionResult.confidence_score >= 0.6,
-                    ),
+    ranked = (
+        select(
+            StudentResponse.response_id,
+            ComprehensionResult.label,
+            func.row_number()
+            .over(
+                partition_by=StudentResponse.session_id,
+                order_by=(
+                    wrong.desc(),
+                    (ComprehensionResult.label == ComprehensionLabel.STRUGGLING)
+                    .desc()
+                    .nulls_last(),
+                    StudentResponse.submitted_at.desc(),
+                    StudentResponse.response_id,
                 ),
             )
-            .order_by(
-                wrong.desc(),
-                (ComprehensionResult.label == ComprehensionLabel.STRUGGLING).desc().nulls_last(),
-                StudentResponse.submitted_at.desc(),
-                StudentResponse.response_id,
-            )
-            .limit(3)
+            .label("rank"),
+        )
+        .join(Session, Session.session_id == StudentResponse.session_id)
+        .outerjoin(
+            ComprehensionResult, ComprehensionResult.response_id == StudentResponse.response_id
+        )
+        .where(
+            Session.course_id == entry.course_id,
+            Session.status == "ended",
+            Session.ai_learning_assistant.is_(True),
+            StudentResponse.student_id == student_id,
+            or_(
+                wrong,
+                and_(
+                    StudentResponse.is_correct.is_(None),
+                    ComprehensionResult.label.in_(
+                        (ComprehensionLabel.STRUGGLING, ComprehensionLabel.PARTIAL)
+                    ),
+                    ComprehensionResult.confidence_score >= 0.6,
+                ),
+            ),
+        )
+        .subquery()
+    )
+    rows = (
+        await db.execute(
+            select(Session, Question, StudentResponse.is_correct, ranked.c.label)
+            .select_from(Session)
+            .join(StudentResponse, StudentResponse.session_id == Session.session_id)
+            .join(ranked, ranked.c.response_id == StudentResponse.response_id)
+            .join(Question, Question.question_id == StudentResponse.question_id)
+            .where(ranked.c.rank <= 3)
+            .order_by(Session.start_time, Session.session_id, ranked.c.rank)
         )
     ).all()
     items = []
-    for question, correctness, label in rows:
+    for session, question, correctness, label in rows:
         sources = await question_sources(db, session, question)
         if correctness is False:
             reason = "Your checkpoint answer was marked incorrect."
@@ -93,6 +118,9 @@ async def revision_items(db: AsyncSession, user_id: UUID, session_id: UUID) -> l
         source = next((item for item in sources.items if item.match == "excerpt"), None)
         items.append(
             RevisionItem(
+                session.session_id,
+                session.title or code,
+                session.start_time.date(),
                 question.question_text,
                 question.topic,
                 reason,

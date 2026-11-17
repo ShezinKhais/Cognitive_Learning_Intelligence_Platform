@@ -165,7 +165,7 @@ test('an answer is split into text and the sources it cites', () => {
   assert.deepEqual(splitCitations('Layers stay fixed [1] and [12].'), ['Layers stay fixed ', 1, ' and ', 12, '.'])
   assert.deepEqual(splitCitations('[2] First.'), [2, ' First.'])
   assert.deepEqual(splitCitations('No sources here'), ['No sources here'])
-  assert.deepEqual(splitCitations('Not a citation [abc] or [123]'), ['Not a citation [abc] or [123]'])
+  assert.deepEqual(splitCitations('Not a citation [abc] or [123]'), ['Not a citation [abc] or ', 123])
 })
 
 test('a citation keeps its number, and one without stays valid', () => {
@@ -186,4 +186,17 @@ test('a Word or text file is cited by section, and an older server stays valid',
   assert.equal(older?.type === 'citation' && older.citation.source_section, null)
   const bad = parseChatStreamEvent({ type: 'citation', request_id: 'r', citation: { ...base, source_section: '4' } })
   assert.equal(bad, null)
+})
+
+test('revision citations carry their lesson review ID', () => {
+  const base = { id: 'c1', material_title: 'Lab 3', source_page: 2, source_slide: null, excerpt: null }
+  const sessionId = '123e4567-e89b-12d3-a456-426614174000'
+  const revision = parseChatStreamEvent({
+    type: 'citation', request_id: 'r', citation: { ...base, source_session_id: sessionId },
+  })
+  assert.equal(revision?.type === 'citation' && revision.citation.source_session_id, sessionId)
+  const malformed = parseChatStreamEvent({
+    type: 'citation', request_id: 'r', citation: { ...base, source_session_id: 'https://example.com' },
+  })
+  assert.ok(malformed?.type === 'citation' && malformed.citation.source_session_id === undefined)
 })

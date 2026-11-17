@@ -277,8 +277,8 @@ See [docs/governance.md](docs/governance.md).
   student's own device, and only the derived figures sent
 - A summary after each session with what to revisit, past session reviews and progress
   over time
-- **What should I revise?** in the session review tutor highlights up to three of your
-  marked checkpoint answers and links to the relevant lesson excerpts when available
+- **What should I revise?** in the session review tutor highlights marked checkpoints across
+  the subject’s completed lessons, in lesson order, with source excerpts when available.
 - Request special consideration, and see its decision
 
 ### Lecturer
