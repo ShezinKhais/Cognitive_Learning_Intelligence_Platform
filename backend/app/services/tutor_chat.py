@@ -4,8 +4,8 @@ Owner: General CS, Phase 5.
 
 Cyber 1's guarded_chat is the whole path a question takes: it screens the
 question, the excerpts, the prompt and the reply, and nothing reaches the
-student that has not passed. It asks its caller for three things, and this
-module is that caller:
+student that has not passed. Revision requests use saved checkpoint results
+and a fixed response. For model replies, this module gives the guard:
 
 - The excerpts. The question is embedded and matched against the lecture
   material this session draws on, which is the material its lecturer uploaded
@@ -56,6 +56,7 @@ from app.services.ai_gateway import AiGateway, AiRequest, Priority, get_ai_gatew
 from app.services.discussion import notes_for
 from app.services.retrieval import RetrievedChunk
 from app.services.source_labels import source_label
+from app.services.student_review import RevisionItem
 from app.services.tutor_guardrails import EarlierTurn, OpenQuestion, TutorPrompt, guarded_chat
 
 log = logging.getLogger("clip.tutor")
@@ -307,6 +308,63 @@ async def prepare(
     )
 
 
+_REVISION_QUESTIONS = frozenset(
+    {"what should i revise", "what should i review", "what should i study from this lesson"}
+)
+
+
+def wants_revision(question: str) -> bool:
+    return " ".join(question.casefold().split()).rstrip("?.!") in _REVISION_QUESTIONS
+
+
+async def revision_events(
+    request_id: str, items: Sequence[RevisionItem]
+) -> AsyncIterator[dict[str, Any]]:
+    """Use recorded facts and source excerpts without sending answers to the model."""
+    yield {"type": "accepted", "request_id": request_id}
+    if not items:
+        yield {
+            "type": "delta",
+            "request_id": request_id,
+            "text": "I don’t have any marked answers to flag for revision in this session. "
+            "You can still ask me about a topic in the lesson.",
+        }
+    for number, item in enumerate(items, start=1):
+        question = " ".join(item.question.split())[:240]
+        topic = " ".join((item.topic or "").split())[:100]
+        heading = f"Revisit {topic}" if topic else "Revisit this concept"
+        source = item.source
+        next_step = (
+            f"Open the lesson excerpt [{number}], then explain the idea in your own words."
+            if source
+            else "A lesson excerpt isn’t available for this question. "
+            "Use the question to find the topic in your notes or ask your lecturer."
+        )
+        separator = "\n\n" if number > 1 else ""
+        yield {
+            "type": "delta",
+            "request_id": request_id,
+            "text": f"{separator}{heading}\nCheckpoint: {question}\n{item.reason} {next_step}",
+        }
+        if source:
+            yield {
+                "type": "citation",
+                "request_id": request_id,
+                "citation": {
+                    "id": f"{source.chunk_id}-{number}",
+                    "number": number,
+                    "material_title": source.material_title,
+                    "source_page": source.source_page if source.source_label == "Page" else None,
+                    "source_slide": source.source_page if source.source_label == "Slide" else None,
+                    "source_section": source.source_page
+                    if source.source_label == "Section"
+                    else None,
+                    "excerpt": " ".join(source.text.split())[:CITATION_EXCERPT_CHARS] or None,
+                },
+            }
+    yield {"type": "completed", "request_id": request_id}
+
+
 # -- the exchange ---------------------------------------------------------------------
 
 
@@ -331,7 +389,12 @@ class TutorExchange:
         self._found_in: dict[UUID, UUID] = {}
 
     async def lines(
-        self, request_id: str, question: str, earlier: Sequence[EarlierTurn] = ()
+        self,
+        request_id: str,
+        question: str,
+        earlier: Sequence[EarlierTurn] = (),
+        *,
+        revision: Sequence[RevisionItem] | None = None,
     ) -> AsyncIterator[bytes]:
         """The reply as NDJSON: one event to a line, as the panel reads it.
 
@@ -350,6 +413,8 @@ class TutorExchange:
             describe=self._describe,
             earlier=earlier,
         )
+        if revision is not None:
+            events = revision_events(request_id, revision)
         try:
             # Closed on the way out, so a reader that stops early still ends
             # the guard, which ends the model's stream.

@@ -27,11 +27,15 @@ from sqlalchemy import delete, event, select
 from app.auth.store import LECTURER_ID, STUDENT_ID, get_consent_repository
 from app.core.config import get_settings
 from app.core.errors import ConflictError, RateLimitedError
+from app.models.comprehension_result import ComprehensionResult
 from app.models.course import Course
 from app.models.material import Material
 from app.models.question import Question
 from app.models.rag_chunk import RagChunk
 from app.models.session import Session as SessionModel
+from app.models.student import Student
+from app.models.student_response import StudentResponse
+from app.models.user import User
 from app.schemas.identity import ConsentType, Role
 from app.services import tutor_chat
 from app.services.ai_gateway import (
@@ -531,6 +535,133 @@ async def test_ended_session_retains_material_tutor_for_current_members(db, app,
     # Ending a session does not bypass current course membership.
     await enrol(db[1], await add_course(db[1], db[2]))
     assert _ask(client, live.id).status_code == 404
+
+
+async def test_revision_tutor_uses_only_your_marked_answers_from_the_ended_class(
+    db, app, tutor
+) -> None:
+    client, factory, created = db
+    live = await _running_class(db, app)
+    partial_id = await add_question(db, live.course, LECTURER_ID, question_type="free_text")
+    uncertain_id = await add_question(db, live.course, LECTURER_ID)
+    other_id = await add_question(db, live.course, LECTURER_ID)
+    other_user = uuid4()
+    async with factory() as seed:
+        seed.add(
+            User(user_id=other_user, name="Other", role="student", email=f"{other_user}@t.test")
+        )
+        await seed.commit()
+    created["user"].append(other_user)
+    await enrol(factory, live.course, other_user)
+    async with factory() as seed:
+        students = dict(
+            (
+                await seed.execute(
+                    select(Student.user_id, Student.student_id).where(
+                        Student.user_id.in_((STUDENT_ID, other_user))
+                    )
+                )
+            ).all()
+        )
+        for question_id, topic in (
+            (live.question_id, "Planet size"),
+            (partial_id, "Orbital motion"),
+            (uncertain_id, "Uncertain topic"),
+            (other_id, "Private topic"),
+        ):
+            question = await seed.get(Question, question_id)
+            assert question is not None
+            question.topic = topic
+        session_id = UUID(live.id)
+        uncertain = StudentResponse(
+            session_id=session_id,
+            student_id=students[STUDENT_ID],
+            question_id=uncertain_id,
+            free_text="An unverified answer",
+        )
+        partial = StudentResponse(
+            session_id=session_id,
+            student_id=students[STUDENT_ID],
+            question_id=partial_id,
+            free_text="A partial answer",
+        )
+        seed.add_all(
+            [
+                uncertain,
+                partial,
+                StudentResponse(
+                    session_id=session_id,
+                    student_id=students[STUDENT_ID],
+                    question_id=live.question_id,
+                    selected_option=0,
+                    is_correct=False,
+                ),
+                StudentResponse(
+                    session_id=session_id,
+                    student_id=students[other_user],
+                    question_id=other_id,
+                    selected_option=0,
+                    is_correct=False,
+                ),
+            ]
+        )
+        await seed.flush()
+        seed.add(
+            ComprehensionResult(
+                response_id=uncertain.response_id,
+                label="struggling",
+                confidence_score=0.3,
+                score=0.2,
+                ai_feedback_text="Uncertain",
+            )
+        )
+        seed.add(
+            ComprehensionResult(
+                response_id=partial.response_id,
+                label="partial",
+                confidence_score=0.8,
+                score=0.5,
+                ai_feedback_text="Partial",
+            )
+        )
+        await seed.commit()
+
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    assert client.post(f"/api/v1/sessions/{live.id}/end").status_code == 200
+    sign_in_as(app, STUDENT_ID, Role.STUDENT)
+    response = _ask(client, live.id, "What should I revise?")
+    events = _events(response)
+    assert response.headers["cache-control"] == "no-store"
+    assert _types(events) == ["accepted", "delta", "citation", "delta", "completed"]
+    assert "Revisit Planet size" in events[1]["text"]
+    assert "Which planet is largest?" in events[1]["text"]
+    assert "lesson excerpt [1]" in events[1]["text"]
+    assert events[2]["citation"]["source_page"] == 3
+    assert events[2]["citation"]["material_title"] == "week1.pdf"
+    assert "Revisit Orbital motion" in events[3]["text"]
+    assert "partially understood" in events[3]["text"]
+    assert "A lesson excerpt isn’t available" in events[3]["text"]
+    assert "A partial answer" not in response.text
+    assert "Jupiter" not in response.text
+    assert "Uncertain topic" not in response.text
+    assert "Private topic" not in response.text
+    assert tutor.model.prompts == tutor.model.embedded == []
+
+    await enrol(factory, await add_course(factory, created))
+    assert _ask(client, live.id, "What should I revise?").status_code == 404
+
+
+async def test_revision_tutor_handles_an_ended_class_without_marked_answers(db, app, tutor) -> None:
+    client, _, _ = db
+    live = await _running_class(db, app)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    assert client.post(f"/api/v1/sessions/{live.id}/end").status_code == 200
+    sign_in_as(app, STUDENT_ID, Role.STUDENT)
+
+    events = _events(_ask(client, live.id, "  What should I REVIEW?  "))
+    assert _types(events) == ["accepted", "delta", "completed"]
+    assert "don’t have any marked answers to flag" in events[1]["text"]
+    assert tutor.model.prompts == tutor.model.embedded == []
 
 
 async def test_staff_are_not_the_tutors_students(db, app, tutor) -> None:

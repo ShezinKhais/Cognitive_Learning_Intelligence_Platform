@@ -4,6 +4,7 @@ Show the availability of consented historical readings alongside answers.
 The stored summaries carry no validated confidence for an engagement score.
 """
 
+from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select
@@ -24,6 +25,7 @@ from app.models.student import Student
 from app.models.student_response import StudentResponse
 from app.schemas.common import Page
 from app.schemas.identity import ConsentType
+from app.schemas.session import ComprehensionLabel
 from app.schemas.student_review import (
     MissedQuestion,
     ReviewAnswer,
@@ -35,6 +37,69 @@ from app.schemas.student_review import (
 )
 from app.services.course_membership import courses_of_user
 from app.services.source_labels import source_label
+
+
+@dataclass(frozen=True)
+class RevisionItem:
+    question: str
+    topic: str | None
+    reason: str
+    source: ReviewSource | None
+
+
+async def revision_items(db: AsyncSession, user_id: UUID, session_id: UUID) -> list[RevisionItem]:
+    """Find up to three marked answers to revisit in the caller's finished session."""
+    session, _, student_id = await own_session(db, user_id, session_id)
+    wrong = StudentResponse.is_correct.is_(False)
+    rows = (
+        await db.execute(
+            select(Question, StudentResponse.is_correct, ComprehensionResult.label)
+            .join(StudentResponse, StudentResponse.question_id == Question.question_id)
+            .outerjoin(
+                ComprehensionResult, ComprehensionResult.response_id == StudentResponse.response_id
+            )
+            .where(
+                StudentResponse.session_id == session_id,
+                StudentResponse.student_id == student_id,
+                or_(
+                    wrong,
+                    and_(
+                        StudentResponse.is_correct.is_(None),
+                        ComprehensionResult.label.in_(
+                            (ComprehensionLabel.STRUGGLING, ComprehensionLabel.PARTIAL)
+                        ),
+                        ComprehensionResult.confidence_score >= 0.6,
+                    ),
+                ),
+            )
+            .order_by(
+                wrong.desc(),
+                (ComprehensionResult.label == ComprehensionLabel.STRUGGLING).desc().nulls_last(),
+                StudentResponse.submitted_at.desc(),
+                StudentResponse.response_id,
+            )
+            .limit(3)
+        )
+    ).all()
+    items = []
+    for question, correctness, label in rows:
+        sources = await question_sources(db, session, question)
+        if correctness is False:
+            reason = "Your checkpoint answer was marked incorrect."
+        elif label == ComprehensionLabel.PARTIAL:
+            reason = "Your answer was marked as partially understood."
+        else:
+            reason = "Your answer was marked as needing more practice."
+        source = next((item for item in sources.items if item.match == "excerpt"), None)
+        items.append(
+            RevisionItem(
+                question.question_text,
+                question.topic,
+                reason,
+                source or next(iter(sources.items), None),
+            )
+        )
+    return items
 
 
 def sessions_query(user_id: UUID):
