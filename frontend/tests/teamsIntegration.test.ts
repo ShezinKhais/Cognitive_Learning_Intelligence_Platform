@@ -14,6 +14,7 @@ import { applyTeamsTheme } from '../src/teams/teamsTheme.ts'
 import {
   lecturerLiveSessionPath,
   meetingSessionPath,
+  meetingSessionWatcher,
   shouldAdoptMeetingSession,
   shouldWatchMeetingSession,
 } from '../src/teams/lecturerMeeting.ts'
@@ -164,4 +165,39 @@ test('the panel moves to the meeting session only when it is a different one', (
   // No session to move to.
   assert.equal(shouldAdoptMeetingSession('session-7', null), false)
   assert.equal(shouldAdoptMeetingSession(null, undefined), false)
+})
+
+test('an answer the panel has overtaken cannot drag it back', async () => {
+  // The interval and the focus listener both ask, so two lookups are in
+  // flight. The first is about the class that has finished and answers last.
+  const pending: Array<(value: { id: string }) => void> = []
+  const adopted: string[] = []
+  const watcher = meetingSessionWatcher(
+    () => new Promise((resolve) => pending.push(resolve)),
+    (sessionId) => adopted.push(sessionId),
+  )
+
+  watcher.recheck()
+  watcher.recheck()
+  pending[1]({ id: 'next-class' })
+  pending[0]({ id: 'finished-class' })
+  await Promise.resolve()
+  await Promise.resolve()
+
+  assert.deepEqual(adopted, ['next-class'])
+})
+
+test('a watcher that has stopped adopts nothing', () => {
+  const pending: Array<(value: { id: string }) => void> = []
+  const adopted: string[] = []
+  const watcher = meetingSessionWatcher(
+    () => new Promise((resolve) => pending.push(resolve)),
+    (sessionId) => adopted.push(sessionId),
+  )
+
+  watcher.recheck()
+  watcher.stop()
+  pending[0]({ id: 'anything' })
+
+  assert.deepEqual(adopted, [])
 })
