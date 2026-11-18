@@ -91,9 +91,17 @@ def _printable(cell: str) -> str:
     return _CONTROL.sub("", cell).strip()
 
 
-# Outcomes that concern a student the caller may put on this course, and so
-# the only ones whose stored name the caller is shown.
-NAMEABLE = frozenset({BulkRosterOutcome.ADD, BulkRosterOutcome.ALREADY})
+# Whose stored name the preview may read back.
+#
+# For a lecturer, only a student already on this course: one they can see on
+# the roster page anyway. An eligible student of another course previews as
+# ADD, so naming them would be the same directory lookup by another route:
+# paste any address, read back the name of whoever holds it.
+#
+# An admin may read every account on the Accounts page, so naming the student
+# they are about to add tells them nothing new and lets them check the list.
+NAMEABLE = frozenset({BulkRosterOutcome.ALREADY})
+NAMEABLE_FOR_ADMIN = frozenset({BulkRosterOutcome.ADD, BulkRosterOutcome.ALREADY})
 
 
 def _stored_name(users: dict[str, User], email: str) -> str | None:
@@ -142,6 +150,7 @@ async def run(
     # anyway: add this student, or not. An admin, who may already read every
     # account on the Accounts page, keeps the precise reason.
     detailed = principal.is_(Role.ADMIN)
+    nameable = NAMEABLE_FOR_ADMIN if detailed else NAMEABLE
 
     lines: list[BulkRosterLine] = []
     seen: set[str] = set()
@@ -169,10 +178,10 @@ async def run(
             BulkRosterLine(
                 line=number,
                 email=email[:255],
-                # The stored name only for a student of this course's roster.
+                # The pasted name always; the stored one only per nameable.
                 # Echoing it for any address would turn the preview into a
                 # directory: paste 500 addresses, read back 500 real names.
-                name=name or (_stored_name(users, email) if outcome in NAMEABLE else None),
+                name=name or (_stored_name(users, email) if outcome in nameable else None),
                 outcome=outcome,
             )
         )
