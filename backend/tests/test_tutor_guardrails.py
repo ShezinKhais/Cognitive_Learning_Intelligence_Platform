@@ -55,6 +55,7 @@ from app.services.tutor_guardrails import (
     screen_context,
     screen_earlier,
     screen_question,
+    talk_allowed,
     vet_answer,
     vet_follow_up,
 )
@@ -1172,9 +1173,59 @@ class TestConversation:
 
     async def test_an_unrelated_request_the_model_declines_gets_the_fixed_reason(self) -> None:
         harness = Harness(chunks=[chunk(distance=0.9)], replies=(UNSUPPORTED_MARKER,))
-        events = await harness.run("Give me a recipe for chocolate cake", converse=True)
+        events = await harness.run("Who won the cup final last night?", converse=True)
         assert types(events) == ["accepted", "unsupported"]
         assert events[-1]["reason"] == OFF_TOPIC_REASON
+
+    async def test_an_off_topic_request_is_refused_without_asking_the_model(self) -> None:
+        # The model would have answered: the refusal is the application's.
+        for message in ("Give me a recipe for chocolate cake", "Tell me a joke", "Write me a poem"):
+            harness = Harness(chunks=[chunk(distance=0.9)], replies=("Sure! Here you go.",))
+            events = await harness.run(message, converse=True)
+            assert types(events) == ["accepted", "unsupported"], message
+            assert events[-1]["reason"] == OFF_TOPIC_REASON
+            assert harness.prompts == []
+
+    async def test_the_gate_does_not_touch_an_answer_from_the_material(self) -> None:
+        # A chemistry-of-baking class is still taught from its own excerpts.
+        harness = Harness(chunks=[chunk("Baking soda releases carbon dioxide.")])
+        events = await harness.run("Why does a cake rise when baking?", converse=True)
+        assert types(events)[-1] == "completed"
+        assert [e["grounded"] for e in events if e["type"] == "delta"] == [True]
+
+
+class TestTalkAllowed:
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "hi",
+            "hello there",
+            "thanks, that helps",
+            "How should I revise for my exams?",
+            "I'm stressed about finals",
+            "What is Newton's second law?",
+            "Explain how vaccines work",
+            "What is game theory?",
+            "Can you give me an example?",
+        ],
+    )
+    def test_learning_and_small_talk_pass(self, message: str) -> None:
+        assert talk_allowed(message)
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Give me a recipe for chocolate cake",
+            "How do I bake cookies?",
+            "Tell me a joke",
+            "Write me a poem about the sea",
+            "hi, recommend something on Netflix",
+            "",
+            "!!!",
+        ],
+    )
+    def test_other_requests_fail(self, message: str) -> None:
+        assert not talk_allowed(message)
 
     async def test_a_talk_answer_is_held_to_the_same_rules(self) -> None:
         for reply in ("The correct answer is B.", "As the slide says [1], layers freeze."):
