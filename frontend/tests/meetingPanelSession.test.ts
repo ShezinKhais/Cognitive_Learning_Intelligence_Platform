@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { panelSession } from '../src/features/student/meetingSession.ts'
+import { panelSession, shouldWatchMeeting } from '../src/features/student/meetingSession.ts'
 import type { StudentSession } from '../src/features/student/types.ts'
 
 function session(
@@ -77,4 +77,30 @@ test('the next class wins over a finished one still carrying the meeting id', ()
 test('a finished meeting session is still shown when it is all there is', () => {
   const finished = session('finished', 'ended', 'meeting-42')
   assert.equal(panelSession([finished], null, 'meeting-42')?.id, 'finished')
+})
+
+test('a class ended over the socket is watched until its successor is linked', () => {
+  // The panel opened on a running class. The cached list still says active
+  // after the lecturer ends it, so only the socket's report starts the watch.
+  const none = new Set<string>()
+  const running = session('first', 'active', 'meeting-42')
+  assert.equal(panelSession([running], null, 'meeting-42')?.id, 'first')
+  assert.equal(shouldWatchMeeting(true, 'meeting-42', running, none), false)
+
+  const endedLive = new Set(['first'])
+  assert.equal(shouldWatchMeeting(true, 'meeting-42', running, endedLive), true)
+
+  // The refresh brings the ended class and the next one linked to the meeting.
+  const ended = session('first', 'ended', 'meeting-42')
+  const next = session('second', 'active', 'meeting-42')
+  const shown = panelSession([ended, next], null, 'meeting-42')
+  assert.equal(shown?.id, 'second')
+  assert.equal(shouldWatchMeeting(true, 'meeting-42', shown, endedLive), false)
+})
+
+test('nothing is watched outside a ready Teams meeting', () => {
+  const none = new Set<string>()
+  assert.equal(shouldWatchMeeting(false, 'meeting-42', undefined, none), false)
+  assert.equal(shouldWatchMeeting(true, null, undefined, none), false)
+  assert.equal(shouldWatchMeeting(true, 'meeting-42', undefined, none), true)
 })

@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
-import { groupOf } from '../features/sessions/format'
-import { panelSession } from '../features/student/meetingSession'
+import { panelSession, shouldWatchMeeting } from '../features/student/meetingSession'
 import { useStudentApp } from '../features/student/StudentAppContext'
 import type { StudentSession } from '../features/student/types'
 import { useTeams } from '../teams/TeamsProvider'
@@ -21,6 +20,8 @@ export default function TeamsMeetingPage() {
   const requestedSessionId = new URLSearchParams(window.location.search).get('sessionId')
   const meetingId = teams.context?.meetingId ?? null
   const [recheckFailed, setRecheckFailed] = useState(false)
+  // Sessions the live socket reported finished while this panel showed them.
+  const [endedLive, setEndedLive] = useState<ReadonlySet<string>>(() => new Set())
 
   const session =
     panelSession(sessions, requestedSessionId, meetingId) ??
@@ -35,10 +36,19 @@ export default function TeamsMeetingPage() {
    * this panel matched a session once and nothing refreshes the list again:
    * the finished session still carries this teams_meeting_id locally, so it
    * goes on matching and the student sits on a class that is over.
+   *
+   * A panel that opened on a running class only learns it ended from the
+   * live socket, inside LiveSessionPanel; the cached list still says active.
+   * So the panel reports it here, and the list is refreshed at once.
    */
-  const sessionOver = session !== undefined && groupOf(session.status) === 'finished'
-  const waiting =
-    teams.status === 'ready' && Boolean(meetingId) && (!session || sessionOver)
+  const waiting = shouldWatchMeeting(teams.status === 'ready', meetingId, session, endedLive)
+  const finishedLive = useCallback(
+    (id: string) => {
+      setEndedLive((current) => (current.has(id) ? current : new Set(current).add(id)))
+      refreshSessions().catch(() => setRecheckFailed(true))
+    },
+    [refreshSessions],
+  )
   useEffect(() => {
     if (!waiting) {
       return
@@ -122,10 +132,12 @@ export default function TeamsMeetingPage() {
   const inDialog = frame === 'task' || new URLSearchParams(window.location.search).get('view') === 'dialog'
   return (
     <LiveSessionPanel
+      key={session.id}
       session={session}
       compact={frame !== 'content'}
       dialog={inDialog}
       clip={!inDialog && frame === 'sidePanel'}
+      onFinished={finishedLive}
     />
   )
 }
