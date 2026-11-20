@@ -751,6 +751,58 @@ async def test_revision_tutor_selects_another_enrolled_subject_and_rejects_unkno
     assert tutor.model.prompts == tutor.model.embedded == []
 
 
+@pytest.mark.parametrize(
+    "question",
+    ["Explain the chain rule please", "what is a derivative?", "Cancel revision"],
+)
+async def test_subject_picker_allows_a_return_to_normal_tutoring(monkeypatch, question) -> None:
+    subjects = [Course(id=uuid4(), code="CSIT321", name="Capstone")]
+
+    async def available_subjects(db, user_id):
+        return subjects
+
+    monkeypatch.setattr(tutor_chat.student_review, "revision_subjects", available_subjects)
+    earlier = [
+        tutor_chat.EarlierTurn(
+            question="What should I revise?", answer="Which subject would you like to revise?"
+        )
+    ]
+    assert await tutor_chat.prepare_revision(None, STUDENT_ID, question, earlier) is None
+    # A subject removed in another tab must not trap the next normal question either.
+    subjects.clear()
+    assert await tutor_chat.prepare_revision(None, STUDENT_ID, question, earlier) is None
+
+
+async def test_subject_picker_keeps_subject_choices_and_explicit_reprompts(monkeypatch) -> None:
+    subject = Course(id=uuid4(), code="CSIT321", name="Capstone")
+    selected = []
+
+    async def available_subjects(db, user_id):
+        return [subject]
+
+    async def revision_items(db, user_id, chosen):
+        selected.append(chosen.code)
+        return []
+
+    monkeypatch.setattr(tutor_chat.student_review, "revision_subjects", available_subjects)
+    monkeypatch.setattr(tutor_chat.student_review, "revision_items", revision_items)
+    earlier = [
+        tutor_chat.EarlierTurn(
+            question="What should I revise?", answer="Which subject would you like to revise?"
+        )
+    ]
+    for choice in ["CSIT321", "Capstone", "Revise CSIT321 — Capstone"]:
+        reply = await tutor_chat.prepare_revision(None, STUDENT_ID, choice, earlier)
+        assert reply is not None and "CSIT321" in reply.text
+    assert selected == ["CSIT321"] * 3
+
+    for question in ["What should I revise?", "Revise MISSING — Unknown subject"]:
+        reply = await tutor_chat.prepare_revision(None, STUDENT_ID, question, earlier)
+        assert reply is not None
+        assert reply.text.startswith("Which subject would you like to revise?")
+        assert reply.subjects == ("Revise CSIT321 — Capstone",)
+
+
 async def test_staff_are_not_the_tutors_students(db, app, tutor) -> None:
     client, _, _ = db
     live = await _running_class(db, app)

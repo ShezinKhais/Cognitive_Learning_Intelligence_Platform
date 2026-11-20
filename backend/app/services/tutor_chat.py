@@ -346,7 +346,11 @@ async def prepare_revision(
         return None
     subjects = await student_review.revision_subjects(db, user_id)
     if not subjects:
-        return RevisionReply("There are no subjects available for revision yet.")
+        return (
+            RevisionReply("There are no subjects available for revision yet.")
+            if ask_for_subject or explicit_choice
+            else None
+        )
     if not ask_for_subject:
         choice = question[len(_SUBJECT_PREFIX) :] if explicit_choice else question
         selected = [
@@ -369,6 +373,10 @@ async def prepare_revision(
                 "from completed lessons. You can still ask me about a topic in the current lesson.",
                 items=items,
             )
+        # The subject picker is one turn in the conversation. A student can
+        # change their mind and ask an ordinary tutoring question next.
+        if not selected and not explicit_choice:
+            return None
     text = _SUBJECT_QUESTION
     if not ask_for_subject:
         text += " Choose a subject below or enter its course code."
