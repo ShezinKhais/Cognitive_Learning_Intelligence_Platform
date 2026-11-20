@@ -91,9 +91,13 @@ export function LiveSessionPanel({
   session,
   compact = false,
   dialog = false,
+  onFinished,
 }: {
   session: StudentSession
   compact?: boolean
+  /** Told once the live socket says this class ended or was cancelled, so a
+   * Teams panel can look for the next class linked to the meeting. */
+  onFinished?: (sessionId: string) => void
   /** Shown in the checkpoint pop-up over a Teams meeting: the question only,
    * with no camera controls, tutor or notes, and a way back to the lecture. */
   dialog?: boolean
@@ -121,6 +125,9 @@ export function LiveSessionPanel({
   const finished =
     state.sessionStatus === 'ended' ||
     state.sessionStatus === 'cancelled'
+  useEffect(() => {
+    if (finished) onFinished?.(session.id)
+  }, [finished, onFinished, session.id])
   // The learning assistant is offered while the class runs, unless the
   // lecturer has turned it off for this class.
   const assistant = SOCRATIC_CHAT_ENABLED && !finished && state.ai.learning_assistant

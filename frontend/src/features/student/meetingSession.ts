@@ -40,3 +40,23 @@ export function panelSession(
 
   return current ?? requested ?? ofMeeting[0]
 }
+
+/**
+ * Whether an open meeting panel should keep asking for the meeting's session.
+ *
+ * While nothing matches, the lecturer may not have linked the class yet. Once
+ * the class is over, the next one may be linked to the same meeting. "Over"
+ * is either what the cached list says or what the live socket reported: the
+ * list is not refetched when a class ends, so a panel that opened on a
+ * running class only learns it ended from the socket (endedLive).
+ */
+export function shouldWatchMeeting(
+  teamsReady: boolean,
+  meetingId: string | null,
+  session: StudentSession | undefined,
+  endedLive: ReadonlySet<string>,
+): boolean {
+  if (!teamsReady || !meetingId) return false
+  if (!session) return true
+  return groupOf(session.status) === 'finished' || endedLive.has(session.id)
+}

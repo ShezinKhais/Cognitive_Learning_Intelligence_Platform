@@ -37,13 +37,6 @@ export function shouldWatchMeetingSession(
 }
 
 /**
- * Whether a lookup's answer should replace the session the panel is showing.
- *
- * Only a real session id that differs from the current one. A repeat of what
- * is already shown must not be adopted, or the panel would remount on every
- * poll and throw away what it is doing.
- */
-/**
  * Asks the meeting repeatedly, and ignores an answer it has overtaken.
  *
  * The interval and the focus listener both ask, so two lookups can be in
@@ -84,6 +77,13 @@ export function meetingSessionWatcher(
   }
 }
 
+/**
+ * Whether a lookup's answer should replace the session the panel is showing.
+ *
+ * Only a real session id that differs from the current one. A repeat of what
+ * is already shown must not be adopted, or the panel would remount on every
+ * poll and throw away what it is doing.
+ */
 export function shouldAdoptMeetingSession(
   currentSessionId: string | null,
   resolvedSessionId: string | null | undefined,
