@@ -226,7 +226,7 @@ function Exchange({
           <StateNote title="Response interrupted" detail="Please try asking again." />
         )}
 
-        {exchange.phase === 'completed' && exchange.answer && exchange.citations.length === 0 && (
+        {exchange.phase === 'completed' && exchange.general && (
           <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
             General answer, not from your lecturer’s material. Check it against the lecture.
           </p>

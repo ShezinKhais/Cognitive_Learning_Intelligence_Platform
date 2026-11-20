@@ -187,3 +187,35 @@ test('a Word or text file is cited by section, and an older server stays valid',
   const bad = parseChatStreamEvent({ type: 'citation', request_id: 'r', citation: { ...base, source_section: '4' } })
   assert.equal(bad, null)
 })
+
+test('a general answer is marked from the server flag, not from its citations', () => {
+  let state = start()
+  for (const event of [
+    { type: 'delta' as const, request_id: 'request-1', text: 'Try spaced repetition.', grounded: false as const },
+    { type: 'completed' as const, request_id: 'request-1' },
+  ]) {
+    state = chatReducer(state, { type: 'stream-event', event })
+  }
+  assert.equal(state.exchanges[0]?.general, true)
+
+  // A grounded answer, and one from a server that sends no flag, are not.
+  let grounded = start()
+  grounded = chatReducer(grounded, {
+    type: 'stream-event',
+    event: { type: 'delta', request_id: 'request-1', text: 'A base case stops it. [1]' },
+  })
+  assert.equal(grounded.exchanges[0]?.general, undefined)
+})
+
+test('only an explicit false marks a delta as not grounded', () => {
+  assert.deepEqual(
+    parseNdjsonLine('{"type":"delta","request_id":"r1","text":"Hi","grounded":false}'),
+    { type: 'delta', request_id: 'r1', text: 'Hi', grounded: false },
+  )
+  for (const grounded of ['true', '"false"', '0', 'null']) {
+    assert.deepEqual(
+      parseNdjsonLine(`{"type":"delta","request_id":"r1","text":"Hi","grounded":${grounded}}`),
+      { type: 'delta', request_id: 'r1', text: 'Hi' },
+    )
+  }
+})
