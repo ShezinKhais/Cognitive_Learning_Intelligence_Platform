@@ -13,7 +13,7 @@ import {
   coverage, falseRejection, folds, isSpoofLabel, livenessCounts, observe, parseCsv, precision, recall, score, spoofCatch, tune, tuneGaze, tuneLiveness,
   type Condition, type Counts, type Frame, type Label, type LivenessCounts, type Settings,
 } from '../eval/evaluation.ts'
-import { LIVENESS, SUGGESTED_LIVENESS, type LivenessSettings } from '../src/features/attention/liveness.ts'
+import { LIVENESS, SUGGESTED_LIVENESS, TUNED_LIVENESS, type LivenessSettings } from '../src/features/attention/liveness.ts'
 import {
   ADAPTATION, CALIBRATED_THRESHOLDS, DEFAULT_THRESHOLDS, GAZE_MODEL, SUGGESTED_ADAPTATION, type GazeModel, type Thresholds,
 } from '../src/features/attention/signals.ts'
@@ -306,7 +306,7 @@ say()
       say()
     }
     const final = tuneLiveness(scored)
-    say(`Tuned on every recording: \`${JSON.stringify(final.settings)}\` (${final.meetsBar ? 'meets' : '**does not meet**'} the bar there: ${pct(spoofCatch(final.counts))} caught, ${pct(falseRejection(final.counts))} live rejected). Shipped \`LIVENESS\`: ${LIVENESS ? `\`${JSON.stringify(LIVENESS)}\`` : 'off'}.`)
+    say(`Tuned on every recording: \`${JSON.stringify(final.settings)}\` (${final.meetsBar ? 'meets' : '**does not meet**'} the bar there: ${pct(spoofCatch(final.counts))} caught, ${pct(falseRejection(final.counts))} live rejected). These are the evaluation's settings. What ships: \`LIVENESS\` ${LIVENESS ? `on, \`${JSON.stringify(LIVENESS)}\`` : `off until the fairness sign-off (#299); \`TUNED_LIVENESS\` keeps \`${JSON.stringify(TUNED_LIVENESS)}\` for switching it on`}.`)
     say()
   }
 }
