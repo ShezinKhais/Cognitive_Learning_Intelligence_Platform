@@ -35,8 +35,6 @@ import { sourcePlace } from '../features/student/liveSessionTypes'
 import type { StudentSession } from '../features/student/types'
 import ParticipationGauge from '../features/student/ParticipationGauge'
 import ClipFrame, { Reveal } from '../features/student/ClipFrame'
-import PaperclipLauncher from '../features/student/PaperclipLauncher'
-import { opensForQuestion } from '../features/student/paperclip'
 import AssignedRoom from '../features/student/AssignedRoom'
 import RoomConfirm from '../features/student/RoomConfirm'
 import { useLiveSession } from '../features/student/useLiveSession'
@@ -102,12 +100,10 @@ export function LiveSessionPanel({
   /** Shown in the checkpoint pop-up over a Teams meeting: the question only,
    * with no camera controls, tutor or notes, and a way back to the lecture. */
   dialog?: boolean
-  /** Rest as a small paperclip that opens to the score and questions (the Teams side panel). */
+  /** The Teams side panel: a slimmer layout that unfolds in from a paperclip. */
   clip?: boolean
 }) {
   const [activeView, setActiveView] = useState<'class' | 'chat'>('class')
-  const [clipOpen, setClipOpen] = useState(false)
-  const [seenQuestionId, setSeenQuestionId] = useState<string | null>(null)
   const teams = useTeams()
   const {
     state,
@@ -146,29 +142,12 @@ export function LiveSessionPanel({
       )
     : 0
 
-  // The clip opens by itself for a new question, once, and stays as the
-  // student leaves it.
-  const questionId = state.checkpoint?.question.question_id ?? null
-  if (clip && opensForQuestion(seenQuestionId, questionId)) {
-    setSeenQuestionId(questionId)
-    setClipOpen(true)
-  }
-
   // The server's count arrives with the session state, which can lag a
   // question sent by hand. The student has at least seen what they answered
-  // and what is open now, so the score never reads 0 beside a question.
+  // and what is open now, so the dial never reads 0 beside a question.
   const delivered = Math.max(
     state.questionsDelivered,
     state.answeredIds.length + (state.checkpoint ? 1 : 0),
-  )
-
-  const launcher = (
-    <PaperclipLauncher
-      answered={state.answeredIds.length}
-      delivered={delivered}
-      questionOpen={questionId !== null}
-      onOpen={() => setClipOpen(true)}
-    />
   )
 
   const panel = (
@@ -198,18 +177,11 @@ export function LiveSessionPanel({
             </div>
 
             {clip && (
-              <motion.button
-                type="button"
-                onClick={() => setClipOpen(false)}
-                aria-expanded
-                aria-label="Minimise C.L.I.P to the paperclip"
-                title="Minimise"
-                whileHover={{ scale: 1.08 }}
-                whileTap={{ scale: 0.92 }}
-                className="inline-flex size-9 shrink-0 items-center justify-center rounded-full border border-border bg-background text-primary hover:bg-muted"
+              <span
+                aria-hidden
+                className="inline-flex size-9 shrink-0 items-center justify-center rounded-full border border-border bg-background text-primary"
               >
                 <motion.span
-                  aria-hidden
                   className="inline-flex"
                   initial={{ rotate: -55, x: 12, opacity: 0 }}
                   animate={{ rotate: 0, x: 0, opacity: 1 }}
@@ -217,7 +189,7 @@ export function LiveSessionPanel({
                 >
                   <Paperclip size={17} />
                 </motion.span>
-              </motion.button>
+              </span>
             )}
           </div>
 
@@ -468,13 +440,7 @@ export function LiveSessionPanel({
     </div>
   )
 
-  return clip ? (
-    <ClipFrame open={clipOpen} launcher={launcher}>
-      {panel}
-    </ClipFrame>
-  ) : (
-    panel
-  )
+  return clip ? <ClipFrame>{panel}</ClipFrame> : panel
 }
 
 function CompletedCheckpointCard({

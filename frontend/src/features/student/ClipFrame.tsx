@@ -1,60 +1,32 @@
-import { AnimatePresence, motion } from 'motion/react'
+import { motion } from 'motion/react'
 import type { ReactNode } from 'react'
 
-// The clip sits at the top right of the panel, so everything unfolds from and
-// folds back into that corner.
+// The clip sits at the top right of the panel, so the panel unfolds from there.
 const CORNER = '100% 0%'
-const UNFOLD = { type: 'spring', stiffness: 260, damping: 26 } as const
 
 /**
- * Swaps the resting paperclip and the open panel. The panel unfolds out of the
- * clip: it grows from the corner while tipping forward from a folded edge, and
- * folds back the same way. Reduced motion keeps only the fade (MotionConfig in
- * main.tsx), so nothing travels for a student who asks for that.
+ * The Teams side panel's entrance: it unfolds out of the paperclip's corner,
+ * growing while tipping forward from a folded edge, then settles. Reduced
+ * motion keeps only the fade (MotionConfig in main.tsx).
  */
-export default function ClipFrame({
-  open,
-  launcher,
-  children,
-}: {
-  open: boolean
-  launcher: ReactNode
-  children: ReactNode
-}) {
+export default function ClipFrame({ children }: { children: ReactNode }) {
   return (
     <div style={{ perspective: 1200 }}>
-      <AnimatePresence mode="wait" initial={false}>
-        {open ? (
-          <motion.div
-            key="open"
-            style={{ transformOrigin: CORNER }}
-            initial={{ opacity: 0, scale: 0.5, rotateX: -38, y: -6 }}
-            animate={{ opacity: 1, scale: 1, rotateX: 0, y: 0 }}
-            exit={{ opacity: 0, scale: 0.55, rotateX: -28, transition: { duration: 0.18 } }}
-            transition={UNFOLD}
-          >
-            {children}
-          </motion.div>
-        ) : (
-          <motion.div
-            key="closed"
-            style={{ transformOrigin: CORNER }}
-            initial={{ opacity: 0, scale: 0.6 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.12 } }}
-            transition={UNFOLD}
-          >
-            {launcher}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <motion.div
+        style={{ transformOrigin: CORNER }}
+        initial={{ opacity: 0, scale: 0.5, rotateX: -38, y: -6 }}
+        animate={{ opacity: 1, scale: 1, rotateX: 0, y: 0 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 26 }}
+      >
+        {children}
+      </motion.div>
     </div>
   )
 }
 
 /**
- * One part of the open panel, arriving just after the one before it so the
- * panel fills in as it unfolds. Outside the clip it is just its children.
+ * One part of the panel, arriving just after the one before it so the panel
+ * fills in as it unfolds. Outside the Teams side panel it is just its children.
  */
 export function Reveal({
   index,

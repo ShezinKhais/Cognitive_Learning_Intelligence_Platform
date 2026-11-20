@@ -110,8 +110,8 @@ export default function TeamsMeetingPage() {
   const inDialog =
     teams.context?.frameContext === 'task' ||
     new URLSearchParams(window.location.search).get('view') === 'dialog'
-  // The side panel rests as a small paperclip that opens to the score and
-  // questions. The pop-up and the stage show the class straight away.
+  // The side panel gets the slimmer layout that unfolds in from a paperclip.
+  // The pop-up and the stage keep the plain one.
   const clip = teams.context?.frameContext === 'sidePanel' && !inDialog
   return <LiveSessionPanel session={session} compact dialog={inDialog} clip={clip} />
 }
