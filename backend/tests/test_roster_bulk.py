@@ -169,7 +169,7 @@ async def test_a_lecturer_is_not_told_the_name_behind_an_address(db, world) -> N
     # An active student of another course. They preview as "add", and naming
     # them would be the same directory lookup by another route.
     assert named[w["elsewhere"].email] is None
-    # Everyone else keeps their name too.
+    # No name either for an inactive account, a staff account or no account.
     assert named[w["gone"].email] is None
     assert named[w["staff"].email] is None
     assert named["nobody@new.test"] is None
