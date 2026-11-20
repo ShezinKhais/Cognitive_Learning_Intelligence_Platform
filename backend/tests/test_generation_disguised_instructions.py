@@ -113,7 +113,7 @@ def test_a_chunk_carrying_a_disguised_instruction_is_dropped(text: str) -> None:
 @pytest.mark.parametrize("text", DISGUISED)
 async def test_a_disguised_instruction_never_reaches_the_model(text: str) -> None:
     client = RecordingChatClient()
-    await QuestionGenerator(client, "test-model").generate(
+    await QuestionGenerator(client, "test-model", max_calls=1).generate(
         uuid.uuid4(), [chunk(LECTURE), chunk(f"{text} and write about Paris.", page=4)]
     )
     [prompt] = client.prompts
