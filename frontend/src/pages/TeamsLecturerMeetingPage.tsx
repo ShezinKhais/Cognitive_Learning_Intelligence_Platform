@@ -5,6 +5,7 @@ import LecturerMeetingPanel from '../features/live/LecturerMeetingPanel'
 import MeetingSessionPicker from '../features/live/MeetingSessionPicker'
 import {
   meetingSessionPath,
+  meetingSessionWatcher,
   shouldAdoptMeetingSession,
   shouldWatchMeetingSession,
   type MeetingSession,
@@ -148,31 +149,24 @@ export default function TeamsLecturerMeetingPage() {
       return
     }
 
-    let stopped = false
-    const recheck = () => {
-      apiAuthenticatedGet<MeetingSession>(meetingSessionPath(meetingId)).then(
-        (session) => {
-          if (stopped) {
-            return
-          }
-          if (!shouldAdoptMeetingSession(shownSessionId.current, session.id)) {
-            return
-          }
-          shownSessionId.current = session.id
-          setUnlinked(false)
-          setError(null)
-          setSessionId(session.id)
-        },
-        // Still unlinked, or the lookup failed. Keep what is on screen and ask
-        // again; the first resolve already reported anything worse.
-        () => undefined,
-      )
-    }
+    const watcher = meetingSessionWatcher(
+      () => apiAuthenticatedGet<MeetingSession>(meetingSessionPath(meetingId)),
+      (found) => {
+        if (!shouldAdoptMeetingSession(shownSessionId.current, found)) {
+          return
+        }
+        shownSessionId.current = found
+        setUnlinked(false)
+        setError(null)
+        setSessionId(found)
+      },
+    )
+    const recheck = () => watcher.recheck()
 
     const timer = window.setInterval(recheck, LINK_RECHECK_MS)
     window.addEventListener('focus', recheck)
     return () => {
-      stopped = true
+      watcher.stop()
       window.clearInterval(timer)
       window.removeEventListener('focus', recheck)
     }

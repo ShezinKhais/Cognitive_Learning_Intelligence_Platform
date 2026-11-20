@@ -163,13 +163,32 @@ async def test_a_lecturer_is_not_told_the_name_behind_an_address(db, world) -> N
     for line in out.lines:
         named.setdefault(line.email, line.name)
 
-    # The accounts this course may take are named, from the file or the record.
-    assert named[w["elsewhere"].email] == w["elsewhere"].name
+    # Already on this course, so the lecturer reads the name off the roster
+    # page anyway.
     assert named[w["here"].email] == w["here"].name
-    # Everyone else keeps their name, whatever the lecturer pasted.
+    # An active student of another course. They preview as "add", and naming
+    # them would be the same directory lookup by another route.
+    assert named[w["elsewhere"].email] is None
+    # Everyone else keeps their name too.
     assert named[w["gone"].email] is None
     assert named[w["staff"].email] is None
     assert named["nobody@new.test"] is None
+
+
+async def test_an_admin_sees_the_name_of_a_student_they_are_adding(db, world) -> None:
+    """An admin may read every account on the Accounts page, so naming the
+    student they are about to add discloses nothing and makes the list
+    checkable before it is applied."""
+    w = world
+    out = await roster_bulk.run(
+        db, _as(w["admin"], Role.ADMIN), w["course"].code, BulkRosterIn(text=_text(w))
+    )
+    named: dict[str, str | None] = {}
+    for line in out.lines:
+        named.setdefault(line.email, line.name)
+
+    assert named[w["elsewhere"].email] == w["elsewhere"].name
+    assert named[w["here"].email] == w["here"].name
 
 
 async def test_an_admin_still_sees_why_a_line_cannot_be_added(db, world) -> None:

@@ -260,6 +260,7 @@ async def test_a_student_is_answered_from_the_sessions_material(db, app, tutor) 
     assert set(types) <= {"accepted", "delta", "citation", "follow_up", "completed"}
     assert {event["request_id"] for event in events} == {"req-1"}
     assert "".join(e["text"] for e in events if e["type"] == "delta") == "".join(REPLY)
+    assert {e["grounded"] for e in events if e["type"] == "delta"} == {True}
     assert [e["citation"] for e in events if e["type"] == "citation"] == [
         {
             "id": str(live.chunk_id),
@@ -327,6 +328,9 @@ async def test_a_class_with_no_material_is_talked_to_without_excerpts(db, app, t
 
     assert _types(events)[-1] == "completed"
     assert not [event for event in events if event["type"] == "citation"]
+    # The panel's "general answer" label comes from this flag, set by the
+    # server, so the student sees it whatever the model wrote.
+    assert [e["grounded"] for e in events if e["type"] == "delta"] == [False]
     [(_, messages)] = tutor.model.prompts
     assert EXCERPT not in messages[0]["content"] + messages[1]["content"]
     assert "no excerpts" in messages[0]["content"]

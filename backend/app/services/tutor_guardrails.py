@@ -1050,7 +1050,9 @@ async def guarded_chat(
 
     # "[[1]]" would show a stray bracket either side of the citation chip.
     answer = _DOUBLED_CITATION.sub(r"[\1]", vetter.released_text)
-    yield event("delta", text=answer)
+    # Whether the answer comes from the lecturer's material is the server's
+    # to say, not the model's: the panel labels an ungrounded one.
+    yield event("delta", text=answer, grounded=not talk)
     for number in cited_numbers(answer, len(context.chunks)):
         try:
             citation = describe(context.chunks[number - 1], number)

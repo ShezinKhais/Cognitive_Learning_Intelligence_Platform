@@ -43,6 +43,47 @@ export function shouldWatchMeetingSession(
  * is already shown must not be adopted, or the panel would remount on every
  * poll and throw away what it is doing.
  */
+/**
+ * Asks the meeting repeatedly, and ignores an answer it has overtaken.
+ *
+ * The interval and the focus listener both ask, so two lookups can be in
+ * flight at once. They are not answered in the order they were sent: a slow
+ * answer about the meeting as it was can arrive after a later one has already
+ * moved the panel on, and would drag it back to the class that has finished.
+ *
+ * Each lookup takes a ticket, and only the newest ticket may adopt. A
+ * superseded answer is about a state the meeting has already left, so there is
+ * nothing in it worth having.
+ */
+export function meetingSessionWatcher(
+  lookup: () => Promise<{ id?: string | null }>,
+  adopt: (sessionId: string) => void,
+): { recheck: () => void; stop: () => void } {
+  let latest = 0
+  let stopped = false
+
+  return {
+    recheck(): void {
+      latest += 1
+      const ticket = latest
+      void lookup().then(
+        (session) => {
+          if (stopped || ticket !== latest || !session?.id) {
+            return
+          }
+          adopt(session.id)
+        },
+        // Still unlinked, or the lookup failed. Keep what is on screen and
+        // ask again; the first resolve already reported anything worse.
+        () => undefined,
+      )
+    },
+    stop(): void {
+      stopped = true
+    },
+  }
+}
+
 export function shouldAdoptMeetingSession(
   currentSessionId: string | null,
   resolvedSessionId: string | null | undefined,
