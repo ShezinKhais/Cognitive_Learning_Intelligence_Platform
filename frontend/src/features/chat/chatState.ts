@@ -92,6 +92,7 @@ function applyStreamEvent(
           ...exchange,
           phase: 'streaming',
           answer: exchange.answer + event.text,
+          ...(event.grounded === false ? { general: true } : {}),
         }),
       )
     case 'citation':

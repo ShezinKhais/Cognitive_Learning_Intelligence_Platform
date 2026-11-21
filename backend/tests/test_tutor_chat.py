@@ -266,6 +266,7 @@ async def test_a_student_is_answered_from_the_sessions_material(db, app, tutor) 
     assert set(types) <= {"accepted", "delta", "citation", "follow_up", "completed"}
     assert {event["request_id"] for event in events} == {"req-1"}
     assert "".join(e["text"] for e in events if e["type"] == "delta") == "".join(REPLY)
+    assert {e["grounded"] for e in events if e["type"] == "delta"} == {True}
     assert [e["citation"] for e in events if e["type"] == "citation"] == [
         {
             "id": str(live.chunk_id),
@@ -319,15 +320,26 @@ async def test_the_question_and_the_reply_go_through_the_gateway_as_live_work(
     assert EXCERPT in messages[0]["content"] + messages[1]["content"]
 
 
-async def test_a_class_with_no_material_is_told_there_is_nothing_to_draw_on(db, app, tutor) -> None:
+async def test_a_class_with_no_material_is_talked_to_without_excerpts(db, app, tutor) -> None:
     client, factory, _ = db
     live = await _running_class(db, app)
     async with factory() as remove:
         await remove.execute(delete(RagChunk).where(RagChunk.chunk_id == live.chunk_id))
         await remove.commit()
+    tutor.model.reply = (
+        "Frozen layers keep what the network already learned. Why might that help?",
+    )
 
-    assert _types(_events(_ask(client, live.id))) == ["accepted", "empty_retrieval"]
-    assert tutor.model.prompts == []
+    events = _events(_ask(client, live.id))
+
+    assert _types(events)[-1] == "completed"
+    assert not [event for event in events if event["type"] == "citation"]
+    # The panel's "general answer" label comes from this flag, set by the
+    # server, so the student sees it whatever the model wrote.
+    assert [e["grounded"] for e in events if e["type"] == "delta"] == [False]
+    [(_, messages)] = tutor.model.prompts
+    assert EXCERPT not in messages[0]["content"] + messages[1]["content"]
+    assert "no excerpts" in messages[0]["content"]
 
 
 async def test_only_this_lecturers_finished_material_is_searched(db, app, tutor) -> None:
@@ -860,6 +872,48 @@ async def test_a_student_may_ask_only_so_often(db, app, tutor) -> None:
     assert refused.json()["error"]["code"] == "RATE_LIMITED"
     assert 1 <= refused.json()["error"]["detail"]["retry_after_seconds"] <= 60
     assert len(tutor.model.prompts) == 3
+
+
+async def test_revision_preparation_is_rate_limited_before_source_lookups(
+    db, app, tutor, monkeypatch
+) -> None:
+    client, _, _ = db
+    live = await _running_class(db, app)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    assert client.post(f"/api/v1/sessions/{live.id}/end").status_code == 200
+    sign_in_as(app, STUDENT_ID, Role.STUDENT)
+    calls = []
+
+    async def prepare_revision(*args):
+        calls.append(args)
+        return tutor_chat.RevisionReply("A recorded revision plan.")
+
+    monkeypatch.setattr(tutor_chat, "prepare_revision", prepare_revision)
+    for _ in range(3):
+        assert _ask(client, live.id, "What should I revise?").status_code == 200
+    assert _ask(client, live.id, "What should I revise?").status_code == 429
+    assert len(calls) == 3
+
+
+async def test_a_failed_revision_preparation_releases_the_running_exchange(
+    db, app, tutor, monkeypatch
+) -> None:
+    client, _, _ = db
+    live = await _running_class(db, app)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    assert client.post(f"/api/v1/sessions/{live.id}/end").status_code == 200
+    sign_in_as(app, STUDENT_ID, Role.STUDENT)
+
+    async def fail(*args):
+        raise RuntimeError("Synthetic source lookup failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(tutor_chat, "prepare_revision", fail)
+        with pytest.raises(RuntimeError, match="Synthetic source lookup failure"):
+            _ask(client, live.id, "What should I revise?")
+
+    # The failed request counts toward the rate, but holds no running exchange.
+    assert _ask(client, live.id, "What should I revise?").status_code == 200
 
 
 async def test_a_refused_request_does_not_count_against_the_student(db, app, tutor) -> None:

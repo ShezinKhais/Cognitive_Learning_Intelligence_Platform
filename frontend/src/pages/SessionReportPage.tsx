@@ -19,16 +19,21 @@ import {
   type SessionResponse,
   type SessionSummary,
 } from '../features/sessions/sessionsApi'
-import { stripFromResponses } from '../features/sessions/strip'
+import { stripFromDeliveries } from '../features/sessions/strip'
 import { SessionAttendancePanel } from '../features/courses/Attendance'
 
 
 export default function SessionReportPage() {
   const { sessionId = '' } = useParams()
+  return <SessionResults key={sessionId} sessionId={sessionId} />
+}
+
+function SessionResults({ sessionId }: { sessionId: string }) {
   const [session, setSession] = useState<SessionSummary | null>(null)
   const [responses, setResponses] = useState<SessionResponse[] | null>(null)
   const [topics, setTopics] = useState<TopicDifficulty[] | null>(null)
-  const [breakdown, setBreakdown] = useState<SessionBreakdown | null>(null)
+  const [breakdown, setBreakdown] = useState<SessionBreakdown | null>()
+  const [breakdownAttempt, setBreakdownAttempt] = useState(0)
   const [error, setError] = useState<Problem | null>(null)
 
   useEffect(() => {
@@ -43,12 +48,19 @@ export default function SessionReportPage() {
       .catch((caught: unknown) => {
         if (!cancelled) setError(problemOf(caught, 'This session could not be loaded.'))
       })
-    // The breakdown is extra detail: the page works without it.
-    getBreakdown(sessionId).then((found) => !cancelled && setBreakdown(found), () => {})
     return () => {
       cancelled = true
     }
   }, [sessionId])
+
+  useEffect(() => {
+    let current = true
+    getBreakdown(sessionId).then(
+      (found) => current && setBreakdown(found),
+      () => current && setBreakdown(null),
+    )
+    return () => { current = false }
+  }, [sessionId, breakdownAttempt])
 
   if (error) {
     return (
@@ -68,7 +80,8 @@ export default function SessionReportPage() {
     return <PageBody><p role="status" className="text-muted-foreground">Loading the session…</p></PageBody>
   }
 
-  const strip = stripFromResponses(responses)
+  const strip = breakdown ? stripFromDeliveries(breakdown.questions) : []
+  const delivered = breakdown?.questions.length ?? session.questions_delivered
   const marked = responses.filter((r) => r.is_correct !== null)
   const right = marked.filter((r) => r.is_correct).length
 
@@ -100,21 +113,29 @@ export default function SessionReportPage() {
       </PageHeader>
       <PageBody>
         <Panel title="How the class answered" className="mb-6">
-          {strip.length === 0 ? (
-            <p className="text-muted-foreground">No answers were stored for this session.</p>
-          ) : (
-            <div className="flex flex-wrap items-end justify-between gap-6">
+          {delivered === 0 && <p className="mb-3 text-muted-foreground">No checkpoints were delivered in this session.</p>}
+          <div className="flex flex-wrap items-end justify-between gap-6">
+            {strip.length > 0 && (
               <div>
                 <SessionStrip questions={strip} />
                 <div className="mt-3">
                   <StripLegend />
                 </div>
               </div>
-              <dl className="grid grid-cols-3 gap-6 text-right">
-                <Figure label="Questions" value={strip.length} />
-                <Figure label="Answers" value={responses.length} />
-                <Figure label="Right" value={marked.length ? `${Math.round((right / marked.length) * 100)}%` : 'None marked'} />
-              </dl>
+            )}
+            <dl className="grid grid-cols-3 gap-6 text-right">
+              <Figure label="Questions delivered" value={delivered} />
+              <Figure label="Answers" value={responses.length} />
+              <Figure label="Right" value={marked.length ? `${Math.round((right / marked.length) * 100)}%` : 'None marked'} />
+            </dl>
+          </div>
+          {breakdown === null && (
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <p role="alert" className="text-sm text-critical">Question details could not be loaded.</p>
+              <button type="button" className={buttonStyles({ intent: 'secondary' })} onClick={() => {
+                setBreakdown(undefined)
+                setBreakdownAttempt((count) => count + 1)
+              }}>Retry question details</button>
             </div>
           )}
         </Panel>

@@ -71,8 +71,10 @@ export function parseChatStreamEvent(value: unknown): ChatStreamEvent | null {
       return requestId ? { type, request_id: requestId } : null
     case 'delta': {
       const text = typeof item.text === 'string' ? item.text : null
+      // Only an explicit false marks a general answer; an older server sends
+      // nothing, and its answers are all from the material.
       return requestId && text !== null
-        ? { type, request_id: requestId, text }
+        ? { type, request_id: requestId, text, ...(item.grounded === false ? { grounded: false as const } : {}) }
         : null
     }
     case 'citation': {
