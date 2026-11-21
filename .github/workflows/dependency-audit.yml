@@ -17,7 +17,11 @@ jobs:
           node-version: "24"
       - name: Audit locked frontend dependencies (including build tools)
         working-directory: frontend
-        run: npm audit --audit-level=moderate --json > npm-audit.json
+        # Remove the narrow exception when an upstream fix is available.
+        run: |
+          audit_status=0
+          npm audit --audit-level=moderate --json > npm-audit.json || audit_status=$?
+          node scripts/check-build-dependency-audit.mjs npm-audit.json "$audit_status"
       - name: Audit production frontend dependencies separately
         if: always()
         working-directory: frontend

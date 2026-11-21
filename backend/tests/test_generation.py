@@ -2,6 +2,7 @@
 drafts and check each one is caught."""
 
 import asyncio
+import json
 import random
 import re
 import uuid
@@ -534,7 +535,7 @@ def test_the_generator_shows_different_chunks_on_each_call():
 
                     return Reply
 
-    generator = QuestionGenerator(Client, "m", count=3, rng=random.Random(5))
+    generator = QuestionGenerator(Client, "m", count=3, rng=random.Random(5), max_calls=1)
     chunks = [
         ContentChunk(uuid.uuid4(), i, uuid.uuid4(), f"Plain lecture text number {i}.", i + 1)
         for i in range(100)
@@ -544,3 +545,103 @@ def test_the_generator_shows_different_chunks_on_each_call():
     assert len(shown_pages) == 2
     assert all(len(pages) == MAX_PROMPT_CHUNKS for pages in shown_pages)
     assert shown_pages[0] != shown_pages[1]
+
+
+def _mcq(n: int) -> str:
+    return json.dumps(
+        {
+            "prompt": f"Which layers are frozen in transfer learning, case {n}?",
+            "options": ["The base layers", "The output layer", "No layers", "Every layer"],
+            "correct_option": 0,
+            "difficulty": "easy",
+            "topic": "Transfer learning",
+            "source_slide": 1,
+            "source_excerpt": "The base layers are frozen",
+        }
+    )
+
+
+class _Replies:
+    """A chat client that answers each call with the next reply, then '[]'."""
+
+    def __init__(self, replies: list[str]) -> None:
+        self.replies = list(replies)
+        self.calls = 0
+        outer = self
+
+        class _Completions:
+            async def create(self, model, messages):
+                outer.calls += 1
+                text = outer.replies.pop(0) if outer.replies else "[]"
+                return type(
+                    "R",
+                    (),
+                    {"choices": [type("C", (), {"message": type("M", (), {"content": text})})]},
+                )
+
+        self.chat = type("Chat", (), {"completions": _Completions()})
+
+
+def test_too_few_kept_means_asking_again_until_enough_pass():
+    # One good draft per reply: 5 wanted takes 5 calls.
+    client = _Replies([f"[{_mcq(i)}]" for i in range(10)])
+    generator = QuestionGenerator(client, "m", count=5, rng=random.Random(1))
+    drafts = asyncio.run(generator.generate(uuid.uuid4(), _chunks_with_text()))
+    assert len(drafts) == 5
+    assert client.calls == 5
+
+
+def test_asking_again_stops_after_the_call_limit():
+    client = _Replies([f"[{_mcq(i)}]" for i in range(20)])
+    generator = QuestionGenerator(client, "m", count=15, rng=random.Random(1), max_calls=4)
+    drafts = asyncio.run(generator.generate(uuid.uuid4(), _chunks_with_text()))
+    assert client.calls == 4
+    assert len(drafts) == 4
+
+
+def test_asking_again_stops_when_calls_add_nothing():
+    # One good draft, then only empty replies: three dry calls in a row end it.
+    client = _Replies([f"[{_mcq(0)}]"])
+    generator = QuestionGenerator(client, "m", count=5, rng=random.Random(1))
+    drafts = asyncio.run(generator.generate(uuid.uuid4(), _chunks_with_text()))
+    assert len(drafts) == 1
+    assert client.calls == 1 + 3
+
+
+def test_a_failed_call_while_asking_again_keeps_what_passed():
+    """Review of #307: a timeout on a top-up call stops asking again, and the
+    drafts already kept are returned rather than lost with the error."""
+
+    class _FailsOnThird(_Replies):
+        def __init__(self) -> None:
+            super().__init__([f"[{_mcq(0)}]", f"[{_mcq(1)}]"])
+            completions = self.chat.completions
+            first = completions.create
+
+            async def create(model, messages):
+                if self.calls == 2:
+                    self.calls += 1
+                    raise TimeoutError("the model did not answer in time")
+                return await first(model, messages)
+
+            completions.create = create
+
+    client = _FailsOnThird()
+    generator = QuestionGenerator(client, "m", count=5, rng=random.Random(1))
+    drafts = asyncio.run(generator.generate(uuid.uuid4(), _chunks_with_text()))
+    assert [d.prompt for d in drafts] == [json.loads(_mcq(i))["prompt"] for i in (0, 1)]
+    assert client.calls == 3
+
+
+def test_never_more_than_wanted_and_no_repeats():
+    same = f"[{_mcq(0)}, {_mcq(0)}, {_mcq(1)}, {_mcq(2)}]"
+    client = _Replies([same, same, f"[{_mcq(3)}]"])
+    generator = QuestionGenerator(client, "m", count=3, rng=random.Random(1))
+    drafts = asyncio.run(generator.generate(uuid.uuid4(), _chunks_with_text()))
+    assert len(drafts) == 3
+    assert len({d.prompt for d in drafts}) == 3
+    assert client.calls == 1
+
+
+def _chunks_with_text() -> list[ContentChunk]:
+    return [ContentChunk(uuid.uuid4(), 0, uuid.uuid4(), CHUNK_TEXT, 1)]

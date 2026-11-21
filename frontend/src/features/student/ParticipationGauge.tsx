@@ -9,7 +9,16 @@ const LENGTH = Math.PI * 40
  * answered out of those sent. Only they see it. It is not an engagement
  * score, which stays with the lecturer under the fairness rules.
  */
-export default function ParticipationGauge({ answered, delivered }: { answered: number; delivered: number }) {
+export default function ParticipationGauge({
+  answered,
+  delivered,
+  compact = false,
+}: {
+  answered: number
+  delivered: number
+  /** Just the dial, for the small Teams panel; the words stay in its title and label. */
+  compact?: boolean
+}) {
   const share = delivered > 0 ? Math.min(1, answered / delivered) : 0
   return (
     <div className="flex items-center gap-3" title="Only you see this">
@@ -30,10 +39,12 @@ export default function ParticipationGauge({ answered, delivered }: { answered: 
           {delivered > 0 ? `${answered}/${delivered}` : '0'}
         </text>
       </svg>
-      <div className="text-sm leading-tight">
-        <p className="font-semibold">Your checkpoints</p>
-        <p className="text-muted-foreground">Only you see this</p>
-      </div>
+      {!compact && (
+        <div className="text-sm leading-tight">
+          <p className="font-semibold">Your checkpoints</p>
+          <p className="text-muted-foreground">Only you see this</p>
+        </div>
+      )}
     </div>
   )
 }

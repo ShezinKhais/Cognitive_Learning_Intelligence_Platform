@@ -66,11 +66,56 @@ test('every page of sessions and of answers is read before topics are worked out
     const page = review(id, sessions.find((s) => s.id === id)!.ended_at, mine.slice(offset, offset + 2))
     return { ...page, total: mine.length } as T
   }
-  const reviews = await allReviews(read)
+  const { reviews, unavailable } = await allReviews(read)
+  assert.deepEqual(unavailable, [])
   assert.equal(reviews.length, 3)
   assert.equal(reviews.find((r) => r.session.id === 'c')!.answers.length, 5)
   // The last answer, on the third page, was right; it is in the result.
   const loss = topicProgress(reviews).find((t) => t.topic === 'Loss')!
   assert.equal(loss.answered, 5)
   assert.equal(asked.filter((p) => p.startsWith('/student-reviews/c')).length, 3)
+})
+
+
+test('a topic name shared by two subjects produces separate progress and histories', () => {
+  const maths = review('maths', '2026-10-10T08:00:00Z', [answer('Introduction', { is_correct: true })])
+  maths.session.course_code = 'MATH100'
+  const coding = review('coding', '2026-10-09T08:00:00Z', [answer('Introduction', { is_correct: false })])
+  const topics = topicProgress([maths, coding])
+  assert.deepEqual(topics.map((topic) => [topic.courseCode, topic.latest, topic.marks[0].sessionId]), [
+    ['CSIT321', 'struggling', 'coding'],
+    ['MATH100', 'mastered', 'maths'],
+  ])
+  assert.notEqual(topics[0].id, topics[1].id)
+})
+
+test('progress limits concurrency and can retry just the failed lesson', async () => {
+  const { allReviews } = await import('../src/features/review/readAll.ts')
+  const fixtures = Array.from({ length: 12 }, (_, i) => review(String(i), '2026-10-09T08:00:00Z', []))
+  let active = 0
+  let peak = 0
+  let failed = true
+  const requests: string[] = []
+  const read = async <T,>(path: string): Promise<T> => {
+    if (path.startsWith('/student-reviews?')) {
+      return { items: fixtures.map(({ session }) => session), total: fixtures.length } as T
+    }
+    const id = path.split('/')[2].split('?')[0]
+    requests.push(id)
+    peak = Math.max(peak, ++active)
+    await Promise.resolve()
+    active -= 1
+    if (failed && id === '2') throw new Error('Unavailable')
+    return fixtures[Number(id)] as T
+  }
+  const partial = await allReviews(read)
+  assert.equal(peak, 4)
+  assert.equal(partial.reviews.length, 11)
+  assert.deepEqual(partial.unavailable.map(({ id }) => id), ['2'])
+  failed = false
+  requests.length = 0
+  const recovered = await allReviews(read, partial.unavailable)
+  assert.deepEqual(requests, ['2'])
+  assert.deepEqual(recovered.reviews.map(({ session }) => session.id), ['2'])
+  assert.deepEqual(recovered.unavailable, [])
 })

@@ -8,7 +8,14 @@ import { Panel, Tag } from '../../components/ui/primitives'
 interface CourseAttendance {
   course_code: string
   classes: { session_id: string; title: string; starts_at: string | null }[]
-  students: { student_id: string; name: string; email: string; attended: number; classes: boolean[] }[]
+  students: {
+    student_id: string
+    name: string
+    email: string
+    attended: number
+    classes: boolean[]
+    not_yet_enrolled?: string[]
+  }[]
 }
 
 interface SessionAttendance {
@@ -20,13 +27,18 @@ interface SessionAttendance {
     email: string
     present: boolean
     first_seen: string | null
-    minutes: number | null
+    last_seen: string | null
     sources: ('clip' | 'teams')[]
   }[]
 }
 
-const day = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '–'
+const classTime = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+  }) : '–'
 
 /** Hands a file the API serves behind sign-in to the browser as a download.
  * The link is put in the page and its URL kept for a minute, as Firefox and
@@ -73,7 +85,7 @@ export function CourseAttendancePanel({ code }: { code: string }) {
   return (
     <Panel
       title="Attendance"
-      description="Present means the student joined the class in C.L.I.P or was seen joining its Teams meeting."
+      description="Present means a join was recorded in C.L.I.P. or Teams. Classes before recorded enrolment are excluded from attendance totals."
       actions={
         data && data.classes.length > 0 ? (
           <button type="button" className={buttonStyles({ intent: 'secondary' })} onClick={() => void csv()}>
@@ -103,34 +115,36 @@ export function CourseAttendancePanel({ code }: { code: string }) {
                 <th scope="col" className="sticky left-0 bg-card px-3 py-2 font-medium">Student</th>
                 <th scope="col" className="px-3 py-2 text-right font-medium">Attended</th>
                 {data.classes.map((item) => (
-                  <th key={item.session_id} scope="col" className="whitespace-nowrap px-2 py-2 text-center font-medium" title={item.title}>
-                    {day(item.starts_at)}
+                  <th key={item.session_id} scope="col" className="px-2 py-2 text-center font-medium">
+                    <span className="block">{item.title}</span>
+                    <span className="block whitespace-nowrap text-xs">{classTime(item.starts_at)}</span>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {data.students.map((row) => (
-                <tr key={row.student_id}>
-                  <th scope="row" className="sticky left-0 bg-card px-3 py-2 text-left font-medium">
-                    <span className="block whitespace-nowrap">{row.name}</span>
-                  </th>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {row.attended} of {row.classes.length}
-                  </td>
-                  {row.classes.map((present, index) => (
-                    <td key={data.classes[index].session_id} className="px-2 py-2 text-center">
-                      <span
-                        aria-label={present ? 'Present' : 'Absent'}
-                        title={`${data.classes[index].title}: ${present ? 'present' : 'absent'}`}
-                        className={present ? 'font-semibold text-success' : 'text-muted-foreground'}
-                      >
-                        {present ? '✓' : '·'}
-                      </span>
+              {data.students.map((row) => {
+                const beforeEnrolment = new Set(row.not_yet_enrolled)
+                return (
+                  <tr key={row.student_id}>
+                    <th scope="row" className="sticky left-0 bg-card px-3 py-2 text-left font-medium">
+                      <span className="block whitespace-nowrap">{row.name}</span>
+                    </th>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {row.attended} of {row.classes.length - beforeEnrolment.size}
                     </td>
-                  ))}
-                </tr>
-              ))}
+                    {row.classes.map((present, index) => {
+                      const { session_id: id } = data.classes[index]
+                      const label = beforeEnrolment.has(id) ? 'Not yet enrolled' : present ? 'Present' : 'Absent'
+                      return (
+                        <td key={id} className={`px-2 py-2 text-center ${present ? 'font-semibold text-success' : 'text-muted-foreground'}`}>
+                          {label}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -139,46 +153,65 @@ export function CourseAttendancePanel({ code }: { code: string }) {
   )
 }
 
+const seenAt = (iso: string) => new Date(iso).toLocaleString(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+})
+
 /** Who was in one class, for its lecturer. */
 export function SessionAttendancePanel({ sessionId }: { sessionId: string }) {
-  const [data, setData] = useState<SessionAttendance | null>(null)
+  const [attempt, setAttempt] = useState(0)
+  const [result, setResult] = useState<{ sessionId: string; attempt: number; data?: SessionAttendance } | null>(null)
 
   useEffect(() => {
     let current = true
     apiAuthenticatedGet<SessionAttendance>(`/sessions/${encodeURIComponent(sessionId)}/attendance`).then(
-      (found) => current && setData(found),
-      () => {},
+      (data) => current && setResult({ sessionId, attempt, data }),
+      () => current && setResult({ sessionId, attempt }),
     )
     return () => {
       current = false
     }
-  }, [sessionId])
+  }, [sessionId, attempt])
 
-  if (!data) return null
+  const current = result?.sessionId === sessionId && result.attempt === attempt ? result : null
+  const data = current?.data
   return (
     <Panel
       title="Who was there"
-      description={`${data.present} of ${data.total} students. Joined in C.L.I.P or seen joining the Teams meeting.`}
+      description={data && `${data.present} of ${data.total} students. Attendance is based on recorded joins in C.L.I.P. or Teams.`}
       className="mb-6"
     >
-      <ul className="divide-y divide-border">
-        {data.students.map((row) => (
-          <li key={row.student_id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
-            <span className="min-w-0">
-              <span className="block font-medium">{row.name}</span>
-              <span className="block truncate text-xs text-muted-foreground">{row.email}</span>
-            </span>
-            {row.present ? (
-              <span className="flex items-center gap-2 text-sm text-muted-foreground">
-                {row.minutes !== null && `${row.minutes} min`}
-                <Tag tone="good">{row.sources.includes('clip') ? 'Present' : 'In Teams only'}</Tag>
+      {!current ? (
+        <p role="status" className="text-sm text-muted-foreground">Loading attendance…</p>
+      ) : !data ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <p role="alert" className="text-sm text-critical">Attendance could not be loaded.</p>
+          <button type="button" className={buttonStyles({ intent: 'secondary' })} onClick={() => setAttempt((count) => count + 1)}>
+            Retry attendance
+          </button>
+        </div>
+      ) : (
+        <ul className="divide-y divide-border">
+          {data.students.map((row) => (
+            <li key={row.student_id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+              <span className="min-w-0">
+                <span className="block font-medium">{row.name}</span>
+                <span className="block truncate text-xs text-muted-foreground">{row.email}</span>
               </span>
-            ) : (
-              <Tag>Absent</Tag>
-            )}
-          </li>
-        ))}
-      </ul>
+              {row.present ? (
+                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  {row.first_seen && <span>First seen <time dateTime={row.first_seen}>{seenAt(row.first_seen)}</time></span>}
+                  {row.last_seen && <span>Last seen <time dateTime={row.last_seen}>{seenAt(row.last_seen)}</time></span>}
+                  <Tag tone="good">{row.sources.includes('clip') ? 'Present' : 'In Teams only'}</Tag>
+                </div>
+              ) : (
+                <Tag>Absent</Tag>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </Panel>
   )
 }
