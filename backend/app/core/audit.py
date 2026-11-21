@@ -81,8 +81,14 @@ def audit_action(
     *,
     commit: bool = False,
     require_argument: str | None = None,
+    require_field: tuple[str, str] | None = None,
 ) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
     """Audit a successful state-changing endpoint.
+
+    require_field names (argument, attribute) on the request body, for an
+    endpoint that both previews and applies a change on the one route. The
+    record is written only when that attribute is true, so a preview that
+    changes nothing does not read back as an applied change.
 
     The audit record joins the endpoint's transaction, so the change and its
     record are kept or lost together. With commit=True that transaction is
@@ -108,6 +114,11 @@ def audit_action(
 
             if require_argument is not None and bound.arguments.get(require_argument) is None:
                 return await func(*args, **kwargs)
+
+            if require_field is not None:
+                argument, attribute = require_field
+                if not getattr(bound.arguments.get(argument), attribute, False):
+                    return await func(*args, **kwargs)
 
             principal: Any = bound.arguments.get("principal")
             db: Any = bound.arguments.get("db")
