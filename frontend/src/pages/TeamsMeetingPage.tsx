@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
+import { panelSession, shouldWatchMeeting } from '../features/student/meetingSession'
 import { useStudentApp } from '../features/student/StudentAppContext'
 import type { StudentSession } from '../features/student/types'
 import { useTeams } from '../teams/TeamsProvider'
@@ -15,21 +16,35 @@ export default function TeamsMeetingPage() {
   const requestedSessionId = new URLSearchParams(window.location.search).get('sessionId')
   const meetingId = teams.context?.meetingId ?? null
   const [recheckFailed, setRecheckFailed] = useState(false)
+  // Sessions the live socket reported finished while this panel showed them.
+  const [endedLive, setEndedLive] = useState<ReadonlySet<string>>(() => new Set())
 
-  const session = sessions.find(
-    (candidate) =>
-      (
-        requestedSessionId &&
-        candidate.id === requestedSessionId
-      ) || (
-        meetingId &&
-        candidate.teams_meeting_id === meetingId
-      ),
-  ) ?? breakoutFallback(sessions, meetingId)
+  const session =
+    panelSession(sessions, requestedSessionId, meetingId) ??
+    breakoutFallback(sessions, meetingId)
 
-  // The lecturer may link the session after this panel opened. Until a
-  // session appears, keep asking, so nobody has to close and reopen it.
-  const waiting = teams.status === 'ready' && Boolean(meetingId) && !session
+  /*
+   * The lecturer may link the session after this panel opened. Until a
+   * session appears, keep asking, so nobody has to close and reopen it.
+   *
+   * Keep asking once the class has finished too. The lecturer starts the next
+   * one in the same meeting and link_meeting moves the meeting's link, but
+   * this panel matched a session once and nothing refreshes the list again:
+   * the finished session still carries this teams_meeting_id locally, so it
+   * goes on matching and the student sits on a class that is over.
+   *
+   * A panel that opened on a running class only learns it ended from the
+   * live socket, inside LiveSessionPanel; the cached list still says active.
+   * So the panel reports it here, and the list is refreshed at once.
+   */
+  const waiting = shouldWatchMeeting(teams.status === 'ready', meetingId, session, endedLive)
+  const finishedLive = useCallback(
+    (id: string) => {
+      setEndedLive((current) => (current.has(id) ? current : new Set(current).add(id)))
+      refreshSessions().catch(() => setRecheckFailed(true))
+    },
+    [refreshSessions],
+  )
   useEffect(() => {
     if (!waiting) {
       return
@@ -113,7 +128,16 @@ export default function TeamsMeetingPage() {
   // The side panel gets the slimmer layout that unfolds in from a paperclip.
   // The pop-up and the stage keep the plain one.
   const clip = teams.context?.frameContext === 'sidePanel' && !inDialog
-  return <LiveSessionPanel session={session} compact dialog={inDialog} clip={clip} />
+  return (
+    <LiveSessionPanel
+      key={session.id}
+      session={session}
+      compact
+      dialog={inDialog}
+      clip={clip}
+      onFinished={finishedLive}
+    />
+  )
 }
 
 /**
