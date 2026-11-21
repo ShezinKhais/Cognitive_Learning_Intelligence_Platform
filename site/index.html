@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="C.L.I.P. brings live checkpoints, optional on-device gaze and voice indicators, source-linked tutoring, and lesson review into Microsoft Teams.">
+  <title>C.L.I.P. | Classroom learning intelligence</title>
+  <link rel="icon" type="image/png" href="clip-icon.png">
+  <link rel="stylesheet" href="styles.css">
+  <script src="checkpoint.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap nav">
+      <a class="brand" href="./" aria-label="C.L.I.P. home">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span>C.L.I.P.<small>Cognitive Learning Intelligence Platform</small></span>
+      </a>
+      <nav aria-label="Main navigation">
+        <a href="#workflow">How it works</a>
+        <a href="#gaze">Gaze &amp; voice</a>
+        <a href="#privacy">Privacy</a>
+        <a class="nav-guide" href="guide.html">User guides <span aria-hidden="true">↗</span></a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="intro">
+      <div class="wrap hero-grid">
+        <div>
+          <p class="eyebrow">Microsoft Teams classroom companion</p>
+          <h1 id="intro">Check understanding<br>while <em>class is live.</em></h1>
+          <p class="hero-copy">C.L.I.P. helps lecturers spot concepts that need another explanation and gives students a way to revisit the lesson afterward. It connects live checkpoints, optional browser-based gaze and voice indicators, and a tutor that cites lecture material.</p>
+          <div class="hero-actions">
+            <a class="button primary" href="#checkpoint">Try a checkpoint <span aria-hidden="true">↘</span></a>
+            <a class="button light" href="guide.html">Read the guides <span aria-hidden="true">↗</span></a>
+          </div>
+        </div>
+        <div class="demo" id="checkpoint">
+          <div class="demo-header"><span>Student · Live checkpoint</span><span>Sample</span></div>
+          <div class="demo-body">
+            <p class="demo-topic">Astronomy · The Solar System</p>
+            <h2>Which planet is largest?</h2>
+            <form id="sample">
+              <fieldset>
+                <legend class="sr-only">Choose one planet</legend>
+                <label class="choice"><input required type="radio" name="planet" value="Mars"> <span>Mars</span></label>
+                <label class="choice"><input type="radio" name="planet" value="Jupiter"> <span>Jupiter</span></label>
+                <label class="choice"><input type="radio" name="planet" value="Venus"> <span>Venus</span></label>
+              </fieldset>
+              <button class="button primary" type="submit">Check answer <span aria-hidden="true">→</span></button>
+              <p id="sample-feedback" class="feedback" role="status"></p>
+            </form>
+          </div>
+          <div class="demo-footer">This example runs in your browser. Your answer stays on this page.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap workflow" id="workflow" aria-labelledby="workflow-heading">
+      <h2 id="workflow-heading">Before, during, and after class</h2>
+      <div class="flow">
+        <article><p class="eyebrow">Before class</p><h3>Prepare the material</h3><p>The lecturer uploads lesson files. C.L.I.P. drafts questions from the material and records the source. A lecturer reviews, edits, and approves the questions before using them.</p></article>
+        <article><p class="eyebrow">During class</p><h3>Run live checkpoints</h3><p>Students answer multiple-choice or written questions in the Teams side panel. The lecturer follows submissions and comprehension trends, so they can decide when to explain a concept again.</p></article>
+        <article><p class="eyebrow">After class</p><h3>Review and revise</h3><p>Students see their own answers, feedback, and source excerpts in Session Review. The Socratic tutor offers guided hints and questions. The lecturer can review the class results and export a report.</p></article>
+      </div>
+    </section>
+
+    <section class="sensing" id="gaze" aria-labelledby="gaze-heading">
+      <div class="wrap sensing-grid">
+        <div>
+          <p class="eyebrow">Optional student indicators</p>
+          <h2 id="gaze-heading">Camera gaze and microphone activity</h2>
+          <p>When enabled and permitted, the browser uses MediaPipe Face Landmarker to estimate whether a face is visible and whether its direction is consistent with looking toward the screen. A short calibration can help when the camera is positioned off-centre.</p>
+          <p>Voice activity detection estimates whether someone is speaking. The browser processes both indicators locally. It sends the share of time facing the screen, face presence, a speech flag, and the time window. C.L.I.P. combines these readings into minute summaries.</p>
+          <p>When engagement estimates and refocus nudges are enabled, sustained low readings can contribute to a private check-in asking whether you are still with the class. The default minimum signal window is 45 seconds, and the participation estimate must also be low. If enough students have low estimates at once, the lecturer receives an aggregate class alert. These indicators do not change your marks.</p>
+          <p>Camera position, low light, glasses, or a face out of view can affect the estimate. The indicators describe limited participation signals. Checkpoint answers provide the evidence for comprehension.</p>
+        </div>
+        <div class="signal-demo" aria-labelledby="signal-heading">
+          <p class="eyebrow">Illustrative example</p>
+          <h3 id="signal-heading">What does a reading mean?</h3>
+          <p>Explore the reported signals without using your camera.</p>
+          <div class="signal-options" aria-label="Example camera reading">
+            <button type="button" data-reading="facing" aria-pressed="true">Facing screen</button>
+            <button type="button" data-reading="away" aria-pressed="false">Looking aside</button>
+            <button type="button" data-reading="unavailable" aria-pressed="false">No reading</button>
+          </div>
+          <div class="signal-result" role="status">
+            <strong id="signal-title">Face detected · likely facing the screen</strong>
+            <p id="signal-detail">The camera estimate describes direction. It cannot tell whether the student understands the lesson.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap capabilities" aria-labelledby="capabilities-heading">
+      <h2 id="capabilities-heading">Tools for each role</h2>
+      <dl>
+        <div><dt>Students</dt><dd>Join classes, answer checkpoints, read feedback, and ask for hints grounded in lesson sources. After class, use <strong>To revisit</strong> and <strong>Progress over time</strong> to find topics that need practice.</dd></div>
+        <div><dt>Lecturers</dt><dd>Manage materials, approve questions, start and link lessons in Teams, and see live class trends. Manage the rooms in Teams and use C.L.I.P. to coordinate room labels and confirmations.</dd></div>
+        <div><dt>Administrators</dt><dd>Manage accounts and courses, preview timetable and roster imports, and review special consideration and data requests. System status and the audit log help administrators investigate issues.</dd></div>
+      </dl>
+    </section>
+
+    <section class="privacy" id="privacy" aria-labelledby="privacy-heading">
+      <div class="wrap privacy-grid">
+        <div><p class="eyebrow">Data and consent</p><h2 id="privacy-heading">What C.L.I.P. processes</h2></div>
+        <div class="privacy-content">
+          <article><h3>Student camera and microphone</h3><p>Each optional indicator requires separate consent. The browser keeps raw camera frames and microphone audio from these indicators on the device. Students can switch them off and continue answering questions. Indicators do not affect marks.</p></article>
+          <article><h3>Discussion notes and lecturer transcription</h3><p>Catch-up uses discussion notes made available to students. If the deployment enables live lecturer transcription, the lecturer can start it after confirming notice and consent. Short microphone chunks go to the C.L.I.P. server for speech recognition. Stored transcript text is distinct from student voice activity.</p></article>
+          <article><h3>Session records</h3><p>Answers, feedback, and summaries are subject to the configured retention period. By default, eligible session data is purged after 90 days. Students can use <strong>My data</strong> to download their data or request deletion.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap resources" aria-labelledby="resources-heading">
+      <div><h2 id="resources-heading">Get started with C.L.I.P.</h2><p>Use the guide for your role to join a meeting, run a lesson, or manage a course.</p></div>
+      <div class="hero-actions">
+        <a class="button primary" href="guide.html#students">Student guide ↗</a>
+        <a class="button light" href="guide.html#lecturers">Lecturer guide ↗</a>
+        <a class="button light" href="guide.html#administrators">Administrator guide ↗</a>
+      </div>
+    </section>
+  </main>
+  <footer><div class="wrap footer"><a class="brand footer-brand" href="./" aria-label="C.L.I.P. home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>C.L.I.P.</span></a><p>University of Wollongong in Dubai · CSIT321 · Team 4</p><a href="https://github.com/ShezinKhais/Cognitive_Learning_Intelligence_Platform">Project repository ↗</a></div></footer>
+</body>
+</html>
