@@ -218,7 +218,7 @@ application access policy limits it to a lecturers' group; do that outside a
 test tenant. `TEAMS_CATALOG_APP_ID` is the app's id in the organisation's
 catalog (Teams admin center, Manage apps, C.L.I.P, App ID), not the manifest
 id. The activity notice needs the manifest's `activities` entry, so upload
-`clip.zip` again after this version (0.3.7).
+`clip.zip` again after this version (0.3.8).
 
 ## Not done yet
 
