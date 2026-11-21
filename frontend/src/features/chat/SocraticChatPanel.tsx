@@ -11,6 +11,7 @@ import {
   useId,
   useRef,
 } from 'react'
+import { Link } from 'react-router'
 
 import { MAX_CHAT_QUESTION_LENGTH } from './chatApi'
 import { splitCitations } from './chatState'
@@ -27,6 +28,7 @@ export function SocraticChatPanel({
   sessionId,
   compact = false,
   discussion = false,
+  sessionReview = false,
   discussionSince,
   discussionUntil,
   discussionRollingMinutes,
@@ -34,6 +36,7 @@ export function SocraticChatPanel({
   sessionId: string
   compact?: boolean
   discussion?: boolean
+  sessionReview?: boolean
   discussionSince?: string
   discussionUntil?: string
   discussionRollingMinutes?: number
@@ -82,6 +85,16 @@ export function SocraticChatPanel({
         <p className="mt-3 rounded-lg bg-muted px-3 py-2 text-xs text-foreground">
           Ask about the lecture or about studying. Answers from the material show their sources, and quiz answers are never given away.
         </p>
+        {sessionReview && !discussion && (
+          <button
+            type="button"
+            disabled={active}
+            onClick={() => void submit('What should I revise?')}
+            className="mt-3 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+          >
+            What should I revise?
+          </button>
+        )}
       </header>
 
       <div
@@ -257,6 +270,11 @@ function Exchange({
                       {citation.material_title} · {location}
                     </p>
                     {citation.source_note_id && <a className="text-xs underline" href={`#discussion-${citation.source_note_id}`}>Read full discussion note</a>}
+                    {citation.source_session_id && (
+                      <Link className="text-xs underline" to={`/student/reviews/${citation.source_session_id}`}>
+                        Open lesson review
+                      </Link>
+                    )}
                     {citation.excerpt && (
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">{citation.excerpt}</p>
                     )}

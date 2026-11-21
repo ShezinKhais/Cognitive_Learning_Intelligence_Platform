@@ -25,7 +25,7 @@ export function historyFor(exchanges: readonly ChatExchange[]): { question: stri
 export function splitCitations(text: string): (string | number)[] {
   const parts: (string | number)[] = []
   let last = 0
-  for (const match of text.matchAll(/\[(\d{1,2})\]/g)) {
+  for (const match of text.matchAll(/\[(\d+)\]/g)) {
     const at = match.index ?? 0
     if (at > last) parts.push(text.slice(last, at))
     parts.push(Number(match[1]))

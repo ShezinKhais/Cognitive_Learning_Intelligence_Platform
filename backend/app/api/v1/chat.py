@@ -44,7 +44,8 @@ _EVENTS = (
     "One JSON object per line, each with `type` and `request_id`. `accepted` comes "
     "first. Then either `delta` events carrying `text`, `citation` events carrying a "
     "`citation` (`id`, `material_title`, `source_page`, `source_slide`, `excerpt`, "
-    "optional `number` and `source_note_id` for discussion notes), "
+    "optional `number`, `source_note_id` for discussion notes, and `source_session_id` for "
+    "revision sources), "
     "`follow_up` events carrying a `prompt`, and `completed`; or one of `unsupported` "
     "(with a `reason`), `empty_retrieval` and `error` (with a `detail`)."
 )
@@ -104,20 +105,30 @@ async def session_chat(
         context = await tutor_chat.with_discussion(
             db, context, payload.discussion_since, payload.discussion_until
         )
-    # The request's session is not closed until the response has been sent,
-    # which here is when the reply ends. Closed now, it gives its connection
-    # back, so a class asking at once does not hold one each while the model
-    # writes. Nothing was written through it, and the context is a copy.
-    await db.close()
-    # Last, so a request refused for any other reason costs the student
-    # nothing against their limit.
-    tutor_chat.get_chat_limiter().admit(principal.user_id)
+    earlier = [EarlierTurn(question=turn.question, answer=turn.answer) for turn in payload.history]
+    # Authorization and context checks precede admission. Revision source
+    # lookups can span many lessons, so admit before starting that work.
+    limiter = tutor_chat.get_chat_limiter()
+    limiter.admit(principal.user_id)
+    try:
+        revision = (
+            await tutor_chat.prepare_revision(db, principal.user_id, payload.question, earlier)
+            if payload.source == "materials" and live.status == SessionStatus.ENDED.value
+            else None
+        )
+        # Return the connection before streaming the copied context.
+        await db.close()
+    except BaseException:
+        # A failed or cancelled preparation never reaches the stream's cleanup.
+        limiter.finish(principal.user_id)
+        raise
 
     return StreamingResponse(
         tutor_chat.TutorExchange(context).lines(
             payload.request_id,
             payload.question,
-            [EarlierTurn(question=turn.question, answer=turn.answer) for turn in payload.history],
+            earlier,
+            revision=revision,
         ),
         media_type=tutor_chat.NDJSON,
         headers={

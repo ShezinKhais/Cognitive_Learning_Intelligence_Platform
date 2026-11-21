@@ -17,6 +17,7 @@ import asyncio
 import contextlib
 import json
 from collections.abc import AsyncIterator, Sequence
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 from uuid import UUID, uuid4
@@ -27,11 +28,16 @@ from sqlalchemy import delete, event, select
 from app.auth.store import LECTURER_ID, STUDENT_ID, get_consent_repository
 from app.core.config import get_settings
 from app.core.errors import ConflictError, RateLimitedError
+from app.models.comprehension_result import ComprehensionResult
 from app.models.course import Course
+from app.models.course_enrollment import CourseEnrollment
 from app.models.material import Material
 from app.models.question import Question
 from app.models.rag_chunk import RagChunk
 from app.models.session import Session as SessionModel
+from app.models.student import Student
+from app.models.student_response import StudentResponse
+from app.models.user import User
 from app.schemas.identity import ConsentType, Role
 from app.services import tutor_chat
 from app.services.ai_gateway import (
@@ -545,6 +551,270 @@ async def test_ended_session_retains_material_tutor_for_current_members(db, app,
     assert _ask(client, live.id).status_code == 404
 
 
+async def test_revision_tutor_uses_only_your_marked_answers_across_completed_lessons_in_the_subject(
+    db, app, tutor
+) -> None:
+    client, factory, created = db
+    live = await _running_class(db, app)
+    partial_id = await add_question(db, live.course, LECTURER_ID, question_type="free_text")
+    uncertain_id = await add_question(db, live.course, LECTURER_ID)
+    other_id = await add_question(db, live.course, LECTURER_ID)
+    unrelated_course = await add_course(factory, created)
+    excluded_id = await add_question(db, unrelated_course, LECTURER_ID)
+    other_user = uuid4()
+    async with factory() as seed:
+        seed.add(
+            User(user_id=other_user, name="Other", role="student", email=f"{other_user}@t.test")
+        )
+        await seed.commit()
+    created["user"].append(other_user)
+    await enrol(factory, live.course, other_user)
+    async with factory() as seed:
+        students = dict(
+            (
+                await seed.execute(
+                    select(Student.user_id, Student.student_id).where(
+                        Student.user_id.in_((STUDENT_ID, other_user))
+                    )
+                )
+            ).all()
+        )
+        entry = await seed.get(SessionModel, UUID(live.id))
+        assert entry is not None
+        entry.title = "Week 10"
+        lesson_date = datetime.now(UTC) - timedelta(days=63)
+        earlier = SessionModel(
+            instructor_id=LECTURER_ID,
+            course_id=live.course.id,
+            title="Week 1",
+            start_time=lesson_date,
+            ended_at=lesson_date + timedelta(hours=1),
+            mode=entry.mode,
+            status="ended",
+        )
+        unrelated = SessionModel(
+            instructor_id=LECTURER_ID,
+            course_id=unrelated_course.id,
+            title="Another subject",
+            start_time=lesson_date,
+            ended_at=lesson_date + timedelta(hours=1),
+            mode=entry.mode,
+            status="ended",
+        )
+        in_progress = SessionModel(
+            instructor_id=LECTURER_ID,
+            course_id=live.course.id,
+            title="Unfinished lesson",
+            start_time=lesson_date,
+            mode=entry.mode,
+            status="active",
+        )
+        seed.add_all((earlier, unrelated, in_progress))
+        await seed.flush()
+        for question_id, topic in (
+            (live.question_id, "Planet size"),
+            (partial_id, "Orbital motion"),
+            (uncertain_id, "Uncertain topic"),
+            (other_id, "Private topic"),
+        ):
+            question = await seed.get(Question, question_id)
+            assert question is not None
+            question.topic = topic
+        session_id = UUID(live.id)
+        uncertain = StudentResponse(
+            session_id=session_id,
+            student_id=students[STUDENT_ID],
+            question_id=uncertain_id,
+            free_text="An unverified answer",
+        )
+        partial = StudentResponse(
+            session_id=earlier.session_id,
+            student_id=students[STUDENT_ID],
+            question_id=partial_id,
+            free_text="A partial answer",
+        )
+        seed.add_all(
+            [
+                uncertain,
+                partial,
+                StudentResponse(
+                    session_id=unrelated.session_id,
+                    student_id=students[STUDENT_ID],
+                    question_id=excluded_id,
+                    selected_option=0,
+                    is_correct=False,
+                ),
+                StudentResponse(
+                    session_id=in_progress.session_id,
+                    student_id=students[STUDENT_ID],
+                    question_id=partial_id,
+                    selected_option=0,
+                    is_correct=False,
+                ),
+                StudentResponse(
+                    session_id=session_id,
+                    student_id=students[STUDENT_ID],
+                    question_id=live.question_id,
+                    selected_option=0,
+                    is_correct=False,
+                ),
+                StudentResponse(
+                    session_id=session_id,
+                    student_id=students[other_user],
+                    question_id=other_id,
+                    selected_option=0,
+                    is_correct=False,
+                ),
+            ]
+        )
+        await seed.flush()
+        seed.add(
+            ComprehensionResult(
+                response_id=uncertain.response_id,
+                label="struggling",
+                confidence_score=0.3,
+                score=0.2,
+                ai_feedback_text="Uncertain",
+            )
+        )
+        seed.add(
+            ComprehensionResult(
+                response_id=partial.response_id,
+                label="partial",
+                confidence_score=0.8,
+                score=0.5,
+                ai_feedback_text="Partial",
+            )
+        )
+        await seed.commit()
+
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    assert client.post(f"/api/v1/sessions/{live.id}/end").status_code == 200
+    sign_in_as(app, STUDENT_ID, Role.STUDENT)
+    choices = _events(_ask(client, live.id, "What should I revise?"))
+    assert _types(choices) == ["accepted", "delta", "follow_up", "completed"]
+    assert choices[1]["text"] == "Which subject would you like to revise?"
+    option = choices[2]["prompt"]
+    assert option == f"Revise {live.course.code} — {live.course.name}"
+    response = client.post(
+        f"/api/v1/sessions/{live.id}/chat",
+        json={
+            "request_id": "req-1",
+            "question": live.course.code,
+            "history": [{"question": "What should I revise?", "answer": choices[1]["text"]}],
+        },
+    )
+    events = _events(response)
+    assert response.headers["cache-control"] == "no-store"
+    assert _types(events) == ["accepted", "delta", "delta", "delta", "citation", "completed"]
+    assert live.course.code in events[1]["text"]
+    assert "Week 1 (" in events[2]["text"]
+    assert "Revisit Orbital motion" in events[2]["text"]
+    assert "partially understood" in events[2]["text"]
+    assert "A lesson excerpt isn’t available" in events[2]["text"]
+    assert "Week 10 (" in events[3]["text"]
+    assert "Revisit Planet size" in events[3]["text"]
+    assert "Which planet is largest?" in events[3]["text"]
+    assert "lesson excerpt [2]" in events[3]["text"]
+    assert events[4]["citation"]["source_page"] == 3
+    assert events[4]["citation"]["material_title"] == "week1.pdf"
+    assert events[4]["citation"]["source_session_id"] == live.id
+    assert "Another subject" not in response.text
+    assert "Unfinished lesson" not in response.text
+    assert "A partial answer" not in response.text
+    assert "Jupiter" not in response.text
+    assert "Uncertain topic" not in response.text
+    assert "Private topic" not in response.text
+    assert tutor.model.prompts == tutor.model.embedded == []
+
+    from_earlier = _ask(client, str(earlier.session_id), option)
+    assert _events(from_earlier) == events
+
+    await enrol(factory, await add_course(factory, created))
+    assert _ask(client, live.id, "What should I revise?").status_code == 404
+
+
+async def test_revision_tutor_selects_another_enrolled_subject_and_rejects_unknown_subjects(
+    db, app, tutor
+) -> None:
+    client, factory, created = db
+    live = await _running_class(db, app)
+    other = await add_course(factory, created)
+    async with factory() as seed:
+        student_id = await seed.scalar(
+            select(Student.student_id).where(Student.user_id == STUDENT_ID)
+        )
+        seed.add(CourseEnrollment(student_id=student_id, course_id=other.id))
+        await seed.commit()
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    assert client.post(f"/api/v1/sessions/{live.id}/end").status_code == 200
+    sign_in_as(app, STUDENT_ID, Role.STUDENT)
+
+    choices = _events(_ask(client, live.id, "  What should I REVIEW?  "))
+    options = {e["prompt"] for e in choices if e["type"] == "follow_up"}
+    option = f"Revise {other.code} — {other.name}"
+    assert options == {option, f"Revise {live.course.code} — {live.course.name}"}
+    events = _events(_ask(client, live.id, option))
+    assert _types(events) == ["accepted", "delta", "completed"]
+    assert f"don’t have any marked answers to flag in {other.code}" in events[1]["text"]
+    unavailable = _events(_ask(client, live.id, "Revise MISSING — Another subject"))
+    assert unavailable[1]["text"].startswith("Which subject would you like to revise?")
+    assert {e["prompt"] for e in unavailable if e["type"] == "follow_up"} == options
+    assert tutor.model.prompts == tutor.model.embedded == []
+
+
+@pytest.mark.parametrize(
+    "question",
+    ["Explain the chain rule please", "what is a derivative?", "Cancel revision"],
+)
+async def test_subject_picker_allows_a_return_to_normal_tutoring(monkeypatch, question) -> None:
+    subjects = [Course(id=uuid4(), code="CSIT321", name="Capstone")]
+
+    async def available_subjects(db, user_id):
+        return subjects
+
+    monkeypatch.setattr(tutor_chat.student_review, "revision_subjects", available_subjects)
+    earlier = [
+        tutor_chat.EarlierTurn(
+            question="What should I revise?", answer="Which subject would you like to revise?"
+        )
+    ]
+    assert await tutor_chat.prepare_revision(None, STUDENT_ID, question, earlier) is None
+    # A subject removed in another tab must not trap the next normal question either.
+    subjects.clear()
+    assert await tutor_chat.prepare_revision(None, STUDENT_ID, question, earlier) is None
+
+
+async def test_subject_picker_keeps_subject_choices_and_explicit_reprompts(monkeypatch) -> None:
+    subject = Course(id=uuid4(), code="CSIT321", name="Capstone")
+    selected = []
+
+    async def available_subjects(db, user_id):
+        return [subject]
+
+    async def revision_items(db, user_id, chosen):
+        selected.append(chosen.code)
+        return []
+
+    monkeypatch.setattr(tutor_chat.student_review, "revision_subjects", available_subjects)
+    monkeypatch.setattr(tutor_chat.student_review, "revision_items", revision_items)
+    earlier = [
+        tutor_chat.EarlierTurn(
+            question="What should I revise?", answer="Which subject would you like to revise?"
+        )
+    ]
+    for choice in ["CSIT321", "Capstone", "Revise CSIT321 — Capstone"]:
+        reply = await tutor_chat.prepare_revision(None, STUDENT_ID, choice, earlier)
+        assert reply is not None and "CSIT321" in reply.text
+    assert selected == ["CSIT321"] * 3
+
+    for question in ["What should I revise?", "Revise MISSING — Unknown subject"]:
+        reply = await tutor_chat.prepare_revision(None, STUDENT_ID, question, earlier)
+        assert reply is not None
+        assert reply.text.startswith("Which subject would you like to revise?")
+        assert reply.subjects == ("Revise CSIT321 — Capstone",)
+
+
 async def test_staff_are_not_the_tutors_students(db, app, tutor) -> None:
     client, _, _ = db
     live = await _running_class(db, app)
@@ -602,6 +872,48 @@ async def test_a_student_may_ask_only_so_often(db, app, tutor) -> None:
     assert refused.json()["error"]["code"] == "RATE_LIMITED"
     assert 1 <= refused.json()["error"]["detail"]["retry_after_seconds"] <= 60
     assert len(tutor.model.prompts) == 3
+
+
+async def test_revision_preparation_is_rate_limited_before_source_lookups(
+    db, app, tutor, monkeypatch
+) -> None:
+    client, _, _ = db
+    live = await _running_class(db, app)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    assert client.post(f"/api/v1/sessions/{live.id}/end").status_code == 200
+    sign_in_as(app, STUDENT_ID, Role.STUDENT)
+    calls = []
+
+    async def prepare_revision(*args):
+        calls.append(args)
+        return tutor_chat.RevisionReply("A recorded revision plan.")
+
+    monkeypatch.setattr(tutor_chat, "prepare_revision", prepare_revision)
+    for _ in range(3):
+        assert _ask(client, live.id, "What should I revise?").status_code == 200
+    assert _ask(client, live.id, "What should I revise?").status_code == 429
+    assert len(calls) == 3
+
+
+async def test_a_failed_revision_preparation_releases_the_running_exchange(
+    db, app, tutor, monkeypatch
+) -> None:
+    client, _, _ = db
+    live = await _running_class(db, app)
+    sign_in_as(app, LECTURER_ID, Role.LECTURER)
+    assert client.post(f"/api/v1/sessions/{live.id}/end").status_code == 200
+    sign_in_as(app, STUDENT_ID, Role.STUDENT)
+
+    async def fail(*args):
+        raise RuntimeError("Synthetic source lookup failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(tutor_chat, "prepare_revision", fail)
+        with pytest.raises(RuntimeError, match="Synthetic source lookup failure"):
+            _ask(client, live.id, "What should I revise?")
+
+    # The failed request counts toward the rate, but holds no running exchange.
+    assert _ask(client, live.id, "What should I revise?").status_code == 200
 
 
 async def test_a_refused_request_does_not_count_against_the_student(db, app, tutor) -> None:
