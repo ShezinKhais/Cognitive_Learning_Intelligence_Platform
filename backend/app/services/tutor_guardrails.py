@@ -657,6 +657,10 @@ _VERDICT_WORDS = re.compile(
 
 _CITATION = re.compile(r"\[(\d{1,3})\]")
 _DOUBLED_CITATION = re.compile(r"\[\[(\d{1,3})\]\]")
+# Markdown emphasis. The panel shows plain text, so "**photosynthesis**"
+# arrived with its asterisks. Only paired ** and __ around text: a single *
+# is left alone, since "a*b" or "5 * 3" may be meant literally.
+_EMPHASIS = re.compile(r"(\*\*|__)(?=\S)(.+?)(?<=\S)\1")
 _SENTENCE_END = re.compile(r"[.!?]+[\"')\]]*\s|\n")
 
 
@@ -1106,7 +1110,7 @@ async def guarded_chat(
         return
 
     # "[[1]]" would show a stray bracket either side of the citation chip.
-    answer = _DOUBLED_CITATION.sub(r"[\1]", vetter.released_text)
+    answer = _EMPHASIS.sub(r"\2", _DOUBLED_CITATION.sub(r"[\1]", vetter.released_text))
     # Whether the answer comes from the lecturer's material is the server's
     # to say, not the model's: the panel labels an ungrounded one.
     yield event("delta", text=answer, grounded=not talk)

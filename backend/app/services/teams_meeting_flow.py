@@ -465,8 +465,12 @@ async def participants_changed(
     active = status == SessionStatus.ACTIVE.value
     if kind == "participant_joined":
         cancelled = presence.joined(meeting_id, aads)
-        if active:
+        # A student who joins before the class starts is kept too, so they
+        # count as present the moment it starts, like one who joins after.
+        # The classroom only tells staff once the class is running.
+        if active or status == SessionStatus.PREPARED.value:
             await classroom.teams_presence(session_id, joined=students)
+        if active:
             if cancelled is not None:
                 await classroom.tell_ending(session_id, None, None)
             notifications.enqueue_welcome(session_id, {aad: teams_id for teams_id, aad in people})

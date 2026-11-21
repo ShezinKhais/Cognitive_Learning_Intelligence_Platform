@@ -1149,6 +1149,17 @@ class TestDoubledCitation:
         assert shown(events) == "Frozen layers keep general features. [1] Why?"
         assert types(events).count("citation") == 1
 
+    async def test_markdown_bold_is_shown_as_plain_text(self) -> None:
+        harness = Harness(replies=("The **base layers** keep __general__ features. [1] Why?",))
+        events = await harness.run()
+        assert shown(events) == "The base layers keep general features. [1] Why?"
+
+    async def test_a_single_asterisk_is_left_alone(self) -> None:
+        reply = "Momentum is m * v, so 2 * 3 gives 6 [1]. Why?"
+        harness = Harness(replies=(reply,))
+        events = await harness.run()
+        assert shown(events) == reply
+
 
 class TestConversation:
     """With converse set, a message no excerpt is near is talked about, not refused."""

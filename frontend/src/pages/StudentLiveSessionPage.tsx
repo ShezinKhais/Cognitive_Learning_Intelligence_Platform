@@ -35,8 +35,7 @@ import type {
 import { sourcePlace } from '../features/student/liveSessionTypes'
 import type { StudentSession } from '../features/student/types'
 import ParticipationGauge from '../features/student/ParticipationGauge'
-import PaperclipLauncher from '../features/student/PaperclipLauncher'
-import { opensForQuestion } from '../features/student/paperclip'
+import ClipFrame, { Reveal } from '../features/student/ClipFrame'
 import AssignedRoom from '../features/student/AssignedRoom'
 import RoomConfirm from '../features/student/RoomConfirm'
 import { useLiveSession } from '../features/student/useLiveSession'
@@ -106,12 +105,10 @@ export function LiveSessionPanel({
   /** Shown in the checkpoint pop-up over a Teams meeting: the question only,
    * with no camera controls, tutor or notes, and a way back to the lecture. */
   dialog?: boolean
-  /** Rest as a small paperclip that opens to the score and questions (the Teams side panel). */
+  /** The Teams side panel: a slimmer layout that unfolds in from a paperclip. */
   clip?: boolean
 }) {
   const [activeView, setActiveView] = useState<'class' | 'chat'>('class')
-  const [clipOpen, setClipOpen] = useState(false)
-  const [seenQuestionId, setSeenQuestionId] = useState<string | null>(null)
   const teams = useTeams()
   const {
     state,
@@ -153,42 +150,25 @@ export function LiveSessionPanel({
       )
     : 0
 
-  // The clip opens by itself for a new question, once, and stays as the
-  // student leaves it.
-  const questionId = state.checkpoint?.question.question_id ?? null
-  if (clip && opensForQuestion(seenQuestionId, questionId)) {
-    setSeenQuestionId(questionId)
-    setClipOpen(true)
-  }
+  // The server's count arrives with the session state, which can lag a
+  // question sent by hand. The student has at least seen what they answered
+  // and what is open now, so the dial never reads 0 beside a question.
+  const delivered = Math.max(
+    state.questionsDelivered,
+    state.answeredIds.length + (state.checkpoint ? 1 : 0),
+  )
 
-  if (clip && !clipOpen) {
-    return (
-      <PaperclipLauncher
-        answered={state.answeredIds.length}
-        delivered={state.questionsDelivered}
-        questionOpen={questionId !== null}
-        onOpen={() => setClipOpen(true)}
-      />
-    )
-  }
-
-  return (
-    <div className={`bg-background px-4 py-5 ${compact ? '' : 'sm:px-6 sm:py-8'}`}>
+  const panel = (
+    <div className={`bg-background ${clip ? 'px-3 py-3' : `px-4 py-5 ${compact ? '' : 'sm:px-6 sm:py-8'}`}`}>
       <div className={`mx-auto ${compact ? 'max-w-xl' : 'max-w-4xl'}`}>
-        {clip && (
-          <div className="mb-3 flex justify-end">
-            <button
-              type="button"
-              onClick={() => setClipOpen(false)}
-              aria-expanded
-              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-sm font-medium hover:bg-muted"
-            >
-              <Paperclip size={15} aria-hidden />
-              Minimise
-            </button>
-          </div>
-        )}
-        <header className="rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)] sm:p-6">
+        <Reveal index={0} enabled={clip}>
+        <header
+          className={
+            clip
+              ? 'rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-card-hover)]'
+              : 'rounded-xl border border-border bg-card p-5 shadow-[var(--shadow-card)] sm:p-6'
+          }
+        >
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               {!compact && (
@@ -199,7 +179,7 @@ export function LiveSessionPanel({
                 {session.course_code}
               </p>
 
-              <h1 className="mt-1 text-2xl font-bold sm:text-3xl">
+              <h1 className={clip ? 'mt-0.5 text-lg font-bold leading-tight' : 'mt-1 text-2xl font-bold sm:text-3xl'}>
                 {session.title}
               </h1>
             </div>
@@ -216,9 +196,24 @@ export function LiveSessionPanel({
               </a>
             )}
 
+            {clip && (
+              <span
+                aria-hidden
+                className="inline-flex size-9 shrink-0 items-center justify-center rounded-full border border-border bg-background text-primary"
+              >
+                <motion.span
+                  className="inline-flex"
+                  initial={{ rotate: -55, x: 12, opacity: 0 }}
+                  animate={{ rotate: 0, x: 0, opacity: 1 }}
+                  transition={{ delay: 0.1, type: 'spring', stiffness: 220, damping: 14 }}
+                >
+                  <Paperclip size={17} />
+                </motion.span>
+              </span>
+            )}
           </div>
 
-          {!dialog && (<div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 border-t border-border pt-4 text-sm text-muted-foreground">
+          {!dialog && (<div className={`${clip ? 'mt-3 items-center pt-3' : 'mt-5 pt-4'} flex flex-wrap gap-x-6 gap-y-2 border-t border-border text-sm text-muted-foreground`}>
             {!finished && (
               <span className="inline-flex items-center gap-2">
                 <Users aria-hidden="true" size={17} />
@@ -234,7 +229,7 @@ export function LiveSessionPanel({
             </span>
 
             <span className="ml-auto">
-              <ParticipationGauge answered={state.answeredIds.length} delivered={state.questionsDelivered} />
+              <ParticipationGauge answered={state.answeredIds.length} delivered={delivered} compact={clip} />
             </span>
           </div>)}
           {dialog ? null : state.sessionStatus === 'active' && state.assignedRoom ? (
@@ -244,6 +239,7 @@ export function LiveSessionPanel({
               enabled={state.connection === 'connected' && !state.paused} />
           )}
         </header>
+        </Reveal>
 
         {!finished && <ConnectionNotice status={state.connection} />}
 
@@ -265,6 +261,7 @@ export function LiveSessionPanel({
         ))}
 
         {assistant && !dialog && (
+          <Reveal index={1} enabled={clip}>
           <SegmentedTabs
             label="Student session tools"
             value={activeView}
@@ -284,6 +281,7 @@ export function LiveSessionPanel({
               },
             ]}
           />
+          </Reveal>
         )}
 
         {state.error && !finished && state.connection !== 'forbidden' && (
@@ -311,6 +309,7 @@ export function LiveSessionPanel({
           </div>
         )}
 
+        <Reveal index={2} enabled={clip}>
         <section
           className="mt-5"
           aria-live="polite"
@@ -370,8 +369,13 @@ export function LiveSessionPanel({
             </AnimatePresence>
           )}
         </section>
+        </Reveal>
 
-        {!dialog && <DiscussionPanel key={`discussion-${session.id}`} sessionId={session.id} />}
+        {!dialog && (
+          <Reveal index={3} enabled={clip}>
+            <DiscussionPanel key={`discussion-${session.id}`} sessionId={session.id} />
+          </Reveal>
+        )}
         {dialog &&
           (!state.checkpoint ||
             secondsRemaining <= 0 ||
@@ -455,6 +459,8 @@ export function LiveSessionPanel({
         )}
     </div>
   )
+
+  return clip ? <ClipFrame>{panel}</ClipFrame> : panel
 }
 
 function CompletedCheckpointCard({

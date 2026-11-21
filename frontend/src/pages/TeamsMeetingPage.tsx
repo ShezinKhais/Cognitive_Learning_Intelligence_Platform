@@ -127,8 +127,8 @@ export default function TeamsMeetingPage() {
   const frame = teams.context?.frameContext
   // The checkpoint pop-up over the meeting shows only the question, so the
   // student answers and is back to the lecture in one step. The side panel
-  // rests as a small paperclip that opens to the score and questions; the
-  // stage shows the class straight away.
+  // gets the slimmer layout that unfolds in from a paperclip; the stage shows
+  // the whole class, and the pop-up only the question.
   const inDialog = frame === 'task' || new URLSearchParams(window.location.search).get('view') === 'dialog'
   return (
     <LiveSessionPanel
