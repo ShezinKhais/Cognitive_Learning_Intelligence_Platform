@@ -482,16 +482,21 @@ for (const action of ['Toggle session connection', 'Toggle sensor mount', 'Rejec
   })
 }
 
-test('calibration gives up when the camera stops sending frames', async ({ page }) => {
+test('every student calibrates when the camera starts, and can try again', async ({ page }) => {
   await optIn(page, 'camera')
   await page.getByRole('button', { name: 'Turn on' }).click()
   await expect(page.getByRole('button', { name: 'Stop camera', exact: true })).toBeVisible({ timeout: 60_000 })
-  // A muted track sends no frames, so calibration has no timestamp to end on.
+  // Calibration starts by itself. The fake camera shows no face, so it fails,
+  // and the student is judged by head direction until a retry works.
+  const retry = page.getByRole('button', { name: 'Try again: look at the screen for 3 seconds' })
+  await expect(retry).toBeEnabled({ timeout: 15_000 })
+  await expect(page.getByText('Until it does, only the direction of your head is used.')).toBeVisible()
+  // A muted track sends no frames, so a retry has no timestamp to end on and gives up.
   await page.evaluate(() => Object.defineProperty(MediaStreamTrack.prototype, 'muted', { configurable: true, get: () => true }))
-  await page.getByRole('button', { name: 'Calibrate: look at the screen for 3 seconds' }).click()
+  await retry.click()
   await expect(page.getByRole('button', { name: 'Look at the screen…' })).toBeDisabled()
   await expect(page.getByText('The camera stopped sending pictures, so calibration did not finish.')).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByRole('button', { name: 'Calibrate: look at the screen for 3 seconds' })).toBeEnabled()
+  await expect(retry).toBeEnabled()
 })
 
 test('keyboard, IME composition, source rendering and reduced-motion scrolling', async ({ page }) => {

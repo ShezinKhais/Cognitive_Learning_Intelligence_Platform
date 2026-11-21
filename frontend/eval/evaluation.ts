@@ -366,7 +366,7 @@ export const GAZE_GRID = {
 
 /** The gaze model and limits with the best balanced accuracy on `frames`; ties keep the earlier one. */
 export function tuneGaze(
-  frames: Frame[], base: Thresholds, uncalibrated: Thresholds,
+  frames: Frame[], base: Thresholds, uncalibrated: Thresholds, calibrated = true,
 ): { gaze: GazeModel; thresholds: Thresholds; balancedAccuracy: number | null } {
   const byKey = calibrations(frames)
   let best: { gaze: GazeModel; thresholds: Thresholds; balancedAccuracy: number | null } | null = null
@@ -376,7 +376,7 @@ export function tuneGaze(
       for (const maxYawDegrees of GAZE_GRID.maxYawDegrees) {
         for (const maxPitchDegrees of GAZE_GRID.maxPitchDegrees) {
           const thresholds = { ...base, maxYawDegrees, maxPitchDegrees }
-          const value = balancedAccuracy(score(frames, { thresholds, calibrated: true, uncalibrated, gaze }, byKey).looking)
+          const value = balancedAccuracy(score(frames, { thresholds, calibrated, uncalibrated, gaze }, byKey).looking)
           if (value !== null && (best === null || best.balancedAccuracy === null || value > best.balancedAccuracy)) {
             best = { gaze, thresholds, balancedAccuracy: value }
           }

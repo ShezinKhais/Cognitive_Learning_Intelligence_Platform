@@ -23,10 +23,16 @@ export interface LivenessSettings {
 }
 
 /**
- * Off until the #165 recordings say how well it works for everyone (see
- * backend/tests/eval/CV_EVALUATION.md), like GAZE_MODEL and ADAPTATION in
- * signals.ts. While null the classroom judges faces exactly as before, and the
- * model is never even loaded there.
+ * The settings tuned on six participants' photo and video clips (#165, #253).
+ * Leaving one participant out, 0.1% of live faces were wrongly rejected (worst
+ * participant 1.3%, under the 2% bar in every condition) and 56% of spoofs were
+ * caught (CV_EVALUATION.md, second round).
+ */
+export const TUNED_LIVENESS: LivenessSettings = { everyMs: 1000, window: 2, spoofBelow: 0.5 }
+/**
+ * What ships: off until Cyber 1's fairness sign-off (#299) and Cyber 2's device
+ * checks (#160). While null the classroom judges faces as before and never
+ * loads the model. Switching it on is setting this to TUNED_LIVENESS.
  */
 export const LIVENESS: LivenessSettings | null = null
 /** A starting point for the evaluation, not yet measured on recordings. */

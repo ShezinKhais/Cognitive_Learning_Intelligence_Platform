@@ -1,6 +1,6 @@
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision'
 import {
-  ADAPTATION, GAZE_MODEL, calibrate, classifyAdaptive, classifyFace, faceFeatures, learn, startAdaptation, thresholdsFor,
+  ADAPTATION, GAZE_MODEL, calibrate, classifyAdaptive, classifyFace, faceFeatures, gazeFor, learn, startAdaptation, thresholdsFor,
   type AdaptiveState, type Calibration, type FaceFeatures,
 } from './signals'
 import {
@@ -86,18 +86,20 @@ self.onmessage = async (event: MessageEvent) => {
           if (ADAPTATION) {
             // A new calibration starts the learned normal again, from its frames.
             adaptive = startAdaptation(calibration)
-            for (const f of calibrating.frames) adaptive = learn(adaptive, f, thresholdsFor(calibration), ADAPTATION, GAZE_MODEL)
+            for (const f of calibrating.frames) adaptive = learn(adaptive, f, thresholdsFor(calibration), ADAPTATION, gazeFor(calibration, GAZE_MODEL))
           }
           calibrating = null
           self.postMessage({ type: 'calibrated', ok: calibration !== null })
         }
       }
       const base = thresholdsFor(calibration)
+      // The combined gaze only once this student's centre is known.
+      const gaze = gazeFor(calibration, GAZE_MODEL)
       // A photo is not this student's normal, so nothing is learned from it.
-      if (ADAPTATION && adaptive && mayLearn(spoof, calibrating !== null, timestamp, learnUntil)) adaptive = learn(adaptive, features, base, ADAPTATION, GAZE_MODEL)
+      if (ADAPTATION && adaptive && mayLearn(spoof, calibrating !== null, timestamp, learnUntil)) adaptive = learn(adaptive, features, base, ADAPTATION, gaze)
       const value = ADAPTATION && adaptive
-        ? classifyAdaptive(features, adaptive, base, ADAPTATION, GAZE_MODEL)
-        : classifyFace(features, base, calibration, GAZE_MODEL)
+        ? classifyAdaptive(features, adaptive, base, ADAPTATION, gaze)
+        : classifyFace(features, base, calibration, gaze)
       self.postMessage({
         type: 'observation',
         value: applyLiveness(value, spoof),

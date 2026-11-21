@@ -273,8 +273,8 @@ See [docs/governance.md](docs/governance.md).
 - Live and post-session catch-up from lecturer-published discussion minutes, with time windows and source links
 - Optional live lecturer microphone transcription feeding student catch-up automatically, with explicit opt-in and local server speech processing
 - Optional post-meeting Teams transcript import and AI-drafted minutes, reviewed by the lecturer before publication
-- Optional camera indicators with a three-second personal calibration, worked out on the
-  student's own device, and only the derived figures sent
+- Optional camera indicators, with a three-second personal calibration for every student when
+  the camera starts, worked out on the student's own device, and only the derived figures sent
 - A summary after each session with what to revisit, past session reviews and progress
   over time
 - **What should I revise?** in the session review tutor lets you choose a subject, then highlights
