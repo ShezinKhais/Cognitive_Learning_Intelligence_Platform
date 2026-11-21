@@ -20,7 +20,7 @@ from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, monitoring_request_id_var, request_id_var
 from app.realtime.classroom import classroom
 from app.repositories.teams_meeting_repository import DatabaseMeetingDirectory
-from app.services import class_glance
+from app.services import class_glance, teams_meeting_watch
 from app.services.ai_gateway import get_ai_gateway
 from app.services.live_wiring import install_live_store
 from app.services.material_recovery import SWEEP_EVERY, sweep_stranded
@@ -134,6 +134,8 @@ async def lifespan(app: FastAPI):
     seeding = asyncio.create_task(ensure_dev_users(get_settings()), name="dev-user-seed")
     scheduler = housekeeping()
     scheduler.start()
+    # C.L.I.P into lecturers' coming Teams meetings, when switched on.
+    teams_meeting_watch.watch.start(get_settings())
     # Loads the model in the background, so the first student to ask does not
     # wait for it.
     ai = get_ai_gateway()
@@ -143,6 +145,7 @@ async def lifespan(app: FastAPI):
     with contextlib.suppress(asyncio.CancelledError):
         await seeding
     await scheduler.stop()
+    await teams_meeting_watch.watch.stop()
     # Question windows and cycles are timers on this process. Sessions stay
     # active in the database and resume when the next process is touched.
     await classroom.shutdown()
