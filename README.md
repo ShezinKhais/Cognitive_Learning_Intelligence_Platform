@@ -277,6 +277,8 @@ See [docs/governance.md](docs/governance.md).
   student's own device, and only the derived figures sent
 - A summary after each session with what to revisit, past session reviews and progress
   over time
+- **What should I revise?** in the session review tutor lets you choose a subject, then highlights
+  marked checkpoints from its completed lessons in order, with source excerpts when available.
 - Request special consideration, and see its decision
 
 ### Lecturer
@@ -594,6 +596,7 @@ rather than a component, so every phase ends with something that runs end to end
 | Security and privacy reviews | [docs/security](docs/security/README.md) |
 | Final Report | Not yet linked |
 | Poster | Not yet linked |
+| Informational website and user guides | [Website source and local preview](site/README.md) · [Download the Word guide](site/clip-user-guide.docx) |
 | Third-party licences | [docs/licenses.md](docs/licenses.md) |
 
 ### Reference documents
