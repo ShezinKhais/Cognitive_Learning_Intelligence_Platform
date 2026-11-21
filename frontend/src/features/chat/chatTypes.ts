@@ -30,6 +30,9 @@ export interface ChatExchange {
   citations: ChatCitation[]
   followUps: string[]
   explanation: string | null
+  /** Set when the server says the answer is general background, not drawn
+   * from the lecturer's material. Older servers never set it. */
+  general?: boolean
 }
 
 export interface ChatState {
@@ -42,7 +45,7 @@ export interface ChatState {
 
 export type ChatStreamEvent =
   | { type: 'accepted'; request_id: string }
-  | { type: 'delta'; request_id: string; text: string }
+  | { type: 'delta'; request_id: string; text: string; grounded?: false }
   | { type: 'citation'; request_id: string; citation: ChatCitation }
   | { type: 'follow_up'; request_id: string; prompt: string }
   | { type: 'unsupported'; request_id: string; reason: string }

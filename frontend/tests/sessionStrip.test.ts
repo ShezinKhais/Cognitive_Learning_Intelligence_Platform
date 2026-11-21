@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import type { SessionResponse } from '../src/features/sessions/sessionsApi.ts'
-import { describeQuestion, stripFromResponses } from '../src/features/sessions/strip.ts'
+import type { QuestionBreakdown, SessionResponse } from '../src/features/sessions/sessionsApi.ts'
+import { describeQuestion, stripFromDeliveries, stripFromResponses } from '../src/features/sessions/strip.ts'
 
 let next = 0
 function answer(question: string, at: string, correct: boolean | null): SessionResponse {
@@ -46,4 +46,27 @@ test('a session with no answers has an empty strip', () => {
 test('free text only says how many are waiting', () => {
   const [question] = stripFromResponses([answer('q', '2026-10-16T10:00:00Z', null)])
   assert.equal(describeQuestion(question), 'Question 1: 1 answer, 1 not marked yet')
+})
+
+
+test('recorded deliveries preserve zero-response checkpoints and their positions', () => {
+  const checkpoint = {
+    prompt: 'A checkpoint',
+    type: 'mcq',
+    options: null,
+    correct_option: null,
+    topic: null,
+    eligible: 4,
+    option_counts: null,
+    median_seconds: null,
+  } satisfies Partial<QuestionBreakdown>
+  const strip = stripFromDeliveries([
+    { ...checkpoint, number: 1, question_id: 'missed', answers: 0, correct: 0, marked: 0 },
+    { ...checkpoint, number: 2, question_id: 'answered', answers: 4, correct: 2, marked: 3 },
+  ])
+  assert.deepEqual(strip, [
+    { questionId: 'missed', position: 1, right: 0, wrong: 0, unmarked: 0 },
+    { questionId: 'answered', position: 2, right: 2, wrong: 1, unmarked: 1 },
+  ])
+  assert.equal(describeQuestion(strip[0]), 'Question 1: 0 answers')
 })

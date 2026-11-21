@@ -339,7 +339,7 @@ async def test_a_run_keeps_what_the_upload_generator_kept_and_what_it_threw_away
     # Ten asked for is two calls: one good and one invented draft, then the
     # same good draft again.
     generator = RecordingGenerator(
-        FakeChatClient(f"[{GOOD},{INVENTED}]", f"[{GOOD}]"), "test-model", count=10
+        FakeChatClient(f"[{GOOD},{INVENTED}]", f"[{GOOD}]"), "test-model", count=10, max_calls=2
     )
     passed, rejected, counts = await collect(
         generator, chunks, "week3.pptx", "m1", {"diagram": [3]}
@@ -356,7 +356,9 @@ async def test_a_run_keeps_what_the_upload_generator_kept_and_what_it_threw_away
 
 async def test_a_reply_that_cannot_be_read_counts_as_an_empty_call():
     chunks = [chunk(0, 3, "The base layers are frozen so their weights do not change.")]
-    generator = RecordingGenerator(FakeChatClient("not json at all"), "test-model", count=5)
+    generator = RecordingGenerator(
+        FakeChatClient("not json at all"), "test-model", count=5, max_calls=1
+    )
     passed, rejected, counts = await collect(generator, chunks, "week3.pptx", "m1", {})
     assert (passed, rejected) == ([], [])
     assert (counts["calls"], counts["empty_calls"], counts["drafts"]) == (1, 1, 0)
@@ -375,7 +377,7 @@ async def test_only_replies_that_gave_nothing_are_kept():
         chunk(1, 4, "Fine-tuning then unfreezes the top layers and trains them slowly."),
     ]
     generator = RecordingGenerator(
-        FakeChatClient(f"[{GOOD}]", '{"questions": []}'), "test-model", count=10
+        FakeChatClient(f"[{GOOD}]", '{"questions": []}'), "test-model", count=10, max_calls=2
     )
     _, _, counts = await collect(generator, chunks, "week3.pptx", "m1", {})
     assert counts["unreadable_replies"] == ['{"questions": []}']

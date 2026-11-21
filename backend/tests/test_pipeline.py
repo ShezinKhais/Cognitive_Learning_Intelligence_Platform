@@ -22,7 +22,7 @@ from app.schemas.events import MaterialProgressPayload, MaterialStage, ServerEve
 from app.services.extraction import ExtractedElement, Extraction
 from app.services.jobs import INTERNAL_ERROR, JobStatus
 from app.services.material_seams import CompletedMaterial, DraftQuestion, EmbeddingBatch
-from app.services.pipeline import NO_QUESTIONS_WARNING
+from app.services.pipeline import FEW_QUESTIONS_WARNING, NO_QUESTIONS_WARNING
 
 from .pipeline_support import (
     SAMPLES,
@@ -590,6 +590,34 @@ async def test_a_material_with_no_usable_drafts_says_so(tmp_path: Path) -> None:
     assert result.question_count == 0
     [written] = store.completed
     assert NO_QUESTIONS_WARNING in written.warnings
+
+
+async def test_the_lecturer_is_told_when_fewer_questions_than_wanted_pass(tmp_path: Path) -> None:
+    """A lecture that yields 2 of 15 questions cannot fill a class (#306), so
+    the lecturer is told how many passed rather than finding out in class."""
+    generator = Generator(count=2)
+    generator.count = 15
+    store = Store()
+    pipeline, storage, _ = build(tmp_path, generator=generator, store=store)
+    stored = await stored_text(storage)
+
+    await pipeline.job(stored, uuid4()).run()
+
+    [written] = store.completed
+    assert FEW_QUESTIONS_WARNING.format(kept=2, wanted=15) in written.warnings
+
+
+async def test_no_shortfall_warning_when_enough_questions_pass(tmp_path: Path) -> None:
+    generator = Generator(count=3)
+    generator.count = 3
+    store = Store()
+    pipeline, storage, _ = build(tmp_path, generator=generator, store=store)
+    stored = await stored_text(storage)
+
+    await pipeline.job(stored, uuid4()).run()
+
+    [written] = store.completed
+    assert not any("passed the checks" in w for w in written.warnings)
 
 
 async def test_the_lecturer_is_told_when_sections_are_held_back(tmp_path: Path) -> None:

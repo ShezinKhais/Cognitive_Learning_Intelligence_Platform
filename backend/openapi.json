@@ -1689,7 +1689,7 @@
             "type": "integer"
           },
           "classes": {
-            "description": "One per class, in the order of `classes`.",
+            "description": "Presence per class, in the order of `classes`.",
             "items": {
               "type": "boolean"
             },
@@ -1716,6 +1716,15 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "not_yet_enrolled": {
+            "description": "Classes before recorded enrolment. Excluded from the attendance denominator.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Not Yet Enrolled",
+            "type": "array"
           },
           "student_id": {
             "format": "uuid",
