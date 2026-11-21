@@ -426,11 +426,20 @@ test('spoof clips count for face presence but not for looking at the screen', ()
 })
 
 test('the gaze model can be tuned for a classroom with no calibration step', () => {
-  // Glances and screen looks, and no calibrate clip at all.
+  // Two people whose eyes rest in different places: P1 at 0.5, P2 at 0.65
+  // (camera off to one side). Each looks at the screen and glances away by
+  // 0.15. Without calibration the same iris position (0.65) is "screen" for
+  // one and "away" for the other, so no setting can separate them; with each
+  // person's own centre from their calibrate clip, every setting can. So the
+  // two runs must differ, which they only do if tuneGaze honours the flag.
+  const clip = (who: string, name: string, label: Frame['label'], irisX: number) =>
+    Array.from({ length: 6 }, (_, i) => ({ ...frame(who, name, label, 0), features: pose(0, 0, 0, irisX), t: i }))
   const frames = [
-    ...Array.from({ length: 6 }, (_, i) => ({ ...frame('P1', 's', 'screen', 0), features: pose(0, 0, 0, 0.5) , t: i })),
-    ...Array.from({ length: 6 }, (_, i) => ({ ...frame('P1', 'g', 'away_left', 0), features: pose(0, 0, 0, 0.75), t: i })),
+    ...clip('P1', 'c', 'calibrate', 0.5), ...clip('P1', 's', 'screen', 0.5), ...clip('P1', 'g', 'away_left', 0.65),
+    ...clip('P2', 'c', 'calibrate', 0.65), ...clip('P2', 's', 'screen', 0.65), ...clip('P2', 'g', 'away_left', 0.8),
   ]
-  const { balancedAccuracy: value } = tuneGaze(frames, CALIBRATED_THRESHOLDS, DEFAULT_THRESHOLDS, false)
-  assert.equal(value, 1)
+  const calibrated = tuneGaze(frames, CALIBRATED_THRESHOLDS, DEFAULT_THRESHOLDS, true).balancedAccuracy
+  const uncalibrated = tuneGaze(frames, CALIBRATED_THRESHOLDS, DEFAULT_THRESHOLDS, false).balancedAccuracy
+  assert.equal(calibrated, 1)
+  assert.ok(uncalibrated !== null && uncalibrated < 1, `without calibration: ${uncalibrated}`)
 })

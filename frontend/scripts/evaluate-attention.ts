@@ -329,7 +329,16 @@ say()
 say('## Limits')
 say()
 say(`- ${people.length} participants: a small sample, so the intervals are wide and the numbers may not hold for a whole class.`)
-say('- Acted, not natural: people were told what to do for 10 seconds at a time.')
+// Clips longer than a minute are natural recordings, not 10-second acted ones.
+const longClips = [...new Map(allFrames.map(f => [`${f.participant}/${f.clip}`, f])).keys()]
+  .map(key => {
+    const ts = allFrames.filter(f => `${f.participant}/${f.clip}` === key).map(f => f.t)
+    return { key, seconds: Math.max(...ts) - Math.min(...ts) }
+  })
+  .filter(c => c.seconds > 60)
+say(longClips.length
+  ? `- Mostly acted: people were told what to do for 10 seconds at a time, apart from ${longClips.length} longer natural clip(s) (${longClips.map(c => `${c.key.split('/')[0]}, ${Math.round(c.seconds / 60)} min`).join('; ')}).`
+  : '- Acted, not natural: people were told what to do for 10 seconds at a time.')
 say('- "Looking at the screen" is a camera-facing proxy, not eye tracking, and never a measure of attention or understanding.')
 say('- Fairness of the tuned thresholds across people is for Cyber 1 to sign off; devices and Teams are tested by Cyber 2.')
 
