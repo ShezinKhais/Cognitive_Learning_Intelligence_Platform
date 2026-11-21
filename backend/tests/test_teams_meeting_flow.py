@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import random
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -24,10 +25,12 @@ from app.models.teams_user_mapping import TeamsUserMapping
 from app.realtime.classroom import classroom
 from app.schemas.identity import ConsentType
 from app.schemas.meetings import TeamsActivity
+from app.schemas.session import SessionStatus
 from app.services import teams_meeting_flow as flow_module
 from app.services import teams_replies
 from app.services.meeting_directory import InMemoryMeetingDirectory, meetings
 from app.services.meeting_organiser import thread_in
+from app.services.session_lifecycle import MODE_IN_PERSON
 from app.services.teams_meeting_flow import (
     DISMISS,
     NOT_A_CLASS,
@@ -371,6 +374,38 @@ async def test_someone_joining_a_running_class_gets_clip_and_the_join_is_kept(wo
             )
         ).all()
     assert [(s.event_type, s.participant_count) for s in syncs] == [("participant_joined", 1)]
+
+
+async def test_a_student_who_joined_before_the_start_is_present_once_it_starts(
+    world, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    student = uuid4()
+
+    async def linked_students(db, settings, aads):  # noqa: ANN001, ANN202
+        return {student} if "aad-early" in aads else set()
+
+    monkeypatch.setattr(flow_module, "_students", linked_students)
+    async with world["factory"]() as seed:
+        course_id = await seed.scalar(select(Course.id).where(Course.code == world["code"]))
+        row = Session(
+            instructor_id=world["lecturer"],
+            course_id=course_id,
+            title="Week 6",
+            start_time=datetime.now(UTC),
+            mode=MODE_IN_PERSON,
+            status=SessionStatus.PREPARED.value,
+        )
+        seed.add(row)
+        await seed.commit()
+        session_id = row.session_id
+    await meetings.directory.link(world["meeting"], session_id)
+    try:
+        await _in_call(world, "event-early", ("29:early", "AAD-Early"))
+        classroom.activate(session_id)
+        assert student in classroom.present_students(session_id)
+    finally:
+        await classroom.teams_presence(session_id, left={student})
+        classroom._live.pop(session_id, None)
 
 
 async def test_joining_a_meeting_with_no_class_does_nothing(world) -> None:
