@@ -1,8 +1,10 @@
 """Attendance from C.L.I.P joins and Teams meeting joins, against a real
 database. Commits become flushes and every test is rolled back."""
 
+import csv
+import io
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -10,6 +12,7 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 from app.models.course import Course
+from app.models.course_enrollment import CourseEnrollment
 from app.models.session import Session
 from app.models.session_participant import SessionParticipant
 from app.models.student import Student
@@ -43,7 +46,7 @@ async def _student(db, course: Course, name: str) -> Student:
         user_id=user.user_id,
         course_id=course.id,
         consent_status="granted",
-        enrolled_at=date.today(),
+        enrolled_at=START.date(),
     )
     db.add(student)
     await db.flush()
@@ -155,3 +158,64 @@ async def test_the_course_view_has_one_column_per_finished_class(db, world) -> N
     csv_text = attendance.course_csv(out)
     assert csv_text.startswith("﻿student,email,attended,late,of,")
     assert "Ann," in csv_text and ",present," in csv_text + ","
+
+
+async def test_teams_leave_does_not_extend_clip_attendance_without_a_teams_join(db, world) -> None:
+    session = world["first"]
+    await _teams(db, session, world["ann"], "participant_left", START + timedelta(minutes=55))
+    out = await attendance.session_attendance(db, session)
+    ann = next(row for row in out.students if row.name == "Ann")
+    assert ann.sources == ["clip"]
+    assert ann.first_seen == START
+    assert ann.last_seen == START + timedelta(minutes=50)
+
+    await _teams(db, session, world["bob"], "participant_joined", START + timedelta(minutes=50))
+    await _teams(db, session, world["bob"], "participant_left", START + timedelta(minutes=52))
+    out = await attendance.session_attendance(db, session)
+    bob = next(row for row in out.students if row.name == "Bob")
+    assert bob.sources == ["teams"]
+    assert bob.first_seen == START + timedelta(minutes=5)
+    assert bob.last_seen == START + timedelta(minutes=52)
+
+
+async def test_classes_before_enrolment_are_excluded_in_the_view_and_csv(db, world) -> None:
+    course = world["course"]
+    first, second = world["first"], world["second"]
+    world["cat"].enrolled_at = (START + timedelta(days=3)).date()
+    other = Course(code=f"EX{uuid.uuid4().hex[:6]}".upper(), name="Other course")
+    db.add(other)
+    await db.flush()
+    dan = await _student(db, other, "Dan")
+    db.add(
+        CourseEnrollment(
+            student_id=dan.student_id, course_id=course.id, added_at=START + timedelta(days=3)
+        )
+    )
+    await db.flush()
+
+    out = await attendance.course_attendance(db, course)
+    rows = {row.name: row for row in out.students}
+    for name in ("Cat", "Dan"):
+        assert rows[name].not_yet_enrolled == [first.session_id]
+        assert rows[name].classes == [False, False]
+    assert rows["Ann"].not_yet_enrolled == []
+
+    csv_rows = {
+        row["student"]: row
+        for row in csv.DictReader(io.StringIO(attendance.course_csv(out).lstrip("\ufeff")))
+    }
+    for name in ("Cat", "Dan"):
+        assert csv_rows[name]["of"] == "1"
+        assert list(csv_rows[name].values())[-2:] == ["not yet enrolled", "absent"]
+
+    before = await attendance.session_attendance(db, first)
+    after = await attendance.session_attendance(db, second)
+    assert {row.name for row in before.students} == {"Ann", "Bob"}
+    assert {row.name for row in after.students} == {"Ann", "Bob", "Cat", "Dan"}
+
+    # Observed attendance remains valid if an enrolment record was added later.
+    await _teams(db, first, dan, "participant_joined", START)
+    out = await attendance.course_attendance(db, course)
+    dan_row = next(row for row in out.students if row.name == "Dan")
+    assert dan_row.classes == [True, False]
+    assert dan_row.not_yet_enrolled == []

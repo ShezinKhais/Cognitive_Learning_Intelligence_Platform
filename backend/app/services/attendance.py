@@ -19,7 +19,7 @@ from __future__ import annotations
 import csv
 import io
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.course import Course
+from app.models.course_enrollment import CourseEnrollment
 from app.models.session import Session
 from app.models.session_participant import SessionParticipant
 from app.models.student import Student
@@ -40,7 +41,6 @@ from app.schemas.attendance import (
     CourseAttendanceRow,
     SessionAttendanceOut,
 )
-from app.services.course_membership import students_on
 
 MAX_CLASSES = 40
 JOINED = "participant_joined"
@@ -101,20 +101,50 @@ async def _seen(db: AsyncSession, session_ids: list[UUID]) -> dict[tuple[UUID, U
         key = (session_id, student_id)
         if kind == JOINED:
             seen[key].add("teams", at, at)
-        elif key in seen:
+        elif key in seen and "teams" in seen[key].sources:
             seen[key].add("teams", None, at)
     return seen
 
 
 async def _people(db: AsyncSession, course_id: UUID, extra: set[UUID]) -> list[tuple]:
-    """(student_id, name, email) for the course's students and anyone in extra."""
+    """Current members and recorded attendees, with the relevant enrolment date."""
     rows = await db.execute(
-        select(Student.student_id, User.name, User.email)
+        select(
+            Student.student_id,
+            User.name,
+            User.email,
+            Student.course_id,
+            Student.enrolled_at,
+            CourseEnrollment.added_at,
+        )
         .join(User, User.user_id == Student.user_id)
-        .where(Student.student_id.in_(students_on(course_id)) | Student.student_id.in_(extra))
+        .outerjoin(
+            CourseEnrollment,
+            (CourseEnrollment.student_id == Student.student_id)
+            & (CourseEnrollment.course_id == course_id),
+        )
+        .where(
+            (Student.course_id == course_id)
+            | CourseEnrollment.student_id.is_not(None)
+            | Student.student_id.in_(extra)
+        )
         .order_by(func.lower(User.name))
     )
-    return list(rows.tuples().all())
+    return [
+        (student, name, email, enrolled if home == course_id else added)
+        for student, name, email, home, enrolled, added in rows.tuples().all()
+    ]
+
+
+def _before_enrolment(session: Session, enrolled: date | datetime | None) -> bool:
+    # Use the class end when known. Home-course dates only have day precision,
+    # so a student added on the day still counts as eligible for that class.
+    ended = session.ended_at or session.end_time or session.start_time
+    if ended is None or enrolled is None:
+        return False
+    if isinstance(enrolled, datetime):
+        return ended < enrolled
+    return ended.date() < enrolled
 
 
 def _late_after(session: Session) -> datetime | None:
@@ -139,8 +169,10 @@ async def session_attendance(db: AsyncSession, session: Session) -> SessionAtten
     attended = {student for (_, student) in seen}
     code = await db.scalar(select(Course.code).where(Course.id == session.course_id)) or ""
     students = []
-    for student_id, name, email in await _people(db, session.course_id, attended):
+    for student_id, name, email, enrolled in await _people(db, session.course_id, attended):
         record = seen.get((session.session_id, student_id))
+        if record is None and session.status == "ended" and _before_enrolment(session, enrolled):
+            continue
         minutes = None
         if record and record.first and record.last:
             minutes = max(0, int((record.last - record.first).total_seconds() // 60))
@@ -188,9 +220,14 @@ async def course_attendance(db: AsyncSession, course: Course) -> CourseAttendanc
     attended = {student for (_, student) in seen}
     students = []
     late_after = {s.session_id: _late_after(s) for s in classes}
-    for student_id, name, email in await _people(db, course.id, attended):
+    for student_id, name, email, enrolled in await _people(db, course.id, attended):
         marks = [(sid, student_id) in seen for sid in ids]
         late = [_is_late(seen.get((sid, student_id)), late_after[sid]) for sid in ids]
+        not_yet_enrolled = [
+            session.session_id
+            for session, present in zip(classes, marks, strict=True)
+            if not present and _before_enrolment(session, enrolled)
+        ]
         students.append(
             CourseAttendanceRow(
                 student_id=student_id,
@@ -200,6 +237,7 @@ async def course_attendance(db: AsyncSession, course: Course) -> CourseAttendanc
                 classes=marks,
                 late=late,
                 late_count=sum(late),
+                not_yet_enrolled=not_yet_enrolled,
             )
         )
     return CourseAttendanceOut(
@@ -226,14 +264,25 @@ def course_csv(attendance: CourseAttendanceOut) -> str:
         ]
     )
     for row in attendance.students:
+        not_yet_enrolled = set(row.not_yet_enrolled)
+        lateness = row.late or [False] * len(row.classes)
+        marks = [
+            "not yet enrolled"
+            if session.session_id in not_yet_enrolled
+            else ("late" if late else "present")
+            if mark
+            else "absent"
+            for session, mark, late in zip(attendance.classes, row.classes, lateness, strict=True)
+        ]
         writer.writerow(
-            [_safe(row.name), _safe(row.email), row.attended, row.late_count, len(row.classes)]
-            + [
-                ("late" if late else "present") if mark else "absent"
-                for mark, late in zip(
-                    row.classes, row.late or [False] * len(row.classes), strict=True
-                )
+            [
+                _safe(row.name),
+                _safe(row.email),
+                row.attended,
+                row.late_count,
+                len(row.classes) - len(not_yet_enrolled),
             ]
+            + marks
         )
     return "﻿" + out.getvalue()
 

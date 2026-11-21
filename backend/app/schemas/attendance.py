@@ -56,12 +56,16 @@ class CourseAttendanceRow(BaseModel):
     name: str
     email: str
     attended: int
-    classes: list[bool] = Field(description="One per class, in the order of `classes`.")
+    classes: list[bool] = Field(description="Presence per class, in the order of `classes`.")
     late: list[bool] = Field(
         default_factory=list,
         description="One per class, in the order of `classes`: present but late.",
     )
     late_count: int = 0
+    not_yet_enrolled: list[UUID] = Field(
+        default_factory=list,
+        description="Classes before recorded enrolment. Excluded from the attendance denominator.",
+    )
 
 
 class CourseAttendanceOut(BaseModel):

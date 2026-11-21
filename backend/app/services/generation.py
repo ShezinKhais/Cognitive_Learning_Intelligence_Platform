@@ -7,6 +7,7 @@ import logging
 import math
 import random
 import re
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID
@@ -15,6 +16,7 @@ from rapidfuzz import fuzz
 
 from app.schemas.content import Difficulty, QuestionType
 from app.services.extraction import NUMBER, ContentChunk, looks_like_data_table
+from app.services.grounding_evaluation import reason_kind
 from app.services.material_seams import DraftQuestion
 from app.services.retrieval import RetrievedChunk
 from app.services.text_variants import SET_ASIDE, normalise_for_screening, screening_variants
@@ -588,6 +590,13 @@ async def verify_draft(client, model: str, draft: DraftQuestion, chunks) -> str 
 # asked for many more writes a long JSON reply and is likelier to break it,
 # and one broken reply loses every question in it.
 DRAFTS_PER_CALL = 5
+# Further calls while too few drafts pass the checks (#306). With roughly one
+# draft in four kept, the first calls for 15 questions leave about 4; each
+# further call shows the model other parts of the material (prompt_chunks).
+# Stops after this many calls in all, or after TOP_UP_DRY_CALLS in a row that
+# add nothing, so material with little to ask about cannot run on.
+MAX_GENERATION_CALLS = 12
+TOP_UP_DRY_CALLS = 3
 
 
 def batches(
@@ -855,8 +864,12 @@ class QuestionGenerator:
         free_text: bool = False,
         verify: bool = False,
         rng: random.Random | None = None,
+        max_calls: int = MAX_GENERATION_CALLS,
     ) -> None:
         self._client = client
+        # Public: the pipeline tells the lecturer when fewer were kept.
+        self.count = count
+        self._max_calls = max_calls
         # Which chunk of each stretch a prompt shows (prompt_chunks). Random by
         # default, so generating again asks about other parts of a long
         # material; tests pass a seeded one.
@@ -903,13 +916,58 @@ class QuestionGenerator:
 
         accepted: list[DraftQuestion] = []
         seen: set[str] = set()
-        for share, count in batches(usable, wanted):
-            for draft in self._kept(await self._draft(chunks, count, share)):
+        drafted = 0
+        reasons: Counter[str] = Counter()
+
+        def keep(outcome: GenerationOutcome) -> int:
+            nonlocal drafted
+            drafted += len(outcome.accepted) + len(outcome.rejected)
+            for _, why in outcome.rejected:
+                reasons.update({reason_kind(reason) for reason in why})
+            added = 0
+            for draft in self._kept(outcome):
                 # Two calls can still land on the same idea.
                 key = " ".join(draft.prompt.lower().split())
-                if key not in seen:
+                if key not in seen and len(accepted) < wanted:
                     seen.add(key)
                     accepted.append(draft)
+                    added += 1
+            return added
+
+        calls = 0
+        for share, count in batches(usable, wanted):
+            keep(await self._draft(chunks, count, share))
+            calls += 1
+        # Too few kept: ask again, each time about other parts of the
+        # material, until enough pass the same checks or it stops helping.
+        dry = 0
+        while len(accepted) < wanted and calls < self._max_calls and dry < TOP_UP_DRY_CALLS:
+            calls += 1
+            try:
+                outcome = await self._draft(chunks, DRAFTS_PER_CALL, usable)
+            except Exception:
+                # A timeout or model error on a top-up call ends the top-up,
+                # not the material: the drafts already kept passed every
+                # check, and losing them would leave fewer than before (#307).
+                logger.warning(
+                    "material %s: asking again failed after %d calls; keeping the %d kept",
+                    material_id,
+                    calls,
+                    len(accepted),
+                    exc_info=True,
+                )
+                break
+            added = keep(outcome)
+            dry = 0 if added else dry + 1
+        logger.info(
+            "material %s: kept %d of %d wanted from %d drafts in %d calls; rejected by %s",
+            material_id,
+            len(accepted),
+            wanted,
+            drafted,
+            calls,
+            dict(reasons.most_common()) or "nothing",
+        )
         # Counted from the MCQs kept, not those asked for, so the ratio holds
         # when the checks reject some, and no MCQs means no short answers.
         short_answers = free_text_count(len(accepted))

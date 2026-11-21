@@ -106,7 +106,7 @@ def test_one_short_answer_question_for_every_three_multiple_choice(mcqs, short_a
 
 async def test_free_text_off_asks_only_for_multiple_choice():
     client = ScriptedClient(MCQ_REPLY)
-    generator = QuestionGenerator(client, "test-model")
+    generator = QuestionGenerator(client, "test-model", max_calls=1)
 
     drafts = await generator.generate(uuid.uuid4(), chunks())
 
@@ -117,7 +117,7 @@ async def test_free_text_off_asks_only_for_multiple_choice():
 
 async def test_free_text_on_asks_for_both_in_separate_calls():
     client = ScriptedClient(MCQ_REPLY, FREE_TEXT_REPLY)
-    generator = QuestionGenerator(client, "test-model", count=5, free_text=True)
+    generator = QuestionGenerator(client, "test-model", max_calls=1, count=5, free_text=True)
 
     drafts = await generator.generate(uuid.uuid4(), chunks())
 
@@ -140,7 +140,7 @@ async def test_no_kept_multiple_choice_means_no_free_text_call():
     unsupported = json.loads(MCQ_REPLY)
     unsupported[0]["options"] = ["Dropout", "Batch norm", "Pooling", "Padding"]
     client = ScriptedClient(json.dumps(unsupported))
-    generator = QuestionGenerator(client, "test-model", free_text=True)
+    generator = QuestionGenerator(client, "test-model", max_calls=1, free_text=True)
 
     drafts = await generator.generate(uuid.uuid4(), chunks())
 
@@ -150,7 +150,7 @@ async def test_no_kept_multiple_choice_means_no_free_text_call():
 
 async def test_a_failed_free_text_call_keeps_the_multiple_choice_questions():
     client = ScriptedClient(MCQ_REPLY, TimeoutError("model server did not answer"))
-    generator = QuestionGenerator(client, "test-model", free_text=True)
+    generator = QuestionGenerator(client, "test-model", max_calls=1, free_text=True)
 
     drafts = await generator.generate(uuid.uuid4(), chunks())
 
@@ -159,7 +159,7 @@ async def test_a_failed_free_text_call_keeps_the_multiple_choice_questions():
 
 async def test_an_unreadable_free_text_reply_keeps_the_multiple_choice_questions():
     client = ScriptedClient(MCQ_REPLY, '[{"prompt": "cut off')
-    generator = QuestionGenerator(client, "test-model", free_text=True)
+    generator = QuestionGenerator(client, "test-model", max_calls=1, free_text=True)
 
     drafts = await generator.generate(uuid.uuid4(), chunks())
 
@@ -169,7 +169,7 @@ async def test_an_unreadable_free_text_reply_keeps_the_multiple_choice_questions
 async def test_a_failed_multiple_choice_call_still_fails_the_material():
     # Unchanged: only the short-answer call is optional.
     client = ScriptedClient(TimeoutError("model server did not answer"))
-    generator = QuestionGenerator(client, "test-model", free_text=True)
+    generator = QuestionGenerator(client, "test-model", max_calls=1, free_text=True)
 
     with pytest.raises(TimeoutError):
         await generator.generate(uuid.uuid4(), chunks())
@@ -179,7 +179,7 @@ async def test_short_answer_drafts_go_through_the_checks():
     unsupported = json.loads(FREE_TEXT_REPLY)
     unsupported[0]["reference_answer"] = "Dropout and batch normalisation stop vanishing gradients."
     client = ScriptedClient(MCQ_REPLY, json.dumps(unsupported))
-    generator = QuestionGenerator(client, "test-model", free_text=True)
+    generator = QuestionGenerator(client, "test-model", max_calls=1, free_text=True)
 
     drafts = await generator.generate(uuid.uuid4(), chunks())
 
@@ -188,7 +188,7 @@ async def test_short_answer_drafts_go_through_the_checks():
 
 async def test_asking_for_one_type_makes_one_call_of_that_type():
     client = ScriptedClient(FREE_TEXT_REPLY)
-    generator = QuestionGenerator(client, "test-model", free_text=False)
+    generator = QuestionGenerator(client, "test-model", max_calls=1, free_text=False)
 
     drafts = await generator.generate(
         uuid.uuid4(), chunks(), count=3, question_type=QuestionType.FREE_TEXT
@@ -201,7 +201,7 @@ async def test_asking_for_one_type_makes_one_call_of_that_type():
 
 async def test_asking_for_multiple_choice_skips_the_free_text_call():
     client = ScriptedClient(MCQ_REPLY)
-    generator = QuestionGenerator(client, "test-model", free_text=True)
+    generator = QuestionGenerator(client, "test-model", max_calls=1, free_text=True)
 
     drafts = await generator.generate(
         uuid.uuid4(), chunks(), count=3, question_type=QuestionType.MCQ

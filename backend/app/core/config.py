@@ -162,8 +162,10 @@ class Settings(BaseSettings):
     # three. Off until the question table stores reference answers and key
     # points: one saved without them has nothing to be marked against.
     free_text_questions_enabled: bool = False
-    # Draft questions asked for per upload. The grounding checks reject any
-    # whose answer is not in the lecturer's text, so fewer are kept than this.
+    # Questions wanted per upload. The grounding checks reject any whose answer
+    # is not in the lecturer's text, so the generator keeps asking, about other
+    # parts of the material each time, until this many pass or it stops helping
+    # (generation.MAX_GENERATION_CALLS, #306).
     questions_per_material: int = Field(default=15, ge=1, le=30)
     # A second model call per multiple choice question that passes the
     # grounding checks, rejecting one whose cited slide makes another option

@@ -81,6 +81,11 @@ HELD_BACK_WARNING = (
     "text addressed to an AI model rather than to students. Check the material if "
     "this is unexpected."
 )
+FEW_QUESTIONS_WARNING = (
+    "Only {kept} of the {wanted} questions asked for passed the checks that make sure "
+    "each answer is in the material. Material with more explanatory text gives the "
+    "generator more to work from; you can also write questions yourself."
+)
 UNSTORED_NOTE = "persistence is not wired up in this build and was skipped"
 
 
@@ -394,6 +399,10 @@ class MaterialJob:
             # review, and the review screen is empty with nothing saying why.
             # When every section was held back, that warning is the reason.
             warnings.append(NO_QUESTIONS_WARNING)
+        wanted = getattr(generator, "count", None)
+        if usable and isinstance(wanted, int) and len(usable) < wanted:
+            # Not silent: a lecture with 2 questions cannot fill a class (#306).
+            warnings.append(FEW_QUESTIONS_WARNING.format(kept=len(usable), wanted=wanted))
         return usable, ModelRun(
             operation="question_generation", model=generator.model, succeeded=True
         )
