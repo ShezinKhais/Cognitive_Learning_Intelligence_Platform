@@ -329,27 +329,32 @@ say()
 say('## Limits')
 say()
 say(`- ${people.length} participants: a small sample, so the intervals are wide and the numbers may not hold for a whole class.`)
-// Clips longer than a minute are natural recordings, not 10-second acted
-// ones. A clip is one unbroken run of frames: recording files reuse clip
-// names, so the same name in another file, where time starts again, is
-// another clip, and so is a gap of more than a few seconds.
+// Clips longer than a minute. A clip is one unbroken run of frames:
+// recording files reuse clip names, so the same name in another file, where
+// time starts again, is another clip, and so is a gap of more than a few
+// seconds. They are listed by person and label, as recorded.
 const longClips = (() => {
-  const runs: { who: string; seconds: number }[] = []
-  let current: { key: string; who: string; start: number; last: number } | null = null
+  const runs: { who: string; label: string; seconds: number }[] = []
+  let current: { key: string; who: string; label: string; start: number; last: number } | null = null
   for (const f of allFrames) {
     const key = `${f.participant}/${f.clip}`
     if (!current || current.key !== key || f.t < current.last || f.t - current.last > 5) {
-      if (current) runs.push({ who: current.who, seconds: current.last - current.start })
-      current = { key, who: f.participant, start: f.t, last: f.t }
+      if (current) runs.push({ who: current.who, label: current.label, seconds: current.last - current.start })
+      current = { key, who: f.participant, label: f.label, start: f.t, last: f.t }
     } else {
       current.last = f.t
     }
   }
-  if (current) runs.push({ who: current.who, seconds: current.last - current.start })
+  if (current) runs.push({ who: current.who, label: current.label, seconds: current.last - current.start })
   return runs.filter(r => r.seconds > 60)
 })()
+const longByPerson = [...new Set(longClips.map(c => c.who))].map(who => {
+  const mine = longClips.filter(c => c.who === who)
+  const minutes = Math.round(Math.max(...mine.map(c => c.seconds)) / 60)
+  return `${who}: ${mine.length} of up to ${minutes} min (${mine.map(c => c.label).join(', ')})`
+})
 say(longClips.length
-  ? `- Mostly acted: people were told what to do for 10 seconds at a time, apart from ${longClips.length} longer natural clip(s) (${longClips.map(c => `${c.who}, ${Math.round(c.seconds / 60)} min`).join('; ')}).`
+  ? `- Mostly acted: people were told what to do, usually for 10 seconds at a time. ${longClips.length} clip(s) are longer: ${longByPerson.join('; ')}.`
   : '- Acted, not natural: people were told what to do for 10 seconds at a time.')
 say('- "Looking at the screen" is a camera-facing proxy, not eye tracking, and never a measure of attention or understanding.')
 say('- Fairness of the tuned thresholds across people is for Cyber 1 to sign off; devices and Teams are tested by Cyber 2.')
