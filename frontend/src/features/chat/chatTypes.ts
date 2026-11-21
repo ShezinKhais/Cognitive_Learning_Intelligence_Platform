@@ -11,6 +11,7 @@ export type ChatPhase =
 
 export interface ChatCitation {
   source_note_id?: string
+  source_session_id?: string
   id: string
   /** The [n] the answer cites it by. Older servers leave it out. */
   number?: number

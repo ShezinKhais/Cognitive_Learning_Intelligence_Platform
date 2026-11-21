@@ -4,6 +4,8 @@ Show the availability of consented historical readings alongside answers.
 The stored summaries carry no validated confidence for an engagement score.
 """
 
+from dataclasses import dataclass
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select
@@ -24,6 +26,7 @@ from app.models.student import Student
 from app.models.student_response import StudentResponse
 from app.schemas.common import Page
 from app.schemas.identity import ConsentType
+from app.schemas.session import ComprehensionLabel
 from app.schemas.student_review import (
     MissedQuestion,
     ReviewAnswer,
@@ -35,6 +38,106 @@ from app.schemas.student_review import (
 )
 from app.services.course_membership import courses_of_user
 from app.services.source_labels import source_label
+
+
+@dataclass(frozen=True)
+class RevisionItem:
+    session_id: UUID
+    lesson: str
+    lesson_date: date
+    question: str
+    topic: str | None
+    reason: str
+    source: ReviewSource | None
+
+
+async def revision_subjects(db: AsyncSession, user_id: UUID) -> list[Course]:
+    """List subjects the student can currently access, even before results exist."""
+    return list(
+        await db.scalars(
+            select(Course).where(Course.id.in_(courses_of_user(user_id))).order_by(Course.code)
+        )
+    )
+
+
+async def revision_items(db: AsyncSession, user_id: UUID, course: Course) -> list[RevisionItem]:
+    """Find up to three marked answers per finished lesson in the caller's subject."""
+    wrong = StudentResponse.is_correct.is_(False)
+    ranked = (
+        select(
+            StudentResponse.response_id,
+            ComprehensionResult.label,
+            func.row_number()
+            .over(
+                partition_by=StudentResponse.session_id,
+                order_by=(
+                    wrong.desc(),
+                    (ComprehensionResult.label == ComprehensionLabel.STRUGGLING)
+                    .desc()
+                    .nulls_last(),
+                    StudentResponse.submitted_at.desc(),
+                    StudentResponse.response_id,
+                ),
+            )
+            .label("rank"),
+        )
+        .join(Session, Session.session_id == StudentResponse.session_id)
+        .join(Student, Student.student_id == StudentResponse.student_id)
+        .outerjoin(
+            ComprehensionResult, ComprehensionResult.response_id == StudentResponse.response_id
+        )
+        .where(
+            Session.course_id == course.id,
+            Session.course_id.in_(courses_of_user(user_id)),
+            Session.status == "ended",
+            Session.ai_learning_assistant.is_(True),
+            Student.user_id == user_id,
+            or_(
+                wrong,
+                and_(
+                    StudentResponse.is_correct.is_(None),
+                    ComprehensionResult.label.in_(
+                        (ComprehensionLabel.STRUGGLING, ComprehensionLabel.PARTIAL)
+                    ),
+                    ComprehensionResult.confidence_score >= 0.6,
+                ),
+            ),
+        )
+        .subquery()
+    )
+    rows = (
+        await db.execute(
+            select(Session, Question, StudentResponse.is_correct, ranked.c.label)
+            .select_from(Session)
+            .join(StudentResponse, StudentResponse.session_id == Session.session_id)
+            .join(ranked, ranked.c.response_id == StudentResponse.response_id)
+            .join(Question, Question.question_id == StudentResponse.question_id)
+            .where(ranked.c.rank <= 3)
+            .order_by(Session.start_time, Session.session_id, ranked.c.rank)
+        )
+    ).all()
+    items = []
+    for session, question, correctness, label in rows:
+        sources = await question_sources(db, session, question)
+        if correctness is False:
+            reason = "Your checkpoint answer was marked incorrect."
+        elif label == ComprehensionLabel.PARTIAL:
+            reason = "Your answer was marked as partially understood."
+        else:
+            reason = "Your answer was marked as needing more practice."
+        source = next((item for item in sources.items if item.match == "excerpt"), None)
+        items.append(
+            RevisionItem(
+                session.session_id,
+                session.title or course.code,
+                session.start_time.date(),
+                question.question_text,
+                question.topic,
+                reason,
+                source or next(iter(sources.items), None),
+            )
+        )
+    return items
 
 
 def sessions_query(user_id: UUID):

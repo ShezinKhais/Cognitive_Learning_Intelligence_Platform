@@ -210,7 +210,7 @@ function Review({ sessionId }: { sessionId: string }) {
         {import.meta.env.VITE_SOCRATIC_CHAT_ENABLED === 'true' && (
           <section aria-label="Study the session material" className="mt-10">
             <p className="mb-3 text-sm text-muted-foreground">Ask for guided help with the session material. For what was said in class, use the discussion catch-up above.</p>
-            <SocraticChatPanel key={`material-${sessionId}`} sessionId={sessionId} />
+            <SocraticChatPanel key={`material-${sessionId}`} sessionId={sessionId} sessionReview />
           </section>
         )}
       </PageBody>

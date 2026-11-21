@@ -4,8 +4,8 @@ Owner: General CS, Phase 5.
 
 Cyber 1's guarded_chat is the whole path a question takes: it screens the
 question, the excerpts, the prompt and the reply, and nothing reaches the
-student that has not passed. It asks its caller for three things, and this
-module is that caller:
+student that has not passed. Revision requests use saved checkpoint results
+and a fixed response. For model replies, this module gives the guard:
 
 - The excerpts. The question is embedded and matched against the lecture
   material this session draws on, which is the material its lecturer uploaded
@@ -52,10 +52,12 @@ from app.models.rag_chunk import RagChunk
 from app.models.session import Session
 from app.repositories.session_repository import SessionRepository
 from app.schemas.content import MaterialStatus
+from app.services import student_review
 from app.services.ai_gateway import AiGateway, AiRequest, Priority, get_ai_gateway
 from app.services.discussion import notes_for
 from app.services.retrieval import RetrievedChunk
 from app.services.source_labels import source_label
+from app.services.student_review import RevisionItem
 from app.services.tutor_guardrails import EarlierTurn, OpenQuestion, TutorPrompt, guarded_chat
 
 log = logging.getLogger("clip.tutor")
@@ -310,6 +312,130 @@ async def prepare(
     )
 
 
+_REVISION_QUESTIONS = frozenset(
+    {
+        "what should i revise",
+        "what should i revise in this subject",
+        "what should i review",
+        "what should i study for this course",
+    }
+)
+
+
+_SUBJECT_QUESTION = "Which subject would you like to revise?"
+_SUBJECT_PREFIX = "Revise "
+
+
+def _normalized(text: str) -> str:
+    return " ".join(text.casefold().split()).rstrip("?.!")
+
+
+@dataclass(frozen=True)
+class RevisionReply:
+    text: str
+    subjects: tuple[str, ...] = ()
+    items: Sequence[RevisionItem] = ()
+
+
+async def prepare_revision(
+    db: AsyncSession, user_id: UUID, question: str, earlier: Sequence[EarlierTurn]
+) -> RevisionReply | None:
+    ask_for_subject = _normalized(question) in _REVISION_QUESTIONS
+    choosing = bool(earlier and earlier[-1].answer.startswith(_SUBJECT_QUESTION))
+    explicit_choice = (
+        question.casefold().startswith(_SUBJECT_PREFIX.casefold()) and " — " in question
+    )
+    if not (ask_for_subject or choosing or explicit_choice):
+        return None
+    subjects = await student_review.revision_subjects(db, user_id)
+    if not subjects:
+        return (
+            RevisionReply("There are no subjects available for revision yet.")
+            if ask_for_subject or explicit_choice
+            else None
+        )
+    if not ask_for_subject:
+        choice = question[len(_SUBJECT_PREFIX) :] if explicit_choice else question
+        selected = [
+            subject
+            for subject in subjects
+            if _normalized(choice)
+            in {
+                _normalized(subject.code),
+                _normalized(subject.name),
+                _normalized(f"{subject.code} — {subject.name}"),
+            }
+        ]
+        if len(selected) == 1:
+            subject = selected[0]
+            items = await student_review.revision_items(db, user_id, subject)
+            return RevisionReply(
+                f"Revision plan for {subject.code} — {subject.name}."
+                if items
+                else f"I don’t have any marked answers to flag in {subject.code} — {subject.name} "
+                "from completed lessons. You can still ask me about a topic in the current lesson.",
+                items=items,
+            )
+        # The subject picker is one turn in the conversation. A student can
+        # change their mind and ask an ordinary tutoring question next.
+        if not selected and not explicit_choice:
+            return None
+    text = _SUBJECT_QUESTION
+    if not ask_for_subject:
+        text += " Choose a subject below or enter its course code."
+    return RevisionReply(
+        text, tuple(f"{_SUBJECT_PREFIX}{subject.code} — {subject.name}" for subject in subjects)
+    )
+
+
+async def revision_events(request_id: str, reply: RevisionReply) -> AsyncIterator[dict[str, Any]]:
+    """Use recorded facts and source excerpts without sending answers to the model."""
+    yield {"type": "accepted", "request_id": request_id}
+    yield {"type": "delta", "request_id": request_id, "text": reply.text}
+    for subject in reply.subjects:
+        yield {"type": "follow_up", "request_id": request_id, "prompt": subject}
+    last_lesson = None
+    for number, item in enumerate(reply.items, start=1):
+        question = " ".join(item.question.split())[:240]
+        topic = " ".join((item.topic or "").split())[:100]
+        heading = f"Revisit {topic}" if topic else "Revisit this concept"
+        source = item.source
+        next_step = (
+            f"Open the lesson excerpt [{number}], then explain the idea in your own words."
+            if source
+            else "A lesson excerpt isn’t available for this question. "
+            "Use the question to find the topic in your notes or ask your lecturer."
+        )
+        separator = "\n\n"
+        if item.session_id != last_lesson:
+            lesson = " ".join(item.lesson.split())[:160]
+            separator += f"{lesson} ({item.lesson_date:%Y-%m-%d})\n"
+            last_lesson = item.session_id
+        yield {
+            "type": "delta",
+            "request_id": request_id,
+            "text": f"{separator}{heading}\nCheckpoint: {question}\n{item.reason} {next_step}",
+        }
+        if source:
+            yield {
+                "type": "citation",
+                "request_id": request_id,
+                "citation": {
+                    "id": f"{source.chunk_id}-{number}",
+                    "number": number,
+                    "material_title": source.material_title,
+                    "source_session_id": str(item.session_id),
+                    "source_page": source.source_page if source.source_label == "Page" else None,
+                    "source_slide": source.source_page if source.source_label == "Slide" else None,
+                    "source_section": source.source_page
+                    if source.source_label == "Section"
+                    else None,
+                    "excerpt": " ".join(source.text.split())[:CITATION_EXCERPT_CHARS] or None,
+                },
+            }
+    yield {"type": "completed", "request_id": request_id}
+
+
 # -- the exchange ---------------------------------------------------------------------
 
 
@@ -334,7 +460,12 @@ class TutorExchange:
         self._found_in: dict[UUID, UUID] = {}
 
     async def lines(
-        self, request_id: str, question: str, earlier: Sequence[EarlierTurn] = ()
+        self,
+        request_id: str,
+        question: str,
+        earlier: Sequence[EarlierTurn] = (),
+        *,
+        revision: RevisionReply | None = None,
     ) -> AsyncIterator[bytes]:
         """The reply as NDJSON: one event to a line, as the panel reads it.
 
@@ -355,6 +486,8 @@ class TutorExchange:
             overview=self._overview if self._context.discussion is None else None,
             converse=self._context.discussion is None,
         )
+        if revision is not None:
+            events = revision_events(request_id, revision)
         try:
             # Closed on the way out, so a reader that stops early still ends
             # the guard, which ends the model's stream.
