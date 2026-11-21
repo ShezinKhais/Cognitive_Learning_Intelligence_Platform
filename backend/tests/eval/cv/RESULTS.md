@@ -181,7 +181,7 @@ Share of frames read as "on screen". `screen_head_turned` should be high, `away_
 
 Of 13080 held-out frames, adaptation turned 19 from "on screen" to "away" (only a moved centre can do this; the learned limits are never stricter) and 0 from "away" to "no reading" (a normal wider than the camera can measure).
 
-Adaptation settings replayed: `{"rate":0.05,"maxCentreStepDegrees":0.5,"spreadMultiplier":3,"maxLimits":{"yaw":25,"pitch":30,"roll":25},"minFrames":12}` (shipped). The recordings' only certain "looking" moments are the calibrate clips, so adaptation learns from those; the classroom also learns while a student types an answer, which these clips do not contain.
+Adaptation settings replayed: `{"rate":0.05,"maxCentreStepDegrees":0.5,"spreadMultiplier":3,"maxLimits":{"yaw":25,"pitch":30,"roll":25},"minFrames":12}` (suggested; `ADAPTATION` is off in `signals.ts`). The recordings' only certain "looking" moments are the calibrate clips, so adaptation learns from those; the classroom also learns while a student types an answer, which these clips do not contain.
 
 ## Anti-spoofing (#165)
 
@@ -223,7 +223,7 @@ Held out one participant at a time (6 rounds). Acceptance bar to agree: under 2.
 
 Time per check in the browser: median 7.0 ms, 95th percentile 9.0 ms (4381 checks). Note the device each participant used: a slow laptop is the case that matters.
 
-Tuned on every recording: `{"everyMs":1000,"window":2,"spoofBelow":0.5}` (meets the bar there: 56.2% caught, 0.1% live rejected). Shipped `LIVENESS`: `{"everyMs":1000,"window":2,"spoofBelow":0.5}`.
+Tuned on every recording: `{"everyMs":1000,"window":2,"spoofBelow":0.5}` (meets the bar there: 56.2% caught, 0.1% live rejected). These are the evaluation's settings. What ships: `LIVENESS` off until the fairness sign-off (#299); `TUNED_LIVENESS` keeps `{"everyMs":1000,"window":2,"spoofBelow":0.5}` for switching it on.
 
 ## Thresholds
 
