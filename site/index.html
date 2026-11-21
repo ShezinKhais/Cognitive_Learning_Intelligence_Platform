@@ -75,6 +75,7 @@
           <h2 id="gaze-heading">Camera gaze and microphone activity</h2>
           <p>When enabled and permitted, the browser uses MediaPipe Face Landmarker to estimate whether a face is visible and whether its direction is consistent with looking toward the screen. A short calibration can help when the camera is positioned off-centre.</p>
           <p>Voice activity detection estimates whether someone is speaking. The browser processes both indicators locally. It sends the share of time facing the screen, face presence, a speech flag, and the time window. C.L.I.P. combines these readings into minute summaries.</p>
+          <p>When engagement estimates and refocus nudges are enabled, sustained low readings can contribute to a private check-in asking whether you are still with the class. The default minimum signal window is 45 seconds, and the participation estimate must also be low. If enough students have low estimates at once, the lecturer receives an aggregate class alert. These indicators do not change your marks.</p>
           <p>Camera position, low light, glasses, or a face out of view can affect the estimate. The indicators describe limited participation signals. Checkpoint answers provide the evidence for comprehension.</p>
         </div>
         <div class="signal-demo" aria-labelledby="signal-heading">

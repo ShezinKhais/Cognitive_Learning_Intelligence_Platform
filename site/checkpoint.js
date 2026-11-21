@@ -20,7 +20,7 @@ const readings = {
   },
   away: {
     title: 'Face detected · looking aside',
-    detail: 'The student may be reading notes or using another screen. This reading alone does not trigger a refocus prompt.',
+    detail: 'The student may be reading notes or using another screen. A sustained low estimate can contribute to private check-ins and aggregate class alerts when those features are enabled.',
   },
   unavailable: {
     title: 'Gaze reading unavailable',
