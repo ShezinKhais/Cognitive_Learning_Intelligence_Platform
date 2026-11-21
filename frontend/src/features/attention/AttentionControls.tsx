@@ -253,6 +253,11 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
   function startCalibration() {
     if (calibrateCamera(setCalibration)) setCalibration('running')
   }
+  // Every student calibrates: it starts as soon as the camera is on. Until it
+  // succeeds, only the direction of the head is used (signals.ts, gazeFor).
+  useEffect(() => {
+    if (cameraStatus === 'on' && calibration === 'none') startCalibration()
+  }, [cameraStatus, calibration])
 
   const running = cameraStatus === 'on' || microphoneStatus === 'on'
   const pending = cameraStatus === 'starting' || microphoneStatus === 'starting'
@@ -382,14 +387,14 @@ export function AttentionControls({ enabled, onSignal, consentRejected }: {
                 <button type="button" disabled={calibration === 'running'} onClick={startCalibration}
                   className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-semibold hover:bg-muted disabled:opacity-60">
                   <Crosshair aria-hidden="true" size={15} />
-                  {calibration === 'running' ? 'Look at the screen…' : calibration === 'done' ? 'Calibrate again' : 'Calibrate: look at the screen for 3 seconds'}
+                  {calibration === 'running' ? 'Look at the screen…' : calibration === 'done' ? 'Calibrate again' : 'Try again: look at the screen for 3 seconds'}
                 </button>
                 <span className="text-sm text-foreground">
                   {calibration === 'done' && 'Calibrated to where you look. Only the offsets are kept, on this device.'}
-                  {calibration === 'failed' && 'That did not work: your face was not clearly facing the screen. The standard settings are used.'}
-                  {calibration === 'timeout' && 'The camera stopped sending pictures, so calibration did not finish. The standard settings are used.'}
-                  {calibration === 'none' && 'Optional. Helps if your camera is off to one side.'}
-                  {calibration === 'running' && 'Keep looking at the middle of the screen.'}
+                  {calibration === 'failed' && 'That did not work: your face was not clearly facing the screen. Until it does, only the direction of your head is used.'}
+                  {calibration === 'timeout' && 'The camera stopped sending pictures, so calibration did not finish. Until it does, only the direction of your head is used.'}
+                  {calibration === 'none' && 'Calibrating to where you look, so your camera position is taken into account.'}
+                  {calibration === 'running' && 'Calibrating: keep looking at the middle of the screen for 3 seconds.'}
                 </span>
               </div>
               {calibration === 'running' && (

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import {
-  LIVENESS, MODEL_INPUT, SUGGESTED_LIVENESS, applyLiveness, cropBox, dueForCheck, faceBox, forCalibration, isSpoof, livenessFrame,
+  LIVENESS, MODEL_INPUT, SUGGESTED_LIVENESS, TUNED_LIVENESS, applyLiveness, cropBox, dueForCheck, faceBox, forCalibration, isSpoof, livenessFrame,
   loadInBackground, mayLearn, noteFrame, recordCheck, startLiveness, wantsLivenessModel,
   type LiveCheck, type LivenessSettings, type LivenessState,
 } from '../src/features/attention/liveness.ts'
@@ -22,8 +22,10 @@ function step(state: LivenessState, ms: number, live: number, faces = 1): Livene
   return faces === 1 && dueForCheck(state, ms, s) ? recordCheck(state, live, ms, s) : state
 }
 
-test('off by default: the classroom judges faces exactly as before', () => {
+test('off until the sign-offs, with the tuned settings kept ready (#165, #253, #299)', () => {
   assert.equal(LIVENESS, null)
+  assert.equal(wantsLivenessModel(LIVENESS, false), false, 'the classroom does not load the model')
+  assert.deepEqual(TUNED_LIVENESS, { everyMs: 1000, window: 2, spoofBelow: 0.5 })
 })
 
 test('a face is rejected only when every check in a full window says not live', () => {
@@ -117,8 +119,8 @@ const seen = { face: true, forward: true, head: 'forward' } as const
 const lowCheck = async (): Promise<LiveCheck> => ({ live: 0.01, ms: 3 })
 
 test('with LIVENESS off, the worker does not load the model and judges faces as before', async () => {
-  assert.equal(wantsLivenessModel(LIVENESS, false), false, 'classroom: no import, no download')
-  assert.equal(wantsLivenessModel(LIVENESS, true), true, 'the recorder still asks for scores')
+  assert.equal(wantsLivenessModel(null, false), false, 'classroom: no import, no download')
+  assert.equal(wantsLivenessModel(null, true), true, 'the recorder still asks for scores')
   let calls = 0
   const check = async () => { calls += 1; return { live: 0.01, ms: 3 } }
   let state = startLiveness()
