@@ -11,6 +11,7 @@ import {
   type MeetingSession,
 } from '../teams/lecturerMeeting'
 import { useTeams } from '../teams/TeamsProvider'
+import { closeTeamsDialog } from '../teams/teamsClient'
 
 // How often an open panel asks again whether a session has appeared for this
 // meeting. Also checked when the panel regains focus. The student panel in
@@ -32,8 +33,13 @@ const LINK_RECHECK_MS = 10_000
 export default function TeamsLecturerMeetingPage() {
   const teams = useTeams()
 
-  const hintedSessionId =
-    new URLSearchParams(window.location.search).get('sessionId')
+  const query = new URLSearchParams(window.location.search)
+  const hintedSessionId = query.get('sessionId')
+  // The pop-up C.L.I.P opens for the organiser as they join a meeting with
+  // no class. Teams may not give a dialog the meeting's context, so the
+  // meeting comes with it; the backend still checks they organised it.
+  const inDialog = query.get('view') === 'dialog'
+  const hintedMeetingId = query.get('meetingId')
 
   const [sessionId, setSessionId] = useState<string | null>(null)
   // What the recheck below compares against, read outside a state updater.
@@ -46,7 +52,7 @@ export default function TeamsLecturerMeetingPage() {
   // The meeting has no session of the lecturer's yet: offer to link one.
   const [unlinked, setUnlinked] = useState(false)
 
-  const meetingId = teams.context?.meetingId ?? null
+  const meetingId = teams.context?.meetingId ?? hintedMeetingId ?? null
 
   useEffect(() => {
     if (teams.status === 'initializing') {
@@ -196,6 +202,8 @@ export default function TeamsLecturerMeetingPage() {
       <MeetingSessionPicker
         meetingId={meetingId}
         onLinked={(linked) => {
+          // From the pop-up, the class is set up: back to the call.
+          if (inDialog && closeTeamsDialog()) return
           setUnlinked(false)
           setSessionId(linked)
         }}

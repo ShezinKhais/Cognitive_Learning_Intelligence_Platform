@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import re
 from datetime import datetime
 from enum import StrEnum
 from typing import Any
@@ -143,3 +145,29 @@ class TeamsUpdatesOut(BaseModel):
 
 class TeamsUpdatesMute(BaseModel):
     muted: bool = Field(default=True, description="False turns the pop-ups back on.")
+
+
+# A meeting chat's thread, as a Teams join link and the bot's conversation
+# id both carry it.
+MEETING_THREAD = re.compile(r"19:meeting_[A-Za-z0-9_\-]+@thread\.v2")
+
+
+def meeting_chat_thread(conversation_id: object) -> str | None:
+    """The meeting chat thread a Bot Framework conversation id is, or None.
+
+    A reply in the chat carries ";messageid=..." after the thread."""
+    if not isinstance(conversation_id, str):
+        return None
+    thread = conversation_id.split(";", 1)[0]
+    return thread if MEETING_THREAD.fullmatch(thread) else None
+
+
+def meeting_id_for_thread(thread: str) -> str:
+    """The Bot Framework meeting id of the meeting whose chat is this thread.
+
+    Teams sends a meeting's id as base64 of "0#<chat thread>#0", so the id
+    follows from the chat alone. Adding C.L.I.P to a meeting tells the bot
+    the chat, not the id, and without this the meeting stayed unknown until
+    its first start or end, which is why linking it from the website failed.
+    """
+    return base64.b64encode(f"0#{thread}#0".encode()).decode()

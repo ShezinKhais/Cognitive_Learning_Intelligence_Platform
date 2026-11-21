@@ -11,6 +11,11 @@ Owner: General CS, Phase 8.
 - Only the organiser's press on a card counts. Teams says who pressed it,
   and the organiser is read from Teams again for every press, so nothing
   the card itself carries is trusted beyond which button it was.
+- The organiser joining a meeting with nothing linked, whose title names
+  none of their courses, gets a pop-up over the call, for them only, asking
+  whether this is a class. It opens C.L.I.P's class picker, so a lecturer
+  never has to find the side panel or paste a link. A title that names a
+  course needs no question: the meeting starting starts that class.
 - Someone joining a meeting whose class is running gets a pop-up that opens
   C.L.I.P for them, so a student does not have to find the side panel, and
   counts as present in the class straight away; leaving the call takes them
@@ -55,7 +60,12 @@ from app.services import meeting_organiser, session_lifecycle
 from app.services.course_detection import codes_in
 from app.services.course_membership import my_courses
 from app.services.meeting_directory import meetings
-from app.services.teams_notifications import connector_url, notifications
+from app.services.teams_notifications import (
+    class_setup_url,
+    connector_url,
+    notifications,
+    targeted_popup,
+)
 from app.services.teams_presence import EVERYONE_LEFT, LECTURER_LEFT, end_class, presence
 
 log = logging.getLogger("clip.teams.meetings")
@@ -73,11 +83,32 @@ PARTICIPANT_EVENTS = {
 OFFER_MEMORY_SECONDS = 600
 # The most members one participant event is read for.
 MAX_EVENT_MEMBERS = 100
+# How long the organiser's "Is this a class?" pop-up may wait to be sent.
+ASK_SEND_SECONDS = 30
+ASK_TITLE = "Is this a class? Set it up in C.L.I.P"
 
 
 class MeetingFlow:
     def __init__(self) -> None:
         self.offered: dict[str, float] = {}
+        # Who organised a meeting with nothing linked, and its title, so a
+        # stream of people joining asks Teams once rather than per join.
+        self.organisers: dict[str, tuple[float, str | None, str | None]] = {}
+
+    def organiser(self, meeting_id: str) -> tuple[str | None, str | None] | None:
+        found = self.organisers.get(meeting_id)
+        if found is None or time.monotonic() - found[0] >= OFFER_MEMORY_SECONDS:
+            return None
+        return found[1], found[2]
+
+    def remember_organiser(self, meeting_id: str, organiser: str | None, title: str | None) -> None:
+        now = time.monotonic()
+        self.organisers = {
+            mid: seen
+            for mid, seen in self.organisers.items()
+            if now - seen[0] < OFFER_MEMORY_SECONDS
+        }
+        self.organisers[meeting_id] = (now, organiser, title)
 
     def first_offer(self, meeting_id: str) -> bool:
         now = time.monotonic()
@@ -297,6 +328,71 @@ async def meeting_started_unlinked(
         log.warning("meeting %s start was not offered: %s", meeting_id, type(exc).__name__)
 
 
+async def post_popup(
+    settings: Settings, service_url: str, meeting_id: str, recipient: str, title: str, url: str
+) -> None:
+    """Open url in a pop-up over the meeting for one member only."""
+    base = connector_url(service_url)
+    async with httpx.AsyncClient(timeout=4, follow_redirects=False) as client:
+        token = await notifications.access_token(client, settings)
+        await targeted_popup(
+            client,
+            base,
+            {"Authorization": f"Bearer {token}"},
+            meeting_id,
+            {recipient},
+            title=title,
+            url=url,
+            closes_at=time.time() + ASK_SEND_SECONDS,
+            width=480,
+            height=560,
+        )
+
+
+async def ask_organiser(
+    db: AsyncSession,
+    activity: TeamsActivity,
+    meeting_id: str,
+    people: list[tuple[str, str]],
+    settings: Settings,
+    *,
+    fetch=None,
+    popup=None,
+) -> None:
+    """Ask the organiser, as they join a meeting with nothing linked, whether
+    it is a class. Only them, and once."""
+    try:
+        known = flow.organiser(meeting_id)
+        if known is None:
+            known = await _meeting(
+                db, meeting_id, settings, fetch or meeting_organiser.fetch_meeting_details
+            )
+            flow.remember_organiser(meeting_id, *known)
+        organiser, title = known
+        teams_id = next((tid for tid, aad in people if aad == organiser), None)
+        if organiser is None or teams_id is None:
+            return
+        principal = await _staff_for(db, organiser, meeting_id, settings)
+        if principal is None:
+            return
+        courses = await my_courses(db, principal)
+        if not courses or course_in_title(title, [course.code for course in courses]):
+            return
+        if not flow.first_offer(f"ask:{meeting_id}"):
+            return
+        await (popup or post_popup)(
+            settings,
+            activity.service_url,
+            meeting_id,
+            teams_id,
+            ASK_TITLE,
+            class_setup_url(settings.teams_app_base_url, meeting_id),
+        )
+    except (ClipError, httpx.HTTPError, ValueError) as exc:
+        await db.rollback()
+        log.warning("meeting %s: the organiser was not asked: %s", meeting_id, type(exc).__name__)
+
+
 async def _start(
     db: AsyncSession, principal: Principal, meeting_id: str, code: str, title: str | None
 ):
@@ -406,16 +502,20 @@ async def _apply(
 
 
 async def participants_changed(
-    db: AsyncSession, activity: TeamsActivity, settings: Settings
+    db: AsyncSession,
+    activity: TeamsActivity,
+    settings: Settings,
+    *,
+    fetch=None,
+    popup=None,
 ) -> None:
-    """Keep a join or leave, and open C.L.I.P for whoever joins a running class."""
+    """Keep a join or leave, open C.L.I.P for whoever joins a running class,
+    and ask the organiser joining a meeting with no class whether it is one."""
     kind = PARTICIPANT_EVENTS.get(activity.name or "") if activity.type == "event" else None
     meeting_id = _chat_meeting_id(activity)
     if kind is None or meeting_id is None or not settings.teams_notifications_enabled:
         return
     session_id = await meetings.directory.session_for(meeting_id)
-    if session_id is None:
-        return
     value = (activity.model_extra or {}).get("value") or {}
     members = value.get("members") if isinstance(value, dict) else None
     people: list[tuple[str, str]] = []
@@ -432,6 +532,12 @@ async def participants_changed(
         ):
             people.append((teams_id, aad.lower()))
     if not people:
+        return
+    if session_id is None:
+        if kind == "participant_joined":
+            await ask_organiser(
+                db, activity, meeting_id, people, settings, fetch=fetch, popup=popup
+            )
         return
     event_id = (activity.model_extra or {}).get("id")
     try:
