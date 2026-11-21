@@ -42,6 +42,7 @@ from app.core.threads import run_in_daemon_thread
 from app.realtime.hub import SessionHub
 from app.realtime.hub import hub as default_hub
 from app.schemas.events import MaterialProgressPayload, MaterialStage, ServerEventType
+from app.services.ai_gateway import AiUnavailableError
 from app.services.extraction import (
     SECTIONED_PARSERS,
     ContentChunk,
@@ -87,6 +88,13 @@ FEW_QUESTIONS_WARNING = (
     "generator more to work from; you can also write questions yourself."
 )
 UNSTORED_NOTE = "persistence is not wired up in this build and was skipped"
+# What a lecturer is told when the model server cannot be reached (#238). The
+# document itself was read; only indexing and question drafting need the model,
+# so this is worth retrying and the uploaded file is kept for that.
+MODEL_UNAVAILABLE_MESSAGE = (
+    "The AI model server is unavailable, so this material could not be indexed. "
+    "Try uploading it again later."
+)
 
 
 @dataclass(frozen=True)
@@ -163,6 +171,13 @@ class MaterialJob:
             # no retry can use. A failure from any other cause may be transient,
             # and those files are left in place.
             await storage.delete(self.material_id)
+            return None
+        except AiUnavailableError as exc:
+            # Expected while the model server is down, not a bug: recorded with
+            # the gateway's code and a message that says what to do, and not
+            # re-raised, so no traceback is logged for it.
+            log.info("material %s waiting on the model server: %s", self.material_id, exc.code)
+            await self._fail(MODEL_UNAVAILABLE_MESSAGE, exc.code)
             return None
         except Exception as exc:
             log.info("material %s failed with %s", self.material_id, type(exc).__name__)
