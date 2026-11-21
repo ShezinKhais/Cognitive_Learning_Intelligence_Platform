@@ -61,8 +61,9 @@ def test_recap_samples_the_window_and_topic_questions_find_live_speech():
         for i in range(60)
     )
     chunks = discussion_chunks(sources, "What did I miss?", 5)
-    assert chunks[0].chunk_id == sources[0].note_id
-    assert chunks[-1].chunk_id == sources[-1].note_id
+    # Five consecutive stretches of twelve segments each, covering all 60.
+    assert [chunk.chunk_id for chunk in chunks] == [sources[i].note_id for i in range(0, 60, 12)]
+    assert "Segment 59." in chunks[-1].chunk_text
     assert "live_transcript" in chunks[0].chunk_text
     assert (
         discussion_chunks(sources, "What did the lecturer just say?", 1)[0].chunk_id

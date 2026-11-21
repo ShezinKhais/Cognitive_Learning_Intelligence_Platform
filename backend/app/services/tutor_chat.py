@@ -36,7 +36,7 @@ import time
 from collections import deque
 from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import lru_cache
 from typing import Any
 from uuid import UUID
@@ -58,7 +58,14 @@ from app.services.discussion import notes_for
 from app.services.retrieval import RetrievedChunk
 from app.services.source_labels import source_label
 from app.services.student_review import RevisionItem
-from app.services.tutor_guardrails import EarlierTurn, OpenQuestion, TutorPrompt, guarded_chat
+from app.services.tutor_guardrails import (
+    MAX_CHUNK_CHARS,
+    EarlierTurn,
+    OpenQuestion,
+    TutorPrompt,
+    guarded_chat,
+    names_no_topic,
+)
 
 log = logging.getLogger("clip.tutor")
 
@@ -181,18 +188,170 @@ async def with_discussion(
     )
 
 
+# Words that ask for a catch-up rather than name a topic: "What did I miss?",
+# "What happened?", "What has the lecturer said so far?". A question that
+# names something ("What happened with normalization?") is searched first.
+_RECAP_WORDS = re.compile(
+    r"\b(miss(?:ed)?|catch.?up|summar(?:y|i[sz]e)|recap|discuss(?:ed)?|cover(?:ed)?|say|said"
+    r"|repeat|happen(?:ed|ing|s)?|overview)\b",
+    re.I,
+)
+# Words a catch-up question may use on top of names_no_topic's, without
+# naming a topic.
+_CATCH_UP_WORDS = frozenset(
+    """
+    happen happened happening happens miss missed catch say said saying talk talked
+    discuss discussed repeat far has came come coming lecturer teacher professor doctor dr sir
+    """.split()
+)
+# "the last 10 minutes", "in the past half hour", "last hour".
+_WINDOW = re.compile(
+    r"\b(?:in\s+)?(?:the\s+)?(?:last|past|previous|final)\s+"
+    r"(?:(\d{1,3}|five|ten|fifteen|twenty|thirty|forty|sixty)\s*(?:min(?:ute)?s?|(hours?|hrs?))"
+    r"|(half\s+(?:an\s+)?hour)|(hour))\b",
+    re.I,
+)
+_NUMBER_WORDS = {
+    "five": 5,
+    "ten": 10,
+    "fifteen": 15,
+    "twenty": 20,
+    "thirty": 30,
+    "forty": 40,
+    "sixty": 60,
+}
+# "What did the lecturer just say?", not "What did I miss? I just joined".
+_LATEST_WORDS = re.compile(
+    r"\b(just\s+(?:say|said|talk(?:ed)?|explain(?:ed)?|mention(?:ed)?|went\s+over|now)"
+    r"|said\s+just\s+now|latest|most\s+recent|recently|right\s+now)\b",
+    re.I,
+)
+
+
+def named_window(question: str) -> timedelta | None:
+    """The stretch of time a question names, like "the last 10 minutes"."""
+    found = _WINDOW.search(question)
+    if found is None:
+        return None
+    amount, hours, half_hour, hour = found.groups()
+    if half_hour:
+        return timedelta(minutes=30)
+    if hour:
+        return timedelta(hours=1)
+    count = int(amount) if amount.isdigit() else _NUMBER_WORDS[amount.lower()]
+    if count == 0:
+        return None
+    return timedelta(hours=count) if hours else timedelta(minutes=count)
+
+
+def asks_for_recap(question: str) -> bool:
+    """True when the question asks what happened and names no topic."""
+    words = re.findall(r"[^\W_]+", _WINDOW.sub(" ", question).casefold())
+    if not words:
+        # Only a time window, like "last hour?".
+        return _WINDOW.search(question) is not None
+    rest = [word for word in words if word not in _CATCH_UP_WORDS]
+    return not rest or names_no_topic(" ".join(rest))
+
+
+def _spans(ordered: list[DiscussionSource], count: int) -> list[tuple[DiscussionSource, ...]]:
+    """The notes split into consecutive stretches of the session, as even in
+    size as they can be."""
+    count = min(count, len(ordered))
+    bounds = [round(index * len(ordered) / count) for index in range(count + 1)]
+    return [tuple(ordered[start:end]) for start, end in zip(bounds, bounds[1:], strict=False)]
+
+
+def _span_text(span: tuple[DiscussionSource, ...]) -> str:
+    """What the model reads for one stretch: every note in it when they fit,
+    otherwise every second, third... note, so the whole stretch is still
+    represented."""
+    first, last = span[0], span[-1]
+    if len(span) == 1:
+        return f"{first.origin}, {first.occurred_at.isoformat()}: {first.text}"
+    text = ""
+    for stride in range(1, len(span) + 1):
+        shown = span[::stride]
+        sampled = "" if stride == 1 else f" ({len(shown)} of {len(span)} notes shown)"
+        lines = "\n".join(f"- {note.origin}: {' '.join(note.text.split())}" for note in shown)
+        text = (
+            f"Notes from {first.occurred_at.isoformat()} to {last.occurred_at.isoformat()}"
+            f"{sampled}:\n{lines}"
+        )
+        if len(text) <= MAX_CHUNK_CHARS:
+            break
+    return text
+
+
+def discussion_spans(
+    notes: tuple[DiscussionSource, ...], question: str, limit: int
+) -> tuple[list[tuple[DiscussionSource, ...]], bool]:
+    """The notes to answer from, grouped, and whether this is a catch-up.
+
+    A question about a topic gets the notes that mention it, one to a group.
+    A catch-up ("What did I miss?", "What happened?") gets the whole window
+    split into up to `limit` consecutive stretches, in time order, so the
+    answer can list the session's topics in order. A question naming the
+    last few minutes keeps only the notes that long before the latest one.
+    Anything else, with no note mentioning it, gets nothing.
+    """
+    window = named_window(question)
+    if window is not None and notes:
+        latest = max(note.occurred_at for note in notes)
+        notes = tuple(note for note in notes if note.occurred_at >= latest - window)
+    if not notes or limit < 1:
+        return [], False
+    if not asks_for_recap(question):
+        matching = _matching_notes(notes, question)
+        if matching or not _RECAP_WORDS.search(question):
+            return [(note,) for note in matching[:limit]], False
+    if _LATEST_WORDS.search(question):
+        newest = sorted(notes, key=lambda note: note.occurred_at, reverse=True)
+        return [(note,) for note in newest[:limit]], False
+    ordered = sorted(notes, key=lambda note: (note.occurred_at, str(note.note_id)))
+    return _spans(ordered, limit), True
+
+
+# Added to the discussion instructions when a student asks for a catch-up.
+# Clock times are left to the citations, which the panel shows in the
+# student's own time zone; the excerpts carry UTC.
+RECAP_NOTE = (
+    " The student is catching up. Each excerpt covers one stretch of the session, earliest "
+    "first. Reply with a short numbered list of the main topics in the order they came up, "
+    "one line each, each ending with the citation of the excerpt it comes from. Skip "
+    "greetings and housekeeping unless nothing else was recorded. Do not write clock times: "
+    "the citations link each topic to its time. List only topics the excerpts record."
+)
+
+
+def span_title(span: tuple[DiscussionSource, ...]) -> str:
+    """A citation's title, saying when automatic speech in it is unreviewed."""
+    automatic = sum(note.origin == "live_transcript" for note in span)
+    if automatic == len(span):
+        label = "Automatic live transcript (unreviewed)"
+    elif automatic:
+        label = "Discussion notes and automatic live transcript (unreviewed)"
+    else:
+        label = "Discussion note" if len(span) == 1 else "Discussion notes"
+    first, last = span[0].occurred_at.isoformat(), span[-1].occurred_at.isoformat()
+    return f"{label} — {first}" + (f" to {last}" if len(span) > 1 else "")
+
+
+def span_chunk(index: int, span: tuple[DiscussionSource, ...]) -> RetrievedChunk:
+    """A group of notes as the excerpt the guard screens, cited by its first note."""
+    return RetrievedChunk(span[0].note_id, index, _span_text(span), None, 0.0)
+
+
 def discussion_chunks(
     notes: tuple[DiscussionSource, ...], question: str, limit: int
 ) -> list[RetrievedChunk]:
-    # A catch-up request names a time window rather than a topic. Other
-    # questions retrieve matching notes and return empty when none match.
-    broad = bool(
-        re.search(
-            r"\b(miss(?:ed)?|catch.?up|summari[sz]e|recap|discuss(?:ed)?|covered|say|said|repeat)\b",
-            question,
-            re.I,
-        )
-    )
+    spans, _ = discussion_spans(notes, question, limit)
+    return [span_chunk(index, span) for index, span in enumerate(spans)]
+
+
+def _matching_notes(notes: tuple[DiscussionSource, ...], question: str) -> list[DiscussionSource]:
+    """The notes sharing a word with the question, most shared words first,
+    then newest first."""
     stop = {
         "what",
         "when",
@@ -238,30 +397,15 @@ def discussion_chunks(
         "discuss",
     }
     terms = set(re.findall(r"[^\W_]{4,}", question.lower())) - stop
-    ranked = sorted(
-        notes,
-        key=lambda n: (len(terms & set(re.findall(r"[^\W_]{4,}", n.text.lower()))), n.occurred_at),
-        reverse=True,
-    )
-    matching = [n for n in ranked if terms & set(re.findall(r"[^\W_]{4,}", n.text.lower()))]
-    if matching or not broad:
-        ranked = matching
-    elif len(ranked) > limit and not re.search(r"\b(just|latest|recent|now)\b", question, re.I):
-        # A recap samples the requested window instead of taking only its last
-        # few ten-second chunks. It is still an overview of cited sources.
-        ordered = sorted(ranked, key=lambda note: note.occurred_at)
-        ranked = (
-            [ordered[-1]]
-            if limit == 1
-            else [
-                ordered[round(index * (len(ordered) - 1) / (limit - 1))] for index in range(limit)
-            ]
-        )
+    scored = [
+        (len(terms & set(re.findall(r"[^\W_]{4,}", note.text.lower()))), note) for note in notes
+    ]
     return [
-        RetrievedChunk(
-            n.note_id, i, f"{n.origin}, {n.occurred_at.isoformat()}: {n.text}", None, 0.0
+        note
+        for score, note in sorted(
+            scored, key=lambda pair: (pair[0], pair[1].occurred_at), reverse=True
         )
-        for i, n in enumerate(ranked[:limit])
+        if score
     ]
 
 
@@ -458,6 +602,10 @@ class TutorExchange:
         self._settings = settings or get_settings()
         # Which material each retrieved excerpt came from, for its citation.
         self._found_in: dict[UUID, UUID] = {}
+        # The notes each discussion excerpt groups, by the note it is cited
+        # by, and whether the question asked for a catch-up.
+        self._spans: dict[UUID, tuple[DiscussionSource, ...]] = {}
+        self._recap = False
 
     async def lines(
         self,
@@ -507,9 +655,11 @@ class TutorExchange:
 
     async def _retrieve(self, question: str) -> Sequence[RetrievedChunk]:
         if self._context.discussion is not None:
-            return discussion_chunks(
+            spans, self._recap = discussion_spans(
                 self._context.discussion, question, self._settings.chat_retrieved_chunks
             )
+            self._spans = {span[0].note_id: span for span in spans}
+            return [span_chunk(index, span) for index, span in enumerate(spans)]
         if not self._context.materials:
             return []
         vectors = await self._gateway.embed(
@@ -607,6 +757,8 @@ class TutorExchange:
                 "heard the meeting or to cover unrecorded discussion. "
                 "Keep the assessment restrictions."
             )
+            if self._recap:
+                system += RECAP_NOTE
         request = AiRequest(
             messages=[
                 {"role": "system", "content": system},
@@ -624,21 +776,24 @@ class TutorExchange:
     def _describe(self, chunk: RetrievedChunk, number: int) -> dict[str, Any]:
         """A citation as the panel's parser expects it."""
         if self._context.discussion is not None:
-            note = next(n for n in self._context.discussion if n.note_id == chunk.chunk_id)
+            span = self._spans.get(chunk.chunk_id) or (
+                next(n for n in self._context.discussion if n.note_id == chunk.chunk_id),
+            )
+            note = span[0]
             return {
                 "id": str(note.note_id),
+                # Links to the first note of the stretch: where the topic starts.
                 "source_note_id": str(note.note_id),
                 "number": number,
-                "material_title": (
-                    "Automatic live transcript (unreviewed)"
-                    if note.origin == "live_transcript"
-                    else "Discussion note"
-                )
-                + f" — {note.occurred_at.isoformat()}",
+                "material_title": span_title(span),
                 "source_page": None,
                 "source_slide": None,
                 "source_section": None,
-                "excerpt": note.text[:CITATION_EXCERPT_CHARS],
+                "excerpt": (
+                    note.text
+                    if len(span) == 1
+                    else " ".join(" ".join(n.text.split()) for n in span)
+                )[:CITATION_EXCERPT_CHARS],
             }
         source = self._context.materials[self._found_in[chunk.chunk_id]]
         excerpt = " ".join(chunk.chunk_text.split())[:CITATION_EXCERPT_CHARS]

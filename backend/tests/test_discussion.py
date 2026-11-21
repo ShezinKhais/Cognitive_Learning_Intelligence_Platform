@@ -21,7 +21,12 @@ def test_discussion_retrieval_uses_topic_matches_or_recent_notes_for_a_recap():
     old = DiscussionSource(uuid4(), now - timedelta(minutes=20), "Networks carry packets.")
     assert discussion_chunks((old, note), "Explain normalization", 6)[0].chunk_id == note.note_id
     assert discussion_chunks((old, note), "Explain photosynthesis", 6) == []
-    assert discussion_chunks((old, note), "What did I miss?", 1)[0].chunk_id == note.note_id
+    # With room for one excerpt, a recap is one stretch covering the whole
+    # window, cited by where it starts.
+    (recap,) = discussion_chunks((old, note), "What did I miss?", 1)
+    assert recap.chunk_id == old.note_id
+    assert "Networks carry packets." in recap.chunk_text
+    assert "Normalization reduces" in recap.chunk_text
 
 
 def test_discussion_time_window_cannot_be_reversed():

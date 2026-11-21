@@ -17,10 +17,32 @@ Changing the window starts a new conversation.
 The existing AI gateway, cancellation, request limits and tutor safety checks
 apply. The assistant cites note timestamps, excerpts and a link to the full
 record. Unmatched questions and empty windows produce the existing no-source
-state. Note retrieval uses word overlap and returns up to the configured chat
-source limit. A recap covers its cited sources, which may represent only part
-of the discussion. Lecturer notes are refreshed on every question. The model
-needs the configured Ollama service.
+state. Lecturer notes are refreshed on every question. The model needs the
+configured Ollama service.
+
+How the notes are chosen (`discussion_spans` in `tutor_chat.py`, #318):
+
+- **A catch-up question** names no topic: "What did I miss?", "What happened?",
+  "Give me an overview", "What topics came up?", "What has the lecturer said so
+  far?". The whole window is split into up to `CHAT_RETRIEVED_CHUNKS` (default 5)
+  consecutive stretches, in time order, and the assistant is asked for a short
+  numbered list of the main topics in the order they came up, each citing its
+  stretch. A citation links to the first note of its stretch and says
+  "unreviewed" when any of it is automatic speech. A stretch too long for one
+  excerpt (1,500 characters) shows every second, third... note across it, and
+  says how many are shown. The answer leaves clock times to the citations,
+  which the panel shows in the student's own time zone.
+- **A question naming a time** ("the last 10 minutes", "the past half hour",
+  "the last hour") keeps only the notes from that long before the latest note
+  in the chosen window. During class that is the most recent speech; after
+  class, the end of the record.
+- **A question about a topic** gets the notes that share a word with it, most
+  shared words first. "What did the lecturer just say?" gets the newest notes.
+- **Anything else** with no matching note gets the no-source state, so nothing
+  is claimed without a source.
+
+A recap still covers only what was recorded, which may be part of the
+discussion.
 
 The chatbot's discussion sources are reviewed minutes and, when enabled,
 automatic live transcript segments. Lecturers can write reviewed minutes
