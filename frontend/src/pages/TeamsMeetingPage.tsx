@@ -125,19 +125,19 @@ export default function TeamsMeetingPage() {
   const inDialog =
     teams.context?.frameContext === 'task' ||
     new URLSearchParams(window.location.search).get('view') === 'dialog'
-    // The side panel gets the slimmer layout that unfolds in from a paperclip.
-    // The pop-up and the stage keep the plain one.
-    const clip = teams.context?.frameContext === 'sidePanel' && !inDialog
-    return (
-      <LiveSessionPanel
-        key={session.id}
-        session={session}
-        compact
-        dialog={inDialog}
-        clip={clip}
-        onFinished={finishedLive}
-      />
-    )
+  // The side panel gets the slimmer layout that unfolds in from a paperclip.
+  // The pop-up and the stage keep the plain one.
+  const clip = teams.context?.frameContext === 'sidePanel' && !inDialog
+  return (
+    <LiveSessionPanel
+      key={session.id}
+      session={session}
+      compact
+      dialog={inDialog}
+      clip={clip}
+      onFinished={finishedLive}
+    />
+  )
 }
 
 /**
