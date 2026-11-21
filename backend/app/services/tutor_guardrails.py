@@ -657,6 +657,10 @@ _VERDICT_WORDS = re.compile(
 
 _CITATION = re.compile(r"\[(\d{1,3})\]")
 _DOUBLED_CITATION = re.compile(r"\[\[(\d{1,3})\]\]")
+# Markdown emphasis. The panel shows plain text, so "**photosynthesis**"
+# arrived with its asterisks. Only paired ** and __ around text: a single *
+# is left alone, since "a*b" or "5 * 3" may be meant literally.
+_EMPHASIS = re.compile(r"(\*\*|__)(?=\S)(.+?)(?<=\S)\1")
 _SENTENCE_END = re.compile(r"[.!?]+[\"')\]]*\s|\n")
 
 
@@ -888,6 +892,58 @@ _NO_TOPIC_WORDS = frozenset(
 )
 
 
+# What may reach the conversation prompt. The prompt tells the model to
+# refuse anything not about learning, but that is the model's choice; this
+# is the application's. It is a floor, not a classifier: a message passes
+# when it is short small talk, mentions studying, or asks a question, and
+# fails when it names something no class covers. A question about anything
+# else still reaches the model, which may still refuse it.
+_SOCIAL_WORDS = frozenset(
+    """
+    afternoon awesome bye cheers cool evening goodbye great hello helps helped
+    helpful hey hi hiya morning nice ok okay sorry thank thanks thx
+    """.split()
+)
+_STUDY_WORDS = frozenset(
+    """
+    assignment assignments class course coursework deadline deadlines essay exam
+    exams finals focus grade grades homework learn learning lecture lectures
+    lesson lessons memorise memorize module motivated motivation notes practice
+    procrastinate procrastinating procrastination quiz revise revising revision
+    stress stressed studies study studying subject subjects test tests topic
+    topics tutor understand understanding
+    """.split()
+)
+_QUESTION_WORDS = frozenset(
+    """
+    are can could compare define describe difference do does explain how is
+    what when where which who why would
+    """.split()
+)
+# Only subjects with no academic reading; "game", "stock" or "story" are
+# course material somewhere, so they are left to the model.
+_OFF_TOPIC_WORDS = frozenset(
+    """
+    bake baking bet betting boyfriend cake cakes casino celebrity cookies dating
+    fortnite gamble gambling girlfriend horoscope instagram joke jokes lottery
+    lyrics minecraft netflix pizza recipe recipes tiktok
+    """.split()
+)
+_SMALL_TALK_WORDS = 6
+
+
+def talk_allowed(text: str) -> bool:
+    """Whether a message no excerpt is near may be answered as conversation."""
+    words = re.findall(r"[^\W_]+", text.casefold())
+    if not words or any(word in _OFF_TOPIC_WORDS for word in words):
+        return False
+    if len(words) <= _SMALL_TALK_WORDS and any(word in _SOCIAL_WORDS for word in words):
+        return True
+    if any(word in _STUDY_WORDS for word in words):
+        return True
+    return words[0] in _QUESTION_WORDS or text.rstrip().endswith("?")
+
+
 def names_no_topic(text: str) -> bool:
     """True when a question asks about the class as a whole and names nothing
     to search for, like the panel's starter prompts."""
@@ -991,6 +1047,11 @@ async def guarded_chat(
     if talk and not converse:
         yield event("empty_retrieval")
         return
+    # Refused here, before the model, rather than trusting it to refuse.
+    if talk and not talk_allowed(admission.question):
+        log.info("tutor conversation refused: off topic")
+        yield event("unsupported", reason=OFF_TOPIC_REASON)
+        return
 
     # Each attempt is read to the end and vetted whole before any of it is
     # sent. Released a sentence at a time, a citation missing at the end
@@ -1049,7 +1110,7 @@ async def guarded_chat(
         return
 
     # "[[1]]" would show a stray bracket either side of the citation chip.
-    answer = _DOUBLED_CITATION.sub(r"[\1]", vetter.released_text)
+    answer = _EMPHASIS.sub(r"\2", _DOUBLED_CITATION.sub(r"[\1]", vetter.released_text))
     # Whether the answer comes from the lecturer's material is the server's
     # to say, not the model's: the panel labels an ungrounded one.
     yield event("delta", text=answer, grounded=not talk)
