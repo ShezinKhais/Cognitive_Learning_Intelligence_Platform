@@ -1,5 +1,5 @@
-import { useEffect, useId, useState, type FormEvent } from 'react'
-import { UserMinus, UserPlus, Users } from 'lucide-react'
+import { useCallback, useEffect, useId, useState, type FormEvent } from 'react'
+import { Pencil, Plus, Send, UserMinus, UserPlus, Users } from 'lucide-react'
 
 import { ApiError, getCurrentUser, type Role } from '../api'
 import { buttonStyles } from '../components/ui/button'
@@ -17,6 +17,10 @@ import {
   type CourseRoster,
 } from '../features/courses/coursesApi'
 import BulkRosterPanel from '../features/courses/BulkRosterPanel'
+import { CourseRequestsPanel, RequestCourseForm } from '../features/courses/CourseRequestsPanel'
+import type { CourseRequest } from '../features/courses/courseRequests'
+import { listCourseRequests, renameCourse } from '../features/courses/courseRequestsApi'
+import { AddCourseForm } from '../features/governance/AddCourseForm'
 import { listAccounts, type Account, type AccountPage, type Course } from '../features/governance/accountsApi'
 
 const FIELD = 'w-full rounded-md border border-input bg-background px-3 py-2 text-sm'
@@ -33,19 +37,56 @@ export default function CourseRostersPage() {
   const [courses, setCourses] = useState<Course[] | null>(null)
   const [code, setCode] = useState<string | null>(null)
   const [problem, setProblem] = useState<Problem | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [addingCourse, setAddingCourse] = useState(false)
+  const [requestingCourse, setRequestingCourse] = useState(false)
+  const [requests, setRequests] = useState<CourseRequest[]>([])
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const notify = useToast()
   const courseId = useId()
   const isAdmin = role === 'admin'
 
-  useEffect(() => {
-    getCurrentUser().then((user) => setRole(user.role), () => setRole(null))
+  const loadCourses = useCallback((select?: string) => {
     myCourses().then(
       (found) => {
         setCourses(found)
-        setCode((current) => current ?? found[0]?.code ?? null)
+        setCode((current) => select ?? current ?? found[0]?.code ?? null)
       },
       (caught: unknown) => setProblem(problemOf(caught, 'Check your connection and try again.')),
     )
   }, [])
+
+  useEffect(() => {
+    getCurrentUser().then((user) => setRole(user.role), () => setRole(null))
+    loadCourses()
+    // Requests are a side list: the page works without them.
+    listCourseRequests().then(setRequests, () => {})
+  }, [loadCourses])
+
+  function decided(request: CourseRequest) {
+    setRequests((current) => current.map((item) => (item.id === request.id ? request : item)))
+    if (request.status === 'approved') loadCourses(request.code)
+  }
+
+  function saveName(event: FormEvent) {
+    event.preventDefault()
+    if (!code || renaming === null || !renaming.trim()) return
+    setBusy(true)
+    setError(null)
+    renameCourse(code, renaming.trim()).then(
+      (course) => {
+        setBusy(false)
+        setRenaming(null)
+        setCourses((current) => (current ?? []).map((item) => (item.id === course.id ? course : item)))
+        notify(`Renamed ${course.code}`)
+      },
+      (caught: unknown) => {
+        setBusy(false)
+        setError(message(caught, 'The course could not be renamed.'))
+      },
+    )
+  }
 
   if (problem) {
     return (
@@ -62,35 +103,120 @@ export default function CourseRostersPage() {
       <PageHeader
         title={isAdmin ? 'Courses' : 'My courses'}
         description="Students see only the classes of the courses they are on."
+        actions={
+          isAdmin && !addingCourse ? (
+            <button type="button" className={buttonStyles()} onClick={() => setAddingCourse(true)}>
+              <Plus size={16} aria-hidden />
+              Add a course
+            </button>
+          ) : role === 'lecturer' && !requestingCourse ? (
+            <button type="button" className={buttonStyles({ intent: 'secondary' })} onClick={() => setRequestingCourse(true)}>
+              <Send size={15} aria-hidden />
+              Request a course
+            </button>
+          ) : undefined
+        }
       />
       <PageBody>
+        {addingCourse && (
+          <div className="mb-6">
+            <AddCourseForm
+              onCancel={() => setAddingCourse(false)}
+              onAdded={(course) => {
+                setAddingCourse(false)
+                setCourses((current) => [...(current ?? []), course].sort((a, b) => a.code.localeCompare(b.code)))
+                setCode(course.code)
+              }}
+            />
+          </div>
+        )}
+        {requestingCourse && (
+          <div className="mb-6">
+            <RequestCourseForm
+              onCancel={() => setRequestingCourse(false)}
+              onSent={(request) => {
+                setRequestingCourse(false)
+                setRequests((current) => [request, ...current])
+              }}
+            />
+          </div>
+        )}
+        {role && requests.length > 0 && (
+          <div className="mb-6">
+            <CourseRequestsPanel isAdmin={isAdmin} requests={requests} onDecided={decided} />
+          </div>
+        )}
         {courses === null ? (
           <SkeletonRows label="Loading courses" rows={3} />
         ) : courses.length === 0 ? (
           <EmptyState title={isAdmin ? 'No courses yet' : 'You do not teach a course yet'}>
             {isAdmin
-              ? 'Add a course on the Accounts page, then assign its lecturers and students here.'
-              : 'An admin assigns lecturers to courses. Ask them to add you to yours.'}
+              ? 'Add a course, or import a timetable or roster, then assign its lecturers and students here.'
+              : 'Request a course above, or ask an admin to add you to one that exists.'}
           </EmptyState>
         ) : (
           <div className="space-y-6">
-            <div className="max-w-sm">
-              <label htmlFor={courseId} className="text-sm font-semibold">
-                Course
-              </label>
-              <select
-                id={courseId}
-                className={`${FIELD} mt-1`}
-                value={code ?? ''}
-                onChange={(event) => setCode(event.target.value)}
-              >
-                {courses.map((course) => (
-                  <option key={course.id} value={course.code}>
-                    {course.code}: {course.name}
-                  </option>
-                ))}
-              </select>
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="w-full max-w-sm">
+                <label htmlFor={courseId} className="text-sm font-semibold">
+                  Course
+                </label>
+                <select
+                  id={courseId}
+                  className={`${FIELD} mt-1`}
+                  value={code ?? ''}
+                  onChange={(event) => {
+                    setCode(event.target.value)
+                    setRenaming(null)
+                  }}
+                >
+                  {courses.map((course) => (
+                    <option key={course.id} value={course.code}>
+                      {course.code}: {course.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {isAdmin && renaming === null && (
+                <button
+                  type="button"
+                  className={buttonStyles({ intent: 'quiet' })}
+                  onClick={() => setRenaming(courses.find((course) => course.code === code)?.name ?? '')}
+                >
+                  <Pencil size={15} aria-hidden />
+                  Rename
+                </button>
+              )}
             </div>
+            {isAdmin && renaming !== null && (
+              <form onSubmit={saveName} className="flex max-w-xl flex-wrap items-end gap-2">
+                <div className="min-w-0 flex-1">
+                  <label htmlFor={`${courseId}-name`} className="text-sm font-semibold">
+                    New name for {code}
+                  </label>
+                  <input
+                    id={`${courseId}-name`}
+                    required
+                    maxLength={255}
+                    value={renaming}
+                    onChange={(event) => setRenaming(event.target.value)}
+                    className={`${FIELD} mt-1`}
+                  />
+                </div>
+                <button type="submit" className={buttonStyles()} disabled={busy}>
+                  Save
+                </button>
+                <button type="button" className={buttonStyles({ intent: 'secondary' })} onClick={() => setRenaming(null)}>
+                  Cancel
+                </button>
+              </form>
+            )}
+
+            {error && (
+              <p role="alert" className="rounded-md border border-critical/30 bg-critical/5 px-4 py-3 text-sm text-critical">
+                {error}
+              </p>
+            )}
 
             {code && <CourseRosterEditor key={code} code={code} isAdmin={isAdmin} />}
           </div>

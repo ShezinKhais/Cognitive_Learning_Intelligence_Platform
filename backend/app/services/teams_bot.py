@@ -59,8 +59,7 @@ from app.schemas.meetings import (
     TeamsActivity,
     activity_meeting_id,
 )
-from app.services import session_lifecycle, teams_meeting_flow
-from app.services.teams_notifications import notifications
+from app.services import session_lifecycle, teams_meeting_flow, teams_presence
 
 log = logging.getLogger("clip.teams")
 
@@ -314,9 +313,9 @@ async def handle_activity(db: AsyncSession, activity: TeamsActivity, settings: S
                     db, activity, event.meeting_id, settings
                 )
             return
-        started = await session_lifecycle.handle_meeting_event(db, owner, event)
-        if event.kind is MeetingEventKind.STARTED:
-            notifications.enqueue_welcome(started.id)
+        await session_lifecycle.handle_meeting_event(db, owner, event)
+        if event.kind is MeetingEventKind.ENDED:
+            teams_presence.presence.forget(event.meeting_id)
     except ClipError as exc:
         await db.rollback()
         log.warning("meeting %s %s was not applied: %s", event.meeting_id, event.kind, exc)

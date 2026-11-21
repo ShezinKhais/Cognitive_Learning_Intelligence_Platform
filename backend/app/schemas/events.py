@@ -107,6 +107,7 @@ class ServerEventType(StrEnum):
     MATERIAL_PROGRESS = "material.progress"
     ROOM_STATUS = "room.status"
     ROOM_ASSIGNED = "room.assigned"
+    SESSION_ENDING = "session.ending"
     ERROR = "error"
 
 
@@ -401,6 +402,16 @@ class RoomAssignedPayload(BaseModel):
     room_label: str | None = Field(default=None, max_length=MAX_ROOM_LABEL_LENGTH)
 
 
+class SessionEndingPayload(BaseModel):
+    """Sent to staff only. The linked Teams call has emptied, or its lecturer
+    has left it, and the class will end on its own at ends_at unless the
+    lecturer keeps it running. ends_at null means the wait is over without an
+    end: someone rejoined, or the lecturer chose to keep the class running."""
+
+    reason: Literal["everyone_left", "lecturer_left"] | None = None
+    ends_at: datetime | None = None
+
+
 class ReadyPayload(BaseModel):
     """Handshake complete. The client may start sending events."""
 
@@ -467,5 +478,6 @@ SERVER_PAYLOADS: dict[ServerEventType, type[BaseModel] | None] = {
     ServerEventType.MATERIAL_PROGRESS: MaterialProgressPayload,
     ServerEventType.ROOM_STATUS: RoomStatusPayload,
     ServerEventType.ROOM_ASSIGNED: RoomAssignedPayload,
+    ServerEventType.SESSION_ENDING: SessionEndingPayload,
     ServerEventType.ERROR: ErrorPayload,
 }

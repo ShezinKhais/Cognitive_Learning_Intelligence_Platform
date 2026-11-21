@@ -53,6 +53,7 @@ NO_CONSENT_NEEDED = {
     ("POST", "/api/v1/me/deletion-request"): "a student can always ask to be erased",
     ("GET", "/api/v1/me/deletion-request"): "a student can always see where that request stands",
     ("POST", "/api/v1/client-errors"): "a page can crash before the terms are accepted",
+    ("POST", "/api/v1/auth/password"): "anyone may change their own password",
 }
 
 # Who each route is for. Anything not named here fails the audit, so a new
@@ -89,6 +90,7 @@ AUDIENCE = {
     ("GET", "/api/v1/student-reviews/{session_id}/responses/{response_id}/sources"): STUDENT_ONLY,
     ("POST", "/api/v1/auth/consent"): ANY_USER,
     ("GET", "/api/v1/auth/me"): ANY_USER,
+    ("POST", "/api/v1/auth/password"): ANY_USER,
     ("POST", "/api/v1/client-errors"): ANY_USER,
     ("GET", "/api/v1/admin/errors"): ADMIN_ONLY,
     ("POST", "/api/v1/admin/errors/synthetic"): ADMIN_ONLY,
@@ -100,6 +102,11 @@ AUDIENCE = {
     ("GET", "/api/v1/admin/courses"): ADMIN_ONLY,
     ("POST", "/api/v1/admin/courses"): ADMIN_ONLY,
     ("GET", "/api/v1/courses/mine"): STAFF,
+    ("GET", "/api/v1/courses/requests"): STAFF,
+    ("POST", "/api/v1/courses/requests"): STAFF,
+    ("PATCH", "/api/v1/admin/courses/{code}"): ADMIN_ONLY,
+    ("POST", "/api/v1/admin/course-requests/{request_id}/approve"): ADMIN_ONLY,
+    ("POST", "/api/v1/admin/course-requests/{request_id}/decline"): ADMIN_ONLY,
     ("GET", "/api/v1/courses/{code}/roster"): STAFF,
     ("GET", "/api/v1/courses/{code}/attendance"): STAFF,
     ("GET", "/api/v1/courses/{code}/attendance.csv"): STAFF,
@@ -124,6 +131,9 @@ AUDIENCE = {
     ("POST", "/api/v1/materials/{material_id}/questions"): STAFF,
     ("POST", "/api/v1/materials/{material_id}/questions/{question_id}:reuse"): STAFF,
     ("POST", "/api/v1/meetings/events"): STAFF,
+    ("POST", "/api/v1/meetings/join-link"): STAFF,
+    ("PUT", "/api/v1/meetings/sessions/{session_id}/end-when-lecturer-leaves"): STAFF,
+    ("POST", "/api/v1/meetings/sessions/{session_id}/keep-running"): STAFF,
     ("GET", "/api/v1/meetings/{meeting_id}"): STAFF,
     ("PUT", "/api/v1/meetings/{meeting_id}"): STAFF,
     ("GET", "/api/v1/meetings/{meeting_id}/class-suggestion"): STAFF,
@@ -210,6 +220,8 @@ def call(client: TestClient, method: str, path: str, **ids: UUID):  # noqa: ANN2
     body = {} if method != "GET" else None
     if method == "PUT" and path.endswith("/question-plan"):
         body = {"selected_only": False, "reviewed_confirmed": True}
+    if method == "PUT" and path.endswith("/end-when-lecturer-leaves"):
+        body = {"end_when_lecturer_leaves": True}
     return client.request(method, filled(path, **ids), json=body)
 
 

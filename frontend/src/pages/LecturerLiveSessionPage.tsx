@@ -33,6 +33,8 @@ import {
   getSessionTopics,
 } from '../features/intelligence/topicRecoveryApi'
 import AiControlsPanel from '../features/live/AiControlsPanel'
+import TeamsLinkPanel from '../features/live/TeamsLinkPanel'
+import ClassEndingBanner from '../features/live/ClassEndingBanner'
 import LiveAlertsPanel from '../features/live/LiveAlertsPanel'
 import CheckpointMonitor from '../features/live/CheckpointMonitor'
 import {
@@ -142,6 +144,8 @@ export default function LecturerLiveSessionPage() {
     sessionNotice,
     rooms,
     acknowledgeAlert,
+    ending,
+    clearEnding,
   } = useLiveSession(sessionId)
 
   // The session's title and course, for the header. The socket carries its
@@ -682,6 +686,15 @@ export default function LecturerLiveSessionPage() {
 
       <div className="mx-auto max-w-6xl px-5 py-8 sm:px-8">
 
+        {sessionId && ending && sessionState?.status === 'active' && (
+          <ClassEndingBanner
+            sessionId={sessionId}
+            ending={ending}
+            onKept={clearEnding}
+            onEndNow={() => setConfirmingEnd(true)}
+          />
+        )}
+
         <div className="grid gap-6 lg:grid-cols-2">
           <Panel
             title="Class"
@@ -769,10 +782,28 @@ export default function LecturerLiveSessionPage() {
                 'ended' ||
                 sessionState?.status ===
                   'cancelled') && (
-                <p className="text-sm text-muted-foreground">
-                  This session is no
-                  longer active.
-                </p>
+                <div className="flex flex-col gap-2">
+                  <p className="text-sm text-muted-foreground">
+                    This session is no
+                    longer active.
+                  </p>
+                  {sessionState?.status === 'ended' && sessionId && (
+                    <div className="flex flex-wrap gap-2">
+                      <Link
+                        to={`/lecturer/sessions/${encodeURIComponent(sessionId)}/results`}
+                        className={buttonStyles()}
+                      >
+                        See the results
+                      </Link>
+                      <Link
+                        to={`/lecturer/sessions/${encodeURIComponent(sessionId)}/report`}
+                        className={buttonStyles({ intent: 'secondary' })}
+                      >
+                        Open the report
+                      </Link>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </Panel>
@@ -783,7 +814,7 @@ export default function LecturerLiveSessionPage() {
               sessionState?.status === 'prepared'
                 ? 'Connected and waiting for the session to start'
                 : sessionState?.status === 'active'
-                  ? 'Currently connected students'
+                  ? 'Students in the class or its Teams call'
                   : sessionState?.status === 'ended'
                     ? 'Session ended'
                     : sessionState?.status === 'cancelled'
@@ -801,6 +832,13 @@ export default function LecturerLiveSessionPage() {
 
           {sessionId && sessionState?.status !== 'ended' && sessionState?.status !== 'cancelled' && (
             <AiControlsPanel sessionId={sessionId} courseCode={details?.course_code} />
+          )}
+
+          {sessionId && details && sessionState?.status !== 'ended' && sessionState?.status !== 'cancelled' && (
+            <TeamsLinkPanel
+              session={details}
+              onChange={setDetails}
+            />
           )}
 
           <LecturerAttentionPanel

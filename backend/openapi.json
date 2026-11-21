@@ -639,6 +639,12 @@
             ],
             "title": "Last Seen"
           },
+          "late": {
+            "default": false,
+            "description": "First seen more than late_minutes after the class started.",
+            "title": "Late",
+            "type": "boolean"
+          },
           "minutes": {
             "anyOf": [
               {
@@ -1694,6 +1700,19 @@
             "title": "Email",
             "type": "string"
           },
+          "late": {
+            "description": "One per class, in the order of `classes`: present but late.",
+            "items": {
+              "type": "boolean"
+            },
+            "title": "Late",
+            "type": "array"
+          },
+          "late_count": {
+            "default": 0,
+            "title": "Late Count",
+            "type": "integer"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -1783,6 +1802,190 @@
           "name"
         ],
         "title": "CourseOut",
+        "type": "object"
+      },
+      "CourseRename": {
+        "properties": {
+          "name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "CourseRename",
+        "type": "object"
+      },
+      "CourseRequestApprove": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correct the course name first.",
+            "title": "Name"
+          }
+        },
+        "title": "CourseRequestApprove",
+        "type": "object"
+      },
+      "CourseRequestCreate": {
+        "properties": {
+          "code": {
+            "maxLength": 20,
+            "minLength": 2,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the course is needed, for the admin.",
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "CourseRequestCreate",
+        "type": "object"
+      },
+      "CourseRequestDecline": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why, shown to the lecturer who asked.",
+            "title": "Note"
+          }
+        },
+        "title": "CourseRequestDecline",
+        "type": "object"
+      },
+      "CourseRequestOut": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decision_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Note"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "requested_by": {
+            "format": "uuid",
+            "title": "Requested By",
+            "type": "string"
+          },
+          "requester_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requester Name"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "approved",
+              "declined"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "reason",
+          "status",
+          "requested_by",
+          "decision_note",
+          "created_at",
+          "decided_at"
+        ],
+        "title": "CourseRequestOut",
         "type": "object"
       },
       "CourseRoster": {
@@ -3142,6 +3345,28 @@
         "title": "MeetingEventKind",
         "type": "string"
       },
+      "MeetingJoinLinkRequest": {
+        "description": "Link a session to the Teams meeting a join link opens, from the\nC.L.I.P website rather than the meeting's side panel.",
+        "properties": {
+          "join_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Join Url",
+            "type": "string"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "join_url"
+        ],
+        "title": "MeetingJoinLinkRequest",
+        "type": "object"
+      },
       "MeetingLinkRequest": {
         "properties": {
           "session_id": {
@@ -3207,7 +3432,7 @@
         "type": "object"
       },
       "MyConsiderationOut": {
-        "description": "The student's most recent request, if any.",
+        "description": "The student's most recent request, if any, and the needs of the\napproved request that applies today, which may be an older one.",
         "properties": {
           "current": {
             "anyOf": [
@@ -3218,6 +3443,13 @@
                 "type": "null"
               }
             ]
+          },
+          "in_force": {
+            "items": {
+              "$ref": "#/components/schemas/ConsiderationNeed"
+            },
+            "title": "In Force",
+            "type": "array"
           }
         },
         "required": [
@@ -3675,6 +3907,27 @@
           "offset"
         ],
         "title": "Page[SessionOut]",
+        "type": "object"
+      },
+      "PasswordChangeRequest": {
+        "properties": {
+          "current_password": {
+            "maxLength": 1024,
+            "title": "Current Password",
+            "type": "string"
+          },
+          "new_password": {
+            "maxLength": 1024,
+            "minLength": 12,
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "PasswordChangeRequest",
         "type": "object"
       },
       "PlannedRoom": {
@@ -5128,6 +5381,17 @@
             "title": "Course Code",
             "type": "string"
           },
+          "late": {
+            "default": 0,
+            "title": "Late",
+            "type": "integer"
+          },
+          "late_minutes": {
+            "default": 0,
+            "description": "How late a first join is marked late. 0: nobody is.",
+            "title": "Late Minutes",
+            "type": "integer"
+          },
           "present": {
             "title": "Present",
             "type": "integer"
@@ -5356,6 +5620,12 @@
             "title": "Course Code",
             "type": "string"
           },
+          "end_when_lecturer_leaves": {
+            "default": false,
+            "description": "The class ends when its lecturer leaves the linked Teams call.",
+            "title": "End When Lecturer Leaves",
+            "type": "boolean"
+          },
           "ended_at": {
             "anyOf": [
               {
@@ -5380,7 +5650,7 @@
           },
           "participant_count": {
             "default": 0,
-            "description": "Students connected now, each counted once.",
+            "description": "Students present now, in C.L.I.P or the linked Teams call, each counted once.",
             "title": "Participant Count",
             "type": "integer"
           },
@@ -5394,6 +5664,19 @@
             "default": 0,
             "title": "Questions Delivered",
             "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the class actually started.",
+            "title": "Started At"
           },
           "starts_at": {
             "anyOf": [
@@ -5409,6 +5692,18 @@
           },
           "status": {
             "$ref": "#/components/schemas/SessionStatus"
+          },
+          "teams_join_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A link that opens the linked Teams meeting, when C.L.I.P is in it.",
+            "title": "Teams Join Url"
           },
           "teams_meeting_id": {
             "anyOf": [
@@ -5949,6 +6244,20 @@
           "serviceUrl"
         ],
         "title": "TeamsActivity",
+        "type": "object"
+      },
+      "TeamsEndOption": {
+        "properties": {
+          "end_when_lecturer_leaves": {
+            "description": "End the class when its lecturer leaves the linked Teams call.",
+            "title": "End When Lecturer Leaves",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "end_when_lecturer_leaves"
+        ],
+        "title": "TeamsEndOption",
         "type": "object"
       },
       "TeamsSignInRequest": {
@@ -6855,6 +7164,114 @@
         ]
       }
     },
+    "/api/v1/admin/course-requests/{request_id}/approve": {
+      "post": {
+        "description": "Create the course asked for, with the lecturer who asked as its lecturer.",
+        "operationId": "approve_course_request_api_v1_admin_course_requests__request_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CourseRequestApprove"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseRequestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve Course Request",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/course-requests/{request_id}/decline": {
+      "post": {
+        "description": "Turn a course request down, with a note the lecturer sees.",
+        "operationId": "decline_course_request_api_v1_admin_course_requests__request_id__decline_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CourseRequestDecline"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseRequestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decline Course Request",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/courses": {
       "get": {
         "description": "Courses a student can be enrolled on.",
@@ -6916,6 +7333,59 @@
           }
         },
         "summary": "Create Course",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/courses/{code}": {
+      "patch": {
+        "description": "Correct a course's name. Its code stays, since imports and links use it.",
+        "operationId": "rename_course_api_v1_admin_courses__code__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CourseRename"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rename Course",
         "tags": [
           "admin"
         ]
@@ -7190,6 +7660,41 @@
         ]
       }
     },
+    "/api/v1/auth/password": {
+      "post": {
+        "description": "Change the signed-in user's own password. The current one is checked,\nand a wrong one counts towards the account lock as a failed sign-in does,\nso this cannot be used to guess it.",
+        "operationId": "change_password_api_v1_auth_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/auth/refresh": {
       "post": {
         "description": "A fresh access token for the holder of the refresh cookie.\n\nThe client calls this shortly before its token expires, so a class longer\nthan the token's lifetime is not interrupted by a sign-in, and on load,\nsince it keeps the access token in memory only. The account is checked\nagain, and the sign-in itself still ends max_sign_in_hours after the\npassword was typed. An access token cannot be refreshed: one taken from\nthe page ends at its own expiry.",
@@ -7319,6 +7824,105 @@
           }
         },
         "summary": "My Courses",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/api/v1/courses/requests": {
+      "get": {
+        "description": "A lecturer's own requests, or every request for an admin, newest first.",
+        "operationId": "list_course_requests_api_v1_courses_requests_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "approved",
+                    "declined"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CourseRequestOut"
+                  },
+                  "title": "Response List Course Requests Api V1 Courses Requests Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Course Requests",
+        "tags": [
+          "courses"
+        ]
+      },
+      "post": {
+        "description": "Ask an admin for a course that does not exist yet.",
+        "operationId": "request_course_api_v1_courses_requests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CourseRequestCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseRequestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Course",
         "tags": [
           "courses"
         ]
@@ -9193,6 +9797,146 @@
           }
         },
         "summary": "Meeting Event",
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/meetings/join-link": {
+      "post": {
+        "description": "Hold a session in the Teams meeting a join link opens, from the\nC.L.I.P website. The meeting must have C.L.I.P added to it, and with\nTeams live a lecturer must be its organiser. Once linked, the meeting\nstarting starts the class, the class starting opens C.L.I.P for everyone\nin the call, and the class ends with the meeting or once everyone has\nleft it.",
+        "operationId": "link_meeting_by_join_link_api_v1_meetings_join_link_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MeetingJoinLinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Link Meeting By Join Link",
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/meetings/sessions/{session_id}/end-when-lecturer-leaves": {
+      "put": {
+        "description": "Whether the class ends when its lecturer leaves the linked Teams call,\nafter the same short wait as an emptied call.",
+        "operationId": "end_when_lecturer_leaves_api_v1_meetings_sessions__session_id__end_when_lecturer_leaves_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamsEndOption"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "End When Lecturer Leaves",
+        "tags": [
+          "meetings"
+        ]
+      }
+    },
+    "/api/v1/meetings/sessions/{session_id}/keep-running": {
+      "post": {
+        "description": "Cancel the wait to end a class whose Teams call has emptied, or whose\nlecturer has left it. 404 when no such wait is running.",
+        "operationId": "keep_running_api_v1_meetings_sessions__session_id__keep_running_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Keep Running",
         "tags": [
           "meetings"
         ]

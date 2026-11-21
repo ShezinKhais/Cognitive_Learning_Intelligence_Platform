@@ -10,6 +10,10 @@ import { LiveSessionPanel } from './StudentLiveSessionPage'
 // meeting to a session. Also checked when the panel regains focus.
 const LINK_RECHECK_MS = 10_000
 
+// Where Teams shows C.L.I.P in a meeting: the side panel, a notification's
+// dialog ('task'), and the meeting stage a lecturer shared it to ('content').
+const MEETING_FRAMES = ['sidePanel', 'task', 'content']
+
 export default function TeamsMeetingPage() {
   const teams = useTeams()
   const { sessions, refreshSessions } = useStudentApp()
@@ -88,11 +92,11 @@ export default function TeamsMeetingPage() {
     )
   }
 
-  if (teams.context && !['sidePanel', 'task'].includes(teams.context.frameContext)) {
+  if (teams.context && !MEETING_FRAMES.includes(teams.context.frameContext)) {
     return (
       <PanelStatus
         title="Open the in-meeting panel"
-        message="Open C.L.I.P from the meeting side panel or a checkpoint notification."
+        message="Open C.L.I.P from the meeting side panel, the meeting stage or a checkpoint notification."
       />
     )
   }
@@ -120,21 +124,19 @@ export default function TeamsMeetingPage() {
     )
   }
 
+  const frame = teams.context?.frameContext
   // The checkpoint pop-up over the meeting shows only the question, so the
-  // student answers and is back to the lecture in one step.
-  const inDialog =
-    teams.context?.frameContext === 'task' ||
-    new URLSearchParams(window.location.search).get('view') === 'dialog'
-  // The side panel gets the slimmer layout that unfolds in from a paperclip.
-  // The pop-up and the stage keep the plain one.
-  const clip = teams.context?.frameContext === 'sidePanel' && !inDialog
+  // student answers and is back to the lecture in one step. The side panel
+  // gets the slimmer layout that unfolds in from a paperclip; the stage shows
+  // the whole class, and the pop-up only the question.
+  const inDialog = frame === 'task' || new URLSearchParams(window.location.search).get('view') === 'dialog'
   return (
     <LiveSessionPanel
       key={session.id}
       session={session}
-      compact
+      compact={frame !== 'content'}
       dialog={inDialog}
-      clip={clip}
+      clip={!inDialog && frame === 'sidePanel'}
       onFinished={finishedLive}
     />
   )

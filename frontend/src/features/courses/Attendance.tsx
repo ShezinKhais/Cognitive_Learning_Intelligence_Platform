@@ -14,12 +14,16 @@ interface CourseAttendance {
     email: string
     attended: number
     classes: boolean[]
+    late?: boolean[]
+    late_count?: number
     not_yet_enrolled?: string[]
   }[]
 }
 
 interface SessionAttendance {
   present: number
+  late?: number
+  late_minutes?: number
   total: number
   students: {
     student_id: string
@@ -29,6 +33,7 @@ interface SessionAttendance {
     first_seen: string | null
     last_seen: string | null
     sources: ('clip' | 'teams')[]
+    late?: boolean
   }[]
 }
 
@@ -132,12 +137,17 @@ export function CourseAttendancePanel({ code }: { code: string }) {
                     </th>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {row.attended} of {row.classes.length - beforeEnrolment.size}
+                      {(row.late_count ?? 0) > 0 && (
+                        <span className="block text-xs text-warning">{row.late_count} late</span>
+                      )}
                     </td>
                     {row.classes.map((present, index) => {
                       const { session_id: id } = data.classes[index]
-                      const label = beforeEnrolment.has(id) ? 'Not yet enrolled' : present ? 'Present' : 'Absent'
+                      const late = present && Boolean(row.late?.[index])
+                      const label = beforeEnrolment.has(id) ? 'Not yet enrolled' : late ? 'Late' : present ? 'Present' : 'Absent'
+                      const tone = late ? 'font-semibold text-warning' : present ? 'font-semibold text-success' : 'text-muted-foreground'
                       return (
-                        <td key={id} className={`px-2 py-2 text-center ${present ? 'font-semibold text-success' : 'text-muted-foreground'}`}>
+                        <td key={id} className={`px-2 py-2 text-center ${tone}`}>
                           {label}
                         </td>
                       )
@@ -179,7 +189,7 @@ export function SessionAttendancePanel({ sessionId }: { sessionId: string }) {
   return (
     <Panel
       title="Who was there"
-      description={data && `${data.present} of ${data.total} students. Attendance is based on recorded joins in C.L.I.P. or Teams.`}
+      description={data && `${data.present} of ${data.total} students${data.late ? `, ${data.late} late` : ''}. Attendance is based on recorded joins in C.L.I.P. or Teams${data.late_minutes ? `; late means more than ${data.late_minutes} minutes after the start` : ''}.`}
       className="mb-6"
     >
       {!current ? (
@@ -203,6 +213,7 @@ export function SessionAttendancePanel({ sessionId }: { sessionId: string }) {
                 <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                   {row.first_seen && <span>First seen <time dateTime={row.first_seen}>{seenAt(row.first_seen)}</time></span>}
                   {row.last_seen && <span>Last seen <time dateTime={row.last_seen}>{seenAt(row.last_seen)}</time></span>}
+                  {row.late && <Tag tone="mixed">Late</Tag>}
                   <Tag tone="good">{row.sources.includes('clip') ? 'Present' : 'In Teams only'}</Tag>
                 </div>
               ) : (

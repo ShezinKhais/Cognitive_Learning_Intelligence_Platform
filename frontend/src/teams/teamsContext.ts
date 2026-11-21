@@ -54,8 +54,13 @@ export function isMobileClient(clientType: unknown): boolean {
   return typeof clientType === 'string' && MOBILE_CLIENTS.has(clientType.toLowerCase())
 }
 
+// Where a simulated meeting shows C.L.I.P: the side panel (the default), or
+// the stage a lecturer shared it to ('content'), or a notification dialog.
+const SIMULATED_FRAMES = new Set(['sidePanel', 'content', 'task'])
+
 export function simulatedTeamsContext(search: string): TeamsContext {
   const query = new URLSearchParams(search)
+  const frame = query.get('frame')
 
   return {
     meetingId: query.get('meetingId'),
@@ -65,7 +70,7 @@ export function simulatedTeamsContext(search: string): TeamsContext {
     loginHint: query.get('loginHint') ?? 'student@example.test',
     locale: query.get('locale') ?? 'en-us',
     theme: normalizeTheme(query.get('theme')),
-    frameContext: 'sidePanel',
+    frameContext: frame && SIMULATED_FRAMES.has(frame) ? frame : 'sidePanel',
     mobile: query.get('mobile') === '1',
   }
 }
