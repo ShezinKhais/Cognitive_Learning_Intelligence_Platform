@@ -94,8 +94,8 @@ export function LiveSessionPanel({
   session,
   compact = false,
   dialog = false,
-  clip = false,
   onFinished,
+  clip = false,
 }: {
   session: StudentSession
   compact?: boolean
