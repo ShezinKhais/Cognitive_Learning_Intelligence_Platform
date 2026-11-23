@@ -31,6 +31,7 @@ dependencies = [
 extraction = ["docling>=2.0"]
 transcription = ["faster-whisper>=1.2,<2"]
 dev = [
+    "numpy>=1.26,<3",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "ruff>=0.8",
