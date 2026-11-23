@@ -93,7 +93,7 @@ async def session_chat(
         # A session that does not exist and one the student is not enrolled
         # for are refused alike, so a session id cannot be probed.
         raise NotFoundError("Session was not found.", {"session_id": str(session_id)})
-    if principal.role is Role.STUDENT and not getattr(live, "ai_learning_assistant", True):
+    if principal.role is Role.STUDENT and not getattr(live, "ai_learning_assistant", False):
         raise PermissionError_(
             "Your lecturer has turned the learning assistant off for this class.",
             {"session_id": str(session_id), "reason": "learning_assistant_off"},

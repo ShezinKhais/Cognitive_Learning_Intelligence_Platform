@@ -973,7 +973,17 @@ class Classroom:
             row = await SessionRepository(db).get(live.session_id, for_update=True)
             if row is None or row.status != SessionStatus.ACTIVE.value:
                 return False
-            delivered = await self.deliver(db, row)
+            if getattr(row, "question_selection_enabled", False):
+                from app.services.lecture_checkpoint_selection import choose_recent_question
+
+                question_id = await choose_recent_question(db, row, _now())
+                delivered = (
+                    await self.deliver(db, row, question_id)
+                    if question_id is not None
+                    else None
+                )
+            else:
+                delivered = await self.deliver(db, row)
         if delivered is None:
             log.info("No static question available for session %s", live.session_id)
             if live.open is None and live.countdown.due is None:

@@ -202,7 +202,7 @@ class Settings(BaseSettings):
     tenant_id: str = ""
     live_transcription_enabled: bool = False
     live_transcription_model_path: str = ""
-    live_transcription_language: str = Field(default="en", pattern=r"^[a-z]{2,3}$")
+    live_transcription_language: str = Field(default="en", pattern=r"^(auto|[a-z]{2,3})$")
     live_transcription_cpu_threads: int = Field(default=2, ge=1, le=8)
     teams_transcripts_enabled: bool = False
     teams_transcripts_automatic_enabled: bool = False
