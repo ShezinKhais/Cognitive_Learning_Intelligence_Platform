@@ -1,0 +1,351 @@
+"""Live session, response and analytics contracts.
+
+Owners: session lifecycle and delivery (General CS). Persistence (BBIS).
+Scoring (Cyber 1). Classification (AI 1)."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from enum import StrEnum
+from typing import Annotated, Literal
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+
+from app.schemas.content import Difficulty
+
+# course.code is String(20). The title is checked again after trimming, in
+# session_lifecycle, which gives the message a lecturer reads.
+MAX_COURSE_CODE_LENGTH = 20
+MAX_TITLE_LENGTH = 200
+
+# Text a lecturer reads. Blank is not text: an alert with a blank reason, or
+# with only whitespace for one, would tell the lecturer nothing.
+ShownText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+class SessionStatus(StrEnum):
+    PREPARED = "prepared"
+    ACTIVE = "active"
+    ENDING = "ending"
+    ENDED = "ended"
+    CANCELLED = "cancelled"
+
+
+class ComprehensionLabel(StrEnum):
+    """Design document labels. The SRS's Clear/Partial/Misunderstood is stale."""
+
+    MASTERED = "mastered"
+    PARTIAL = "partial"
+    STRUGGLING = "struggling"
+
+
+class EngagementStatus(StrEnum):
+    ENGAGED = "engaged"
+    AT_RISK = "at_risk"
+    DISENGAGED = "disengaged"
+    INSUFFICIENT_DATA = "insufficient_data"
+
+
+class ReadinessIssueCode(StrEnum):
+    """What the lecturer should know before starting a session.
+
+    Each one is a warning. None of them stops the start: a session may begin
+    with no staged question and have one staged while it is live.
+    """
+
+    NO_MATERIAL = "no_material"
+    MATERIAL_PROCESSING = "material_processing"
+    NO_APPROVED_QUESTIONS = "no_approved_questions"
+    MATERIAL_FAILED = "material_failed"
+
+
+class SessionOut(BaseModel):
+    id: UUID
+    course_code: str
+    title: str
+    lecturer_id: UUID
+    status: SessionStatus
+    starts_at: datetime | None = None
+    ended_at: datetime | None = None
+    teams_meeting_id: str | None = None
+    teams_join_url: str | None = Field(
+        default=None,
+        description="A link that opens the linked Teams meeting, when C.L.I.P is in it.",
+    )
+    end_when_lecturer_leaves: bool = Field(
+        default=False,
+        description="The class ends when its lecturer leaves the linked Teams call.",
+    )
+    started_at: datetime | None = Field(
+        default=None, description="When the class actually started."
+    )
+    participant_count: int = Field(
+        default=0,
+        description="Students present now, in C.L.I.P or the linked Teams call, each counted once.",
+    )
+    questions_delivered: int = 0
+    paused: bool = Field(
+        default=False,
+        description="An active session the lecturer has paused. No question goes out until "
+        "it resumes.",
+    )
+
+
+class QuestionBreakdown(BaseModel):
+    """How the class answered one question, in the order they were asked."""
+
+    number: int
+    question_id: UUID
+    prompt: str
+    type: str
+    options: list[str] | None = None
+    correct_option: int | None = None
+    topic: str | None = None
+    eligible: int = Field(description="Students connected when it was asked.")
+    answers: int
+    correct: int
+    marked: int = Field(description="Answers marked right or wrong. Some written answers are not.")
+    option_counts: list[int] | None = Field(
+        default=None, description="How many chose each option, for multiple choice."
+    )
+    median_seconds: float | None = None
+
+
+class StudentBreakdown(BaseModel):
+    """How one student did across the session."""
+
+    student_id: UUID
+    name: str
+    answered: int = 0
+    correct: int = 0
+    marked: int = 0
+    missed: int = 0
+
+
+class SessionBreakdownOut(BaseModel):
+    session_id: UUID
+    questions: list[QuestionBreakdown]
+    students: list[StudentBreakdown]
+
+
+class SessionCreateRequest(BaseModel):
+    course_code: str = Field(max_length=MAX_COURSE_CODE_LENGTH)
+    title: str = Field(max_length=MAX_TITLE_LENGTH)
+    starts_at: datetime | None = None
+
+
+class SessionUpdateRequest(BaseModel):
+    """Rename a session, or move one that has not started. Fields left out
+    stay as they are."""
+
+    title: str | None = Field(default=None, max_length=MAX_TITLE_LENGTH)
+    starts_at: datetime | None = None
+
+
+class SessionCopyRequest(BaseModel):
+    """Prepare a new session for the same course. The title defaults to the
+    original's, and the start to now."""
+
+    title: str | None = Field(default=None, max_length=MAX_TITLE_LENGTH)
+    starts_at: datetime | None = None
+
+
+class DeliverableQuestionOut(BaseModel):
+    """A staged question the current live session may deliver."""
+
+    id: UUID
+    material_id: UUID
+    prompt: str
+    options: list[str] | None = None
+    source_slide: int | None = None
+
+
+class ReadinessIssue(BaseModel):
+    """One reason a session cannot start yet, or one thing worth a warning."""
+
+    code: ReadinessIssueCode
+    message: str = Field(description="Plain-language explanation for the lecturer.")
+    material_id: UUID | None = Field(
+        default=None,
+        description="The material this is about, when it is about one.",
+    )
+
+
+class SessionReadinessOut(BaseModel):
+    """Whether a prepared session has the content it needs to begin.
+
+    start_session runs the same check, so a session this reports as ready
+    will not be refused for content, and one it reports as not ready will be.
+    """
+
+    session_id: UUID
+    ready: bool = Field(description="True only when blockers is empty.")
+    blockers: list[ReadinessIssue] = Field(
+        default_factory=list,
+        description="Each one stops the session from starting.",
+    )
+    warnings: list[ReadinessIssue] = Field(
+        default_factory=list,
+        description="Worth showing the lecturer, but they do not stop the start.",
+    )
+    materials_total: int = 0
+    materials_processing: int = Field(default=0, description="Pending or still being processed.")
+    materials_failed: int = 0
+    deliverable_questions: int = Field(
+        default=0, description="Approved, staged questions this session may deliver."
+    )
+    checked_at: datetime
+
+
+class ResponseOut(BaseModel):
+    id: UUID
+    question_id: UUID
+    student_id: UUID
+    selected_option: int | None = None
+    free_text: str | None = None
+    is_correct: bool | None = None
+    elapsed_ms: int | None = None
+    submitted_at: datetime
+
+
+class ComprehensionOut(BaseModel):
+    response_id: UUID
+    label: ComprehensionLabel
+    confidence: float = Field(ge=0.0, le=1.0)
+    reason: str | None = None
+
+
+class EngagementOut(BaseModel):
+    """Engagement and comprehension are reported separately and must not be
+    combined into a single figure anywhere in the API."""
+
+    student_id: UUID
+    session_id: UUID
+    score: float | None = Field(default=None, ge=0.0, le=1.0)
+    status: EngagementStatus
+    confidence: float = Field(
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Whether participation evidence backs the score: 1 when it does, 0 when it does "
+            "not, worked out the same way for every student. It is not a probability. "
+            "No evidence renders as 'insufficient data', never as 'disengaged'."
+        ),
+    )
+    signals_available: list[str] = Field(
+        default_factory=list,
+        description=(
+            "['participation'] when questions attempted, answer timing or attention prompt "
+            "responses backed the score, otherwise empty. The same view for every student; "
+            "camera and microphone detail is not reported."
+        ),
+    )
+    computed_at: datetime
+
+
+class ActionItem(BaseModel):
+    """One thing a student could do next, worked out from their marked answers.
+
+    Only comprehension and missed questions give rise to one. Engagement never
+    does: how someone's camera or click rate read says nothing about what they
+    should study.
+    """
+
+    kind: Literal["revisit_topic", "review_missed"]
+    text: ShownText
+    topic: str | None = None
+
+
+class StudentSessionSummary(BaseModel):
+    """What one student did in one session. Engagement and comprehension sit in
+    separate fields and are never combined into one figure."""
+
+    student_id: UUID
+    session_id: UUID
+    questions_attempted: int
+    questions_missed: int
+    engagement: EngagementOut
+    comprehension_by_topic: dict[str, ComprehensionLabel] = Field(default_factory=dict)
+    action_items: list[ActionItem] = Field(
+        default_factory=list,
+        description="Suggested next steps from comprehension and missed questions only.",
+    )
+
+
+class AlertOut(BaseModel):
+    """An alert kept for the lecturer: what was raised, why, what to do about it,
+    and whether anyone has seen it.
+
+    Served from the stored alert, so it is there after a refresh and after the
+    session. The three figures at the end are those of a topic difficulty alert,
+    null for any other kind.
+    """
+
+    alert_id: UUID
+    session_id: UUID
+    question_id: UUID | None
+    kind: str
+    topic: str | None
+    message: ShownText
+    reason: ShownText
+    confidence: float = Field(ge=0.0, le=1.0)
+    explanation: ShownText
+    explanation_source: Literal["ai", "fallback"]
+    confidence_reasons: list[ShownText] = Field(default_factory=list)
+    recommendation: ShownText
+    status: Literal["open", "acknowledged"]
+    raised_at: datetime
+    acknowledged_by: UUID | None = Field(
+        default=None, description="Whoever acknowledged it first. The first one is kept."
+    )
+    acknowledged_at: datetime | None = None
+    respondents: int | None = None
+    threshold: float | None = None
+    correct_ratio: float | None = None
+
+
+class ClassComprehensionAlert(BaseModel):
+    # The id the lecturer's alert.raised event carried, so a reloaded page and
+    # the live stream refer to one alert.
+    alert_id: UUID
+    session_id: UUID
+    question_id: UUID
+    topic: str | None
+    correct_ratio: float = Field(ge=0.0, le=1.0)
+    respondents: int
+    threshold: float
+    raised_at: datetime
+    message: ShownText
+    reason: ShownText
+    confidence: float = Field(ge=0.0, le=1.0)
+    explanation: ShownText
+    explanation_source: Literal["ai", "fallback"]
+    confidence_reasons: list[ShownText] = Field(default_factory=list)
+    recommendation: ShownText
+
+
+class TopicDifficultyOut(BaseModel):
+    """How hard the class found one topic, from its answers' comprehension
+    labels. See app/services/topic_difficulty.py for how each figure is made."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    topic: str
+    questions: int = Field(ge=0)
+    answers: int = Field(ge=0, description="One per student per question, by its newest label.")
+    mastered: int = Field(ge=0)
+    partial: int = Field(ge=0)
+    struggling: int = Field(ge=0)
+    uncertain: int = Field(ge=0, description="Labels below 0.6 confidence. Still counted in full.")
+    score: float | None = Field(
+        ge=0.0,
+        le=1.0,
+        description="0 when every answer was mastered, 1 when every one was struggling. "
+        "Null below 5 answers.",
+    )
+    level: Difficulty | None = Field(description="Null when score is null.")
+    expected: Difficulty | None = Field(
+        description="The difficulty the question generator gave most of the topic's "
+        "questions. Null when evenly split."
+    )

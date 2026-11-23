@@ -1,0 +1,74 @@
+"""Additive AI2 post-session review contract; no model-generated claims."""
+
+from datetime import datetime
+from typing import Literal
+from uuid import UUID
+
+from pydantic import BaseModel, Field
+
+from app.schemas.session import ComprehensionLabel
+
+
+class ReviewSession(BaseModel):
+    id: UUID
+    title: str
+    course_code: str
+    ended_at: datetime | None
+
+
+class ReviewAnswer(BaseModel):
+    id: UUID
+    question: str
+    topic: str | None
+    answer: str
+    is_correct: bool | None
+    label: ComprehensionLabel | None
+    confidence: float | None = Field(ge=0, le=1)
+    submitted_at: datetime
+    correct_answer: str | None = None
+    key_points: list[str] = Field(default_factory=list)
+
+
+class MissedQuestion(BaseModel):
+    id: UUID
+    question: str
+    topic: str | None
+    correct_answer: str | None
+    key_points: list[str] = Field(default_factory=list)
+
+
+class ReviewEngagement(BaseModel):
+    status: Literal["unavailable", "readings_available"] = "unavailable"
+    score: None = None
+    camera_windows: int | None = Field(default=None, ge=1)
+    microphone_windows: int | None = Field(default=None, ge=1)
+    explanation: str = (
+        "A verified post-session engagement record with confidence and signal availability "
+        "is not available. Missing readings are not zero and do not indicate understanding."
+    )
+
+
+class StudentReview(BaseModel):
+    session: ReviewSession
+    questions_attempted: int
+    questions_missed: int
+    engagement: ReviewEngagement = Field(default_factory=ReviewEngagement)
+    answers: list[ReviewAnswer]
+    total: int
+    limit: int
+    offset: int
+
+
+class ReviewSource(BaseModel):
+    chunk_id: UUID
+    material_title: str
+    source_page: int | None
+    # What source_page numbers: Word and text files are numbered by section.
+    source_label: Literal["Page", "Slide", "Section"] = "Page"
+    text: str
+    match: Literal["excerpt", "page"]
+
+
+class ReviewSources(BaseModel):
+    items: list[ReviewSource]
+    has_more: bool = False

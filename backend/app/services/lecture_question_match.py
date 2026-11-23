@@ -10,15 +10,52 @@ import re
 from collections.abc import Iterable
 from datetime import datetime, timedelta
 
-STOPWORDS = frozenset({
-    "a", "an", "and", "are", "as", "at", "be", "by",
-    "can", "define", "describe", "do", "does", "explain",
-    "for", "from", "how", "in", "into", "is", "it",
-    "of", "on", "or", "the", "their", "them", "these",
-    "this", "to", "what", "when", "where", "which",
-    "why", "with", "give", "example", "following",
-    "about", "between", "difference",
-})
+STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "can",
+        "define",
+        "describe",
+        "do",
+        "does",
+        "explain",
+        "for",
+        "from",
+        "how",
+        "in",
+        "into",
+        "is",
+        "it",
+        "of",
+        "on",
+        "or",
+        "the",
+        "their",
+        "them",
+        "these",
+        "this",
+        "to",
+        "what",
+        "when",
+        "where",
+        "which",
+        "why",
+        "with",
+        "give",
+        "example",
+        "following",
+        "about",
+        "between",
+        "difference",
+    }
+)
 
 TOKEN_PATTERN = re.compile(r"[^\W_]+", re.UNICODE)
 

@@ -1,4 +1,4 @@
-﻿"""Regression tests for transcript-aware automatic delivery."""
+"""Regression tests for transcript-aware automatic delivery."""
 
 from uuid import UUID
 

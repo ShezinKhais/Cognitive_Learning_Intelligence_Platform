@@ -1,4 +1,4 @@
-﻿"""Multilingual language selection for the local Whisper recognizer."""
+"""Multilingual language selection for the local Whisper recognizer."""
 
 from types import SimpleNamespace
 
@@ -19,9 +19,7 @@ from .test_live_transcription import wav
         ("fr", "fr"),
     ],
 )
-def test_whisper_receives_expected_language(
-    monkeypatch, configured_language, expected_language
-):
+def test_whisper_receives_expected_language(monkeypatch, configured_language, expected_language):
     requests = []
 
     class FakeWhisper:

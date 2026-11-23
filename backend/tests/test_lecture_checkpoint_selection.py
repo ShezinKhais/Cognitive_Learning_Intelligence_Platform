@@ -1,4 +1,4 @@
-﻿"""Tests for the real transcript-aware question selection service."""
+"""Tests for the real transcript-aware question selection service."""
 
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -35,9 +35,7 @@ class FakeQuestionRepository:
 def fake_repository(monkeypatch):
     FakeQuestionRepository.candidates = []
     FakeQuestionRepository.calls = []
-    monkeypatch.setattr(
-        selection, "SessionRepository", FakeQuestionRepository
-    )
+    monkeypatch.setattr(selection, "SessionRepository", FakeQuestionRepository)
     return FakeQuestionRepository
 
 
@@ -63,9 +61,7 @@ async def test_selects_taught_question_not_earlier_unrelated_question(
     now = datetime(2026, 11, 23, 12, 0, tzinfo=UTC)
     session = SimpleNamespace(session_id=uuid4())
 
-    db = FakeDb([
-        note(now - timedelta(minutes=8), "We discussed enzymes and inhibition.")
-    ])
+    db = FakeDb([note(now - timedelta(minutes=8), "We discussed enzymes and inhibition.")])
 
     animals = question("What are mammals?", "mammals")
     enzymes = question("What is enzyme inhibition?", "enzyme")
@@ -90,14 +86,14 @@ async def test_no_recent_transcript_skips_all_questions(fake_repository):
     now = datetime(2026, 11, 23, 12, 0, tzinfo=UTC)
     session = SimpleNamespace(session_id=uuid4())
 
-    db = FakeDb([
-        note(now - timedelta(minutes=25), "Enzymes and inhibition."),
-        note(now - timedelta(minutes=3), "Enzymes and inhibition.", "lecturer"),
-    ])
+    db = FakeDb(
+        [
+            note(now - timedelta(minutes=25), "Enzymes and inhibition."),
+            note(now - timedelta(minutes=3), "Enzymes and inhibition.", "lecturer"),
+        ]
+    )
 
-    fake_repository.candidates = [
-        question("What is enzyme inhibition?", "enzyme")
-    ]
+    fake_repository.candidates = [question("What is enzyme inhibition?", "enzyme")]
 
     selected = await selection.choose_recent_question(db, session, now)
 
@@ -109,9 +105,7 @@ async def test_no_supported_question_abstains(fake_repository):
     now = datetime(2026, 11, 23, 12, 0, tzinfo=UTC)
     session = SimpleNamespace(session_id=uuid4())
 
-    db = FakeDb([
-        note(now - timedelta(minutes=5), "Today we studied enzymes.")
-    ])
+    db = FakeDb([note(now - timedelta(minutes=5), "Today we studied enzymes.")])
 
     fake_repository.candidates = [
         question("What are mammals?", "mammals"),
@@ -127,9 +121,7 @@ async def test_no_supported_question_abstains(fake_repository):
 async def test_can_choose_question_on_later_candidate_page(fake_repository):
     now = datetime(2026, 11, 23, 12, 0, tzinfo=UTC)
     session = SimpleNamespace(session_id=uuid4())
-    db = FakeDb([
-        note(now - timedelta(minutes=2), "Enzyme inhibition was discussed.")
-    ])
+    db = FakeDb([note(now - timedelta(minutes=2), "Enzyme inhibition was discussed.")])
 
     unrelated = [question("What are mammals?", "mammals") for _ in range(100)]
     matched = question("What is enzyme inhibition?", "enzyme")

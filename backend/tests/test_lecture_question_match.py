@@ -1,4 +1,4 @@
-﻿from app.services.lecture_question_match import supported_by_recent_lecture
+from app.services.lecture_question_match import supported_by_recent_lecture
 
 
 def test_enzyme_question_is_eligible_after_enzyme_teaching():

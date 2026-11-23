@@ -978,9 +978,7 @@ class Classroom:
 
                 question_id = await choose_recent_question(db, row, _now())
                 delivered = (
-                    await self.deliver(db, row, question_id)
-                    if question_id is not None
-                    else None
+                    await self.deliver(db, row, question_id) if question_id is not None else None
                 )
             else:
                 delivered = await self.deliver(db, row)

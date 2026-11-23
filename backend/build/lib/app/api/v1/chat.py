@@ -1,0 +1,139 @@
+"""The tutor's chat route.
+
+Owner: General CS, Phase 5.
+
+A student in a session asks the tutor a question and reads the reply as it is
+written. The reply is NDJSON, one event to a line, which is what the student
+panel's chatProtocol.ts parses. Closing the connection is how a student
+stops a reply: the server notices, and the model is stopped with it.
+
+Everything that can refuse the request does so before the reply starts, with
+an ordinary error response: who is asking, whether they belong to the
+session, whether they have consented, and whether they are asking too often.
+Once the stream is open, a problem is an event on it.
+"""
+
+from __future__ import annotations
+
+from uuid import UUID
+
+from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
+
+from app.api.deps import CurrentUser, DbSession, require_consents, require_roles
+from app.core.errors import NotFoundError, PermissionError_
+from app.realtime.classroom import classroom
+from app.schemas.chat import ChatRequest
+from app.schemas.identity import ConsentType, Role
+from app.schemas.session import SessionStatus
+from app.services import discussion, session_lifecycle, tutor_chat
+from app.services.tutor_guardrails import EarlierTurn
+
+router = APIRouter(
+    prefix="/sessions",
+    tags=["chat"],
+    dependencies=[
+        Depends(require_consents(ConsentType.TERMS)),
+        # The tutor is the students'. Staff reach a session through its
+        # controls, and have the material itself.
+        Depends(require_roles(Role.STUDENT)),
+    ],
+)
+
+_EVENTS = (
+    "One JSON object per line, each with `type` and `request_id`. `accepted` comes "
+    "first. Then either `delta` events carrying `text`, `citation` events carrying a "
+    "`citation` (`id`, `material_title`, `source_page`, `source_slide`, `excerpt`, "
+    "optional `number`, `source_note_id` for discussion notes, and `source_session_id` for "
+    "revision sources), "
+    "`follow_up` events carrying a `prompt`, and `completed`; or one of `unsupported` "
+    "(with a `reason`), `empty_retrieval` and `error` (with a `detail`)."
+)
+
+
+@router.post(
+    "/{session_id}/chat",
+    response_class=StreamingResponse,
+    responses={
+        200: {"description": _EVENTS, "content": {tutor_chat.NDJSON: {}}},
+        404: {"description": "No such session, or the student does not belong to it."},
+        409: {"description": "The tutor is still answering this student's last question."},
+        429: {"description": "The student is asking too often."},
+    },
+)
+async def session_chat(
+    session_id: UUID,
+    payload: ChatRequest,
+    principal: CurrentUser,
+    db: DbSession,
+) -> StreamingResponse:
+    """Ask about session materials or lecturer-published discussion minutes.
+
+    The reply streams as it is written. To stop it, close the connection.
+    """
+    if payload.source == "discussion":
+        live = await discussion.accessible_session(
+            db, session_id, principal.user_id, principal.role
+        )
+    else:
+        live = await session_lifecycle.joinable_session(
+            db, principal.user_id, principal.role, session_id
+        )
+        if live is None:
+            # Review tutoring uses the same current-membership check as discussion.
+            # Prepared/cancelled sessions do not gain access through this fallback.
+            try:
+                ended = await discussion.accessible_session(
+                    db, session_id, principal.user_id, principal.role
+                )
+            except NotFoundError:
+                ended = None
+            live = ended if ended is not None and ended.status == "ended" else None
+    if live is None:
+        # A session that does not exist and one the student is not enrolled
+        # for are refused alike, so a session id cannot be probed.
+        raise NotFoundError("Session was not found.", {"session_id": str(session_id)})
+    if principal.role is Role.STUDENT and not getattr(live, "ai_learning_assistant", False):
+        raise PermissionError_(
+            "Your lecturer has turned the learning assistant off for this class.",
+            {"session_id": str(session_id), "reason": "learning_assistant_off"},
+        )
+
+    open_question_id = classroom.state(session_id, SessionStatus(live.status)).active_question_id
+    context = await tutor_chat.prepare(db, live, principal.user_id, open_question_id)
+    if payload.source == "discussion":
+        context = await tutor_chat.with_discussion(
+            db, context, payload.discussion_since, payload.discussion_until
+        )
+    earlier = [EarlierTurn(question=turn.question, answer=turn.answer) for turn in payload.history]
+    # Authorization and context checks precede admission. Revision source
+    # lookups can span many lessons, so admit before starting that work.
+    limiter = tutor_chat.get_chat_limiter()
+    limiter.admit(principal.user_id)
+    try:
+        revision = (
+            await tutor_chat.prepare_revision(db, principal.user_id, payload.question, earlier)
+            if payload.source == "materials" and live.status == SessionStatus.ENDED.value
+            else None
+        )
+        # Return the connection before streaming the copied context.
+        await db.close()
+    except BaseException:
+        # A failed or cancelled preparation never reaches the stream's cleanup.
+        limiter.finish(principal.user_id)
+        raise
+
+    return StreamingResponse(
+        tutor_chat.TutorExchange(context).lines(
+            payload.request_id,
+            payload.question,
+            earlier,
+            revision=revision,
+        ),
+        media_type=tutor_chat.NDJSON,
+        headers={
+            "Cache-Control": "no-store",
+            # Tells a proxy not to hold the reply back until it is complete.
+            "X-Accel-Buffering": "no",
+        },
+    )

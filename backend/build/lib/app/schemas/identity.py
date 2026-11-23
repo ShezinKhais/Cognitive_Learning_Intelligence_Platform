@@ -1,0 +1,110 @@
+"""Identity, consent and administration contracts.
+
+Owners: authentication and RBAC (Cyber 1). Administrator console (Cyber 2).
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from enum import StrEnum
+from typing import Literal
+from uuid import UUID
+
+from pydantic import BaseModel, EmailStr, Field
+
+
+class Role(StrEnum):
+    STUDENT = "student"
+    LECTURER = "lecturer"
+    ADMIN = "admin"
+
+
+class ConsentType(StrEnum):
+    """Granular. Declining one must never block the others, and declining
+    camera or microphone must never lower an engagement score."""
+
+    TERMS = "terms"
+    ENGAGEMENT_MONITORING = "engagement_monitoring"
+    CAMERA = "camera"
+    MICROPHONE = "microphone"
+
+
+# Far past any real password; it only stops a megabyte being hashed.
+MAX_PASSWORD_LENGTH = 1024
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(max_length=MAX_PASSWORD_LENGTH)
+
+
+# Long enough that a guessed password is not the easy way in, with no rules
+# about character classes, which push people to predictable patterns.
+MIN_NEW_PASSWORD_LENGTH = 12
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(max_length=MAX_PASSWORD_LENGTH)
+    new_password: str = Field(min_length=MIN_NEW_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
+
+
+class TeamsSignInRequest(BaseModel):
+    # An Entra access token from TeamsJS authentication.getAuthToken().
+    token: str = Field(min_length=1, max_length=16384)
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"
+    expires_in: int
+    role: Role
+
+
+class UserOut(BaseModel):
+    id: UUID
+    email: EmailStr
+    full_name: str
+    role: Role
+    consents: list[ConsentType] = Field(default_factory=list)
+
+
+class ConsentRequest(BaseModel):
+    consent_type: ConsentType
+    granted: bool
+
+
+class ConsentOut(BaseModel):
+    consent_type: ConsentType
+    granted: bool
+    recorded_at: datetime
+
+
+class ImportRow(BaseModel):
+    row: int
+    course_code: str
+    account: str
+    detail: str
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    room: str | None = None
+
+
+class TimetableImportResult(BaseModel):
+    """Result of an administrator uploading a timetable CSV or XLSX.
+
+    CSV and XLSX are parsed as structured data. There is no OCR path, because a
+    misread digit would silently assign a student to the wrong session.
+    """
+
+    rows_read: int
+    sessions_created: int
+    conflicts: list[str] = Field(default_factory=list)
+    unmatched_lecturers: list[str] = Field(default_factory=list)
+    unmatched_students: list[str] = Field(default_factory=list)
+    sessions_to_create: int = 0
+    courses_changed: int = 0
+    new_course_codes: list[str] = Field(default_factory=list)
+    memberships_changed: int = 0
+    applied: bool = False
+    preview_token: str | None = None
+    rows: list[ImportRow] = Field(default_factory=list)

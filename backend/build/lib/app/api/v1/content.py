@@ -1,0 +1,415 @@
+"""Lecture material and question routes.
+
+Contract frozen in Phase 1. Handler bodies are owned by:
+  AI 1:     upload processing, extraction, question generation
+  Cyber 1:  upload security validation
+  Cyber 2:  review actions
+  BBIS:     persistence and queries
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Request, UploadFile, status
+
+from app.api.deps import (
+    AppSettings,
+    CurrentUser,
+    DbSession,
+    Paginated,
+    require_consents,
+    require_roles,
+)
+from app.core.audit import audit_action
+from app.core.errors import ConflictError, NotFoundError, ValidationError
+from app.repositories.material_repository import MaterialRepository
+from app.repositories.question_repository import QuestionRepository
+from app.schemas.common import Page
+from app.schemas.content import (
+    MaterialOut,
+    MaterialStatus,
+    MaterialUpdateRequest,
+    QuestionBulkReviewRequest,
+    QuestionBulkReviewResult,
+    QuestionCreateRequest,
+    QuestionOut,
+    QuestionReviewRequest,
+)
+from app.schemas.identity import ConsentType, Role
+from app.services import question_bank
+from app.services.extraction import CONTENT_TYPES
+from app.services.material_edits import (
+    course_codes,
+    delete_material,
+    remove_stored_file,
+    update_material,
+)
+from app.services.material_pages import page_previews
+from app.services.question_ownership import filter_owned_questions, get_owned_question
+from app.services.regeneration import regenerate
+from app.services.source_labels import source_label
+from app.services.uploads import accept_upload, get_material_storage, get_question_generator
+
+# Every route here, the review actions included, is lecturer and admin work,
+# so the role guard sits on the router. Ownership narrows a lecturer down to
+# the material they uploaded on top of this, for materials and their
+# questions alike; neither check alone is enough -- role without ownership
+# would let any lecturer touch any other lecturer's questions, and ownership
+# without role would let a user who uploaded material keep acting on it
+# after their role changed away from lecturer.
+router = APIRouter(
+    prefix="/materials",
+    tags=["content"],
+    dependencies=[
+        Depends(require_roles(Role.LECTURER, Role.ADMIN)),
+        # The same terms gate /sessions and /admin enforce. The lecturer pages
+        # redirect to /consent first, but that is the frontend's courtesy, not
+        # a control: without this an unconsented token uploaded with a 202.
+        Depends(require_consents(ConsentType.TERMS)),
+    ],
+)
+
+
+def _to_question_out(question) -> QuestionOut:  # noqa: ANN001 - app.models.Question
+    return QuestionOut(
+        id=question.question_id,
+        material_id=question.source_material_id,
+        type=question.question_type,
+        status=question.status,
+        difficulty=question.difficulty,
+        prompt=question.question_text,
+        options=question.options,
+        correct_option=question.correct_option,
+        topic=question.topic,
+        reference_answer=question.reference_answer,
+        key_points=question.key_points,
+        source_slide=question.source_slide,
+        source_excerpt=question.source_excerpt,
+    )
+
+
+@router.post("", response_model=MaterialOut, status_code=status.HTTP_202_ACCEPTED)
+async def upload_material(file: UploadFile, principal: CurrentUser) -> MaterialOut:
+    """Accepts PDF, PPTX, DOCX or TXT.
+
+    Returns 202 immediately after the uploaded file passes security validation.
+    Processing then runs in the background and reports progress over the
+    WebSocket as `material.progress` events.
+    """
+    stored = await accept_upload(file, principal.user_id)
+
+    # Built from what the request knows. The row was written under this id
+    # before the job was queued; its counts stay null until processing ends.
+    return MaterialOut(
+        id=stored.material_id,
+        filename=stored.filename,
+        # The type of what was stored, decided by the validated extension. The
+        # client's Content-Type header is whatever the browser chose to send.
+        content_type=CONTENT_TYPES[stored.extension],
+        size_bytes=stored.size_bytes,
+        status=MaterialStatus.PENDING,
+        uploaded_at=datetime.now(UTC),
+    )
+
+
+@router.get(
+    "",
+    response_model=Page[MaterialOut],
+    dependencies=[
+        Depends(require_roles(Role.LECTURER, Role.ADMIN)),
+    ],
+)
+async def list_materials(
+    principal: CurrentUser,
+    db: DbSession,
+    page: Paginated,
+) -> Page[MaterialOut]:
+    uploaded_by_user_id = None if principal.is_(Role.ADMIN) else principal.user_id
+    repository = MaterialRepository(db)
+    materials, total = await repository.list_page(
+        limit=page.limit,
+        offset=page.offset,
+        uploaded_by_user_id=uploaded_by_user_id,
+    )
+
+    codes = await course_codes(db, {m.course_id for m in materials if m.course_id})
+    return Page[MaterialOut](
+        items=[_material_out(material, codes) for material in materials],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
+
+
+@router.get(
+    "/{material_id}",
+    response_model=MaterialOut,
+    dependencies=[
+        Depends(require_roles(Role.LECTURER, Role.ADMIN)),
+    ],
+)
+async def get_material(
+    material_id: UUID,
+    principal: CurrentUser,
+    db: DbSession,
+) -> MaterialOut:
+    uploaded_by_user_id = None if principal.is_(Role.ADMIN) else principal.user_id
+    repository = MaterialRepository(db)
+    material = await repository.get_by_id(
+        material_id,
+        uploaded_by_user_id=uploaded_by_user_id,
+    )
+
+    if material is None:
+        raise NotFoundError(
+            "Material was not found.",
+            {"material_id": str(material_id)},
+        )
+
+    # The page preview is only on the single-material read. Built for every
+    # row of a list it would load the full text of every upload a lecturer has.
+    pages = page_previews(
+        await repository.list_elements(material.id),
+        sections=source_label(material.filename) == "Section",
+    )
+    codes = await course_codes(db, {material.course_id} if material.course_id else set())
+    return _material_out(material, codes).model_copy(update={"pages": pages})
+
+
+def _material_out(material, codes: dict[UUID, str]) -> MaterialOut:  # noqa: ANN001 - app.models.Material
+    return MaterialOut.model_validate(material, from_attributes=True).model_copy(
+        update={"course_code": codes.get(material.course_id) if material.course_id else None}
+    )
+
+
+@router.patch("/{material_id}", response_model=MaterialOut)
+@audit_action("MATERIAL_UPDATED")
+async def edit_material(
+    material_id: UUID,
+    payload: MaterialUpdateRequest,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> MaterialOut:
+    """Rename a material, or file it under a course: its questions are then
+    offered only to that course's sessions. Send course_code as null to file
+    it under none."""
+    material = await update_material(
+        db,
+        principal,
+        material_id,
+        filename=payload.filename,
+        course_code=payload.course_code,
+        set_course="course_code" in payload.model_fields_set,
+    )
+    await db.commit()
+    codes = await course_codes(db, {material.course_id} if material.course_id else set())
+    return _material_out(material, codes)
+
+
+@router.delete("/{material_id}", status_code=status.HTTP_204_NO_CONTENT)
+@audit_action("MATERIAL_DELETED")
+async def remove_material(
+    material_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> None:
+    """Delete a material with its questions and what was read from it.
+    Refused (409) while it is still processing, or once any of its questions
+    has been delivered in a class, whose history it is."""
+    storage = get_material_storage()
+    await delete_material(db, principal, material_id, storage)
+    await db.commit()
+    await remove_stored_file(storage, material_id)
+
+
+@router.get("/{material_id}/questions", response_model=Page[QuestionOut])
+async def list_questions(
+    material_id: UUID,
+    principal: CurrentUser,
+    db: DbSession,
+    page: Paginated,
+) -> Page[QuestionOut]:
+    """The review queue for a material.
+
+    Lecturer/admin only, same as the mutation routes --
+    QuestionOut carries correct_option, which must never reach a student or
+    a lecturer who didn't upload this material. A lecturer sees only their
+    own; an admin sees everything.
+    """
+    repo = QuestionRepository(db)
+    questions, total = await repo.list_owned_by_material(
+        material_id,
+        principal.user_id,
+        is_admin=principal.role == Role.ADMIN,
+        limit=page.limit,
+        offset=page.offset,
+    )
+    return Page(
+        items=[_to_question_out(q) for q in questions],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )
+
+
+@router.patch("/{material_id}/questions/{question_id}", response_model=QuestionOut)
+@audit_action("QUESTION_REVIEWED")
+async def review_question(
+    material_id: UUID,
+    question_id: UUID,
+    payload: QuestionReviewRequest,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> QuestionOut:
+    """Approve, edit or reject a generated question. No question reaches a
+    student without passing through here.
+    """
+    # A lecturer may only act on questions from material they uploaded that
+    # belong to material_id; admins may act on any question. A question that
+    # exists but belongs to a different material is rejected the same way a
+    # nonexistent question is -- see app.services.question_ownership for
+    # why. Invalid status transitions (e.g. skipping straight to
+    # delivered, or editing a staged/delivered question) are rejected by
+    # the repository with a 409; see QuestionRepository.apply_review.
+    repo = QuestionRepository(db)
+    question = await get_owned_question(question_id, principal, repo, material_id=material_id)
+
+    updated = await repo.apply_review(
+        question,
+        status=payload.status.value,
+        reviewer_id=principal.user_id,
+        prompt=payload.prompt,
+        options=payload.options,
+        correct_option=payload.correct_option,
+        difficulty=payload.difficulty.value if payload.difficulty else None,
+    )
+
+    return _to_question_out(updated)
+
+
+@router.post(
+    "/{material_id}/questions",
+    response_model=QuestionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+@audit_action("QUESTION_WRITTEN")
+async def write_question(
+    material_id: UUID,
+    payload: QuestionCreateRequest,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> QuestionOut:
+    """Add a question of the lecturer's own to one of their materials. It is
+    ready to send straight away."""
+    return _to_question_out(await question_bank.write_question(db, principal, material_id, payload))
+
+
+@router.post(
+    "/{material_id}/questions/{question_id}:reuse",
+    response_model=QuestionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+@audit_action("QUESTION_REUSED")
+async def reuse_question(
+    material_id: UUID,
+    question_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> QuestionOut:
+    """Stage a copy of a question that has been asked, for another class
+    (409 for one that has not been asked)."""
+    repo = QuestionRepository(db)
+    question = await get_owned_question(question_id, principal, repo, material_id=material_id)
+    return _to_question_out(await question_bank.reuse_question(db, principal, question))
+
+
+@router.post(
+    "/{material_id}/questions/{question_id}:regenerate",
+    response_model=QuestionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+@audit_action("QUESTION_REGENERATED")
+async def regenerate_question(
+    material_id: UUID,
+    question_id: UUID,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> QuestionOut:
+    """Replace a draft question with a newly generated one from the same page.
+
+    The draft is rejected rather than deleted and the replacement is returned
+    as a new draft. Refused with 409 for a question that is not a draft, and
+    503 when the generator is unavailable or returns nothing usable.
+    """
+    repo = QuestionRepository(db)
+    question = await get_owned_question(question_id, principal, repo, material_id=material_id)
+    replacement = await regenerate(question, principal.user_id, db, get_question_generator())
+    return _to_question_out(replacement)
+
+
+@router.post("/{material_id}/questions:bulk", response_model=QuestionBulkReviewResult)
+@audit_action("QUESTIONS_BULK_REVIEWED")
+async def bulk_review_questions(
+    material_id: UUID,
+    payload: QuestionBulkReviewRequest,
+    principal: CurrentUser,
+    request: Request,
+    settings: AppSettings,
+    db: DbSession,
+) -> QuestionBulkReviewResult:
+    """Backs the 'approve all' and 'stage N questions' actions."""
+    # Same ownership and material-scoping rule as review_question, applied
+    # per question. A question that is unowned, belongs to a different
+    # material, or whose current status doesn't allow the requested
+    # transition, is skipped rather than failing the whole batch -- one
+    # stale or reassigned row should not block the rest of a bulk action.
+    # Every skipped id is reported back in skipped_ids rather than silently
+    # dropped, so a lecturer can tell "all N approved" from "N approved, M
+    # skipped" instead of a response that looks identical either way.
+    repo = QuestionRepository(db)
+    owned, rejected = await filter_owned_questions(
+        payload.question_ids, principal, repo, material_id=material_id
+    )
+
+    updated = []
+    skipped_ids = list(rejected)
+    for question in owned:
+        try:
+            updated.append(
+                await repo.apply_review(
+                    question,
+                    status=payload.status.value,
+                    reviewer_id=principal.user_id,
+                    flush=False,
+                )
+            )
+        except (ConflictError, ValidationError):
+            # A bad transition or a malformed answer key on one question
+            # must not fail the rest of the batch -- same treatment as an
+            # unowned or wrong-material id, for the same reason: "approve
+            # all" is one convenient action, not an all-or-nothing
+            # transaction that one stale or malformed row can block.
+            skipped_ids.append(question.question_id)
+
+    # One write for the whole batch. Every check above runs before any field
+    # changes, so a skipped question was never modified.
+    await db.flush()
+
+    return QuestionBulkReviewResult(
+        updated=[_to_question_out(q) for q in updated],
+        skipped_ids=skipped_ids,
+    )

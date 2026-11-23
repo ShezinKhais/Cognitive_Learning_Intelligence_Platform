@@ -1,0 +1,68 @@
+"""The Teams bot's messaging endpoint.
+
+Owner: General CS, Phase 4. Teams authenticates with a Bot Framework token,
+not a C.L.I.P one, so this router sits outside the bearer and consent
+guards the other routes use. Without Teams credentials it refuses every
+activity; the meeting routes are the fallback.
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Request
+
+from app.api.deps import AppSettings, DbSession
+from app.core.errors import ServiceUnavailableError
+from app.schemas.meetings import TeamsActivity
+from app.services import teams_bot, teams_replies
+from app.services.teams_notifications import checkpoint_dialog_for, remember_reference
+
+router = APIRouter(prefix="/teams", tags=["teams"])
+
+
+@lru_cache
+def _authenticator(app_id: str, tenant_id: str) -> teams_bot.BotAuthenticator:
+    return teams_bot.BotAuthenticator(app_id, tenant_id)
+
+
+class TeamsNotConfiguredError(ServiceUnavailableError):
+    """Expected until the tenant exists, so logged as one line, not a trace."""
+
+    log_traceback = False
+
+
+async def get_bot_authenticator(settings: AppSettings) -> teams_bot.BotAuthenticator:
+    if not settings.teams_configured:
+        raise TeamsNotConfiguredError(
+            "Teams is not configured. Send meeting events to /api/v1/meetings/events."
+        )
+    return _authenticator(settings.client_id, settings.tenant_id)
+
+
+@router.post("/messages", response_model=None)
+async def bot_messages(
+    activity: TeamsActivity,
+    request: Request,
+    db: DbSession,
+    settings: AppSettings,
+    authenticator: Annotated[teams_bot.BotAuthenticator, Depends(get_bot_authenticator)],
+) -> dict | None:
+    """Receive an activity from Teams. Meeting starts and ends are applied to
+    the linked session; a message gets a short reply; everything else is
+    acknowledged. An activity from any other Bot Framework channel, or from
+    another organisation, is refused."""
+    await authenticator.verify(
+        request.headers.get("Authorization"), activity.service_url, activity.channel_id
+    )
+    authenticator.authorize(activity)
+    if activity.type == "invoke" and activity.name == "task/fetch":
+        # "Answer now" on a checkpoint card: Teams opens the dialog this
+        # returns over the meeting, so the student never leaves the lecture.
+        return checkpoint_dialog_for(getattr(activity, "value", None), settings) or {}
+    # Before the activity is applied, so a refusal there still leaves the
+    # meeting reachable for checkpoint notifications.
+    await remember_reference(db, activity, settings)
+    await teams_bot.handle_activity(db, activity, settings)
+    await teams_replies.answer(db, activity, settings)

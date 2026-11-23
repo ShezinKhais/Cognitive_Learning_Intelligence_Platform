@@ -15,9 +15,7 @@ from scripts import prepare_live_speech
         ("multilingual", "Systran/faster-whisper-base"),
     ],
 )
-def test_preparation_downloads_selected_pinned_model(
-    monkeypatch, tmp_path, choice, model
-):
+def test_preparation_downloads_selected_pinned_model(monkeypatch, tmp_path, choice, model):
     calls = []
 
     def fake_download(*args, **kwargs):
@@ -53,9 +51,7 @@ def test_default_remains_english(monkeypatch, tmp_path):
         "huggingface_hub",
         SimpleNamespace(snapshot_download=lambda *a, **k: calls.append(a)),
     )
-    monkeypatch.setattr(
-        sys, "argv", ["prepare_live_speech.py", "--output", str(tmp_path)]
-    )
+    monkeypatch.setattr(sys, "argv", ["prepare_live_speech.py", "--output", str(tmp_path)])
 
     prepare_live_speech.main()
 
