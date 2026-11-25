@@ -66,7 +66,7 @@ export function SocraticChatPanel({
   return (
     <section
       aria-labelledby={headingId}
-      className={`mx-auto flex w-full flex-col ${compact ? 'min-h-[36rem]' : 'min-h-[42rem]'} rounded-xl border border-border bg-card shadow-[var(--shadow-card)]`}
+      className={`mx-auto flex w-full flex-col ${compact ? 'min-h-[20rem] sm:min-h-[30rem]' : 'min-h-[42rem]'} rounded-xl border border-border bg-card shadow-[var(--shadow-card)]`}
     >
       <header className="border-b border-border p-4 sm:p-5">
         <div className="flex items-center gap-3">
