@@ -226,6 +226,9 @@ class Graph:
 class MeetingWatch:
     def __init__(self) -> None:
         self.installed: dict[str, float] = {}
+        # Installed but the tab not pinned yet: whether the lecturer is still
+        # owed the notice, and when it was first tried.
+        self.unfinished: dict[str, tuple[bool, float]] = {}
         self.catalog: str | None = None
         self.task: asyncio.Task | None = None
 
@@ -257,6 +260,11 @@ class MeetingWatch:
         now = time.monotonic()
         self.installed = {
             thread: at for thread, at in self.installed.items() if now - at < REMEMBER_SECONDS
+        }
+        self.unfinished = {
+            thread: left
+            for thread, left in self.unfinished.items()
+            if now - left[1] < REMEMBER_SECONDS
         }
 
     async def sweep(
@@ -318,27 +326,39 @@ class MeetingWatch:
     ) -> bool:
         if meeting.thread in self.installed:
             return False
-        known = await db.scalar(
-            select(TeamsMeetingReference.meeting_id).where(
-                TeamsMeetingReference.meeting_id == meeting_id_for_thread(meeting.thread)
-            )
-        )
-        if known is not None:
-            # Added by hand, or by an earlier process.
-            self.installed[meeting.thread] = time.monotonic()
-            return False
         assert self.catalog is not None
-        try:
-            fresh = await graph.install(meeting.thread, self.catalog)
-        except httpx.HTTPError as exc:
-            status = getattr(getattr(exc, "response", None), "status_code", None)
-            log.info("C.L.I.P not installed in a meeting yet (%s)", status or type(exc).__name__)
-            return False
-        self.installed[meeting.thread] = time.monotonic()
+        left = self.unfinished.pop(meeting.thread, None)
+        if left is None:
+            known = await db.scalar(
+                select(TeamsMeetingReference.meeting_id).where(
+                    TeamsMeetingReference.meeting_id == meeting_id_for_thread(meeting.thread)
+                )
+            )
+            if known is not None:
+                # Added by hand, or by an earlier process.
+                self.installed[meeting.thread] = time.monotonic()
+                return False
+            try:
+                fresh = await graph.install(meeting.thread, self.catalog)
+            except httpx.HTTPError as exc:
+                status = getattr(getattr(exc, "response", None), "status_code", None)
+                log.info(
+                    "C.L.I.P not installed in a meeting yet (%s)", status or type(exc).__name__
+                )
+                return False
+            first_tried = time.monotonic()
+        else:
+            # The install worked on an earlier sweep but the tab did not. The
+            # bot has usually heard from the chat by now, so the reference
+            # check above would wrongly call this meeting done.
+            fresh, first_tried = left
         try:
             await graph.pin_tab(meeting.thread, self.catalog, settings.teams_app_base_url)
         except (httpx.HTTPError, ValueError) as exc:
             log.warning("the C.L.I.P tab was not pinned in a meeting: %s", type(exc).__name__)
+            self.unfinished[meeting.thread] = (fresh, first_tried)
+            return False
+        self.installed[meeting.thread] = time.monotonic()
         if fresh:
             code = course_in_title(meeting.subject, codes)
             try:

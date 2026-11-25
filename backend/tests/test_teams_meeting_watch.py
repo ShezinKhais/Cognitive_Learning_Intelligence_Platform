@@ -101,6 +101,7 @@ class _Graph:
         self.tabs: list[str] = []
         self.notices: list[tuple[str, str, str]] = []
         self.calendars: list[str] = []
+        self.tab_fails = False
 
     async def calendar(self, user, start, end):  # noqa: ANN001, ANN201
         self.calendars.append(user)
@@ -120,6 +121,11 @@ class _Graph:
         return fresh
 
     async def pin_tab(self, thread, catalog, base):  # noqa: ANN001, ANN201
+        if self.tab_fails:
+            request = httpx.Request("POST", "https://graph.example/tabs")
+            raise httpx.HTTPStatusError(
+                "refused", request=request, response=httpx.Response(500, request=request)
+            )
         self.tabs.append(thread)
 
     async def notify(self, thread, user, subject, text, link):  # noqa: ANN001, ANN201
@@ -223,3 +229,32 @@ async def test_an_install_already_there_is_not_announced_again(lecturer) -> None
     assert await MeetingWatch().sweep(lecturer["settings"], graph, None, lecturer["factory"]) == 0
     assert graph.notices == []
     assert graph.tabs == [thread]
+
+
+async def test_a_tab_that_failed_is_pinned_on_the_next_sweep(lecturer) -> None:
+    """Installed but not pinned is not done, even once the bot knows the meeting."""
+    thread = _thread()
+    graph = _Graph({lecturer["aad"]: [_event(thread)]})
+    graph.tab_fails = True
+    watch = MeetingWatch()
+    assert await watch.sweep(lecturer["settings"], graph, None, lecturer["factory"]) == 0
+    assert graph.installed == [thread] and graph.tabs == [] and graph.notices == []
+
+    # The bot hears from the new chat and keeps a reference, as it does live.
+    async with lecturer["factory"]() as seed:
+        seed.add(
+            TeamsMeetingReference(
+                meeting_id=meeting_id_for_thread(thread),
+                service_url="https://smba.trafficmanager.net/emea/",
+                conversation_id=thread,
+                tenant_id=lecturer["settings"].tenant_id,
+            )
+        )
+        await seed.commit()
+    graph.tab_fails = False
+    assert await watch.sweep(lecturer["settings"], graph, None, lecturer["factory"]) == 1
+    assert graph.installed == [thread] and graph.tabs == [thread]
+    assert len(graph.notices) == 1
+
+    assert await watch.sweep(lecturer["settings"], graph, None, lecturer["factory"]) == 0
+    assert len(graph.tabs) == 1 and len(graph.notices) == 1
