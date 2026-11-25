@@ -128,3 +128,71 @@ async def test_notes_publish_live_persist_after_end_and_respect_course_access(db
         await sql.execute(delete(Session).where(Session.session_id == UUID(session_id)))
         await sql.commit()
         assert await sql.get(DiscussionNote, UUID(note_id)) is None
+
+
+def test_broad_recaps_are_chronological_across_session():
+    now = datetime.now(UTC)
+    notes = tuple(
+        DiscussionSource(
+            uuid4(),
+            now + timedelta(minutes=index),
+            f"Topic {index} discussed in class.",
+        )
+        for index in range(12)
+    )
+    result = discussion_chunks(notes, "What happened in class?", 4)
+    assert len(result) == 4
+    assert [chunk.chunk_id for chunk in result] == [
+        notes[index].note_id for index in (0, 4, 7, 11)
+    ]
+
+
+def test_arabic_recap_preserves_chronological_evidence():
+    now = datetime.now(UTC)
+    notes = (
+        DiscussionSource(
+            uuid4(), now,
+            "شرح قواعد البيانات",
+        ),
+        DiscussionSource(
+            uuid4(), now + timedelta(minutes=5),
+            "شرح الشبكات",
+        ),
+    )
+    question = "ماذا حدث في المحاضرة؟"
+    result = discussion_chunks(notes, question, 6)
+    assert [chunk.chunk_id for chunk in result] == [
+        note.note_id for note in notes
+    ]
+
+def test_arabic_topic_retrieval_finds_matching_notes():
+    now = datetime.now(UTC)
+    notes = (
+        DiscussionSource(
+            uuid4(), now,
+            "شرح الشبكات",
+        ),
+        DiscussionSource(
+            uuid4(), now + timedelta(minutes=1),
+            "شرح قواعد البيانات",
+        ),
+    )
+    question = "قواعد البيانات"
+    result = discussion_chunks(notes, question, 6)
+    assert len(result) == 1
+    assert result[0].chunk_id == notes[1].note_id
+
+def test_empty_catchup_has_no_fabricated_sources():
+    assert discussion_chunks((), "What happened?", 6) == []
+
+
+def test_recent_recap_keeps_latest_evidence_in_order():
+    now = datetime.now(UTC)
+    notes = tuple(
+        DiscussionSource(uuid4(), now + timedelta(minutes=i), f"Topic {i}")
+        for i in range(8)
+    )
+    result = discussion_chunks(notes, "Recap the latest discussion", 3)
+    assert [chunk.chunk_id for chunk in result] == [
+        note.note_id for note in notes[-3:]
+    ]
