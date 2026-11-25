@@ -9,27 +9,28 @@ part for them:
 
 - Every few minutes it reads the coming days of each linked lecturer's
   calendar from Microsoft Graph (Calendars.Read), keeping only Teams
-  meetings they organise.
+  meetings they organise whose title names one of their courses. Staff
+  meetings, one-to-ones and anything else without a course code in its
+  title are left alone; a lecturer can still add C.L.I.P to one by hand.
 - It installs C.L.I.P into each such meeting's chat
   (TeamsAppInstallation.ReadWriteSelfForChat.All) and pins the C.L.I.P tab
   (TeamsTab.ReadWriteSelfForChat.All), so the meeting has the side panel for
   everyone and the bot hears the meeting start and people join.
-- It tells the lecturer in their Teams activity feed (TeamsActivity.Send):
-  the class it will run when the meeting's title names one of their
-  courses, or a question when it does not. The notice opens the C.L.I.P tab
-  in that meeting.
+- It tells the lecturer in their Teams activity feed (TeamsActivity.Send)
+  which class the meeting will run. The notice opens the C.L.I.P tab in that
+  meeting.
 
 Everything after that is what already happens once C.L.I.P is in a meeting
 (teams_meeting_flow): the meeting starting starts the class its title names,
-the organiser joining a meeting with no class is asked in a pop-up, and
-students joining a running class get C.L.I.P opened for them.
+and students joining a running class get C.L.I.P opened for them.
 
-Only meetings a C.L.I.P lecturer organises are touched, and only after
-their own account is linked to Teams. A meeting the bot already knows, or
-one installed into in this process, is not installed into again, so a
-restart costs one conflict per meeting at most. Each step is best effort:
-a meeting whose chat Teams has not created yet is tried again on the next
-sweep, and a failed notice is not retried.
+Progress is kept in teams_auto_join, written before the tab is pinned, so a
+restart resumes a half-finished meeting rather than losing it. A meeting
+whose tab is pinned is done and never touched again, so a lecturer who
+removes C.L.I.P from it keeps it removed. A meeting the bot already knows
+without a row was added by hand and is left alone. Each step is best
+effort: a meeting whose chat Teams has not created yet, or whose tab failed,
+is tried again on the next sweep, and a failed notice is not retried.
 
 The tenant's administrator grants the Graph permissions above as
 application permissions, with admin consent. Without them the sweep logs
@@ -42,7 +43,6 @@ import asyncio
 import contextlib
 import json
 import logging
-import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from urllib.parse import quote, urlencode
@@ -50,10 +50,12 @@ from uuid import UUID
 
 import httpx
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import Settings, get_settings
 from app.core.database import get_session_factory
 from app.core.errors import ClipError
+from app.models.teams_auto_join import TeamsAutoJoin
 from app.models.teams_meeting_reference import TeamsMeetingReference
 from app.models.teams_user_mapping import TeamsUserMapping
 from app.models.user import User
@@ -80,9 +82,9 @@ CHAT_PERMISSIONS = [
 TAB_ENTITY = "clip.meeting"
 TAB_NAME = "C.L.I.P"
 ACTIVITY_TYPE = "meetingReady"
-# A meeting installed into in this process is not tried again for this long.
-REMEMBER_SECONDS = 7 * 24 * 3600
 MAX_EVENTS = 100
+# Pages of calendar read per lecturer per sweep; 2,000 events at 100 a page.
+MAX_PAGES = 20
 
 
 @dataclass(frozen=True)
@@ -120,10 +122,8 @@ def tab_deep_link(app_id: str, thread: str) -> str:
     )
 
 
-def notice_text(subject: str, code: str | None) -> str:
-    if code:
-        return f"C.L.I.P is ready in {subject}. It runs as a {code} class when the meeting starts."
-    return f"C.L.I.P is ready in {subject}. Is it a class? Open C.L.I.P to set it up."
+def notice_text(subject: str, code: str) -> str:
+    return f"C.L.I.P is ready in {subject}. It runs as a {code} class when the meeting starts."
 
 
 class Graph:
@@ -144,11 +144,29 @@ class Graph:
                 "$top": str(MAX_EVENTS),
             },
         )
-        response.raise_for_status()
-        body = response.json()
-        return body.get("value", []) if isinstance(body, dict) else []
+        events: list = []
+        for _ in range(MAX_PAGES):
+            response.raise_for_status()
+            body = response.json()
+            if not isinstance(body, dict):
+                break
+            page = body.get("value")
+            events.extend(page if isinstance(page, list) else [])
+            following = body.get("@odata.nextLink")
+            # The bearer token goes only to Graph itself.
+            if not isinstance(following, str) or not following.startswith(f"{GRAPH}/"):
+                break
+            response = await self.client.get(following, headers=self.headers)
+        else:
+            log.warning("a lecturer's calendar has more than %d pages; the rest waits", MAX_PAGES)
+        return events
 
     async def catalog_id(self, external_id: str) -> str | None:
+        try:
+            external_id = str(UUID(external_id))
+        except ValueError:
+            log.warning("TEAMS_APP_ID is not a GUID, so the app catalog was not searched")
+            return None
         response = await self.client.get(
             f"{GRAPH}/appCatalogs/teamsApps",
             headers=self.headers,
@@ -225,10 +243,6 @@ class Graph:
 
 class MeetingWatch:
     def __init__(self) -> None:
-        self.installed: dict[str, float] = {}
-        # Installed but the tab not pinned yet: whether the lecturer is still
-        # owed the notice, and when it was first tried.
-        self.unfinished: dict[str, tuple[bool, float]] = {}
         self.catalog: str | None = None
         self.task: asyncio.Task | None = None
 
@@ -256,23 +270,11 @@ class MeetingWatch:
                 log.warning("Teams meeting sweep failed: %s", type(exc).__name__)
             await asyncio.sleep(settings.teams_auto_join_interval_seconds)
 
-    def _forget_old(self) -> None:
-        now = time.monotonic()
-        self.installed = {
-            thread: at for thread, at in self.installed.items() if now - at < REMEMBER_SECONDS
-        }
-        self.unfinished = {
-            thread: left
-            for thread, left in self.unfinished.items()
-            if now - left[1] < REMEMBER_SECONDS
-        }
-
     async def sweep(
         self, settings: Settings, graph: Graph, now: datetime | None = None, factory=None
     ) -> int:
         """Put C.L.I.P in the coming meetings of every linked lecturer.
         Returns how many meetings it was installed into."""
-        self._forget_old()
         if self.catalog is None:
             self.catalog = settings.teams_catalog_app_id or await graph.catalog_id(
                 settings.teams_app_id
@@ -324,19 +326,25 @@ class MeetingWatch:
         meeting: Meeting,
         codes: list[str],
     ) -> bool:
-        if meeting.thread in self.installed:
+        """Install and pin C.L.I.P in one class meeting. True when the
+        lecturer was told about it on this call."""
+        code = course_in_title(meeting.subject, codes)
+        if code is None:
+            # Not a class: never installed into automatically.
             return False
         assert self.catalog is not None
-        left = self.unfinished.pop(meeting.thread, None)
-        if left is None:
+        row = await db.get(TeamsAutoJoin, meeting.thread)
+        if row is not None and row.tab_pinned:
+            # Done before; if C.L.I.P was removed since, it stays removed.
+            return False
+        if row is None:
             known = await db.scalar(
                 select(TeamsMeetingReference.meeting_id).where(
                     TeamsMeetingReference.meeting_id == meeting_id_for_thread(meeting.thread)
                 )
             )
             if known is not None:
-                # Added by hand, or by an earlier process.
-                self.installed[meeting.thread] = time.monotonic()
+                # Added by hand: the lecturer set this meeting up themselves.
                 return False
             try:
                 fresh = await graph.install(meeting.thread, self.catalog)
@@ -346,21 +354,29 @@ class MeetingWatch:
                     "C.L.I.P not installed in a meeting yet (%s)", status or type(exc).__name__
                 )
                 return False
-            first_tried = time.monotonic()
-        else:
-            # The install worked on an earlier sweep but the tab did not. The
-            # bot has usually heard from the chat by now, so the reference
-            # check above would wrongly call this meeting done.
-            fresh, first_tried = left
+            row = TeamsAutoJoin(
+                chat_thread=meeting.thread,
+                tenant_id=settings.tenant_id,
+                tab_pinned=False,
+                notice_owed=fresh,
+            )
+            db.add(row)
+            try:
+                await db.commit()
+            except IntegrityError:
+                # Another worker got here first and carries it on.
+                await db.rollback()
+                return False
         try:
             await graph.pin_tab(meeting.thread, self.catalog, settings.teams_app_base_url)
         except (httpx.HTTPError, ValueError) as exc:
             log.warning("the C.L.I.P tab was not pinned in a meeting: %s", type(exc).__name__)
-            self.unfinished[meeting.thread] = (fresh, first_tried)
             return False
-        self.installed[meeting.thread] = time.monotonic()
-        if fresh:
-            code = course_in_title(meeting.subject, codes)
+        owed = row.notice_owed
+        row.tab_pinned = True
+        row.notice_owed = False
+        await db.commit()
+        if owed:
             try:
                 await graph.notify(
                     meeting.thread,
@@ -371,8 +387,8 @@ class MeetingWatch:
                 )
             except httpx.HTTPError as exc:
                 log.warning("the lecturer was not told about a meeting: %s", type(exc).__name__)
-        log.info("C.L.I.P is in a meeting a lecturer organises")
-        return fresh
+        log.info("C.L.I.P is in a class meeting a lecturer organises")
+        return owed
 
 
 watch = MeetingWatch()

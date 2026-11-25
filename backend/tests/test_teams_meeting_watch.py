@@ -19,11 +19,14 @@ from app.auth.store import LECTURER_ID, STUDENT_ID, get_consent_repository
 from app.core.config import Settings, get_settings
 from app.models.course import Course
 from app.models.course_enrollment import CourseLecturer
+from app.models.teams_auto_join import TeamsAutoJoin
 from app.models.teams_meeting_reference import TeamsMeetingReference
 from app.models.teams_user_mapping import TeamsUserMapping
 from app.schemas.identity import ConsentType
 from app.schemas.meetings import meeting_id_for_thread
 from app.services.teams_meeting_watch import (
+    GRAPH,
+    Graph,
     MeetingWatch,
     notice_text,
     tab_deep_link,
@@ -47,6 +50,10 @@ def _event(thread: str | None, subject: str = "Weekly catch-up", **changes) -> d
         "onlineMeeting": {"joinUrl": join} if join else None,
         **changes,
     }
+
+
+def _class(lecturer: dict, thread: str) -> dict:
+    return _event(thread, f"{lecturer['code']} Lecture")
 
 
 def _thread() -> str:
@@ -81,9 +88,45 @@ def test_the_notice_opens_the_clip_tab_in_that_meeting() -> None:
     assert context == {"chatId": thread, "contextType": "chat"}
 
 
-def test_the_notice_says_which_class_or_asks() -> None:
+def test_the_notice_says_which_class() -> None:
     assert "runs as a ZQ1234 class" in notice_text("ZQ1234 Week 5", "ZQ1234")
-    assert "Is it a class?" in notice_text("Catch-up", None)
+
+
+async def test_every_page_of_the_calendar_is_read_and_only_from_graph() -> None:
+    seen: list[str] = []
+    second = f"{GRAPH}/users/u/calendarView?$skiptoken=2"
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if "skiptoken=2" in str(request.url):
+            return httpx.Response(
+                200,
+                json={
+                    "value": [{"subject": "b"}],
+                    # A next page anywhere but Graph would be sent the token.
+                    "@odata.nextLink": "https://elsewhere.example/steal",
+                },
+            )
+        return httpx.Response(200, json={"value": [{"subject": "a"}], "@odata.nextLink": second})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(answer)) as client:
+        events = await Graph(client, "token").calendar("u", datetime.now(UTC), datetime.now(UTC))
+    assert [e["subject"] for e in events] == ["a", "b"]
+    assert len(seen) == 2 and not any("elsewhere" in url for url in seen)
+
+
+async def test_the_catalog_is_searched_only_for_a_guid() -> None:
+    seen: list[str] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(200, json={"value": [{"id": "catalog-1"}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(answer)) as client:
+        graph = Graph(client, "token")
+        assert await graph.catalog_id("x' or displayName ne 'y") is None
+        assert seen == []
+        assert await graph.catalog_id(APP_ID) == "catalog-1"
 
 
 def test_auto_join_needs_teams_notifications() -> None:
@@ -168,31 +211,33 @@ async def lecturer(db):  # noqa: ANN001, ANN201
         await cleanup.execute(
             delete(TeamsMeetingReference).where(TeamsMeetingReference.tenant_id == tenant)
         )
+        await cleanup.execute(delete(TeamsAutoJoin).where(TeamsAutoJoin.tenant_id == tenant))
         await cleanup.commit()
 
 
-async def test_clip_joins_the_lecturers_meetings_and_tells_them_once(lecturer) -> None:
+async def test_clip_joins_only_class_meetings_and_tells_the_lecturer_once(lecturer) -> None:
     named, other = _thread(), _thread()
     graph = _Graph({lecturer["aad"]: [_event(named, f"{lecturer['code']} Week 5"), _event(other)]})
     watch = MeetingWatch()
 
     assert (
-        await watch.sweep(lecturer["settings"], graph, datetime.now(UTC), lecturer["factory"]) == 2
+        await watch.sweep(lecturer["settings"], graph, datetime.now(UTC), lecturer["factory"]) == 1
     )
-    assert graph.installed == [named, other]
-    assert graph.tabs == [named, other]
-    texts = {thread: text for thread, _, text in graph.notices}
-    assert f"runs as a {lecturer['code']} class" in texts[named]
-    assert "Is it a class?" in texts[other]
-    assert {user for _, user, _ in graph.notices} == {lecturer["aad"]}
+    # A meeting without a course code (a staff meeting, a one-to-one) is untouched.
+    assert graph.installed == [named]
+    assert graph.tabs == [named]
+    assert len(graph.notices) == 1
+    thread, user, text = graph.notices[0]
+    assert thread == named and user == lecturer["aad"]
+    assert f"runs as a {lecturer['code']} class" in text
     # A student's calendar is never read.
     assert lecturer["student"] not in graph.calendars
 
-    # The next sweep leaves them alone.
+    # The next sweep leaves it alone.
     assert (
         await watch.sweep(lecturer["settings"], graph, datetime.now(UTC), lecturer["factory"]) == 0
     )
-    assert len(graph.installed) == 2 and len(graph.notices) == 2
+    assert len(graph.installed) == 1 and len(graph.notices) == 1
 
 
 async def test_a_meeting_clip_is_already_in_is_left_alone(lecturer) -> None:
@@ -207,14 +252,14 @@ async def test_a_meeting_clip_is_already_in_is_left_alone(lecturer) -> None:
             )
         )
         await seed.commit()
-    graph = _Graph({lecturer["aad"]: [_event(thread)]})
+    graph = _Graph({lecturer["aad"]: [_class(lecturer, thread)]})
     assert await MeetingWatch().sweep(lecturer["settings"], graph, None, lecturer["factory"]) == 0
     assert graph.installed == [] and graph.notices == []
 
 
 async def test_a_chat_teams_has_not_made_yet_is_tried_again(lecturer) -> None:
     thread = _thread()
-    graph = _Graph({lecturer["aad"]: [_event(thread)]}, chat_ready=False)
+    graph = _Graph({lecturer["aad"]: [_class(lecturer, thread)]}, chat_ready=False)
     watch = MeetingWatch()
     assert await watch.sweep(lecturer["settings"], graph, None, lecturer["factory"]) == 0
     graph.chat_ready = True
@@ -224,20 +269,20 @@ async def test_a_chat_teams_has_not_made_yet_is_tried_again(lecturer) -> None:
 
 async def test_an_install_already_there_is_not_announced_again(lecturer) -> None:
     thread = _thread()
-    graph = _Graph({lecturer["aad"]: [_event(thread)]})
+    graph = _Graph({lecturer["aad"]: [_class(lecturer, thread)]})
     graph.installed.append(thread)
     assert await MeetingWatch().sweep(lecturer["settings"], graph, None, lecturer["factory"]) == 0
     assert graph.notices == []
     assert graph.tabs == [thread]
 
 
-async def test_a_tab_that_failed_is_pinned_on_the_next_sweep(lecturer) -> None:
-    """Installed but not pinned is not done, even once the bot knows the meeting."""
+async def test_a_tab_that_failed_is_pinned_after_a_restart(lecturer) -> None:
+    """Installed but not pinned is not done, even after a restart and once the
+    bot knows the meeting."""
     thread = _thread()
-    graph = _Graph({lecturer["aad"]: [_event(thread)]})
+    graph = _Graph({lecturer["aad"]: [_class(lecturer, thread)]})
     graph.tab_fails = True
-    watch = MeetingWatch()
-    assert await watch.sweep(lecturer["settings"], graph, None, lecturer["factory"]) == 0
+    assert await MeetingWatch().sweep(lecturer["settings"], graph, None, lecturer["factory"]) == 0
     assert graph.installed == [thread] and graph.tabs == [] and graph.notices == []
 
     # The bot hears from the new chat and keeps a reference, as it does live.
@@ -252,9 +297,24 @@ async def test_a_tab_that_failed_is_pinned_on_the_next_sweep(lecturer) -> None:
         )
         await seed.commit()
     graph.tab_fails = False
-    assert await watch.sweep(lecturer["settings"], graph, None, lecturer["factory"]) == 1
+    # A new process: nothing carried over in memory.
+    restarted = MeetingWatch()
+    assert await restarted.sweep(lecturer["settings"], graph, None, lecturer["factory"]) == 1
     assert graph.installed == [thread] and graph.tabs == [thread]
     assert len(graph.notices) == 1
 
-    assert await watch.sweep(lecturer["settings"], graph, None, lecturer["factory"]) == 0
+    assert await restarted.sweep(lecturer["settings"], graph, None, lecturer["factory"]) == 0
     assert len(graph.tabs) == 1 and len(graph.notices) == 1
+
+
+async def test_clip_removed_from_a_meeting_by_hand_stays_removed(lecturer) -> None:
+    thread = _thread()
+    graph = _Graph({lecturer["aad"]: [_class(lecturer, thread)]})
+    assert await MeetingWatch().sweep(lecturer["settings"], graph, None, lecturer["factory"]) == 1
+
+    # The lecturer removes C.L.I.P from the meeting, then the backend restarts.
+    graph.installed.clear()
+    graph.tabs.clear()
+    assert await MeetingWatch().sweep(lecturer["settings"], graph, None, lecturer["factory"]) == 0
+    assert graph.installed == [] and graph.tabs == []
+    assert len(graph.notices) == 1

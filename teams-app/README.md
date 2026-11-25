@@ -194,13 +194,19 @@ it is one, and the meeting's link can still be pasted on the website. A
 short invitation link (`teams.microsoft.com/meet/<number>`) names no meeting
 and is refused with a message saying to link from Teams instead.
 
-`TEAMS_AUTO_JOIN_ENABLED=true` removes that step too. Every
+`TEAMS_AUTO_JOIN_ENABLED=true` removes that step for classes. Every
 `TEAMS_AUTO_JOIN_INTERVAL_SECONDS` (300 by default) the backend reads the next
-`TEAMS_AUTO_JOIN_DAYS` (14) of each linked lecturer's calendar, puts C.L.I.P
-and its tab into each Teams meeting they organise, and sends them a Teams
-activity notice: the class it will run when the title names one of their
-courses, or "Is it a class?" when it does not. The notice opens the C.L.I.P
-tab in that meeting. Students' calendars are never read.
+`TEAMS_AUTO_JOIN_DAYS` (14) of each linked lecturer's calendar and, for each
+Teams meeting they organise whose title names one of their course codes, puts
+C.L.I.P and its tab into the meeting and sends them a Teams activity notice
+saying which class it will run. The notice opens the C.L.I.P tab in that
+meeting. Meetings without a course code in the title (staff meetings,
+one-to-ones) are never touched, and students' calendars are never read.
+
+Progress is stored per meeting chat in `teams_auto_join`, so a restart
+resumes a half-finished install. Once a meeting's tab is pinned it is never
+touched again: a lecturer who removes C.L.I.P from a class meeting keeps it
+removed.
 
 It needs these Microsoft Graph **application** permissions on the C.L.I.P app
 registration, with admin consent, granted by the tenant's administrator:
