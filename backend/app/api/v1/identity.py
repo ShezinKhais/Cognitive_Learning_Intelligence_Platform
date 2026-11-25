@@ -220,6 +220,7 @@ async def login(
         email=claims.email,
         settings=settings,
         auth_time=claims.auth_time,
+        token_version=claims.token_version,
     )
     _set_refresh_cookie(response, refresh_token, max_age, settings)
     return token
@@ -323,6 +324,7 @@ async def _authenticate(
         role=role,
         email=user.email,
         settings=settings,
+        token_version=user.token_version if settings.is_production else 0,
     )
 
     if settings.is_production:
@@ -380,7 +382,11 @@ async def teams_sign_in(
 
     role = _normalise_role(user.role)
     token, expires_in = create_access_token(
-        user_id=user.id, role=role, email=user.email, settings=settings
+        user_id=user.id,
+        role=role,
+        email=user.email,
+        settings=settings,
+        token_version=user.token_version if settings.is_production else 0,
     )
     claims = decode_access_token(token, settings)
     refresh_token, max_age = create_refresh_token(
@@ -389,6 +395,7 @@ async def teams_sign_in(
         email=user.email,
         settings=settings,
         auth_time=claims.auth_time,
+        token_version=claims.token_version,
     )
     _set_refresh_cookie(response, refresh_token, max_age, settings)
     log.info("security_event=LOGIN_SUCCEEDED user_id=%s role=%s method=teams", user.id, role.value)
@@ -551,6 +558,7 @@ async def change_password(
             "Choose a password different from the current one.", {"field": "new_password"}
         )
     user.password_hash = hash_password(payload.new_password)
+    user.token_version += 1
     # Audited here rather than by @audit_action: a wrong password commits its
     # failed attempt before refusing, and the decorator would record that
     # commit as a password change.
