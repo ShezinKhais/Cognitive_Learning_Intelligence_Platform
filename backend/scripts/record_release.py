@@ -95,10 +95,12 @@ async def models(settings) -> dict[str, str]:  # noqa: ANN001
     wanted = {"chat": settings.ollama_model, "embedding": settings.embedding_model}
     base = settings.ollama_base_url.rstrip("/").removesuffix("/v1")
     digests: dict[str, str] = {}
+    reached = False
     try:
         async with httpx.AsyncClient(timeout=5) as client:
             response = await client.get(f"{base}/api/tags")
             response.raise_for_status()
+            reached = True
             for model in response.json().get("models", []):
                 name, digest = model.get("name"), model.get("digest")
                 if isinstance(name, str) and isinstance(digest, str):
@@ -106,6 +108,9 @@ async def models(settings) -> dict[str, str]:  # noqa: ANN001
                     digests.setdefault(name.removesuffix(":latest"), digest)
     except (httpx.HTTPError, ValueError):
         pass
+    if not reached:
+        # Unreachable and not downloaded are different faults; say which.
+        return {role: f"{name} (could not reach Ollama)" for role, name in wanted.items()}
     return {
         role: f"{name}@{digests[name][:12]}" if name in digests else f"{name} (not pulled)"
         for role, name in wanted.items()

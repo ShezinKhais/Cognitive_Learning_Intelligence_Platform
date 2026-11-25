@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 # C.L.I.P backend image for the demo deployment. Build context: backend/.
 #
-# Installs the package with `pip install .`: no dev extras and no `extraction`
+# Installs the package with `pip install -c constraints.txt .`, so every
+# dependency is the version in constraints.txt. No dev extras and no `extraction`
 # extra (docling pulls in gigabytes of ML dependencies and is not needed to run
 # a class). Material extraction falls back to the lightweight parsers.
 # Pinned by digest, so a rebuild cannot pick up a different base. Python

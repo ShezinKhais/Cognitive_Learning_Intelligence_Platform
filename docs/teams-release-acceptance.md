@@ -39,6 +39,13 @@ speech is on (`python scripts/check_live_speech.py` in the backend). Copy only
 these values. Do not export full environment files, image environment fields,
 credentials or meeting identifiers into shared evidence.
 
+The package hash covers every installed distribution, pip and setuptools
+included, so it changes with the base image's tooling even when the app's own
+pins are the same. Equal hashes mean the same packages; different hashes mean
+compare the package lists before calling it an app difference. A model shown
+as `(could not reach Ollama)` means the record could not ask Ollama, not that
+the model is missing; `(not pulled)` means Ollama answered without it.
+
 ### What makes a rebuild the same
 
 - Base images are pinned by digest: `python:3.12.16-slim`, `node:24.22.3-alpine`,

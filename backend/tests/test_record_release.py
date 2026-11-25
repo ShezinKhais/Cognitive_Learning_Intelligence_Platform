@@ -30,3 +30,9 @@ def test_only_true_false_switches_are_printed() -> None:
 def test_the_package_list_is_summarised_not_listed() -> None:
     packages = _record().packages()
     assert set(packages) == {"count", "sha256"} and len(packages["sha256"]) == 64
+
+
+async def test_an_unreachable_ollama_is_not_reported_as_a_missing_model() -> None:
+    settings = Settings(clip_secret_key="x" * 40, ollama_base_url="http://127.0.0.1:9/v1")
+    models = await _record().models(settings)
+    assert models and all(value.endswith("(could not reach Ollama)") for value in models.values())
