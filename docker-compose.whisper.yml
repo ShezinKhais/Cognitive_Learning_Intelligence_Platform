@@ -1,4 +1,4 @@
-﻿services:
+services:
   backend:
     build:
       args:
@@ -9,4 +9,4 @@
       LIVE_TRANSCRIPTION_LANGUAGE: auto
       LIVE_TRANSCRIPTION_CPU_THREADS: "2"
     volumes:
-      - "C:/Users/aliye/CLIP-models/faster-whisper-base:/data/models/faster-whisper-base:ro"
+      - "${CLIP_WHISPER_MODEL_DIR:?set CLIP_WHISPER_MODEL_DIR}:/data/models/faster-whisper-base:ro"

@@ -977,9 +977,9 @@ class Classroom:
                 from app.services.lecture_checkpoint_selection import choose_recent_question
 
                 question_id = await choose_recent_question(db, row, _now())
-                delivered = (
-                    await self.deliver(db, row, question_id) if question_id is not None else None
-                )
+                # Preserve scheduled checkpoints when the lecture has no
+                # transcript or no matching question (including other languages).
+                delivered = await self.deliver(db, row, question_id)
             else:
                 delivered = await self.deliver(db, row)
         if delivered is None:

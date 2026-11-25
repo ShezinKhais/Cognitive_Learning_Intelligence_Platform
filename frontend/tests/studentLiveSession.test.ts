@@ -756,8 +756,8 @@ test('a question and its feedback name the part of the file they came from', () 
 test('learning assistant follows lecturer controls during a live session', () => {
   let state = initialLiveSessionState('active')
 
-  // Do not offer chat before authoritative session settings arrive.
-  assert.equal(state.ai.learning_assistant, false)
+  // Preserve the original enabled default until session settings arrive.
+  assert.equal(state.ai.learning_assistant, true)
 
   const sessionEvent = (enabled: boolean) => ({
     session_id: 'session-1',

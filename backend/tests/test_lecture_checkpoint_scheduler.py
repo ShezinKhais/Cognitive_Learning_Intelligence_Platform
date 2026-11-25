@@ -20,16 +20,30 @@ from .classroom_support import (
 pytestmark = pytest.mark.usefixtures("fake_session_repository")
 
 
-async def test_automatic_delivery_skips_without_evidence(monkeypatch):
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "transcription_disabled",
+        "no_recent_transcript",
+        "cross_language_no_match",
+    ],
+)
+async def test_automatic_delivery_falls_back_without_match(monkeypatch, reason):
     room, events = make_room()
     row = make_row()
     row.question_selection_enabled = True
     socket, _ = await join_as(events, row.session_id, Role.STUDENT)
-    staged = StagedQuestion(question_text="What are mammals?")
+
+    staged = StagedQuestion(question_text="What are enzymes?")
     FakeRepository.staged.append(staged)
 
     async def no_match(db, session, checkpoint_at):
         assert session.session_id == row.session_id
+        assert reason in (
+            "transcription_disabled",
+            "no_recent_transcript",
+            "cross_language_no_match",
+        )
         return None
 
     monkeypatch.setattr(
@@ -41,8 +55,10 @@ async def test_automatic_delivery_skips_without_evidence(monkeypatch):
     try:
         live = room.activate(row.session_id)
         assert await room._deliver_on_schedule(live)
-        assert not socket.of(ServerEventType.QUESTION_DELIVERED)
-        assert FakeRepository.staged == [staged]
+
+        [event] = socket.of(ServerEventType.QUESTION_DELIVERED)
+        assert event["data"]["question_id"] == str(staged.question_id)
+        assert FakeRepository.staged == []
     finally:
         await room.shutdown()
 

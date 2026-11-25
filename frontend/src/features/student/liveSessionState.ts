@@ -16,7 +16,7 @@ import type { AiControls } from './liveSessionTypes'
 // Every switch on, as the server has it until the lecturer turns one off.
 const ALL_AI_ON: AiControls = {
   auto_checkpoints: true,
-  learning_assistant: false,
+  learning_assistant: true,
   refocus_nudges: true,
   engagement_estimates: true,
 }
