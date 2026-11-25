@@ -1,4 +1,4 @@
-﻿"""Regression tests for account-level security session invalidation."""
+"""Regression tests for account-level security session invalidation."""
 
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -19,9 +19,7 @@ from app.schemas.identity import Role
 
 
 def settings():
-    return get_settings().model_copy(
-        update={"clip_env": "production", "clip_secret_key": "k" * 32}
-    )
+    return get_settings().model_copy(update={"clip_env": "production", "clip_secret_key": "k" * 32})
 
 
 def identity():
@@ -74,9 +72,7 @@ def test_invalid_token_versions_are_rejected():
             "exp": now + timedelta(minutes=10),
             "token_version": bad,
         }
-        encoded = jwt.encode(
-            payload, settings().clip_secret_key, algorithm="HS256"
-        )
+        encoded = jwt.encode(payload, settings().clip_secret_key, algorithm="HS256")
         with pytest.raises(TokenValidationError):
             decode_access_token(encoded, settings())
 
@@ -123,9 +119,7 @@ async def test_reset_invalidates_old_access_and_refresh_tokens(monkeypatch):
     await service.user_from_token(new_access, settings(), None)
     renewed = await service.renew_token(new_refresh, settings(), None)
 
-    assert decode_access_token(
-        renewed.access_token, settings()
-    ).token_version == 1
+    assert decode_access_token(renewed.access_token, settings()).token_version == 1
 
 
 @pytest.mark.asyncio
@@ -159,9 +153,7 @@ async def test_other_accounts_are_not_revoked(monkeypatch):
 
     monkeypatch.setattr(service, "UserRepository", Repository)
 
-    other_access, other_refresh = tokens(
-        second_id, second_email, role, 0
-    )
+    other_access, other_refresh = tokens(second_id, second_email, role, 0)
 
     await service.user_from_token(other_access, settings(), None)
     await service.renew_token(other_refresh, settings(), None)

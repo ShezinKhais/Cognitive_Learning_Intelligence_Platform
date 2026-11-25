@@ -1,4 +1,4 @@
-﻿"""Password-reset revocation tested against a real PostgreSQL account."""
+"""Password-reset revocation tested against a real PostgreSQL account."""
 
 import pytest
 
@@ -58,9 +58,7 @@ async def test_password_reset_revokes_both_token_types_in_postgres(db):
 
     # Perform a real administrator-style password reset.
     async with factory() as session:
-        _, replacement_password = await accounts.reset_password(
-            session, user_id
-        )
+        _, replacement_password = await accounts.reset_password(session, user_id)
 
     async with factory() as session:
         user = await session.get(User, user_id)
@@ -97,14 +95,8 @@ async def test_password_reset_revokes_both_token_types_in_postgres(db):
     )
 
     async with factory() as session:
-        current_user = await user_from_token(
-            new_access, settings, session
-        )
-        renewed = await renew_token(
-            new_refresh, settings, session
-        )
+        current_user = await user_from_token(new_access, settings, session)
+        renewed = await renew_token(new_refresh, settings, session)
 
     assert current_user.id == user_id
-    assert decode_access_token(
-        renewed.access_token, settings
-    ).token_version == 1
+    assert decode_access_token(renewed.access_token, settings).token_version == 1
