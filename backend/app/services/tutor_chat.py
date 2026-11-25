@@ -230,32 +230,41 @@ def discussion_chunks(
             chosen = [ordered[-1]]
         else:
             chosen = [
-                ordered[round(index * (len(ordered) - 1) / (limit - 1))]
-                for index in range(limit)
+                ordered[round(index * (len(ordered) - 1) / (limit - 1))] for index in range(limit)
             ]
     else:
         stop = {
-            "what", "when", "where", "which", "this", "that",
-            "with", "from", "about", "please", "explain",
-            "could", "would", "have", "were", "does", "tell",
-            "more", "session", "class", "time", "notes",
+            "what",
+            "when",
+            "where",
+            "which",
+            "this",
+            "that",
+            "with",
+            "from",
+            "about",
+            "please",
+            "explain",
+            "could",
+            "would",
+            "have",
+            "were",
+            "does",
+            "tell",
+            "more",
+            "session",
+            "class",
+            "time",
+            "notes",
         }
 
-        terms = set(
-            re.findall(r"[^\W_]{4,}", question.lower())
-        ) - stop
+        terms = set(re.findall(r"[^\W_]{4,}", question.lower())) - stop
 
-        terms.update(
-            re.findall(r"[\u0621-\u064A]{2,}", question)
-        )
+        terms.update(re.findall(r"[\u0621-\u064A]{2,}", question))
 
         def overlap(note: DiscussionSource) -> int:
-            words = set(
-                re.findall(r"[^\W_]{4,}", note.text.lower())
-            )
-            words.update(
-                re.findall(r"[\u0621-\u064A]{2,}", note.text)
-            )
+            words = set(re.findall(r"[^\W_]{4,}", note.text.lower()))
+            words.update(re.findall(r"[\u0621-\u064A]{2,}", note.text))
             return len(terms & words)
 
         chosen = sorted(
