@@ -163,3 +163,123 @@ async def test_a_class_still_running_is_not_listed(database, question):  # noqa:
     async with database() as db:
         result = await student_engagement.history(db, question.user, 20, 0)
         assert result.classes == [] and result.total == 0
+
+
+async def test_partial_sensor_signals_are_reported_separately(database, question):  # noqa: F811
+    """One sensor being unavailable must not erase the other's valid reading."""
+    async with database() as db:
+        session, student = await _ended_class(db, question)
+        granted_at = NOW - timedelta(hours=1)
+
+        db.add_all(
+            [
+                _consent(question.user, "engagement_monitoring", True, granted_at),
+                _consent(question.user, "camera", True, granted_at),
+                _consent(question.user, "microphone", True, granted_at),
+                _window(
+                    session.session_id,
+                    student.student_id,
+                    NOW - timedelta(minutes=20),
+                    camera=True,
+                ),
+                _window(
+                    session.session_id,
+                    student.student_id,
+                    NOW - timedelta(minutes=19),
+                    microphone=True,
+                ),
+            ]
+        )
+        await db.flush()
+
+        [record] = (await student_engagement.history(db, question.user, 20, 0)).classes
+
+        assert record.readings.camera == "available"
+        assert record.readings.camera_windows == 1
+        assert record.readings.microphone == "available"
+        assert record.readings.microphone_windows == 1
+
+        await db.rollback()
+
+
+async def test_withdraw_regrant_and_erasure_never_restore_old_windows(database, question):  # noqa: F811
+    """Consent changes and deleted readings must fail closed."""
+    from sqlalchemy import delete
+
+    async with database() as db:
+        session, student = await _ended_class(db, question)
+
+        monitoring = _consent(
+            question.user,
+            "engagement_monitoring",
+            True,
+            NOW - timedelta(hours=4),
+        )
+        camera = _consent(
+            question.user,
+            "camera",
+            True,
+            NOW - timedelta(hours=4),
+        )
+
+        db.add_all(
+            [
+                monitoring,
+                camera,
+                _window(
+                    session.session_id,
+                    student.student_id,
+                    NOW - timedelta(hours=3),
+                    camera=True,
+                ),
+            ]
+        )
+        await db.flush()
+
+        [before] = (await student_engagement.history(db, question.user, 20, 0)).classes
+        assert before.readings.camera == "available"
+        assert before.readings.camera_windows == 1
+
+        camera.granted = False
+        camera.recorded_at = NOW - timedelta(hours=2)
+        await db.flush()
+
+        [withdrawn] = (await student_engagement.history(db, question.user, 20, 0)).classes
+        assert withdrawn.readings.camera == "not_consented"
+        assert withdrawn.readings.camera_windows is None
+
+        camera.granted = True
+        camera.recorded_at = NOW - timedelta(hours=1)
+        await db.flush()
+
+        [regranted] = (await student_engagement.history(db, question.user, 20, 0)).classes
+        assert regranted.readings.camera == "none_recorded"
+        assert regranted.readings.camera_windows is None
+
+        db.add(
+            _window(
+                session.session_id,
+                student.student_id,
+                NOW - timedelta(minutes=30),
+                camera=True,
+            )
+        )
+        await db.flush()
+
+        [new_reading] = (await student_engagement.history(db, question.user, 20, 0)).classes
+        assert new_reading.readings.camera == "available"
+        assert new_reading.readings.camera_windows == 1
+
+        await db.execute(
+            delete(AttentionSignalSummary).where(
+                AttentionSignalSummary.session_id == session.session_id,
+                AttentionSignalSummary.student_id == student.student_id,
+            )
+        )
+        await db.flush()
+
+        [erased] = (await student_engagement.history(db, question.user, 20, 0)).classes
+        assert erased.readings.camera == "none_recorded"
+        assert erased.readings.camera_windows is None
+
+        await db.rollback()

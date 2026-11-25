@@ -48,8 +48,35 @@ export default function EngagementHistory() {
     }
   }, [])
 
-  if (failed) return null
-  if (!history || history.classes.length === 0) return null
+  if (failed) {
+    return (
+      <section aria-label="Class by class" className="mt-6">
+        <p role="alert" className="text-sm text-muted-foreground">
+          Your class-by-class history could not be loaded. Please try again later.
+        </p>
+      </section>
+    )
+  }
+
+  if (!history) {
+    return (
+      <p role="status" className="mt-6 text-sm text-muted-foreground">
+        Loading your class-by-class history…
+      </p>
+    )
+  }
+
+  if (history.classes.length === 0) {
+    return (
+      <Panel title="Class by class" className="mt-6">
+        <p role="status" className="text-sm text-muted-foreground">
+          No finished class history is available yet. Your participation and
+          optional device readings will appear here when a class has ended
+          and those records are available.
+        </p>
+      </Panel>
+    )
+  }
 
   return (
     <Panel title="Class by class" description={history.explanation} className="mt-6">

@@ -1,0 +1,59 @@
+﻿# Cyber 1 student engagement history: Issue #243
+
+## Existing implementation
+
+The repository already provides a student-only engagement history
+endpoint at GET /api/v1/me/engagement-history.
+
+It uses persisted records from completed classes and reports
+participation separately from optional device readings.
+
+The existing contract is documented in student-engagement-history.md.
+
+## Changes in this branch
+
+- Show an accessible loading state while history is requested.
+- Show an explicit message when no completed history is available.
+- Show an accessible error message when history cannot be loaded.
+- Test partial camera and microphone signal availability.
+- Test withdrawal and regranting of sensor consent.
+- Test that deleted readings become none_recorded, not zero.
+- Test API access for students, lecturers and anonymous callers.
+- Test that the API uses the authenticated student's identity.
+- Test an explicit empty-history response and private cache headers.
+
+## Verification
+
+Environment: local Windows development worktree, isolated Cyber 1
+PostgreSQL test database.
+
+- Student engagement, review, consent and route tests: 45 passed.
+- Frontend unit tests: 360 passed.
+- Frontend production build, lint and test commands completed
+  successfully in Step 154.
+- Backend Ruff checks passed.
+- Git diff checks passed.
+
+## Data interpretation
+
+A stored participation count may be zero.
+
+An unavailable optional device reading is represented by a named
+availability state and a null count, never by an invented zero.
+
+The interface does not produce an engagement score or infer
+comprehension from camera or microphone availability.
+
+## Remaining acceptance gates
+
+- Team approval of the proposed minimum student history contract.
+- Confirm whether confidence-qualified engagement scoring is
+  explicitly deferred, since stored signal windows lack a validated
+  confidence measure.
+- Verify accessibility and consent behavior in the target deployment.
+- Verify retention and deletion behavior against the deployed
+  institution's retention configuration.
+- Record tested deployment, browser and results in Issue #175.
+- Complete review and CI checks before closing Issue #243.
+
+These local results do not establish production acceptance.
