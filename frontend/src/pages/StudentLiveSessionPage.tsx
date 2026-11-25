@@ -380,7 +380,11 @@ export function LiveSessionPanel({
         {!dialog && (
           <Reveal index={3} enabled={clip}>
             <div hidden={assistant && activeView === 'chat'}>
-              <DiscussionPanel key={`discussion-${session.id}`} sessionId={session.id} />
+              <DiscussionPanel
+                key={`discussion-${session.id}`}
+                sessionId={session.id}
+                chatEnabled={assistant}
+              />
             </div>
           </Reveal>
         )}

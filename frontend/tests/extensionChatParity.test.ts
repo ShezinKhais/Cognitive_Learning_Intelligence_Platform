@@ -50,3 +50,11 @@ test('chat tab separates discussion notes from the assistant', () => {
 
   assert.match(live, /hidden=\{assistant && activeView === 'chat'\}/)
 })
+test('discussion chatbot respects the lecturer assistant switch', () => {
+  const live = readFileSync(
+    new URL('../src/pages/StudentLiveSessionPage.tsx', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(live, /chatEnabled=\{assistant\}/)
+})
