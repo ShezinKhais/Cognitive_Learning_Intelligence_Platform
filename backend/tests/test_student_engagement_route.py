@@ -1,4 +1,4 @@
-﻿"""Student engagement history API authorization and response tests."""
+"""Student engagement history API authorization and response tests."""
 
 from unittest.mock import AsyncMock
 
@@ -8,9 +8,7 @@ from app.schemas.student_engagement import StudentEngagementHistory
 from app.services import student_engagement
 
 
-def test_student_history_route_uses_authenticated_identity(
-    as_student, app, monkeypatch
-):
+def test_student_history_route_uses_authenticated_identity(as_student, app, monkeypatch):
     async def db_override():
         yield object()
 
@@ -26,9 +24,7 @@ def test_student_history_route_uses_authenticated_identity(
     history = AsyncMock(return_value=result)
     monkeypatch.setattr(student_engagement, "history", history)
 
-    response = as_student.get(
-        "/api/v1/me/engagement-history?limit=20&offset=0"
-    )
+    response = as_student.get("/api/v1/me/engagement-history?limit=20&offset=0")
 
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
@@ -47,9 +43,7 @@ def test_anonymous_user_cannot_read_student_engagement_history(client):
     assert response.status_code == 401
 
 
-def test_empty_student_engagement_history_is_explicit(
-    as_student, app, monkeypatch
-):
+def test_empty_student_engagement_history_is_explicit(as_student, app, monkeypatch):
     async def db_override():
         yield object()
 
