@@ -56,6 +56,8 @@ export type ChatStreamEvent =
   | { type: 'error'; request_id: string | null; detail: string }
 
 export type ChatAction =
+  | { type: 'history-loaded'; exchanges: ChatExchange[] }
+  | { type: 'history-reset' }
   | { type: 'draft-changed'; value: string }
   | { type: 'submit-started'; id: string; question: string }
   | { type: 'stream-event'; event: ChatStreamEvent }

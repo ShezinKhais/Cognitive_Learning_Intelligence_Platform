@@ -65,6 +65,10 @@ ADMIN_ONLY = "admins"
 MEMBER = "a member of the session, decided in the handler"
 
 AUDIENCE = {
+    # Issue #328: private student-owned chatbot history.
+    ("GET", "/api/v1/me/chat-history"): STUDENT_ONLY,
+    ("DELETE", "/api/v1/me/chat-history"): STUDENT_ONLY,
+    ("DELETE", "/api/v1/me/chat-history/{exchange_id}"): STUDENT_ONLY,
     ("GET", "/api/v1/sessions/{session_id}/discussion/automatic-transcripts"): STAFF,
     ("PUT", "/api/v1/sessions/{session_id}/discussion/automatic-transcripts"): STAFF,
     (

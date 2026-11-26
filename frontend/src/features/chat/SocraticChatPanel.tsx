@@ -10,10 +10,12 @@ import {
   useEffect,
   useId,
   useRef,
+  useState,
 } from 'react'
 import { Link } from 'react-router'
 
 import { MAX_CHAT_QUESTION_LENGTH } from './chatApi'
+import { StudentChatHistoryManager } from './StudentChatHistoryManager'
 import { splitCitations } from './chatState'
 import type { ChatExchange } from './chatTypes'
 import { useSocraticChat } from './useSocraticChat'
@@ -43,6 +45,8 @@ export function SocraticChatPanel({
 }) {
   const {
     state,
+    historyLoading,
+    historyError,
     setDraft,
     submit,
     cancel,
@@ -52,6 +56,7 @@ export function SocraticChatPanel({
   const headingId = useId()
   const end = useRef<HTMLDivElement>(null)
   const active = Boolean(state.activeId)
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   useEffect(() => {
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -66,7 +71,7 @@ export function SocraticChatPanel({
   return (
     <section
       aria-labelledby={headingId}
-      className={`mx-auto flex w-full flex-col ${compact ? 'min-h-[36rem]' : 'min-h-[42rem]'} rounded-xl border border-border bg-card shadow-[var(--shadow-card)]`}
+      className={`mx-auto flex w-full flex-col ${compact ? 'min-h-[20rem] sm:min-h-[30rem]' : 'min-h-[42rem]'} rounded-xl border border-border bg-card shadow-[var(--shadow-card)]`}
     >
       <header className="border-b border-border p-4 sm:p-5">
         <div className="flex items-center gap-3">
@@ -85,6 +90,27 @@ export function SocraticChatPanel({
         <p className="mt-3 rounded-lg bg-muted px-3 py-2 text-xs text-foreground">
           Ask about the lecture or about studying. Answers from the material show their sources, and quiz answers are never given away.
         </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setHistoryOpen((value) => !value)}
+            aria-expanded={historyOpen}
+            className="rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted"
+          >
+            {historyOpen ? 'Hide chat history' : 'My chat history'}
+          </button>
+          {historyLoading && (
+            <span role="status" className="text-xs text-muted-foreground">
+              Loading previous conversations?
+            </span>
+          )}
+          {historyError && (
+            <span role="alert" className="text-xs text-critical">
+              {historyError}
+            </span>
+          )}
+        </div>
+        {historyOpen && <StudentChatHistoryManager />}
         {sessionReview && !discussion && (
           <button
             type="button"

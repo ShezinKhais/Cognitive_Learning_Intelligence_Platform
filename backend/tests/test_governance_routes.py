@@ -319,6 +319,7 @@ async def test_a_student_request_erases_the_student_and_keeps_the_trail(governan
         "teams_records",
         "alerts",
         "recommendations",
+        "chatbot_exchanges",
     }
     async with world.factory() as db:
         remaining = await db.scalar(

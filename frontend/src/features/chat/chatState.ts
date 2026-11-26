@@ -159,6 +159,18 @@ export function chatReducer(
   action: ChatAction,
 ): ChatState {
   switch (action.type) {
+    case 'history-reset':
+      return initialChatState
+    case 'history-loaded': {
+      // The server returns history newest first. Keep current, potentially
+      // streaming exchanges intact, and deduplicate by request ID.
+      const existing = new Set(state.exchanges.map((exchange) => exchange.id))
+      const restored = action.exchanges.filter((exchange) => !existing.has(exchange.id))
+      return {
+        ...state,
+        exchanges: [...restored, ...state.exchanges],
+      }
+    }
     case 'draft-changed':
       return { ...state, draft: action.value }
     case 'follow-up-selected':

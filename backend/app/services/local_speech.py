@@ -81,7 +81,11 @@ def _recognize(raw: bytes, settings: Settings) -> str:
         settings.live_transcription_model_path, settings.live_transcription_cpu_threads
     ).transcribe(
         audio,
-        language=settings.live_transcription_language,
+        language=(
+            None
+            if settings.live_transcription_language == "auto"
+            else settings.live_transcription_language
+        ),
         beam_size=1,
         vad_filter=True,
         condition_on_previous_text=False,

@@ -1,4 +1,5 @@
 import DiscussionPanel from '../features/discussion/DiscussionPanel'
+import { liveAssistantVisible } from '../features/student/liveAssistantVisibility'
 
 import {
   CheckCircle2,
@@ -136,7 +137,12 @@ export function LiveSessionPanel({
   }, [finished, onFinished, session.id])
   // The learning assistant is offered while the class runs, unless the
   // lecturer has turned it off for this class.
-  const assistant = SOCRATIC_CHAT_ENABLED && !finished && state.ai.learning_assistant
+  const assistant = liveAssistantVisible(
+    SOCRATIC_CHAT_ENABLED,
+    state.ai.learning_assistant,
+    state.sessionStatus,
+    dialog,
+  )
   // Back to the class view when the lecturer turns the assistant off, so
   // turning it on again does not open on an empty tab.
   useEffect(() => {
@@ -373,7 +379,13 @@ export function LiveSessionPanel({
 
         {!dialog && (
           <Reveal index={3} enabled={clip}>
-            <DiscussionPanel key={`discussion-${session.id}`} sessionId={session.id} />
+            <div hidden={assistant && activeView === 'chat'}>
+              <DiscussionPanel
+                key={`discussion-${session.id}`}
+                sessionId={session.id}
+                chatEnabled={assistant}
+              />
+            </div>
           </Reveal>
         )}
         {dialog &&

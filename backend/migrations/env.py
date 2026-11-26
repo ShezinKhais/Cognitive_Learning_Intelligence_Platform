@@ -31,6 +31,7 @@ from app.models.question import Question  # noqa: F401
 from app.models.rag_chunk import RagChunk  # noqa: F401
 from app.models.session import Session  # noqa: F401
 from app.models.student import Student  # noqa: F401
+from app.models.student_chat_exchange import StudentChatExchange  # noqa: F401
 from app.models.student_response import StudentResponse  # noqa: F401
 from app.models.user import User  # noqa: F401
 

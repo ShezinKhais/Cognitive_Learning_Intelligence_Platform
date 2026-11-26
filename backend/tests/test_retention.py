@@ -366,6 +366,7 @@ def test_the_tasks_are_registered_once():
 
     assert runner.task_names == [
         "session-data",
+        "student-chat-history",
         "teams-roster-syncs",
         "teams-unresolved-mappings",
     ]
@@ -381,6 +382,7 @@ def test_housekeeping_registers_the_database_purges():
         assert get_purge_runner().task_names == [
             "session-data",
             "stored-uploads",
+            "student-chat-history",
             "teams-roster-syncs",
             "teams-unresolved-mappings",
         ]

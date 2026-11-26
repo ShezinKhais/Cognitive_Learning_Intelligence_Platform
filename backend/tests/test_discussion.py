@@ -24,6 +24,74 @@ def test_discussion_retrieval_uses_topic_matches_or_recent_notes_for_a_recap():
     assert discussion_chunks((old, note), "What did I miss?", 1)[0].chunk_id == note.note_id
 
 
+def test_recursion_catchup_uses_topic_notes_not_unrelated_class_notes():
+    now = datetime.now(UTC)
+    notes = (
+        DiscussionSource(uuid4(), now, "Networks and packets"),
+        DiscussionSource(
+            uuid4(),
+            now + timedelta(minutes=1),
+            "Recursion calls a function repeatedly",
+        ),
+        DiscussionSource(
+            uuid4(),
+            now + timedelta(minutes=2),
+            "Database normalization and tables",
+        ),
+    )
+    result = discussion_chunks(notes, "What did the lecturer say about recursion?", 6)
+    assert [chunk.chunk_id for chunk in result] == [notes[1].note_id]
+
+
+def test_specific_unmentioned_recap_topic_does_not_fall_back():
+    now = datetime.now(UTC)
+    notes = (
+        DiscussionSource(uuid4(), now, "Networks and packets"),
+        DiscussionSource(uuid4(), now, "Database normalization"),
+    )
+    assert discussion_chunks(notes, "What did the lecturer say about recursion?", 6) == []
+
+
+def test_arabic_common_words_do_not_create_false_matches():
+    now = datetime.now(UTC)
+    notes = (
+        DiscussionSource(
+            uuid4(),
+            now,
+            "ندرس في اليوم الشبكات",
+        ),
+        DiscussionSource(
+            uuid4(),
+            now + timedelta(minutes=1),
+            "نتكلم عن الجبر",
+        ),
+    )
+    question = "ماذا قال المحاضر عن انقسام الخلايا"
+    assert discussion_chunks(notes, question, 6) == []
+
+
+def test_arabic_topic_retrieval_ignores_shared_stopwords():
+    now = datetime.now(UTC)
+    notes = (
+        DiscussionSource(
+            uuid4(),
+            now,
+            "نتكلم في الشبكات",
+        ),
+        DiscussionSource(
+            uuid4(),
+            now + timedelta(minutes=1),
+            "نتكلم عن قواعد البيانات",
+        ),
+    )
+    result = discussion_chunks(
+        notes,
+        "قواعد البيانات",
+        6,
+    )
+    assert [chunk.chunk_id for chunk in result] == [notes[1].note_id]
+
+
 def test_discussion_time_window_cannot_be_reversed():
     from pydantic import ValidationError
 
@@ -128,3 +196,70 @@ async def test_notes_publish_live_persist_after_end_and_respect_course_access(db
         await sql.execute(delete(Session).where(Session.session_id == UUID(session_id)))
         await sql.commit()
         assert await sql.get(DiscussionNote, UUID(note_id)) is None
+
+
+def test_broad_recaps_are_chronological_across_session():
+    now = datetime.now(UTC)
+    notes = tuple(
+        DiscussionSource(
+            uuid4(),
+            now + timedelta(minutes=index),
+            f"Topic {index} discussed in class.",
+        )
+        for index in range(12)
+    )
+    result = discussion_chunks(notes, "What happened in class?", 4)
+    assert len(result) == 4
+    assert [chunk.chunk_id for chunk in result] == [notes[index].note_id for index in (0, 4, 7, 11)]
+
+
+def test_arabic_recap_preserves_chronological_evidence():
+    now = datetime.now(UTC)
+    notes = (
+        DiscussionSource(
+            uuid4(),
+            now,
+            "شرح قواعد البيانات",
+        ),
+        DiscussionSource(
+            uuid4(),
+            now + timedelta(minutes=5),
+            "شرح الشبكات",
+        ),
+    )
+    question = "ماذا حدث في المحاضرة؟"
+    result = discussion_chunks(notes, question, 6)
+    assert [chunk.chunk_id for chunk in result] == [note.note_id for note in notes]
+
+
+def test_arabic_topic_retrieval_finds_matching_notes():
+    now = datetime.now(UTC)
+    notes = (
+        DiscussionSource(
+            uuid4(),
+            now,
+            "شرح الشبكات",
+        ),
+        DiscussionSource(
+            uuid4(),
+            now + timedelta(minutes=1),
+            "شرح قواعد البيانات",
+        ),
+    )
+    question = "قواعد البيانات"
+    result = discussion_chunks(notes, question, 6)
+    assert len(result) == 1
+    assert result[0].chunk_id == notes[1].note_id
+
+
+def test_empty_catchup_has_no_fabricated_sources():
+    assert discussion_chunks((), "What happened?", 6) == []
+
+
+def test_recent_recap_keeps_latest_evidence_in_order():
+    now = datetime.now(UTC)
+    notes = tuple(
+        DiscussionSource(uuid4(), now + timedelta(minutes=i), f"Topic {i}") for i in range(8)
+    )
+    result = discussion_chunks(notes, "Recap the latest discussion", 3)
+    assert [chunk.chunk_id for chunk in result] == [note.note_id for note in notes[-3:]]

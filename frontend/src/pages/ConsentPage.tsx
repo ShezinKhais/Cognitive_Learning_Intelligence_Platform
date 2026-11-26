@@ -252,6 +252,22 @@ export default function ConsentPage() {
           </fieldset>
         )}
 
+        <p className="mt-5 rounded-lg border border-border bg-card p-3 text-sm text-muted-foreground">
+          Student camera and microphone engagement indicators are processed
+          on your device. Separately, if enabled by the institution, a lecturer
+          may start live transcription after confirming the required notice
+          and consent. Short audio chunks, including nearby speech, are
+          processed on the C.L.I.P server, and recognized text may be stored
+          and shared with enrolled students as an unreviewed transcript.
+          These are separate features with separate permissions.
+          Read the{' '}
+          <a href="/privacy" target="_blank" rel="noopener noreferrer"
+             className="font-semibold text-primary underline underline-offset-2">
+            privacy notice
+          </a>{' '}
+          for details.
+        </p>
+
         {error && (
           <p role="alert" className="mt-4 text-sm text-critical">
             {error}

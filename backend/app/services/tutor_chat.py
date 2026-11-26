@@ -184,16 +184,33 @@ async def with_discussion(
 def discussion_chunks(
     notes: tuple[DiscussionSource, ...], question: str, limit: int
 ) -> list[RetrievedChunk]:
-    # A catch-up request names a time window rather than a topic. Other
-    # questions retrieve matching notes and return empty when none match.
-    broad = bool(
+    """Find topic evidence, or sample chronologically for broad recaps."""
+    if limit <= 0 or not notes:
+        return []
+
+    recap = bool(
         re.search(
-            r"\b(miss(?:ed)?|catch.?up|summari[sz]e|recap|discuss(?:ed)?|covered|say|said|repeat)\b",
+            r"\b(miss(?:ed)?|catch.?up|summari[sz]e|recap|"
+            r"discuss(?:ed)?|covered|happened|say|said|repeat)\b",
             question,
             re.I,
         )
+        or any(
+            phrase in question
+            for phrase in (
+                "\u0645\u0627\u0630\u0627 \u062d\u062f\u062b",
+                "\u0645\u0627\u0630\u0627 \u0641\u0627\u062a\u0646\u064a",
+                "\u0645\u0644\u062e\u0635",
+                "\u0644\u062e\u0635",
+                "\u062a\u0644\u062e\u064a\u0635",
+                "\u0645\u0627\u0630\u0627 \u062a\u0646\u0627\u0648\u0644\u0646\u0627",
+                "\u0634\u0648 \u0635\u0627\u0631",
+                "\u0634\u0648 \u0641\u0627\u062a\u0646\u064a",
+            )
+        )
     )
-    stop = {
+
+    english_stop = {
         "what",
         "when",
         "where",
@@ -214,54 +231,117 @@ def discussion_chunks(
         "more",
         "session",
         "class",
-        "miss",
-        "missed",
-        "summarize",
-        "summarise",
-        "recap",
-        "discussed",
-        "covered",
-        "recorded",
-        "notes",
-        "range",
         "time",
-        "main",
-        "ideas",
-        "said",
-        "saying",
-        "just",
-        "latest",
-        "recent",
+        "notes",
         "lecturer",
         "teacher",
-        "repeat",
+        "said",
+        "say",
+        "saying",
         "discuss",
+        "discussed",
+        "discussion",
+        "covered",
+        "happened",
+        "miss",
+        "missed",
+        "catch",
+        "recap",
+        "summarize",
+        "summarise",
+        "summary",
+        "repeat",
+        "latest",
+        "recent",
+        "just",
+        "material",
+        "recorded",
+        "during",
+        "today",
     }
-    terms = set(re.findall(r"[^\W_]{4,}", question.lower())) - stop
-    ranked = sorted(
+
+    arabic_stop = {
+        "\u0641\u064a",
+        "\u0645\u0646",
+        "\u0639\u0646",
+        "\u0639\u0644\u0649",
+        "\u0625\u0644\u0649",
+        "\u0647\u0630\u0627",
+        "\u0647\u0630\u0647",
+        "\u0645\u0627\u0630\u0627",
+        "\u062d\u062f\u062b",
+        "\u0641\u0627\u062a\u0646\u064a",
+        "\u0645\u0644\u062e\u0635",
+        "\u0644\u062e\u0635",
+        "\u062a\u0644\u062e\u064a\u0635",
+        "\u062a\u0646\u0627\u0648\u0644\u0646\u0627",
+        "\u0627\u0644\u0645\u062d\u0627\u0636\u0631\u0629",
+        "\u0627\u0644\u0645\u062d\u0627\u0636\u0631",
+        "\u0627\u0644\u062f\u0631\u0633",
+        "\u0634\u0631\u062d",
+        "\u0642\u0627\u0644",
+        "\u0634\u0648",
+        "\u0635\u0627\u0631",
+        "\u0627\u0644\u0622\u0646",
+        "\u0645\u0624\u062e\u0631\u0627",
+    }
+
+    def terms(text: str) -> set[str]:
+        english = set(re.findall(r"[a-z]{4,}", text.casefold()))
+        arabic = set(re.findall(r"[\u0621-\u064a]{3,}", text))
+        return (english - english_stop) | (arabic - arabic_stop)
+
+    ordered = sorted(
         notes,
-        key=lambda n: (len(terms & set(re.findall(r"[^\W_]{4,}", n.text.lower()))), n.occurred_at),
-        reverse=True,
+        key=lambda note: (note.occurred_at, str(note.note_id)),
     )
-    matching = [n for n in ranked if terms & set(re.findall(r"[^\W_]{4,}", n.text.lower()))]
-    if matching or not broad:
-        ranked = matching
-    elif len(ranked) > limit and not re.search(r"\b(just|latest|recent|now)\b", question, re.I):
-        # A recap samples the requested window instead of taking only its last
-        # few ten-second chunks. It is still an overview of cited sources.
-        ordered = sorted(ranked, key=lambda note: note.occurred_at)
-        ranked = (
-            [ordered[-1]]
-            if limit == 1
-            else [
+
+    wanted = terms(question)
+
+    def overlap(note: DiscussionSource) -> int:
+        return len(wanted & terms(note.text))
+
+    matches = (
+        sorted(
+            (note for note in ordered if overlap(note) > 0),
+            key=lambda note: (-overlap(note), -note.occurred_at.timestamp()),
+        )
+        if wanted
+        else []
+    )
+
+    if matches:
+        chosen = matches[:limit]
+    elif wanted or not recap:
+        # Do not invent evidence for a specifically named topic.
+        chosen = []
+    else:
+        recent = bool(
+            re.search(r"\b(just|latest|recent|now)\b", question, re.I)
+            or "\u0627\u0644\u0622\u0646" in question
+            or "\u0645\u0624\u062e\u0631\u0627" in question
+        )
+
+        if recent:
+            chosen = ordered[-limit:]
+        elif len(ordered) <= limit:
+            chosen = ordered
+        elif limit == 1:
+            chosen = [ordered[-1]]
+        else:
+            chosen = [
                 ordered[round(index * (len(ordered) - 1) / (limit - 1))] for index in range(limit)
             ]
-        )
+
     return [
         RetrievedChunk(
-            n.note_id, i, f"{n.origin}, {n.occurred_at.isoformat()}: {n.text}", None, 0.0
+            note.note_id,
+            index,
+            f"{note.origin}, {note.occurred_at.isoformat()}: {note.text}",
+            None,
+            0.0,
         )
-        for i, n in enumerate(ranked[:limit])
+        for index, note in enumerate(chosen)
     ]
 
 
@@ -602,6 +682,10 @@ class TutorExchange:
                 " The excerpts include reviewed minutes and unreviewed automatic "
                 "live speech transcripts. "
                 "Automatic speech can contain recognition errors; acknowledge uncertainty. "
+                "For broad session catch-up requests, summarize the cited topics in "
+                "chronological order with their source timestamps. Respond in the "
+                "student's question language when possible. Do not invent missing "
+                "topics or translate source quotations inaccurately. "
                 "Explain or recap only what "
                 "these notes record, with citations. They may be incomplete. Never claim to have "
                 "heard the meeting or to cover unrecorded discussion. "
