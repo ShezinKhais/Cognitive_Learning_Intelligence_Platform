@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.database import get_session_factory
 from app.history.database import resolve_history_factory
 from app.models.session import Session
+from app.models.student_chat_exchange import StudentChatExchange
 from app.models.student_response import StudentResponse
 from app.models.teams_roster_sync import TeamsRosterSync
 from app.models.teams_user_mapping import TeamsUserMapping
@@ -93,6 +94,52 @@ class SessionDataPurge:
                 user_id=None,
                 target_type="retention",
                 details=details,
+            )
+            await db.commit()
+            return len(ids)
+
+
+class ChatHistoryPurge:
+    """Expire private chatbot exchanges by age, independently of sessions.
+
+    This preserves conversations across classes while respecting the
+    deployment's existing retention period. Only counts enter the audit.
+    """
+
+    name = "student-chat-history"
+
+    def __init__(self, sessions: SessionFactory = get_session_factory) -> None:
+        self._sessions = sessions
+
+    async def purge(self, cutoff: datetime, limit: int) -> int:
+        async with self._sessions()() as db:
+            ids = list(
+                await db.scalars(
+                    select(StudentChatExchange.id)
+                    .where(StudentChatExchange.created_at < cutoff)
+                    .order_by(StudentChatExchange.created_at, StudentChatExchange.id)
+                    .limit(limit)
+                )
+            )
+            if not ids:
+                return 0
+
+            await db.execute(
+                delete(StudentChatExchange).where(
+                    StudentChatExchange.id.in_(ids),
+                    StudentChatExchange.created_at < cutoff,
+                )
+            )
+            await record_event(
+                db,
+                action_type=RETENTION_ACTION,
+                user_id=None,
+                target_type="retention",
+                details={
+                    "task": self.name,
+                    "chatbot_exchanges": len(ids),
+                    "cutoff": cutoff.isoformat(),
+                },
             )
             await db.commit()
             return len(ids)
@@ -175,6 +222,11 @@ class TeamsMappingPurge:
 
 def register_database_purges(runner: PurgeRunner) -> None:
     """Add the database purge tasks to the runner. Safe to call again."""
-    for task in (SessionDataPurge(), RosterSyncPurge(), TeamsMappingPurge()):
+    for task in (
+        SessionDataPurge(),
+        ChatHistoryPurge(),
+        RosterSyncPurge(),
+        TeamsMappingPurge(),
+    ):
         if task.name not in runner.task_names:
             runner.register(task)

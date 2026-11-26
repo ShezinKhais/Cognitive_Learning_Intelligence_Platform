@@ -23,6 +23,10 @@ class StudentDataExport(BaseModel):
     attention_summaries: list[dict[str, Any]]
     missed_responses: list[dict[str, Any]]
     deletion_requests: list[dict[str, Any]]
+    chatbot_history: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Private chatbot exchanges owned by this student.",
+    )
     history: list[dict[str, Any]] = Field(
         description="Summaries kept per course and semester after session data is deleted."
     )

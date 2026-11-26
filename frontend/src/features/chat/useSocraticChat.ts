@@ -3,12 +3,14 @@ import {
   useEffect,
   useReducer,
   useRef,
+  useState,
 } from 'react'
 
 import {
   MAX_CHAT_QUESTION_LENGTH,
   streamChat,
 } from './chatApi'
+import { listAllChatHistory, restoredExchange } from './chatHistoryApi'
 import {
   chatReducer,
   historyFor,
@@ -18,8 +20,46 @@ import {
 export function useSocraticChat(sessionId: string, discussionSince?: string, discussionUntil?: string, discussion = false, discussionRollingMinutes?: number) {
   const [state, dispatch] = useReducer(chatReducer, initialChatState)
   const controller = useRef<AbortController | null>(null)
+  const [historyLoading, setHistoryLoading] = useState(true)
+  const [historyError, setHistoryError] = useState<string | null>(null)
 
   useEffect(() => () => controller.current?.abort(), [])
+
+  useEffect(() => {
+    const abort = new AbortController()
+    let mounted = true
+
+    // A different session or source must never inherit another panel's
+    // previous exchanges. Abort an outstanding reply on navigation.
+    controller.current?.abort()
+    controller.current = null
+    dispatch({ type: 'history-reset' })
+    setHistoryLoading(true)
+    setHistoryError(null)
+
+    void listAllChatHistory(abort.signal).then(
+      (saved) => {
+        if (!mounted) return
+        const source = discussion ? 'discussion' : 'materials'
+        const exchanges = saved
+          .filter((record) => record.session_id === sessionId && record.source === source)
+          .reverse()
+          .map(restoredExchange)
+        dispatch({ type: 'history-loaded', exchanges })
+        setHistoryLoading(false)
+      },
+      () => {
+        if (!mounted) return
+        setHistoryError('Previous conversations could not be loaded.')
+        setHistoryLoading(false)
+      },
+    )
+
+    return () => {
+      mounted = false
+      abort.abort()
+    }
+  }, [sessionId, discussion])
 
   const submit = useCallback(async (questionOverride?: string) => {
     const question = (questionOverride ?? state.draft).trim()
@@ -67,6 +107,8 @@ export function useSocraticChat(sessionId: string, discussionSince?: string, dis
 
   return {
     state,
+    historyLoading,
+    historyError,
     setDraft: (value: string) => dispatch({ type: 'draft-changed', value }),
     submit,
     cancel,

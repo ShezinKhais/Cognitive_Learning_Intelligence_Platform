@@ -5984,6 +5984,15 @@
             "title": "Attention Summaries",
             "type": "array"
           },
+          "chatbot_history": {
+            "description": "Private chatbot exchanges owned by this student.",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Chatbot History",
+            "type": "array"
+          },
           "deletion_requests": {
             "items": {
               "additionalProperties": true,
@@ -9468,6 +9477,116 @@
         "summary": "Bulk Review Questions",
         "tags": [
           "content"
+        ]
+      }
+    },
+    "/api/v1/me/chat-history": {
+      "delete": {
+        "description": "Delete all of this student's history, not anyone else's.",
+        "operationId": "delete_my_chat_history_api_v1_me_chat_history_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Delete My Chat History",
+        "tags": [
+          "student-chat-history"
+        ]
+      },
+      "get": {
+        "description": "Return only this student's conversations, newest first.",
+        "operationId": "my_chat_history_api_v1_me_chat_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response My Chat History Api V1 Me Chat History Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "My Chat History",
+        "tags": [
+          "student-chat-history"
+        ]
+      }
+    },
+    "/api/v1/me/chat-history/{exchange_id}": {
+      "delete": {
+        "description": "Delete one owned exchange; never reveal whether another student's exists.",
+        "operationId": "delete_my_chat_exchange_api_v1_me_chat_history__exchange_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "exchange_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Exchange Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete My Chat Exchange",
+        "tags": [
+          "student-chat-history"
         ]
       }
     },

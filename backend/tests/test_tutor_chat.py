@@ -20,6 +20,7 @@ from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -39,7 +40,7 @@ from app.models.student import Student
 from app.models.student_response import StudentResponse
 from app.models.user import User
 from app.schemas.identity import ConsentType, Role
-from app.services import tutor_chat
+from app.services import chat_history_persistence, tutor_chat
 from app.services.ai_gateway import (
     AiGateway,
     AiLimits,
@@ -175,6 +176,13 @@ async def tutor(db, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(gateway, "stream", spying_stream)
     monkeypatch.setattr(tutor_chat, "get_ai_gateway", lambda: gateway)
     monkeypatch.setattr(tutor_chat, "get_chat_limiter", lambda: limiter)
+    # Tutor route tests verify streaming, not database persistence.
+    # Prevent completed fake replies from entering the real student history.
+    monkeypatch.setattr(
+        chat_history_persistence,
+        "save_completed_exchange",
+        AsyncMock(),
+    )
     yield SimpleNamespace(model=model, gateway=gateway, limiter=limiter, requests=requests)
     event.remove(pool, "checkout", taken)
     event.remove(pool, "checkin", returned)

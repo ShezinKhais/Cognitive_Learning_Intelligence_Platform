@@ -23,6 +23,7 @@ from app.api.v1 import (
     my_data,
     reports,
     sessions,
+    student_chat_history,
     student_engagement,
     student_review,
     teams,
@@ -41,6 +42,7 @@ api_router.include_router(student_engagement.router)
 api_router.include_router(my_data.router)
 api_router.include_router(reports.router)
 api_router.include_router(chat.router)
+api_router.include_router(student_chat_history.router)
 api_router.include_router(transcript_automation.router)
 api_router.include_router(discussion.router)
 api_router.include_router(transcript_automation.webhook_router)

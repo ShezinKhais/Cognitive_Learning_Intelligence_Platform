@@ -26,7 +26,7 @@ from app.realtime.classroom import classroom
 from app.schemas.chat import ChatRequest
 from app.schemas.identity import ConsentType, Role
 from app.schemas.session import SessionStatus
-from app.services import discussion, session_lifecycle, tutor_chat
+from app.services import chat_history_persistence, discussion, session_lifecycle, tutor_chat
 from app.services.tutor_guardrails import EarlierTurn
 
 router = APIRouter(
@@ -124,11 +124,18 @@ async def session_chat(
         raise
 
     return StreamingResponse(
-        tutor_chat.TutorExchange(context).lines(
-            payload.request_id,
-            payload.question,
-            earlier,
-            revision=revision,
+        chat_history_persistence.save_completed_stream(
+            tutor_chat.TutorExchange(context).lines(
+                payload.request_id,
+                payload.question,
+                earlier,
+                revision=revision,
+            ),
+            student_id=principal.user_id,
+            session_id=session_id,
+            request_id=payload.request_id,
+            question=payload.question,
+            source=payload.source,
         ),
         media_type=tutor_chat.NDJSON,
         headers={
