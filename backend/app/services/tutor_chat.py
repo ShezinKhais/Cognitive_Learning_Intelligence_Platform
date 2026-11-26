@@ -184,7 +184,7 @@ async def with_discussion(
 def discussion_chunks(
     notes: tuple[DiscussionSource, ...], question: str, limit: int
 ) -> list[RetrievedChunk]:
-    """Retrieve matching notes or chronological evidence for a session recap."""
+    """Find topic evidence, or sample chronologically for broad recaps."""
     if limit <= 0 or not notes:
         return []
 
@@ -210,12 +210,112 @@ def discussion_chunks(
         )
     )
 
+    english_stop = {
+        "what",
+        "when",
+        "where",
+        "which",
+        "this",
+        "that",
+        "with",
+        "from",
+        "about",
+        "please",
+        "explain",
+        "could",
+        "would",
+        "have",
+        "were",
+        "does",
+        "tell",
+        "more",
+        "session",
+        "class",
+        "time",
+        "notes",
+        "lecturer",
+        "teacher",
+        "said",
+        "say",
+        "saying",
+        "discuss",
+        "discussed",
+        "discussion",
+        "covered",
+        "happened",
+        "miss",
+        "missed",
+        "catch",
+        "recap",
+        "summarize",
+        "summarise",
+        "summary",
+        "repeat",
+        "latest",
+        "recent",
+        "just",
+        "material",
+        "recorded",
+        "during",
+        "today",
+    }
+
+    arabic_stop = {
+        "\u0641\u064a",
+        "\u0645\u0646",
+        "\u0639\u0646",
+        "\u0639\u0644\u0649",
+        "\u0625\u0644\u0649",
+        "\u0647\u0630\u0627",
+        "\u0647\u0630\u0647",
+        "\u0645\u0627\u0630\u0627",
+        "\u062d\u062f\u062b",
+        "\u0641\u0627\u062a\u0646\u064a",
+        "\u0645\u0644\u062e\u0635",
+        "\u0644\u062e\u0635",
+        "\u062a\u0644\u062e\u064a\u0635",
+        "\u062a\u0646\u0627\u0648\u0644\u0646\u0627",
+        "\u0627\u0644\u0645\u062d\u0627\u0636\u0631\u0629",
+        "\u0627\u0644\u0645\u062d\u0627\u0636\u0631",
+        "\u0627\u0644\u062f\u0631\u0633",
+        "\u0634\u0631\u062d",
+        "\u0642\u0627\u0644",
+        "\u0634\u0648",
+        "\u0635\u0627\u0631",
+        "\u0627\u0644\u0622\u0646",
+        "\u0645\u0624\u062e\u0631\u0627",
+    }
+
+    def terms(text: str) -> set[str]:
+        english = set(re.findall(r"[a-z]{4,}", text.casefold()))
+        arabic = set(re.findall(r"[\u0621-\u064a]{3,}", text))
+        return (english - english_stop) | (arabic - arabic_stop)
+
     ordered = sorted(
         notes,
         key=lambda note: (note.occurred_at, str(note.note_id)),
     )
 
-    if recap:
+    wanted = terms(question)
+
+    def overlap(note: DiscussionSource) -> int:
+        return len(wanted & terms(note.text))
+
+    matches = (
+        sorted(
+            (note for note in ordered if overlap(note) > 0),
+            key=lambda note: (-overlap(note), -note.occurred_at.timestamp()),
+        )
+        if wanted
+        else []
+    )
+
+    if matches:
+        chosen = matches[:limit]
+    elif wanted or not recap:
+        # Do not invent evidence for a specifically named topic.
+        chosen = []
+    else:
         recent = bool(
             re.search(r"\b(just|latest|recent|now)\b", question, re.I)
             or "\u0627\u0644\u0622\u0646" in question
@@ -232,48 +332,6 @@ def discussion_chunks(
             chosen = [
                 ordered[round(index * (len(ordered) - 1) / (limit - 1))] for index in range(limit)
             ]
-    else:
-        stop = {
-            "what",
-            "when",
-            "where",
-            "which",
-            "this",
-            "that",
-            "with",
-            "from",
-            "about",
-            "please",
-            "explain",
-            "could",
-            "would",
-            "have",
-            "were",
-            "does",
-            "tell",
-            "more",
-            "session",
-            "class",
-            "time",
-            "notes",
-        }
-
-        terms = set(re.findall(r"[^\W_]{4,}", question.lower())) - stop
-
-        terms.update(re.findall(r"[\u0621-\u064A]{2,}", question))
-
-        def overlap(note: DiscussionSource) -> int:
-            words = set(re.findall(r"[^\W_]{4,}", note.text.lower()))
-            words.update(re.findall(r"[\u0621-\u064A]{2,}", note.text))
-            return len(terms & words)
-
-        chosen = sorted(
-            (note for note in ordered if overlap(note) > 0),
-            key=lambda note: (
-                -overlap(note),
-                -note.occurred_at.timestamp(),
-            ),
-        )[:limit]
 
     return [
         RetrievedChunk(
