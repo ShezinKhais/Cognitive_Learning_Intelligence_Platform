@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 
 import { apiAuthenticatedGet } from '../../api'
+import { historyViewState, nextHistoryAttempt } from './engagementHistoryState'
+import { buttonStyles } from '../../components/ui/button'
 import { Panel, Tag } from '../../components/ui/primitives'
 
 type Availability = 'available' | 'none_recorded' | 'not_consented'
@@ -36,6 +38,7 @@ function reading(state: Availability, windows: number | null): string {
 export default function EngagementHistory() {
   const [history, setHistory] = useState<History | null>(null)
   const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let current = true
@@ -46,10 +49,44 @@ export default function EngagementHistory() {
     return () => {
       current = false
     }
-  }, [])
+  }, [attempt])
 
-  if (failed) return null
-  if (!history || history.classes.length === 0) return null
+  function retry() {
+    setFailed(false)
+    setHistory(null)
+    setAttempt(nextHistoryAttempt)
+  }
+
+  const view = historyViewState({ failed, history })
+
+  if (view === 'error') {
+    return (
+      <section aria-label="Class by class" className="mt-6">
+        <p role="alert" className="text-sm text-muted-foreground">
+          Your class-by-class history could not be loaded.
+        </p>
+        <button
+          type="button"
+          onClick={retry}
+          className={buttonStyles({ intent: "secondary", className: "mt-3" })}
+        >
+          Retry class history
+        </button>
+      </section>
+    )
+  }
+
+  if (view === 'loading') {
+    return (
+      <p role="status" className="mt-6 text-sm text-muted-foreground">
+        Loading your class-by-class history…
+      </p>
+    )
+  }
+
+  if (view === 'empty' || !history) {
+    return null
+  }
 
   return (
     <Panel title="Class by class" description={history.explanation} className="mt-6">
