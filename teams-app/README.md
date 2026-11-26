@@ -185,6 +185,47 @@ the bot's **Meeting event subscriptions**, tick **Participant join** and
 **Participant leave** beside meeting start and end. The manifest is unchanged:
 its permissions already cover all of this.
 
+## C.L.I.P in every lecturer's meeting
+
+Without anything set up, a lecturer adds C.L.I.P to each meeting from Apps.
+After that nothing else is needed: the bot knows the meeting from its chat,
+the organiser joining a meeting with no class gets a pop-up asking whether
+it is one, and the meeting's link can still be pasted on the website. A
+short invitation link (`teams.microsoft.com/meet/<number>`) names no meeting
+and is refused with a message saying to link from Teams instead.
+
+`TEAMS_AUTO_JOIN_ENABLED=true` removes that step for classes. Every
+`TEAMS_AUTO_JOIN_INTERVAL_SECONDS` (300 by default) the backend reads the next
+`TEAMS_AUTO_JOIN_DAYS` (14) of each linked lecturer's calendar and, for each
+Teams meeting they organise whose title names one of their course codes, puts
+C.L.I.P and its tab into the meeting and sends them a Teams activity notice
+saying which class it will run. The notice opens the C.L.I.P tab in that
+meeting. Meetings without a course code in the title (staff meetings,
+one-to-ones) are never touched, and students' calendars are never read.
+
+Progress is stored per meeting chat in `teams_auto_join`, so a restart
+resumes a half-finished install. Once a meeting's tab is pinned it is never
+touched again: a lecturer who removes C.L.I.P from a class meeting keeps it
+removed.
+
+It needs these Microsoft Graph **application** permissions on the C.L.I.P app
+registration, with admin consent, granted by the tenant's administrator:
+
+| Permission | For |
+|---|---|
+| `Calendars.Read` | Finding the Teams meetings a lecturer organises |
+| `TeamsAppInstallation.ReadWriteSelfForChat.All` | Adding C.L.I.P to a meeting's chat |
+| `TeamsTab.ReadWriteSelfForChat.All` | Pinning the C.L.I.P tab in the meeting |
+| `TeamsActivity.Send` | The notice to the lecturer |
+| `AppCatalog.Read.All` | Only when `TEAMS_CATALOG_APP_ID` is not set |
+
+`Calendars.Read` covers every mailbox in the tenant unless an Exchange
+application access policy limits it to a lecturers' group; do that outside a
+test tenant. `TEAMS_CATALOG_APP_ID` is the app's id in the organisation's
+catalog (Teams admin center, Manage apps, C.L.I.P, App ID), not the manifest
+id. The activity notice needs the manifest's `activities` entry, so upload
+`clip.zip` again after this version (0.3.8).
+
 ## Not done yet
 
 - **Checking the meeting organizer when a meeting is linked.** Nothing yet
