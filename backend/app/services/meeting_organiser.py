@@ -27,6 +27,7 @@ from urllib.parse import quote, unquote
 
 import httpx
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import Principal
@@ -40,6 +41,7 @@ from app.core.errors import (
 from app.models.teams_meeting_reference import TeamsMeetingReference
 from app.repositories.teams_user_mapping_repository import TeamsUserMappingRepository
 from app.schemas.identity import Role
+from app.schemas.meetings import MEETING_THREAD, meeting_id_for_thread
 from app.services.teams_notifications import connector_url, notifications
 
 log = logging.getLogger("clip.teams.organiser")
@@ -110,40 +112,94 @@ async def require_organiser(
 
 # A Teams join link carries the meeting chat's thread, which is the
 # conversation the bot posts into once it is in the meeting.
-_THREAD = re.compile(r"19:meeting_[A-Za-z0-9_\-]+@thread\.v2")
 
 
 def thread_in(join_url: str) -> str | None:
     """The meeting chat thread a Teams join link names, or None."""
-    found = _THREAD.search(unquote(unquote(join_url)))
+    found = MEETING_THREAD.search(unquote(unquote(join_url)))
     return found.group(0) if found else None
 
 
-async def meeting_for_join_link(db: AsyncSession, join_url: str, settings: Settings) -> str:
-    """The meeting id the bot knows for the meeting this join link opens.
+# The short links Outlook and new Teams put in invitations
+# (teams.microsoft.com/meet/<number>?p=<passcode>) carry no meeting chat.
+_SHORT_LINK = re.compile(r"^https://teams\.(microsoft|live)\.com/meet/\d+", re.I)
 
-    The bot learns a meeting's id when it is added to the meeting, so the
-    link is matched against the meetings it is in. A link to a meeting it
-    has not been added to is refused with what to do about it.
+
+def is_short_link(join_url: str) -> bool:
+    return bool(_SHORT_LINK.match(join_url.strip()))
+
+
+SHORT_LINK_MESSAGE = (
+    "That is a short Teams link, which does not say which meeting it is. Open the "
+    "meeting in Teams and link it from C.L.I.P in the meeting, or copy its full link "
+    "(it starts https://teams.microsoft.com/l/meetup-join/)."
+)
+NOT_IN_MEETING_MESSAGE = (
+    "C.L.I.P is not in this meeting yet. Open the meeting in Teams, add C.L.I.P "
+    "from Apps, then link it here."
+)
+
+
+async def meeting_for_join_link(
+    db: AsyncSession, join_url: str, settings: Settings, fetch=None
+) -> str:
+    """The meeting id for the meeting this join link opens.
+
+    The id comes from the link itself. Teams is then asked about the meeting
+    through the bot, and only answers for a meeting the bot is in, so a link
+    to a meeting without C.L.I.P is refused with what to do about it.
     """
     thread = thread_in(join_url)
     if thread is None:
+        if is_short_link(join_url):
+            raise ValidationError(SHORT_LINK_MESSAGE)
         raise ValidationError(
             "That is not a Teams meeting link. Copy it from the meeting's "
             "invitation: Join the meeting now."
         )
+    derived = meeting_id_for_thread(thread)
+    tenant = func.lower(TeamsMeetingReference.tenant_id) == settings.tenant_id.lower()
     meeting_id = await db.scalar(
         select(TeamsMeetingReference.meeting_id)
         .where(
-            func.lower(TeamsMeetingReference.conversation_id).startswith(thread.lower()),
-            func.lower(TeamsMeetingReference.tenant_id) == settings.tenant_id.lower(),
+            tenant,
+            (TeamsMeetingReference.meeting_id == derived)
+            | func.lower(TeamsMeetingReference.conversation_id).startswith(thread.lower()),
         )
         .order_by(TeamsMeetingReference.seen_at.desc())
         .limit(1)
     )
-    if meeting_id is None:
-        raise ConflictError(
-            "C.L.I.P is not in this meeting yet. Open the meeting in Teams, add C.L.I.P "
-            "from Apps, then link it here."
+    if meeting_id is not None or not settings.teams_notifications_enabled:
+        return meeting_id or derived
+    # Nothing from this meeting has reached the bot since it was added, or it
+    # was added before C.L.I.P could tell a meeting from its chat. Every
+    # meeting in the tenant is reached through the same connector, so ask
+    # Teams about this one there.
+    service_url = await db.scalar(
+        select(TeamsMeetingReference.service_url)
+        .where(tenant)
+        .order_by(TeamsMeetingReference.seen_at.desc())
+        .limit(1)
+    )
+    if service_url is None:
+        raise ConflictError(NOT_IN_MEETING_MESSAGE)
+    try:
+        await (fetch or fetch_meeting_details)(settings, service_url, derived)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in (401, 403, 404):
+            raise ConflictError(NOT_IN_MEETING_MESSAGE) from exc
+        raise ServiceUnavailableError("Teams did not answer. Try again.") from exc
+    except (httpx.HTTPError, ValueError) as exc:
+        raise ServiceUnavailableError("Teams did not answer. Try again.") from exc
+    await db.execute(
+        insert(TeamsMeetingReference)
+        .values(
+            meeting_id=derived,
+            service_url=service_url,
+            conversation_id=thread,
+            tenant_id=settings.tenant_id,
         )
-    return meeting_id
+        .on_conflict_do_nothing(index_elements=[TeamsMeetingReference.meeting_id])
+    )
+    await db.commit()
+    return derived

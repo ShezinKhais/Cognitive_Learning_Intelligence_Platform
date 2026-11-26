@@ -858,7 +858,7 @@ async def test_a_refused_pop_up_falls_back_to_the_answer_now_card(monkeypatch) -
     client_type = httpx.AsyncClient
     monkeypatch.setattr(module, "get_session_factory", lambda: Db)
     monkeypatch.setattr(module, "_meeting_members", members)
-    monkeypatch.setattr(module, "_targeted_popup", refused)
+    monkeypatch.setattr(module, "targeted_popup", refused)
     monkeypatch.setattr(TeamsNotifications, "access_token", token)
     monkeypatch.setattr(
         module.httpx,
@@ -913,7 +913,7 @@ async def test_a_last_call_pops_the_checkpoint_up_for_those_still_to_answer(monk
 
     monkeypatch.setattr(module, "get_session_factory", lambda: Db)
     monkeypatch.setattr(module, "_meeting_members", members)
-    monkeypatch.setattr(module, "_targeted_popup", popup)
+    monkeypatch.setattr(module, "targeted_popup", popup)
     monkeypatch.setattr(TeamsNotifications, "access_token", token)
 
     session_id = uuid4()

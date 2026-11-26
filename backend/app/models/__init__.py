@@ -30,6 +30,7 @@ from app.models.session_activity import SessionActivity
 from app.models.session_participant import SessionParticipant
 from app.models.student import Student
 from app.models.student_response import StudentResponse
+from app.models.teams_auto_join import TeamsAutoJoin
 from app.models.teams_meeting_link import TeamsMeetingLink
 from app.models.teams_meeting_reference import TeamsMeetingReference
 from app.models.teams_participant_mapping import TeamsParticipantMapping
@@ -61,6 +62,7 @@ __all__ = [
     "Student",
     "StudentResponse",
     "TeamsMeetingLink",
+    "TeamsAutoJoin",
     "TeamsMeetingReference",
     "TeamsParticipantMapping",
     "TeamsRosterSync",

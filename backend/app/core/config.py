@@ -220,6 +220,15 @@ class Settings(BaseSettings):
     attendance_late_minutes: int = Field(default=20, ge=0)
     teams_app_base_url: str = ""
     teams_app_id: str = ""
+    # Put C.L.I.P in every Teams meeting a linked lecturer organises, without
+    # them adding it (teams_meeting_watch). Needs teams_notifications_enabled
+    # and Graph application permissions granted with admin consent.
+    teams_auto_join_enabled: bool = False
+    teams_auto_join_interval_seconds: int = Field(default=300, ge=60)
+    teams_auto_join_days: int = Field(default=14, ge=1, le=60)
+    # The app's id in the organisation's Teams catalog. Empty looks it up
+    # from teams_app_id, which needs AppCatalog.Read.All as well.
+    teams_catalog_app_id: str = ""
     # Where the bot gets its token to post into Teams. A single-tenant bot
     # (an Azure Bot) uses its own tenant, the default. A bot registered in
     # the Teams Developer Portal is multi-tenant and must use botframework.com.
@@ -358,6 +367,8 @@ class Settings(BaseSettings):
                 )
             UUID(self.tenant_id)
             UUID(self.client_id)
+        if self.teams_auto_join_enabled and not self.teams_notifications_enabled:
+            raise ValueError("TEAMS_AUTO_JOIN_ENABLED requires TEAMS_NOTIFICATIONS_ENABLED")
         if self.teams_notifications_enabled:
             if not self.teams_configured:
                 raise ValueError(
