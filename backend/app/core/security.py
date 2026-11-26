@@ -48,6 +48,7 @@ class TokenClaims:
     # When the user typed their password. A refreshed token keeps the time of
     # the sign-in it came from, so the sign-in as a whole can be capped.
     auth_time: datetime
+    token_version: int = 0
 
 
 def hash_password(password: str) -> str:
@@ -106,6 +107,7 @@ def create_access_token(
     settings: Settings,
     expires_delta: timedelta | None = None,
     auth_time: datetime | None = None,
+    token_version: int = 0,
 ) -> tuple[str, int]:
     """Create a signed JWT and return it with its lifetime in seconds.
 
@@ -127,6 +129,7 @@ def create_access_token(
         "iat": now,
         "exp": expires_at,
         "auth_time": int(signed_in.timestamp()),
+        "token_version": token_version,
     }
 
     token = jwt.encode(
@@ -155,6 +158,10 @@ def decode_access_token(token: str, settings: Settings) -> TokenClaims:
         # they were issued.
         auth_time = datetime.fromtimestamp(int(payload.get("auth_time", payload["iat"])), UTC)
 
+        version = payload.get("token_version", 0)
+        if type(version) is not int or version < 0:
+            raise ValueError("invalid token version")
+
         if not email:
             raise ValueError("empty email")
 
@@ -171,6 +178,7 @@ def decode_access_token(token: str, settings: Settings) -> TokenClaims:
         role=role,
         email=email,
         auth_time=auth_time,
+        token_version=version,
     )
 
 
@@ -181,6 +189,7 @@ def create_refresh_token(
     email: str,
     settings: Settings,
     auth_time: datetime,
+    token_version: int = 0,
 ) -> tuple[str, int]:
     """Create the token kept in the httpOnly refresh cookie.
 
@@ -198,6 +207,7 @@ def create_refresh_token(
         "iat": now,
         "exp": expires_at,
         "auth_time": int(auth_time.timestamp()),
+        "token_version": token_version,
     }
 
     token = jwt.encode(payload, settings.clip_secret_key, algorithm=JWT_ALGORITHM)
@@ -222,13 +232,23 @@ def decode_refresh_token(token: str, settings: Settings) -> TokenClaims:
         email = str(payload["email"]).strip().lower()
         auth_time = datetime.fromtimestamp(int(payload["auth_time"]), UTC)
 
+        version = payload.get("token_version", 0)
+        if type(version) is not int or version < 0:
+            raise ValueError("invalid token version")
+
         if not email:
             raise ValueError("empty email")
 
     except (jwt.PyJWTError, KeyError, TypeError, ValueError) as exc:
         raise TokenValidationError("invalid or expired refresh token") from exc
 
-    return TokenClaims(user_id=user_id, role=role, email=email, auth_time=auth_time)
+    return TokenClaims(
+        user_id=user_id,
+        role=role,
+        email=email,
+        auth_time=auth_time,
+        token_version=version,
+    )
 
 
 def extract_bearer_token(authorization: str | None) -> str:

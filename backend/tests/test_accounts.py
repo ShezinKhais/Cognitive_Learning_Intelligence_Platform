@@ -170,6 +170,7 @@ async def test_a_password_reset_replaces_the_old_one(db) -> None:
     )
     _, second = await accounts.reset_password(db, lecturer.id)
     user = await db.get(User, lecturer.id)
+    assert user.token_version == 1
     assert first != second
     assert verify_password(second, user.password_hash)
     assert not verify_password(first, user.password_hash)

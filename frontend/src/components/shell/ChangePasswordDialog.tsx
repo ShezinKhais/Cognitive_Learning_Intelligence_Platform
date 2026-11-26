@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 
-import { ApiError, apiAuthenticatedRequest } from '../../api'
+import { ApiError, apiAuthenticatedRequest, clearAccessToken } from '../../api'
 import { buttonStyles } from '../ui/button'
 import { useToast } from '../ui/toast'
 
@@ -48,10 +48,10 @@ export default function ChangePasswordDialog({ open, onClose }: { open: boolean;
     setSaving(true)
     setError(null)
     changePassword(current, next).then(
-      () => {
-        setSaving(false)
-        notify('Password changed')
-        close()
+      async () => {
+        notify('Password changed. Please sign in again.')
+        await clearAccessToken()
+        window.location.assign('/')
       },
       (caught: unknown) => {
         setSaving(false)
@@ -76,6 +76,7 @@ export default function ChangePasswordDialog({ open, onClose }: { open: boolean;
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
           At least {MIN_LENGTH} characters. A few unrelated words are easier to remember than symbols.
+          Changing your password will sign you out of C.L.I.P on all devices. You will need to sign in again.
         </p>
         <label htmlFor={`${id}-current`} className="mt-4 block text-sm font-semibold">
           Current password
