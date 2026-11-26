@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import Boolean, CheckConstraint, String, true
+from sqlalchemy import Boolean, CheckConstraint, Integer, String, true
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -42,6 +42,14 @@ class User(Base):
     password_hash: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
+    )
+
+    # A security reset increments this to invalidate older sessions.
+    token_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
     )
 
     active: Mapped[bool] = mapped_column(

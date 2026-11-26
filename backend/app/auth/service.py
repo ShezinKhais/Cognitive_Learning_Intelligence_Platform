@@ -90,6 +90,13 @@ async def _holder(
     if user.email.lower() != claims.email.lower() or user.role != claims.role:
         raise TokenValidationError("token identity no longer matches the user")
 
+    if settings.is_production:
+        account = await UserRepository(db).get_by_id(claims.user_id)
+        if account is None or account.token_version != claims.token_version:
+            raise TokenValidationError("session was invalidated by a security reset")
+    elif claims.token_version != 0:
+        raise TokenValidationError("unexpected development token version")
+
     return user
 
 
@@ -128,5 +135,6 @@ async def renew_token(
         email=user.email,
         settings=settings,
         auth_time=claims.auth_time,
+        token_version=claims.token_version,
     )
     return RenewedToken(access_token=renewed, expires_in=expires_in, user=user)

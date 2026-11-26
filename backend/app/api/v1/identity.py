@@ -52,6 +52,7 @@ from app.core.security import (
 from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.realtime.classroom import classroom
+from app.realtime.hub import hub
 from app.repositories.consent_repository import ConsentRepository
 from app.repositories.teams_user_mapping_repository import TeamsUserMappingRepository
 from app.repositories.user_repository import UserRepository
@@ -220,6 +221,7 @@ async def login(
         email=claims.email,
         settings=settings,
         auth_time=claims.auth_time,
+        token_version=claims.token_version,
     )
     _set_refresh_cookie(response, refresh_token, max_age, settings)
     return token
@@ -323,6 +325,7 @@ async def _authenticate(
         role=role,
         email=user.email,
         settings=settings,
+        token_version=user.token_version if settings.is_production else 0,
     )
 
     if settings.is_production:
@@ -380,7 +383,11 @@ async def teams_sign_in(
 
     role = _normalise_role(user.role)
     token, expires_in = create_access_token(
-        user_id=user.id, role=role, email=user.email, settings=settings
+        user_id=user.id,
+        role=role,
+        email=user.email,
+        settings=settings,
+        token_version=user.token_version if settings.is_production else 0,
     )
     claims = decode_access_token(token, settings)
     refresh_token, max_age = create_refresh_token(
@@ -389,6 +396,7 @@ async def teams_sign_in(
         email=user.email,
         settings=settings,
         auth_time=claims.auth_time,
+        token_version=claims.token_version,
     )
     _set_refresh_cookie(response, refresh_token, max_age, settings)
     log.info("security_event=LOGIN_SUCCEEDED user_id=%s role=%s method=teams", user.id, role.value)
@@ -551,6 +559,7 @@ async def change_password(
             "Choose a password different from the current one.", {"field": "new_password"}
         )
     user.password_hash = hash_password(payload.new_password)
+    user.token_version += 1
     # Audited here rather than by @audit_action: a wrong password commits its
     # failed attempt before refusing, and the decorator would record that
     # commit as a password change.
@@ -564,6 +573,15 @@ async def change_password(
     )
     await db.commit()
     log.info("security_event=PASSWORD_CHANGED user_id=%s", user.user_id)
+    try:
+        await hub.close_user_sessions(
+            user.user_id, 4001, "account credentials changed", include_user_channel=True
+        )
+    except Exception:
+        log.exception(
+            "security_event=ACCOUNT_SOCKET_REVOCATION_FAILED user_id=%s",
+            user.user_id,
+        )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
