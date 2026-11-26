@@ -52,6 +52,7 @@ from app.core.security import (
 from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.realtime.classroom import classroom
+from app.realtime.hub import hub
 from app.repositories.consent_repository import ConsentRepository
 from app.repositories.teams_user_mapping_repository import TeamsUserMappingRepository
 from app.repositories.user_repository import UserRepository
@@ -572,6 +573,15 @@ async def change_password(
     )
     await db.commit()
     log.info("security_event=PASSWORD_CHANGED user_id=%s", user.user_id)
+    try:
+        await hub.close_user_sessions(
+            user.user_id, 4001, "account credentials changed", include_user_channel=True
+        )
+    except Exception:
+        log.exception(
+            "security_event=ACCOUNT_SOCKET_REVOCATION_FAILED user_id=%s",
+            user.user_id,
+        )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

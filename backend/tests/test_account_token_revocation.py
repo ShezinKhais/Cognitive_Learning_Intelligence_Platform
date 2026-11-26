@@ -15,7 +15,11 @@ from app.core.security import (
     decode_access_token,
     decode_refresh_token,
 )
+from app.models.user import User
 from app.schemas.identity import Role
+from app.services import accounts as account_service
+
+from .session_support import add_lecturer
 
 
 def settings():
@@ -123,40 +127,52 @@ async def test_reset_invalidates_old_access_and_refresh_tokens(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_other_accounts_are_not_revoked(monkeypatch):
-    first_id, first_email, role = identity()
-    second_id, second_email, _ = identity()
+async def test_other_accounts_are_not_revoked(db):
+    """A real password reset must not revoke a different account's tokens."""
+    _, factory, created = db
 
-    accounts = {
-        first_id: SimpleNamespace(
-            id=first_id,
-            email=first_email,
-            role=role.value,
-            active=True,
-            token_version=1,
-        ),
-        second_id: SimpleNamespace(
-            id=second_id,
-            email=second_email,
-            role=role.value,
-            active=True,
-            token_version=0,
-        ),
-    }
+    first_id = await add_lecturer(factory, created)
+    second_id = await add_lecturer(factory, created)
 
-    class Repository:
-        def __init__(self, db):
-            pass
+    async with factory() as session:
+        first = await session.get(User, first_id)
+        second = await session.get(User, second_id)
 
-        async def get_by_id(self, requested):
-            return accounts.get(requested)
+        first_email = first.email
+        second_email = second.email
 
-    monkeypatch.setattr(service, "UserRepository", Repository)
+    first_access, first_refresh = tokens(first_id, first_email, Role.LECTURER, 0)
+    other_access, other_refresh = tokens(second_id, second_email, Role.LECTURER, 0)
 
-    other_access, other_refresh = tokens(second_id, second_email, role, 0)
+    # Both accounts authenticate before the administrator resets the first.
+    async with factory() as session:
+        await service.user_from_token(first_access, settings(), session)
+        await service.renew_token(first_refresh, settings(), session)
+        await service.user_from_token(other_access, settings(), session)
+        await service.renew_token(other_refresh, settings(), session)
 
-    await service.user_from_token(other_access, settings(), None)
-    await service.renew_token(other_refresh, settings(), None)
+    # Invoke the actual password-reset service, including its database commit.
+    async with factory() as session:
+        await account_service.reset_password(session, first_id)
+
+    async with factory() as session:
+        first = await session.get(User, first_id)
+        second = await session.get(User, second_id)
+
+        assert first.token_version == 1
+        assert second.token_version == 0
+
+        with pytest.raises(TokenValidationError, match="security reset"):
+            await service.user_from_token(first_access, settings(), session)
+
+        with pytest.raises(TokenValidationError, match="security reset"):
+            await service.renew_token(first_refresh, settings(), session)
+
+        still_active = await service.user_from_token(other_access, settings(), session)
+        renewed = await service.renew_token(other_refresh, settings(), session)
+
+        assert still_active.id == second_id
+        assert decode_access_token(renewed.access_token, settings()).token_version == 0
 
 
 def test_legacy_version_zero_tokens_remain_compatible():

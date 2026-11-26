@@ -1,4 +1,4 @@
-﻿# Cyber 1 account recovery: Issue #171
+# Cyber 1 account recovery: Issue #171
 
 ## Recovery model
 
@@ -63,6 +63,25 @@ sign-in receives the current version.
 
 The change invalidates C.L.I.P sessions, not the user's Microsoft
 Entra sessions.
+
+After a successful administrator password reset or self-service
+password change, the backend also closes the affected user's
+currently registered WebSocket connections, including live-session
+and personal progress channels. Other users' connections are not
+intentionally disconnected.
+
+WebSocket disconnection is currently process-local: each backend
+process maintains its own connection registry. A multi-process or
+multi-host deployment requires coordinated revocation across
+instances. This implementation does not claim cross-instance
+WebSocket disconnection.
+
+Account-version checks for access and refresh tokens are enforced
+in production mode. Development mode retains its existing
+development-account authentication behavior.
+
+After changing their own password, users are explicitly signed out
+of the frontend and must sign in again.
 
 Normal sign-out behavior is unchanged: clearing a refresh cookie
 is not a general server-side session revocation mechanism.
