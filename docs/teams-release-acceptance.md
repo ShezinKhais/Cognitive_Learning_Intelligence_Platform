@@ -20,23 +20,58 @@ without caching. The web file also contains the built frontend switches.
 An unstamped image says `unknown`; it cannot pass the comparison. These stamps
 help identify a build; they are not a cryptographic attestation of its contents.
 
-Record the actual web and backend image IDs and architecture using
-`docker image inspect --format '{{.Id}} {{.Architecture}}'`, the database
-image digest, migration via `alembic current` inside the backend, frontend
-lockfile hash, and installed Python versions via `python -m pip list --format=freeze`
-inside the backend. Record effective feature switches, exact model names/digests,
-speech model hash/language, and the prompt/evaluation source commit. Copy only
-these selected values. Do not export full environment files, image environment
-fields, credentials or meeting identifiers into shared evidence.
+Then record what the backend is running. This prints JSON with the commit,
+the database migration against the code's head, every true/false switch, the
+chat and embedding models with their Ollama digests, the prompt versions, and
+a hash of the installed Python packages. It prints no URL, key, secret or
+account id, so the output can go into shared evidence as it is:
 
-Keep the tested images under their release tag or export them with `docker save`;
-retaining the actual images allows re-use even if a base tag or package changes.
-This does not make a clean rebuild from floating base tags/Python ranges bitwise
-reproducible. For rollback, stop live classes, check migration compatibility with
-the older images and follow the existing database backup/restore runbook if
-needed. Select the previously recorded image tag and run Compose with
-`--no-build`; verify both identities before resuming. Do not rebuild an older
-tag from the current checkout or automatically downgrade a production database.
+```sh
+docker compose -p clip-demo -f docker-compose.demo.yml --env-file deploy/demo.env \
+  exec -T backend python - < backend/scripts/record_release.py
+docker image inspect --format '{{.Id}} {{.Architecture}}' \
+  clip-demo-backend:"$CLIP_IMAGE_TAG" clip-demo-web:"$CLIP_IMAGE_TAG"
+```
+
+Add the frontend lockfile hash (`sha256sum frontend/package-lock.json`), the
+Teams package version and ZIP hash, and the speech model hash and language when
+speech is on (`python scripts/check_live_speech.py` in the backend). Copy only
+these values. Do not export full environment files, image environment fields,
+credentials or meeting identifiers into shared evidence.
+
+The package hash covers every installed distribution, pip and setuptools
+included, so it changes with the base image's tooling even when the app's own
+pins are the same. Equal hashes mean the same packages; different hashes mean
+compare the package lists before calling it an app difference. A model shown
+as `(could not reach Ollama)` means the record could not ask Ollama, not that
+the model is missing; `(not pulled)` means Ollama answered without it.
+
+### What makes a rebuild the same
+
+- Base images are pinned by digest: `python:3.12.16-slim`, `node:24.22.3-alpine`,
+  `nginx:1.31.7-alpine` and `pgvector/pgvector:pg16` (PostgreSQL 16.14), each
+  the version the demo ran when the pins were taken.
+- Backend packages install from `backend/constraints.txt`, the exact versions of
+  that image; `pyproject.toml` keeps the ranges for development. Frontend
+  packages install with `npm ci` from `package-lock.json`.
+- The transcription extra's own packages are not in the constraints yet, so an
+  image built with `ENABLE_LIVE_TRANSCRIPTION=true` can still differ.
+- Ollama models are named by tag; the record above captures the digest that
+  answered, which is what to compare between machines.
+
+To move a pin, change it, rebuild, run the suite and the checks on this page,
+and commit the new pin with the result. A stamp identifies a build; it is not a
+cryptographic attestation of its contents.
+
+### Known-good release and rollback
+
+Keep the tested images under their release tag (`CLIP_IMAGE_TAG`) or export them
+with `docker save`. For rollback, stop live classes, check migration
+compatibility with the older images and follow the existing database
+backup/restore runbook if needed. Select the previously recorded image tag and
+run Compose with `--no-build`; verify both identities with
+`check_deployed_release.py` before resuming. Do not rebuild an older tag from
+the current checkout or automatically downgrade a production database.
 
 ## Validate the package
 
@@ -61,8 +96,10 @@ See [Microsoft's package update guidance](https://learn.microsoft.com/en-us/micr
 
 ## OCR in the demo image
 
-Set `OCR_IN_IMAGE=true` before building to install Tesseract and enable OCR for
-scanned PDFs. The image ships English support; additional languages and
+`OCR_IN_IMAGE` is `true` in the demo example and the Compose default, which
+installs Tesseract and enables OCR for scanned PDFs. Set it to `false` for a
+smaller image; scanned pages are then reported as unreadable rather than
+silently empty. The image ships English support; additional languages and
 LibreOffice vector conversion are outside this image option. A clean synthetic
 scan must yield expected text and a blank scan must be labelled unreadable.
 Low-contrast and formula samples are observations: OCR text, especially equations,

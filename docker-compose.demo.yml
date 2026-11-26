@@ -11,7 +11,8 @@ name: clip-demo
 
 services:
   db:
-    image: pgvector/pgvector:pg16
+    # PostgreSQL 16.14 with pgvector, pinned to the image the demo database runs.
+    image: pgvector/pgvector:pg16@sha256:a36250871de0833b8757561c72f2477ef1ddd1101afa4e617fb552e0de514c6b
     restart: unless-stopped
     environment:
       POSTGRES_USER: clip
@@ -32,7 +33,7 @@ services:
       context: ./backend
       args:
         CLIP_RELEASE_SHA: ${CLIP_RELEASE_SHA:-unknown}
-        ENABLE_OCR: ${OCR_IN_IMAGE:-false}
+        ENABLE_OCR: ${OCR_IN_IMAGE:-true}
         ENABLE_LIVE_TRANSCRIPTION: ${LIVE_TRANSCRIPTION_ENABLED:-false}
     image: clip-demo-backend:${CLIP_IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -50,7 +51,7 @@ services:
       FORWARDED_ALLOW_IPS: "*"
       # No model is needed to log in and run a class. Point this at an Ollama
       # on the host to get generated questions and the tutor.
-      OCR_ENABLED: ${OCR_IN_IMAGE:-false}
+      OCR_ENABLED: ${OCR_IN_IMAGE:-true}
       AI_WARMUP_ENABLED: ${AI_WARMUP_ENABLED:-false}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5}
