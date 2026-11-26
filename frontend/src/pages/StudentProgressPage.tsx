@@ -133,7 +133,7 @@ export default function StudentProgressPage() {
             </Link>
           </div>
         )}
-        <EngagementHistory />
+        {reviews && <EngagementHistory />}
       </PageBody>
     </>
   )

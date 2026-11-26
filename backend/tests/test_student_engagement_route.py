@@ -68,4 +68,9 @@ def test_empty_student_engagement_history_is_explicit(as_student, app, monkeypat
 
     assert body["classes"] == []
     assert body["total"] == 0
-    assert "not counted" in body["explanation"] or "not" in body["explanation"]
+    assert body["explanation"] == (
+        "What was recorded in each finished class. Answers and missed checkpoints come from "
+        "the class itself. Camera and microphone counts appear only for readings you agreed "
+        "to, and only from when you agreed. A class with no reading says so; it is not counted "
+        "as zero, and none of this measures how well you understood."
+    )

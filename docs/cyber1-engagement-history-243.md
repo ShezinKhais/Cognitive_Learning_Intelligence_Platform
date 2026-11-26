@@ -1,4 +1,4 @@
-﻿# Cyber 1 student engagement history: Issue #243
+# Cyber 1 student engagement history: Issue #243
 
 ## Existing implementation
 
@@ -13,8 +13,8 @@ The existing contract is documented in student-engagement-history.md.
 ## Changes in this branch
 
 - Show an accessible loading state while history is requested.
-- Show an explicit message when no completed history is available.
-- Show an accessible error message when history cannot be loaded.
+- Avoid a duplicate empty-history message when no completed classes are available.
+- Show an accessible error message with a Retry button when history cannot be loaded.
 - Test partial camera and microphone signal availability.
 - Test withdrawal and regranting of sensor consent.
 - Test that deleted readings become none_recorded, not zero.
@@ -28,9 +28,10 @@ Environment: local Windows development worktree, isolated Cyber 1
 PostgreSQL test database.
 
 - Student engagement, review, consent and route tests: 45 passed.
-- Frontend unit tests: 360 passed.
-- Frontend production build, lint and test commands completed
-  successfully in Step 154.
+- Frontend tests: 360 existing tests passed before the new regression tests were added.
+- Frontend production build and lint completed successfully after the UI changes.
+- Added regression tests for loading, error, empty and ready states,
+  retry generation, and the presence of the Retry control.
 - Backend Ruff checks passed.
 - Git diff checks passed.
 

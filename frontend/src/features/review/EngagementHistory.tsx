@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 
 import { apiAuthenticatedGet } from '../../api'
+import { historyViewState, nextHistoryAttempt } from './engagementHistoryState'
+import { buttonStyles } from '../../components/ui/button'
 import { Panel, Tag } from '../../components/ui/primitives'
 
 type Availability = 'available' | 'none_recorded' | 'not_consented'
@@ -36,6 +38,7 @@ function reading(state: Availability, windows: number | null): string {
 export default function EngagementHistory() {
   const [history, setHistory] = useState<History | null>(null)
   const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let current = true
@@ -46,19 +49,34 @@ export default function EngagementHistory() {
     return () => {
       current = false
     }
-  }, [])
+  }, [attempt])
 
-  if (failed) {
+  function retry() {
+    setFailed(false)
+    setHistory(null)
+    setAttempt(nextHistoryAttempt)
+  }
+
+  const view = historyViewState({ failed, history })
+
+  if (view === 'error') {
     return (
       <section aria-label="Class by class" className="mt-6">
         <p role="alert" className="text-sm text-muted-foreground">
-          Your class-by-class history could not be loaded. Please try again later.
+          Your class-by-class history could not be loaded.
         </p>
+        <button
+          type="button"
+          onClick={retry}
+          className={buttonStyles({ intent: "secondary", className: "mt-3" })}
+        >
+          Retry class history
+        </button>
       </section>
     )
   }
 
-  if (!history) {
+  if (view === 'loading') {
     return (
       <p role="status" className="mt-6 text-sm text-muted-foreground">
         Loading your class-by-class history…
@@ -66,16 +84,8 @@ export default function EngagementHistory() {
     )
   }
 
-  if (history.classes.length === 0) {
-    return (
-      <Panel title="Class by class" className="mt-6">
-        <p role="status" className="text-sm text-muted-foreground">
-          No finished class history is available yet. Your participation and
-          optional device readings will appear here when a class has ended
-          and those records are available.
-        </p>
-      </Panel>
-    )
+  if (view === 'empty' || !history) {
+    return null
   }
 
   return (
