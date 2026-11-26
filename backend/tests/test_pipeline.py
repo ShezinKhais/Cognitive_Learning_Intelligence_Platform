@@ -19,10 +19,15 @@ import pytest
 from app.realtime.hub import SessionHub
 from app.schemas.content import Difficulty, QuestionType
 from app.schemas.events import MaterialProgressPayload, MaterialStage, ServerEventType
+from app.services.ai_gateway import AiUnavailableError
 from app.services.extraction import ExtractedElement, Extraction
 from app.services.jobs import INTERNAL_ERROR, JobStatus
 from app.services.material_seams import CompletedMaterial, DraftQuestion, EmbeddingBatch
-from app.services.pipeline import FEW_QUESTIONS_WARNING, NO_QUESTIONS_WARNING
+from app.services.pipeline import (
+    FEW_QUESTIONS_WARNING,
+    MODEL_UNAVAILABLE_MESSAGE,
+    NO_QUESTIONS_WARNING,
+)
 
 from .pipeline_support import (
     SAMPLES,
@@ -456,6 +461,27 @@ async def test_an_unexpected_failure_is_recorded_as_a_code(tmp_path: Path) -> No
         await pipeline.job(await stored_text(storage), uuid4()).run()
 
     assert store.outcomes[0].error == INTERNAL_ERROR
+
+
+class UnreachableEmbedder:
+    """The gateway's answer when the model server is down."""
+
+    async def embed(self, chunks):
+        raise AiUnavailableError("The assistant is unavailable. Try again shortly.", {})
+
+
+async def test_an_unreachable_model_server_is_reported_clearly(tmp_path: Path) -> None:
+    """#238: not "Processing failed unexpectedly", and the file is kept for a retry."""
+    store = Store()
+    pipeline, storage, _ = build(tmp_path, embedder=UnreachableEmbedder(), store=store)
+    stored = await stored_text(storage)
+
+    result = await pipeline.job(stored, uuid4()).run()
+
+    assert result is None
+    assert store.outcomes[0].message == MODEL_UNAVAILABLE_MESSAGE
+    assert store.outcomes[0].error == "AI_UNAVAILABLE"
+    assert exists(stored.key)
 
 
 async def test_a_draft_that_breaks_the_check_is_dropped_not_fatal(tmp_path: Path) -> None:
