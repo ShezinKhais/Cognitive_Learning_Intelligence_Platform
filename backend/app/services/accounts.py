@@ -198,10 +198,12 @@ async def update_account(
 
 
 async def reset_password(db: AsyncSession, user_id: UUID) -> tuple[AccountOut, str]:
-    user = await db.get(User, user_id)
+    # Lock the row so simultaneous security resets cannot lose a version increment.
+    user = await db.get(User, user_id, with_for_update=True)
     if user is None:
         raise NotFoundError("No such account.")
     password = new_password()
     user.password_hash = hash_password(password)
+    user.token_version += 1
     await db.commit()
     return await get_account(db, user_id), password

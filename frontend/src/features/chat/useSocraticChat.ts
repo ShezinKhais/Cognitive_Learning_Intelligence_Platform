@@ -37,7 +37,7 @@ export function useSocraticChat(sessionId: string, discussionSince?: string, dis
     setHistoryLoading(true)
     setHistoryError(null)
 
-    void listAllChatHistory(abort.signal).then(
+    void listAllChatHistory(abort.signal, sessionId).then(
       (saved) => {
         if (!mounted) return
         const source = discussion ? 'discussion' : 'materials'

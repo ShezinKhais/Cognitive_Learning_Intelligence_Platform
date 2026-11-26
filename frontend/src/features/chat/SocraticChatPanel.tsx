@@ -101,7 +101,7 @@ export function SocraticChatPanel({
           </button>
           {historyLoading && (
             <span role="status" className="text-xs text-muted-foreground">
-              Loading previous conversations?
+              Loading previous conversations…
             </span>
           )}
           {historyError && (

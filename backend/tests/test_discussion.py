@@ -43,6 +43,30 @@ def test_recursion_catchup_uses_topic_notes_not_unrelated_class_notes():
     assert [chunk.chunk_id for chunk in result] == [notes[1].note_id]
 
 
+def test_broad_recaps_with_general_words_retain_chronological_notes():
+    now = datetime.now(UTC)
+    notes = (
+        DiscussionSource(uuid4(), now, "Recursion basics"),
+        DiscussionSource(
+            uuid4(),
+            now + timedelta(minutes=1),
+            "Merge sort explanation",
+        ),
+        DiscussionSource(
+            uuid4(),
+            now + timedelta(minutes=2),
+            "Quicksort example",
+        ),
+    )
+
+    for question in (
+        "Summarize the main points I missed",
+        "Can you summarize the lecture so far?",
+    ):
+        result = discussion_chunks(notes, question, 6)
+        assert [chunk.chunk_id for chunk in result] == [note.note_id for note in notes]
+
+
 def test_specific_unmentioned_recap_topic_does_not_fall_back():
     now = datetime.now(UTC)
     notes = (

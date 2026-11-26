@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,6 +22,11 @@ class StudentChatExchange(Base):
             "student_id",
             "request_id",
             name="uq_student_chat_exchange_student_request",
+        ),
+        Index(
+            "ix_student_chat_exchange_student_created",
+            "student_id",
+            "created_at",
         ),
     )
 

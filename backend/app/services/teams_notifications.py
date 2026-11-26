@@ -40,7 +40,12 @@ from app.models.teams_meeting_link import MAX_TEAMS_MEETING_ID_LENGTH, TeamsMeet
 from app.models.teams_meeting_reference import TeamsMeetingReference
 from app.models.teams_user_mapping import TeamsUserMapping
 from app.models.user import User
-from app.schemas.meetings import TeamsActivity, activity_meeting_id
+from app.schemas.meetings import (
+    TeamsActivity,
+    activity_meeting_id,
+    meeting_chat_thread,
+    meeting_id_for_thread,
+)
 from app.services import class_glance
 from app.services.course_membership import students_on
 
@@ -79,6 +84,12 @@ def panel_url(base: str, session_id: UUID, path: str = "/teams/meeting") -> str:
         raise ValueError("TEAMS_APP_BASE_URL must be a public HTTPS origin")
     query = urlencode({"sessionId": str(session_id)})
     return f"{parsed.scheme}://{parsed.netloc}{path}?{query}"
+
+
+def class_setup_url(base: str, meeting_id: str) -> str:
+    """The lecturer's pop-up for a meeting with no class yet: is this one?"""
+    origin = panel_url(base, UUID(int=0), "/lecturer/teams/meeting").split("?", 1)[0]
+    return f"{origin}?{urlencode({'meetingId': meeting_id, 'view': 'dialog'})}"
 
 
 def update_url(base: str, session_id: UUID) -> str:
@@ -211,6 +222,11 @@ async def remember_reference(db, activity: TeamsActivity, settings: Settings) ->
     meeting_id = activity_meeting_id(activity)
     conversation_id = conversation.get("id") if isinstance(conversation, dict) else None
     tenant_id = tenant.get("id") if isinstance(tenant, dict) else None
+    if meeting_id is None and "meeting" not in data and activity.type != "event":
+        # C.L.I.P being added to a meeting, and most messages in its chat,
+        # name only the chat. The meeting's id follows from it.
+        thread = meeting_chat_thread(conversation_id)
+        meeting_id = meeting_id_for_thread(thread) if thread else None
     if (
         not isinstance(meeting_id, str)
         or not meeting_id
@@ -588,7 +604,7 @@ class TeamsNotifications:
             # screen. A chat message as well made Teams announce it twice, and
             # its link opened the app's full tab, minimising the meeting.
             try:
-                await _targeted_popup(
+                await targeted_popup(
                     client,
                     base,
                     headers,
@@ -673,7 +689,7 @@ class TeamsNotifications:
             recipients = await _meeting_members(client, base, headers, conversation_id, lecturer)
             if not recipients:
                 return
-            await _targeted_popup(
+            await targeted_popup(
                 client,
                 base,
                 headers,
@@ -744,7 +760,7 @@ class TeamsNotifications:
                 }
             if not recipients:
                 return
-            await _targeted_popup(
+            await targeted_popup(
                 client,
                 base,
                 headers,
@@ -809,7 +825,7 @@ class TeamsNotifications:
             recipients = await _meeting_members(client, base, headers, conversation_id, entra)
             if not recipients or time.time() >= notice.closes_at:
                 return
-            await _targeted_popup(
+            await targeted_popup(
                 client,
                 base,
                 headers,
@@ -882,7 +898,7 @@ class TeamsNotifications:
                         client, base, headers, conversation_id, {lecturer}
                     )
                     if present:
-                        await _targeted_popup(
+                        await targeted_popup(
                             client,
                             base,
                             headers,
@@ -956,7 +972,7 @@ async def _chat_members(
     return recipients
 
 
-async def _targeted_popup(
+async def targeted_popup(
     client: httpx.AsyncClient,
     base: str,
     headers: dict[str, str],

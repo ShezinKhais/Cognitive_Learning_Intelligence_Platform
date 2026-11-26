@@ -73,6 +73,8 @@ async def provision(reset_passwords: bool) -> list[tuple[str, str]]:
 
             if role in STAFF and (created or reset_passwords or not user.password_hash):
                 password = secrets.token_urlsafe(12)
+                if not created:
+                    user.token_version += 1
                 user.password_hash = hash_password(password)
                 issued.append((email, password))
 

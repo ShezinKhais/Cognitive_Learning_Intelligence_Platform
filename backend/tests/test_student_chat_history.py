@@ -90,6 +90,111 @@ async def test_history_query_uses_authenticated_student_id():
 
 
 @pytest.mark.asyncio
+async def test_history_session_filter_preserves_student_ownership():
+    student_id = uuid4()
+    session_id = uuid4()
+    db = SimpleNamespace(
+        scalar=AsyncMock(return_value=0),
+        scalars=AsyncMock(return_value=SimpleNamespace(all=lambda: [])),
+    )
+
+    await my_chat_history(
+        _principal(student_id),
+        db,
+        Response(),
+        limit=25,
+        offset=0,
+        session_id=session_id,
+    )
+
+    for statement in (
+        db.scalar.await_args.args[0],
+        db.scalars.await_args.args[0],
+    ):
+        values = _bound_values(statement)
+        assert student_id in values
+        assert session_id in values
+
+
+@pytest.mark.asyncio
+async def test_cursor_pagination_uses_stable_timestamp_and_id():
+    from datetime import timedelta
+
+    student_id = uuid4()
+    session_id = uuid4()
+    now = datetime.now(UTC)
+    first = SimpleNamespace(
+        id=uuid4(),
+        student_id=student_id,
+        session_id=session_id,
+        request_id="cursor-1",
+        question="First question",
+        answer="First answer",
+        source="materials",
+        phase="completed",
+        citations=[],
+        follow_ups=[],
+        general=False,
+        explanation=None,
+        created_at=now,
+    )
+
+    db = SimpleNamespace(
+        scalar=AsyncMock(return_value=2),
+        scalars=AsyncMock(return_value=SimpleNamespace(all=lambda: [first])),
+    )
+
+    result = await my_chat_history(
+        _principal(student_id),
+        db,
+        Response(),
+        limit=1,
+        offset=0,
+        session_id=session_id,
+    )
+
+    assert result["next_before"] == (f"{first.created_at.isoformat()}|{first.id}")
+
+    previous_timestamp = now - timedelta(minutes=1)
+    cursor = f"{previous_timestamp.isoformat()}|{uuid4()}"
+
+    await my_chat_history(
+        _principal(student_id),
+        db,
+        Response(),
+        limit=1,
+        offset=0,
+        session_id=session_id,
+        before=cursor,
+    )
+
+    params = _bound_values(db.scalars.await_args.args[0])
+    assert student_id in params
+    assert session_id in params
+    assert previous_timestamp in params
+
+
+@pytest.mark.asyncio
+async def test_invalid_chat_history_cursor_is_rejected():
+    from fastapi import HTTPException
+
+    student_id = uuid4()
+    db = SimpleNamespace(scalar=AsyncMock(return_value=0))
+
+    with pytest.raises(HTTPException) as error:
+        await my_chat_history(
+            _principal(student_id),
+            db,
+            Response(),
+            limit=25,
+            offset=0,
+            before="invalid-cursor",
+        )
+
+    assert error.value.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_delete_all_is_scoped_to_authenticated_student():
     settings = SimpleNamespace(is_production=False)
     student_id = uuid4()

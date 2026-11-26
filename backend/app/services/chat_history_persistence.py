@@ -11,12 +11,17 @@ import logging
 from collections.abc import AsyncIterator
 from uuid import UUID
 
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 
 from app.core.database import get_session_factory
 from app.models.student_chat_exchange import StudentChatExchange
+from app.models.user import User
 
 log = logging.getLogger("clip.tutor.history")
+
+# Keep storage bounded independently of time-based retention.
+MAX_HISTORY_PER_STUDENT = 500
 
 
 async def save_completed_exchange(
@@ -55,7 +60,29 @@ async def save_completed_exchange(
     )
 
     async with get_session_factory()() as db:
+        # Serialize history writes for this student so concurrent saves
+        # cannot each leave more than the configured maximum.
+        await db.scalar(select(User.user_id).where(User.user_id == student_id).with_for_update())
+
         await db.execute(statement)
+
+        # Keep the newest exchanges. The UUID resolves timestamp ties.
+        expired_ids = (
+            select(StudentChatExchange.id)
+            .where(StudentChatExchange.student_id == student_id)
+            .order_by(
+                StudentChatExchange.created_at.desc(),
+                StudentChatExchange.id.desc(),
+            )
+            .offset(MAX_HISTORY_PER_STUDENT)
+        )
+
+        await db.execute(
+            delete(StudentChatExchange).where(
+                StudentChatExchange.student_id == student_id,
+                StudentChatExchange.id.in_(expired_ids),
+            )
+        )
         await db.commit()
 
 

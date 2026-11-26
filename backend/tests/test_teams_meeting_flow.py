@@ -7,15 +7,19 @@ reads, and the cards it posts, never leave the test.
 from __future__ import annotations
 
 import asyncio
+import base64
 import random
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
+import httpx
 import pytest
 from sqlalchemy import delete, select
 
 from app.auth.store import LECTURER_ID, get_consent_repository
 from app.core.config import get_settings
+from app.core.errors import ConflictError, ValidationError
 from app.models.course import Course
 from app.models.course_enrollment import CourseLecturer
 from app.models.session import Session
@@ -24,12 +28,12 @@ from app.models.teams_roster_sync import TeamsRosterSync
 from app.models.teams_user_mapping import TeamsUserMapping
 from app.realtime.classroom import classroom
 from app.schemas.identity import ConsentType
-from app.schemas.meetings import TeamsActivity
+from app.schemas.meetings import TeamsActivity, meeting_chat_thread, meeting_id_for_thread
 from app.schemas.session import SessionStatus
 from app.services import teams_meeting_flow as flow_module
 from app.services import teams_replies
 from app.services.meeting_directory import InMemoryMeetingDirectory, meetings
-from app.services.meeting_organiser import thread_in
+from app.services.meeting_organiser import meeting_for_join_link, thread_in
 from app.services.session_lifecycle import MODE_IN_PERSON
 from app.services.teams_meeting_flow import (
     DISMISS,
@@ -43,6 +47,7 @@ from app.services.teams_meeting_flow import (
     question_card,
     started_card,
 )
+from app.services.teams_notifications import remember_reference
 from app.services.teams_presence import MeetingPresence
 
 SERVICE_URL = "https://smba.trafficmanager.net/emea/"
@@ -571,3 +576,137 @@ def test_a_join_link_names_its_meeting_chat(link: str) -> None:
 def test_a_link_that_is_not_a_teams_meeting_names_nothing() -> None:
     assert thread_in("https://example.com/meet/abc") is None
     assert thread_in("https://teams.microsoft.com/l/channel/19%3aabc%40thread.tacv2") is None
+
+
+# -- a meeting's id from its chat ---------------------------------------------------
+
+
+def test_a_meeting_id_follows_from_its_chat() -> None:
+    thread = "19:meeting_NjA1YzQ0ZjMt@thread.v2"
+    assert meeting_chat_thread(thread + ";messageid=1700000000000") == thread
+    assert meeting_chat_thread("19:abc@thread.tacv2") is None
+    assert meeting_chat_thread(None) is None
+    meeting_id = meeting_id_for_thread(thread)
+    assert base64.b64decode(meeting_id).decode() == f"0#{thread}#0"
+
+
+async def test_clip_being_added_to_a_meeting_makes_the_meeting_known() -> None:
+    thread = "19:meeting_NjA1YzQ0ZjMt@thread.v2"
+    added = TeamsActivity.model_validate(
+        {
+            "type": "conversationUpdate",
+            "serviceUrl": SERVICE_URL,
+            "channelId": "msteams",
+            "conversation": {"id": thread},
+            "channelData": {"tenant": {"id": "tenant"}},
+            "membersAdded": [{"id": "28:bot"}],
+        }
+    )
+    db = AsyncMock()
+    settings = get_settings().model_copy(
+        update={
+            "client_id": "bot",
+            "client_secret": "test-secret",
+            "tenant_id": "tenant",
+            "teams_notifications_enabled": True,
+            "teams_app_base_url": "https://clip.example",
+            "teams_app_id": "00000000-0000-0000-0000-000000000051",
+        }
+    )
+    await remember_reference(db, added, settings)
+    params = db.execute.await_args.args[0].compile().params
+    assert params["meeting_id"] == meeting_id_for_thread(thread)
+    assert params["conversation_id"] == thread
+
+
+# -- linking from the website, by the meeting's own id -------------------------------
+
+
+def _link(thread: str) -> str:
+    encoded = thread.replace(":", "%3a").replace("@", "%40")
+    return f"https://teams.microsoft.com/l/meetup-join/{encoded}/0"
+
+
+async def test_a_short_link_says_how_to_link_instead(world) -> None:
+    async with world["factory"]() as db:
+        with pytest.raises(ValidationError, match="short Teams link"):
+            await meeting_for_join_link(
+                db, "https://teams.microsoft.com/meet/123456789?p=abc", world["settings"]
+            )
+
+
+async def test_a_meeting_clip_is_in_is_linked_though_the_bot_never_heard_from_it(world) -> None:
+    thread = f"19:meeting_{uuid4().hex}@thread.v2"
+    asked: list[str] = []
+
+    async def fetch(settings, service_url, meeting_id):  # noqa: ANN001, ANN202
+        asked.append(meeting_id)
+        return {"organizer": {"aadObjectId": world["organiser"]}}
+
+    async with world["factory"]() as db:
+        found = await meeting_for_join_link(db, _link(thread), world["settings"], fetch=fetch)
+        assert found == meeting_id_for_thread(thread) == asked[0]
+        # Kept, so linking it again needs no question.
+        again = await meeting_for_join_link(db, _link(thread), world["settings"], fetch=fetch)
+        assert again == found and len(asked) == 1
+        await db.execute(
+            delete(TeamsMeetingReference).where(TeamsMeetingReference.meeting_id == found)
+        )
+        await db.commit()
+
+
+async def test_a_meeting_without_clip_is_refused_with_what_to_do(world) -> None:
+    async def fetch(settings, service_url, meeting_id):  # noqa: ANN001, ANN202
+        request = httpx.Request("GET", "https://smba.example/v1/meetings/x")
+        response = httpx.Response(403, request=request)
+        raise httpx.HTTPStatusError("refused", request=request, response=response)
+
+    thread = f"19:meeting_{uuid4().hex}@thread.v2"
+    async with world["factory"]() as db:
+        with pytest.raises(ConflictError, match="not in this meeting yet"):
+            await meeting_for_join_link(db, _link(thread), world["settings"], fetch=fetch)
+
+
+# -- the organiser joining a meeting with no class ------------------------------------
+
+
+async def _joins(world, teams: _Teams, popups: list, *members: tuple[str, str]) -> None:  # noqa: ANN001
+    async def popup(settings, service_url, meeting_id, recipient, title, url):  # noqa: ANN001, ANN202
+        popups.append((meeting_id, recipient, title, url))
+
+    async with world["factory"]() as db:
+        await participants_changed(
+            db,
+            _joined(world["meeting"], uuid4().hex, *members),
+            world["settings"],
+            fetch=teams.fetch,
+            popup=popup,
+        )
+
+
+async def test_the_organiser_joining_a_meeting_with_no_class_is_asked_once(world) -> None:
+    world["settings"] = world["settings"].model_copy(
+        update={"teams_app_base_url": "https://clip.example"}
+    )
+    teams = _Teams(world["organiser"], "Weekly catch-up")
+    popups: list = []
+    await _joins(world, teams, popups, ("29:s", "aad-student"))
+    assert popups == []
+    await _joins(world, teams, popups, ("29:l", world["organiser"]))
+    await _joins(world, teams, popups, ("29:l", world["organiser"]))
+    [(meeting_id, recipient, title, url)] = popups
+    assert (meeting_id, recipient) == (world["meeting"], "29:l")
+    assert "class" in title
+    assert url.startswith("https://clip.example/lecturer/teams/meeting?")
+    assert "view=dialog" in url and "meetingId=" in url
+    assert await _session(world) is None
+
+
+async def test_a_meeting_titled_with_a_course_needs_no_question(world) -> None:
+    world["settings"] = world["settings"].model_copy(
+        update={"teams_app_base_url": "https://clip.example"}
+    )
+    teams = _Teams(world["organiser"], f"{world['code']} Week 5")
+    popups: list = []
+    await _joins(world, teams, popups, ("29:l", world["organiser"]))
+    assert popups == []

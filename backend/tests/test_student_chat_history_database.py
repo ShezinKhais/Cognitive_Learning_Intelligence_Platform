@@ -149,3 +149,89 @@ async def test_chat_history_is_private_and_deletions_are_scoped(db, app, monkeyp
             )
         )
         assert list(remaining) == [bob_id]
+
+
+@pytest.mark.asyncio
+async def test_chat_history_cap_is_per_student_and_preserves_latest(db, monkeypatch):
+    _, factory, created = db
+
+    monkeypatch.setattr(
+        chat_history_persistence,
+        "get_session_factory",
+        lambda: factory,
+    )
+    monkeypatch.setattr(
+        chat_history_persistence,
+        "MAX_HISTORY_PER_STUDENT",
+        2,
+    )
+
+    alice_id = uuid4()
+    bob_id = uuid4()
+
+    async with factory() as session:
+        session.add_all(
+            [
+                User(
+                    user_id=alice_id,
+                    name="History Cap Alice",
+                    email=f"{alice_id.hex}@history-cap.test",
+                    role="student",
+                ),
+                User(
+                    user_id=bob_id,
+                    name="History Cap Bob",
+                    email=f"{bob_id.hex}@history-cap.test",
+                    role="student",
+                ),
+            ]
+        )
+        await session.commit()
+
+    created["user"].extend([alice_id, bob_id])
+
+    async def save(student_id, request_id):
+        await chat_history_persistence.save_completed_exchange(
+            student_id=student_id,
+            session_id=None,
+            request_id=request_id,
+            question=f"Question {request_id}",
+            answer=f"Answer {request_id}",
+            source="materials",
+            citations=[],
+            follow_ups=[],
+            general=False,
+        )
+
+    await save(alice_id, "alice-1")
+    await save(alice_id, "alice-2")
+    await save(alice_id, "alice-3")
+    await save(bob_id, "bob-1")
+
+    # A replay cannot create another exchange.
+    await save(alice_id, "alice-3")
+
+    async with factory() as session:
+        alice_rows = list(
+            await session.scalars(
+                select(StudentChatExchange)
+                .where(StudentChatExchange.student_id == alice_id)
+                .order_by(
+                    StudentChatExchange.created_at.desc(),
+                    StudentChatExchange.id.desc(),
+                )
+            )
+        )
+        bob_rows = list(
+            await session.scalars(
+                select(StudentChatExchange).where(StudentChatExchange.student_id == bob_id)
+            )
+        )
+
+    assert len(alice_rows) == 2
+    assert {row.request_id for row in alice_rows} == {
+        "alice-2",
+        "alice-3",
+    }
+    assert len(bob_rows) == 1
+    assert bob_rows[0].request_id == "bob-1"

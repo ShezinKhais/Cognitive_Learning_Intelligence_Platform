@@ -1,10 +1,13 @@
 # syntax=docker/dockerfile:1
 # C.L.I.P backend image for the demo deployment. Build context: backend/.
 #
-# Installs the package with `pip install .`: no dev extras and no `extraction`
+# Installs the package with `pip install -c constraints.txt .`, so every
+# dependency is the version in constraints.txt. No dev extras and no `extraction`
 # extra (docling pulls in gigabytes of ML dependencies and is not needed to run
 # a class). Material extraction falls back to the lightweight parsers.
-FROM python:3.12-slim
+# Pinned by digest, so a rebuild cannot pick up a different base. Python
+# 3.12.16, the base of the image that passed the demo.
+FROM python:3.12.16-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -21,7 +24,7 @@ WORKDIR /srv/clip
 # Dependencies and the package first, so a change to a migration does not
 # reinstall everything. The package is installed into site-packages; only the
 # files Alembic needs are kept in the working directory.
-COPY pyproject.toml ./
+COPY pyproject.toml constraints.txt ./
 COPY app ./app
 # English scanned PDF support. Adapted from Shezin-Ops-Health (cff5901).
 ARG ENABLE_OCR=false
@@ -31,7 +34,8 @@ RUN if [ "$ENABLE_OCR" = "true" ]; then \
     fi
 
 ARG ENABLE_LIVE_TRANSCRIPTION=false
-RUN if [ "$ENABLE_LIVE_TRANSCRIPTION" = "true" ]; then pip install ".[transcription]"; else pip install .; fi \
+RUN if [ "$ENABLE_LIVE_TRANSCRIPTION" = "true" ]; then pip install -c constraints.txt ".[transcription]"; \
+    else pip install -c constraints.txt .; fi \
     && rm -rf ./app
 
 COPY alembic.ini ./

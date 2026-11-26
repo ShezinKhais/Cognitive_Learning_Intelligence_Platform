@@ -355,17 +355,27 @@ class SessionHub:
         self._closing.add(task)
         task.add_done_callback(self._closing.discard)
 
-    async def close_user_sessions(self, user_id: UUID, code: int, reason: str) -> int:
-        """Close every session socket a user holds, as when they withdraw the
-        consent a class needs. Each socket's endpoint then reports the
-        departure as it would for any other disconnect. Returns how many were
-        closed."""
+    async def close_user_sessions(
+        self,
+        user_id: UUID,
+        code: int,
+        reason: str,
+        *,
+        include_user_channel: bool = False,
+    ) -> int:
+        """Close a user's session sockets and optionally their personal sockets.
+
+        The default preserves consent-withdrawal behavior, which closes only
+        session sockets. Credential changes also close personal channels.
+        This registry is local to the current backend process.
+        Returns the number of connections removed.
+        """
         async with self._lock:
             targets = [
                 c
                 for stream in self._streams.values()
                 for c in stream.members
-                if c.user_id == user_id and c.session_id is not None
+                if c.user_id == user_id and (include_user_channel or c.session_id is not None)
             ]
         for connection in targets:
             # Out of the session first, so nothing more reaches it meanwhile.

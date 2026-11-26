@@ -258,6 +258,10 @@ def discussion_chunks(
         "recorded",
         "during",
         "today",
+        "main",
+        "points",
+        "lecture",
+        "far",
     }
 
     arabic_stop = {

@@ -128,16 +128,22 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
     return () => window.clearInterval(timer)
   }, [activeQuestion])
 
+  useEffect(() => {
+    setAnswered(null)
+    setPerformance(null)
+    setPerformanceFailed(false)
+    setPerformanceLoaded(false)
+  }, [sessionId])
+
   // Reuse the lecturer-authorized response list for both the open-question
   // count and average marked checkpoint accuracy. No chatbot data is used.
   const openQuestionId = activeQuestion?.question_id ?? null
   useEffect(() => {
     let cancelled = false
     let loading = false
+    // Keep the previous average visible while a new question loads.
+    // Only clear the question-specific response count.
     setAnswered(null)
-    setPerformance(null)
-    setPerformanceFailed(false)
-    setPerformanceLoaded(false)
 
     if (status !== 'active' && status !== 'ended') return
 
@@ -164,10 +170,16 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
     }
 
     void load()
-    const timer = window.setInterval(() => void load(), openQuestionId ? 4000 : 10000)
+
+    // A finished class needs one final snapshot, not ongoing polling.
+    // While teaching, poll only when a checkpoint is open.
+    const timer = status === 'active' && openQuestionId
+      ? window.setInterval(() => void load(), 4000)
+      : null
+
     return () => {
       cancelled = true
-      window.clearInterval(timer)
+      if (timer !== null) window.clearInterval(timer)
     }
   }, [sessionId, openQuestionId, status])
 
@@ -294,7 +306,7 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
                 </p>
               ) : !performanceLoaded ? (
                 <p role="status" className="mt-1 text-sm text-muted-foreground">
-                  Loading results?
+                  Loading results…
                 </p>
               ) : performance === null ? (
                 <p className="mt-1 text-sm text-muted-foreground">

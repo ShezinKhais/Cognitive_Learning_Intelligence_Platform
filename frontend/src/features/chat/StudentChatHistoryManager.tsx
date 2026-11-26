@@ -91,7 +91,7 @@ export function StudentChatHistoryManager() {
       </div>
 
       {loading && (
-        <p role="status" className="mt-3 text-sm">Loading history?</p>
+        <p role="status" className="mt-3 text-sm">Loading history…</p>
       )}
 
       {error && (
@@ -120,7 +120,7 @@ export function StudentChatHistoryManager() {
                   <span className="text-xs text-muted-foreground">
                     {record.session_id
                       ? `Class ${record.session_id.slice(0, 8)}`
-                      : 'Previous class'} ? {record.source}
+                      : 'Previous class'} · {record.source}
                   </span>
                   <button
                     type="button"

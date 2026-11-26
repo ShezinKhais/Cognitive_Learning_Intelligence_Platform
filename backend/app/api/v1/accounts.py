@@ -8,6 +8,7 @@ accounts.
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 from uuid import UUID
 
@@ -15,6 +16,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from app.api.deps import AppSettings, CurrentUser, DbSession, require_consents, require_roles
 from app.core.audit import audit_action
+from app.realtime.hub import hub
 from app.schemas.accounts import (
     AccountCreate,
     AccountIssued,
@@ -103,6 +105,15 @@ async def reset_password(
     working at once."""
     response.headers["Cache-Control"] = "no-store"
     account, password = await accounts.reset_password(db, user_id)
+    try:
+        await hub.close_user_sessions(
+            user_id, 4001, "account credentials changed", include_user_channel=True
+        )
+    except Exception:
+        logging.getLogger("clip.security").exception(
+            "security_event=ACCOUNT_SOCKET_REVOCATION_FAILED user_id=%s",
+            user_id,
+        )
     return AccountIssued(account=account, password=password)
 
 
