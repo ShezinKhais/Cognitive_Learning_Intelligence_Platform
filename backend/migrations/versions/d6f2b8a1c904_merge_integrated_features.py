@@ -1,17 +1,16 @@
 """Merge chat history, Teams and account-recovery migrations.
 
 Revision ID: d6f2b8a1c904
-Revises: b28e1f7a9c32, c3a7e91d5b20, a15c0d1e2f36
+Revises: b28e1f7a9c32, d8e2b4f6a1c3
 
-This is a graph-only merge. Existing databases that already applied
-chat history can still apply the other two migrations.
+This graph-only merge joins chat history with the shared Teams and
+account-recovery migration head from PR #331.
 """
 
 revision = "d6f2b8a1c904"
 down_revision = (
     "b28e1f7a9c32",
-    "c3a7e91d5b20",
-    "a15c0d1e2f36",
+    "d8e2b4f6a1c3",
 )
 branch_labels = None
 depends_on = None

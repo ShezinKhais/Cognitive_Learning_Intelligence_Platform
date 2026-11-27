@@ -250,6 +250,8 @@ def discussion_chunks(
         "summarize",
         "summarise",
         "summary",
+        "everything",
+        "anything",
         "repeat",
         "latest",
         "recent",
