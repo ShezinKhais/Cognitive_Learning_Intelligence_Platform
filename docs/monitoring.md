@@ -44,6 +44,30 @@ and use the sanitized dashboard data when sharing incident evidence.
   public proxy, API and required database. The probe needs no credentials and
   never prints the endpoint URL, the response body or the webhook address.
 
+### Run the watcher under systemd
+
+On a separate Linux monitoring host, copy
+`backend/scripts/watch_readiness.py` to `/opt/clip-monitor/watch_readiness.py`
+and copy [the service template](../deploy/systemd/clip-readiness-watch.service)
+to `/etc/systemd/system/clip-readiness-watch.service`. The script must be
+readable by the service's temporary account. Python 3 must be available at
+`/usr/bin/python3`.
+
+Create `/etc/clip/readiness-watch.env` as a root-owned file with mode `0600`.
+Set `CLIP_READINESS_URL=https://your-deployment/api/v1/ready` and, once the
+team has chosen its destination, set `CLIP_ALERT_WEBHOOK` there. Use the
+public health endpoint without embedded credentials. Keep the environment
+file on the monitoring host.
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now clip-readiness-watch.service
+sudo journalctl -u clip-readiness-watch.service -n 30
+```
+
+The service template restarts the watcher if it exits with an error. Verify
+delivery using the controlled outage and recovery steps below.
+
 ## Owners and triage
 
 | Role | Who | Does |

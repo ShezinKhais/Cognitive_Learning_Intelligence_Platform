@@ -1,4 +1,4 @@
-import { authenticatedFetch, statusMessage } from '../../api'
+import { ApiError, authenticatedFetch, statusMessage } from '../../api'
 import type { ChatCitation, ChatExchange } from './chatTypes'
 
 /** A private exchange owned by the authenticated student. */
@@ -37,12 +37,18 @@ async function historyRequest(
   })
 
   if (!response.ok) {
-    throw new Error(
-      `Could not access your private chat history. ${statusMessage(response.status)}`,
-    )
+    throw new ApiError(response.status, 'CHAT_HISTORY_REQUEST_FAILED', statusMessage(response.status))
   }
 
   return response
+}
+
+export function chatHistoryLoadMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 404) return 'Saved conversations are unavailable on this server. Try again after the app is updated.'
+    return error.message
+  }
+  return 'Your saved conversations could not be loaded. Check your connection and try again.'
 }
 
 export async function listChatHistoryPage(

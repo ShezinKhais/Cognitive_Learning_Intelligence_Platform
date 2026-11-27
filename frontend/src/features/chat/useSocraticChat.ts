@@ -10,7 +10,7 @@ import {
   MAX_CHAT_QUESTION_LENGTH,
   streamChat,
 } from './chatApi'
-import { listAllChatHistory, restoredExchange } from './chatHistoryApi'
+import { chatHistoryLoadMessage, listAllChatHistory, restoredExchange } from './chatHistoryApi'
 import {
   chatReducer,
   historyFor,
@@ -48,9 +48,9 @@ export function useSocraticChat(sessionId: string, discussionSince?: string, dis
         dispatch({ type: 'history-loaded', exchanges })
         setHistoryLoading(false)
       },
-      () => {
+      (failure: unknown) => {
         if (!mounted) return
-        setHistoryError('Previous conversations could not be loaded.')
+        setHistoryError(chatHistoryLoadMessage(failure))
         setHistoryLoading(false)
       },
     )

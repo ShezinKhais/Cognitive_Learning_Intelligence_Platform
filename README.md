@@ -580,7 +580,7 @@ rather than a component, so every phase ends with something that runs end to end
 | Local setup | [Getting started](#getting-started) |
 | Teams setup and roles | [Demo quickstart](docs/teams-demo-quickstart.md) and [tenant setup](docs/teams-tenant-setup.md) |
 | Release validation | [Teams release acceptance](docs/teams-release-acceptance.md) |
-| Test plan and execution evidence | [Evidence tracker](https://github.com/ShezinKhais/Cognitive_Learning_Intelligence_Platform/issues/175), [student browser test report](docs/phase8-ai2-test-report.md) and [database recovery evidence](docs/database-integrity-and-recovery.md) |
+| Test plan and execution evidence | [Evidence tracker](https://github.com/ShezinKhais/Cognitive_Learning_Intelligence_Platform/issues/175), [demo integration evidence](docs/evidence/demo-integration.md), [student browser test report](docs/phase8-ai2-test-report.md) and [database recovery evidence](docs/database-integrity-and-recovery.md) |
 | Security and privacy reviews | [Review index](docs/security/README.md) |
 
 ### Submitted documents

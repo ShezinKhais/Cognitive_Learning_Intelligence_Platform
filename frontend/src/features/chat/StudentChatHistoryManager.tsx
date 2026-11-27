@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import {
+  chatHistoryLoadMessage,
   deleteAllChatHistory,
   deleteChatExchange,
   listAllChatHistory,
@@ -16,6 +17,8 @@ export function StudentChatHistoryManager({ reloadAfterDelete = true }: { reload
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  const [loadAttempt, setLoadAttempt] = useState(0)
+  const [loadFailed, setLoadFailed] = useState(false)
 
   useEffect(() => {
     const abort = new AbortController()
@@ -25,14 +28,15 @@ export function StudentChatHistoryManager({ reloadAfterDelete = true }: { reload
         setItems(records)
         setLoading(false)
       },
-      () => {
+      (failure: unknown) => {
         if (abort.signal.aborted) return
-        setError('Your saved conversations could not be loaded.')
+        setLoadFailed(true)
+        setError(chatHistoryLoadMessage(failure))
         setLoading(false)
       },
     )
     return () => abort.abort()
-  }, [])
+  }, [loadAttempt])
 
   async function removeOne(record: SavedChatExchange) {
     if (busy) return
@@ -97,7 +101,23 @@ export function StudentChatHistoryManager({ reloadAfterDelete = true }: { reload
       )}
 
       {error && (
-        <p role="alert" className="mt-3 text-sm text-critical">{error}</p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <p role="alert" className="text-sm text-critical">{error}</p>
+          {loadFailed && (
+            <button
+              type="button"
+              className="text-sm font-semibold underline"
+              onClick={() => {
+                setError(null)
+                setLoadFailed(false)
+                setLoading(true)
+                setLoadAttempt((attempt) => attempt + 1)
+              }}
+            >
+              Retry loading conversations
+            </button>
+          )}
+        </div>
       )}
 
       {!loading && !error && items.length === 0 && (

@@ -148,21 +148,29 @@ test('a lost response after submission is reconciled without repeating the delet
   await expect(page.getByRole('button', { name: 'Send the request' })).toHaveCount(0)
 })
 
-test('a student can delete a saved tutor exchange from My data', async ({ page }) => {
+test('saved tutor history can recover from an older server and be deleted from My data', async ({ page }) => {
   const exchange = {
     id: 'exchange-1', session_id: 'session-1', source: 'materials',
     question: 'Help with recursion', answer: 'Start with the base case.',
   }
   await page.route('**/api/v1/me/deletion-request', route => route.fulfill(absent))
-  await page.route('**/api/v1/me/chat-history?*', route => route.fulfill({
-    json: { items: [exchange], total: 1, limit: 200, offset: 0, next_before: null },
-  }))
+  let historyAvailable = false
+  await page.route('**/api/v1/me/chat-history?*', route => route.fulfill(
+    historyAvailable
+      ? { json: { items: [exchange], total: 1, limit: 200, offset: 0, next_before: null } }
+      : { status: 404, json: { detail: 'Not Found' } },
+  ))
   await page.route('**/api/v1/me/chat-history/exchange-1', route => {
     expect(route.request().method()).toBe('DELETE')
     return route.fulfill({ status: 204 })
   })
   await page.goto('/e2e/harness/index.html?socket=mydata')
   await page.getByRole('button', { name: 'Manage saved conversations' }).click()
+  await expect(page.getByRole('alert')).toHaveText(
+    'Saved conversations are unavailable on this server. Try again after the app is updated.',
+  )
+  historyAvailable = true
+  await page.getByRole('button', { name: 'Retry loading conversations' }).click()
   await expect(page.getByText(exchange.question)).toBeVisible()
   page.once('dialog', dialog => dialog.accept())
   await page.getByRole('button', { name: 'Delete saved conversation exchange-1' }).click()
