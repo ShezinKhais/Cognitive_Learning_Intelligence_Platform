@@ -47,6 +47,8 @@ export function SocraticChatPanel({
     state,
     historyLoading,
     historyError,
+    saveWarning,
+    retryHistory,
     setDraft,
     submit,
     cancel,
@@ -105,11 +107,19 @@ export function SocraticChatPanel({
             </span>
           )}
           {historyError && (
-            <span role="alert" className="text-xs text-critical">
-              {historyError}
-            </span>
+            <>
+              <span role="alert" className="text-xs text-critical">{historyError}</span>
+              <button type="button" onClick={retryHistory} className="text-xs font-semibold underline">
+                Retry loading previous conversations
+              </button>
+            </>
           )}
         </div>
+        {saveWarning && (
+          <p role="status" className="mt-2 text-xs text-muted-foreground">
+            You can read this reply here. C.L.I.P. could not save it to your chat history.
+          </p>
+        )}
         {historyOpen && <StudentChatHistoryManager />}
         {sessionReview && !discussion && (
           <button

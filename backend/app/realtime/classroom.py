@@ -107,6 +107,7 @@ from app.schemas.events import (
     SessionStatePayload,
 )
 from app.schemas.identity import ConsentType, Role
+from app.schemas.question_interaction import PublicInteraction
 from app.schemas.session import ClassComprehensionAlert, SessionStatus
 from app.services.ai_explainability import (
     AlertExplanation,
@@ -176,7 +177,13 @@ class _OpenQuestion:
         # question_type decided at delivery whether it has options, and the
         # student is held to that, not to whichever field they happened to set.
         options = self.question.options
-        if options:
+        if self.question.interaction is not None:
+            order = answer.answer_order
+            if order is None or sorted(order) != list(
+                range(len(self.question.interaction.choices))
+            ):
+                return "Use every choice exactly once."
+        elif options:
             if answer.selected_option is None:
                 return "Choose one of the options."
             if answer.selected_option >= len(options):
@@ -836,6 +843,11 @@ class Classroom:
                 # repository will not hand out such a question, and this
                 # agrees with it.
                 options=question.options if question.question_type == QuestionType.MCQ else None,
+                interaction=(
+                    PublicInteraction.model_validate(question.interaction)
+                    if getattr(question, "interaction", None)
+                    else None
+                ),
                 closes_at=closes_at,
                 window_seconds=window_seconds,
                 source_slide=question.source_slide,
@@ -976,10 +988,12 @@ class Classroom:
             if getattr(row, "question_selection_enabled", False):
                 from app.services.lecture_checkpoint_selection import choose_recent_question
 
-                question_id = await choose_recent_question(db, row, _now())
-                # Preserve scheduled checkpoints when the lecture has no
-                # transcript or no matching question (including other languages).
-                delivered = await self.deliver(db, row, question_id)
+                question_id = await choose_recent_question(db, row, _now(), semantic=True)
+                # A lecturer can still send any staged lesson-plan item manually.
+                # An automatic lecture-aware checkpoint must have evidence.
+                delivered = (
+                    await self.deliver(db, row, question_id) if question_id is not None else None
+                )
             else:
                 delivered = await self.deliver(db, row)
         if delivered is None:
@@ -1049,6 +1063,14 @@ class Classroom:
             open_.saving.append(saved)
 
         try:
+            from app.services.question_interaction import describe_answer
+
+            interaction = open_.question.interaction
+            response_text = (
+                describe_answer(interaction, answer.answer_order)
+                if interaction is not None and answer.answer_order is not None
+                else answer.free_text
+            )
             async with asyncio.timeout(RECORD_TIMEOUT_SECONDS):
                 feedback = await self.recorder.record(
                     Submission(
@@ -1056,7 +1078,7 @@ class Classroom:
                         question_id=answer.question_id,
                         user_id=user_id,
                         selected_option=answer.selected_option,
-                        free_text=answer.free_text,
+                        free_text=response_text,
                         client_elapsed_ms=answer.client_elapsed_ms,
                         received_at=received_at,
                     )

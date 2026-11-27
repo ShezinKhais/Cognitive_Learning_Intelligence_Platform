@@ -13,6 +13,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.question_interaction import InteractionInput, QuestionInteraction
+
 
 class MaterialStatus(StrEnum):
     PENDING = "pending"
@@ -24,6 +26,8 @@ class MaterialStatus(StrEnum):
 class QuestionType(StrEnum):
     MCQ = "mcq"
     FREE_TEXT = "free_text"
+    MATCHING = "matching"
+    ORDERING = "ordering"
 
 
 class QuestionStatus(StrEnum):
@@ -109,6 +113,7 @@ class QuestionOut(BaseModel):
     topic: str | None = None
     reference_answer: str | None = None
     key_points: list[str] | None = None
+    interaction: QuestionInteraction | None = None
     source_slide: int | None = Field(
         default=None,
         description="Drives the 'see slide 3' reference in student feedback.",
@@ -130,6 +135,7 @@ class QuestionReviewRequest(BaseModel):
     """A lecturer approving, editing or rejecting a generated question."""
 
     status: ReviewDecision
+    interaction: InteractionInput | None = None
     prompt: str | None = Field(default=None, max_length=MAX_PROMPT_CHARS)
     options: list[Annotated[str, Field(max_length=MAX_OPTION_CHARS)]] | None = Field(
         default=None, max_length=MAX_OPTIONS
@@ -144,6 +150,7 @@ class QuestionCreateRequest(BaseModel):
     source_slide: int | None = Field(default=None, ge=1)
     source_excerpt: str | None = Field(default=None, max_length=MAX_PROMPT_CHARS)
     type: QuestionType = QuestionType.MCQ
+    interaction: InteractionInput | None = None
     prompt: str = Field(min_length=1, max_length=MAX_PROMPT_CHARS)
     options: list[Annotated[str, Field(max_length=MAX_OPTION_CHARS)]] | None = Field(
         default=None, max_length=MAX_OPTIONS

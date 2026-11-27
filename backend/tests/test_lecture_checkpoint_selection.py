@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -131,3 +132,23 @@ async def test_can_choose_question_on_later_candidate_page(fake_repository):
 
     assert selected == matched.question_id
     assert [call[2] for call in fake_repository.calls] == [0, 100]
+
+
+@pytest.mark.parametrize("ambiguous", [False, True])
+async def test_semantic_match_can_select_across_languages_or_abstain(
+    fake_repository, monkeypatch, ambiguous
+):
+    now = datetime(2026, 11, 23, 12, 0, tzinfo=UTC)
+    session = SimpleNamespace(session_id=uuid4())
+    caption = "شرحنا كيف تقلل المثبطات نشاط الإنزيمات"
+    db = FakeDb([note(now, caption)])
+    unrelated = question("What are mammals?", "Zoology")
+    matched = question("How does enzyme inhibition work?", "Biochemistry")
+    fake_repository.candidates = [unrelated, matched]
+    embed = AsyncMock(return_value=[[1, 0], [1, 0] if ambiguous else [0, 1], [1, 0]])
+    monkeypatch.setattr(selection, "get_ai_gateway", lambda: SimpleNamespace(embed=embed))
+
+    result = await selection.choose_recent_question(db, session, now, semantic=True)
+
+    assert result == (None if ambiguous else matched.question_id)
+    assert embed.await_args.args[0][0] == caption

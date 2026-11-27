@@ -2766,6 +2766,37 @@
         "title": "ImportRow",
         "type": "object"
       },
+      "InteractionInput": {
+        "description": "Choices in solution order. Matching has one label per choice.",
+        "properties": {
+          "choices": {
+            "items": {
+              "maxLength": 180,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 2,
+            "title": "Choices",
+            "type": "array"
+          },
+          "labels": {
+            "items": {
+              "maxLength": 180,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Labels",
+            "type": "array"
+          }
+        },
+        "required": [
+          "choices"
+        ],
+        "title": "InteractionInput",
+        "type": "object"
+      },
       "LecturerUpdateOut": {
         "properties": {
           "at": {
@@ -2812,6 +2843,16 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "interaction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuestionInteraction"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "key_points": {
             "anyOf": [
@@ -4167,6 +4208,16 @@
             "$ref": "#/components/schemas/Difficulty",
             "default": "medium"
           },
+          "interaction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InteractionInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "key_points": {
             "anyOf": [
               {
@@ -4266,6 +4317,57 @@
         "title": "QuestionCreateRequest",
         "type": "object"
       },
+      "QuestionInteraction": {
+        "properties": {
+          "choices": {
+            "items": {
+              "maxLength": 180,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 2,
+            "title": "Choices",
+            "type": "array"
+          },
+          "correct_order": {
+            "items": {
+              "exclusiveMaximum": 8.0,
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "maxItems": 8,
+            "minItems": 2,
+            "title": "Correct Order",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "matching",
+              "ordering"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "labels": {
+            "items": {
+              "maxLength": 180,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Labels",
+            "type": "array"
+          }
+        },
+        "required": [
+          "choices",
+          "kind",
+          "correct_order"
+        ],
+        "title": "QuestionInteraction",
+        "type": "object"
+      },
       "QuestionOut": {
         "properties": {
           "correct_option": {
@@ -4287,6 +4389,16 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "interaction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuestionInteraction"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "key_points": {
             "anyOf": [
@@ -4474,6 +4586,16 @@
               }
             ]
           },
+          "interaction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InteractionInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "options": {
             "anyOf": [
               {
@@ -4527,7 +4649,9 @@
       "QuestionType": {
         "enum": [
           "mcq",
-          "free_text"
+          "free_text",
+          "matching",
+          "ordering"
         ],
         "title": "QuestionType",
         "type": "string"
@@ -11070,7 +11194,7 @@
             "content": {
               "application/x-ndjson": {}
             },
-            "description": "One JSON object per line, each with `type` and `request_id`. `accepted` comes first. Then either `delta` events carrying `text`, `citation` events carrying a `citation` (`id`, `material_title`, `source_page`, `source_slide`, `excerpt`, optional `number`, `source_note_id` for discussion notes, and `source_session_id` for revision sources), `follow_up` events carrying a `prompt`, and `completed`; or one of `unsupported` (with a `reason`), `empty_retrieval` and `error` (with a `detail`)."
+            "description": "One JSON object per line, each with `type` and `request_id`. `accepted` comes first. Then either `delta` events carrying `text`, `citation` events carrying a `citation` (`id`, `material_title`, `source_page`, `source_slide`, `excerpt`, optional `number`, `source_note_id` for discussion notes, and `source_session_id` for revision sources), `follow_up` events carrying a `prompt`, and `completed`. The completed event may contain `history_saved: false` if the reply could not be stored. Other terminal events are `unsupported` (with a `reason`), `empty_retrieval` and `error` (with a `detail`)."
           },
           "404": {
             "description": "No such session, or the student does not belong to it."

@@ -22,11 +22,14 @@ from app.realtime.recorders import (
     Submission,
 )
 from app.schemas.events import (
+    AnswerSubmitPayload,
     FeedbackResultPayload,
     ServerEventType,
 )
 from app.schemas.identity import Role
+from app.schemas.question_interaction import InteractionInput
 from app.schemas.session import SessionStatus
+from app.services.question_interaction import build_interaction
 
 from .classroom_support import (
     FakeDb,
@@ -876,3 +879,58 @@ async def test_how_a_question_is_answered_comes_from_its_type() -> None:
     assert not chosen.accepted and chosen.reason == "Answer this question in your own words."
     assert written.accepted
     await room.shutdown()
+
+
+@pytest.mark.parametrize("kind", ["matching", "ordering"])
+async def test_interactive_checkpoint_delivers_without_key_and_records_permutation(kind):
+    room, events = make_room()
+    row = make_row()
+    student, student_id = await join_as(events, row.session_id, Role.STUDENT)
+    interaction = build_interaction(
+        kind,
+        InteractionInput(
+            labels=["Term A", "Term B"] if kind == "matching" else [],
+            choices=["One", "Two"],
+        ),
+    )
+    question = StagedQuestion(
+        question_type=kind, options=None, correct_option=None, interaction=interaction.model_dump()
+    )
+    FakeRepository.staged.append(question)
+    recorded = []
+
+    async def record(submission):
+        recorded.append(submission)
+
+    room.recorder = SimpleNamespace(record=record)
+    try:
+        await room.deliver(FakeDb(), row)
+        [shown] = student.of(ServerEventType.QUESTION_DELIVERED)
+        assert set(shown["data"]["interaction"]) == {"kind", "labels", "choices"}
+        for wrong in ([0, 0], [0, 1, 2], [0, 7]):
+            refused = await room.submit(
+                row.session_id,
+                student_id,
+                Role.STUDENT,
+                AnswerSubmitPayload(
+                    question_id=question.question_id, answer_order=wrong, client_elapsed_ms=100
+                ),
+            )
+            assert not refused.accepted
+        accepted = await room.submit(
+            row.session_id,
+            student_id,
+            Role.STUDENT,
+            AnswerSubmitPayload(
+                question_id=question.question_id,
+                answer_order=interaction.correct_order,
+                client_elapsed_ms=100,
+            ),
+        )
+        assert accepted.accepted
+        [submission] = recorded
+        assert submission.free_text == (
+            "Term A → One\nTerm B → Two" if kind == "matching" else "1. One\n2. Two"
+        )
+    finally:
+        await room.shutdown()

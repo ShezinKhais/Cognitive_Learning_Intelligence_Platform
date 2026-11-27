@@ -46,8 +46,9 @@ _EVENTS = (
     "`citation` (`id`, `material_title`, `source_page`, `source_slide`, `excerpt`, "
     "optional `number`, `source_note_id` for discussion notes, and `source_session_id` for "
     "revision sources), "
-    "`follow_up` events carrying a `prompt`, and `completed`; or one of `unsupported` "
-    "(with a `reason`), `empty_retrieval` and `error` (with a `detail`)."
+    "`follow_up` events carrying a `prompt`, and `completed`. The completed event may contain "
+    "`history_saved: false` if the reply could not be stored. Other terminal events are "
+    "`unsupported` (with a `reason`), `empty_retrieval` and `error` (with a `detail`)."
 )
 
 
@@ -111,6 +112,7 @@ async def session_chat(
     limiter = tutor_chat.get_chat_limiter()
     limiter.admit(principal.user_id)
     try:
+        permission = await chat_history_persistence.history_permission(db, principal.user_id)
         revision = (
             await tutor_chat.prepare_revision(db, principal.user_id, payload.question, earlier)
             if payload.source == "materials" and live.status == SessionStatus.ENDED.value
@@ -136,6 +138,7 @@ async def session_chat(
             request_id=payload.request_id,
             question=payload.question,
             source=payload.source,
+            permission=permission,
         ),
         media_type=tutor_chat.NDJSON,
         headers={

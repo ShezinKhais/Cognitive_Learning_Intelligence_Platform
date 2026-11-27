@@ -47,6 +47,7 @@ class StagedQuestion:
     source_slide: int | None = 4
     question_id: UUID = field(default_factory=uuid4)
     question_type: str | None = None
+    interaction: dict | None = None
 
     def __post_init__(self) -> None:
         if self.question_type is None:

@@ -1,8 +1,4 @@
-"""Conservative lexical evidence gate for lecture checkpoint candidates.
-
-This is an initial matching stage, not a multilingual semantic classifier.
-Insufficient evidence always returns False.
-"""
+"""Conservative lexical evidence gate for lecture checkpoint candidates."""
 
 from __future__ import annotations
 
@@ -58,6 +54,9 @@ STOPWORDS = frozenset(
 )
 
 TOKEN_PATTERN = re.compile(r"[^\W_]+", re.UNICODE)
+ARABIC_MARKS = re.compile(r"[ـً-ٰٟ]")
+ARABIC_VARIANTS = str.maketrans("أإآٱى", "ااااي")
+ARABIC_STOP = frozenset({"ماذا", "لماذا", "اشرح", "عرف", "هذا", "هذه", "الذي", "التي"})
 
 
 def normalize_token(token: str) -> str:
@@ -70,15 +69,18 @@ def normalize_token(token: str) -> str:
         and not token.endswith(("ss", "us", "is"))
     ):
         return token[:-1]
+    if token.startswith("ال") and len(token) >= 5:
+        return token[2:]
     return token
 
 
 def concepts(text: str) -> set[str]:
     """Extract substantive words with conservative plural normalization."""
+    normalized = ARABIC_MARKS.sub("", text.casefold()).translate(ARABIC_VARIANTS)
     return {
         normalize_token(token)
-        for token in TOKEN_PATTERN.findall(text.casefold())
-        if len(token) >= 3 and token not in STOPWORDS
+        for token in TOKEN_PATTERN.findall(normalized)
+        if len(token) >= 3 and token not in STOPWORDS and token not in ARABIC_STOP
     }
 
 
@@ -92,18 +94,17 @@ def supported_by_recent_lecture(
     A topic word alone is insufficient evidence for a more specific
     concept. This deliberately rejects uncertain matches.
     """
-    transcript = concepts(" ".join(recent_segments))
-    subject = concepts(question)
-    topic_words = concepts(topic or "")
-
-    if not transcript or not subject:
+    terms = concepts(question)
+    if not terms:
         return False
-
-    if topic_words and not topic_words.issubset(transcript):
-        return False
-
-    # The specific question must be supported too, not only its label.
-    return subject.issubset(transcript)
+    required = terms | concepts(topic or "")
+    segments = list(recent_segments)
+    # Check nearby note text together. Distant mentions from separate
+    # lecture topics cannot independently satisfy the same question.
+    return any(
+        required.issubset(concepts(" ".join(segments[index : index + 3])))
+        for index in range(len(segments))
+    )
 
 
 def recent_transcript_segments(

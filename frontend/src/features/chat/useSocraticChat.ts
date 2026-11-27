@@ -22,18 +22,23 @@ export function useSocraticChat(sessionId: string, discussionSince?: string, dis
   const controller = useRef<AbortController | null>(null)
   const [historyLoading, setHistoryLoading] = useState(true)
   const [historyError, setHistoryError] = useState<string | null>(null)
+  const [historyAttempt, setHistoryAttempt] = useState(0)
+  const [saveWarning, setSaveWarning] = useState(false)
 
   useEffect(() => () => controller.current?.abort(), [])
 
   useEffect(() => {
-    const abort = new AbortController()
-    let mounted = true
-
     // A different session or source must never inherit another panel's
     // previous exchanges. Abort an outstanding reply on navigation.
     controller.current?.abort()
     controller.current = null
     dispatch({ type: 'history-reset' })
+    setSaveWarning(false)
+  }, [sessionId, discussion])
+
+  useEffect(() => {
+    const abort = new AbortController()
+    let mounted = true
     setHistoryLoading(true)
     setHistoryError(null)
 
@@ -59,7 +64,7 @@ export function useSocraticChat(sessionId: string, discussionSince?: string, dis
       mounted = false
       abort.abort()
     }
-  }, [sessionId, discussion])
+  }, [sessionId, discussion, historyAttempt])
 
   const submit = useCallback(async (questionOverride?: string) => {
     const question = (questionOverride ?? state.draft).trim()
@@ -68,6 +73,7 @@ export function useSocraticChat(sessionId: string, discussionSince?: string, dis
     const requestId = crypto.randomUUID()
     const nextController = new AbortController()
     controller.current = nextController
+    setSaveWarning(false)
     dispatch({ type: 'submit-started', id: requestId, question })
 
     try {
@@ -82,7 +88,9 @@ export function useSocraticChat(sessionId: string, discussionSince?: string, dis
         history: historyFor(state.exchanges),
         signal: nextController.signal,
         onEvent: (event) => {
-          if (controller.current === nextController) dispatch({ type: 'stream-event', event })
+          if (controller.current !== nextController) return
+          if (event.type === 'completed' && event.history_saved === false) setSaveWarning(true)
+          dispatch({ type: 'stream-event', event })
         },
       })
     } catch (caught: unknown) {
@@ -112,6 +120,8 @@ export function useSocraticChat(sessionId: string, discussionSince?: string, dis
     state,
     historyLoading,
     historyError,
+    saveWarning,
+    retryHistory: () => setHistoryAttempt((attempt) => attempt + 1),
     setDraft: (value: string) => dispatch({ type: 'draft-changed', value }),
     submit,
     cancel,

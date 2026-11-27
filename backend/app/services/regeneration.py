@@ -67,6 +67,8 @@ async def regenerate(
     # A replacement keeps the type of the question it replaces: a lecturer who
     # rejects one short-answer question has not asked for a multiple choice one.
     question_type = QuestionType(question.question_type)
+    if question_type not in {QuestionType.MCQ, QuestionType.FREE_TEXT}:
+        raise ConflictError("Edit this interactive question to change its items.")
     chunks = [
         ContentChunk(
             chunk_id=chunk.chunk_id,

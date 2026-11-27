@@ -259,3 +259,47 @@ async def test_a_failed_store_stops_the_reveal():
     with pytest.raises(RuntimeError):
         await recorder.record_close(make_closed(question, answered={student}))
     assert steps == []
+
+
+@pytest.mark.parametrize("kind", ["matching", "ordering"])
+async def test_interactive_answer_is_graded_and_only_revealed_after_close(kind):
+    from app.schemas.question_interaction import InteractionInput
+    from app.services.question_interaction import build_interaction, describe_answer
+    from app.services.student_review import correct_answer
+
+    session_id = uuid.uuid4()
+    question = make_delivered_question(session_id=session_id)
+    interaction = build_interaction(
+        kind,
+        InteractionInput(
+            labels=["First label", "Second label"] if kind == "matching" else [],
+            choices=["One", "Two"],
+        ),
+    )
+    question.question_type = kind
+    question.options = None
+    question.correct_option = None
+    question.interaction = interaction.model_dump()
+    store = FakeStore()
+    recorder = make_recorder(question, store)
+    correct = describe_answer(interaction, interaction.correct_order)
+    incorrect = describe_answer(interaction, list(reversed(interaction.correct_order)))
+
+    by_student = {}
+    for answer in (correct, incorrect):
+        submission = make_submission(
+            session_id=session_id, question_id=question.question_id, free_text=answer
+        )
+        feedback = await recorder.record(submission)
+        assert feedback.correct is (answer == correct)
+        assert correct not in feedback.explanation
+        saved = store.calls[-1]
+        assert saved["is_correct"] is feedback.correct
+        by_student[submission.user_id] = SimpleNamespace(**saved)
+
+    reveals = await make_close_recorder(question, by_student, []).record_close(
+        make_closed(question, answered=by_student)
+    )
+    assert set(reveals) == set(by_student)
+    assert all(correct in reveal.explanation for reveal in reveals.values())
+    assert correct_answer(question) == correct

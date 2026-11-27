@@ -5,9 +5,11 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select
 
+from app.auth.store import get_consent_repository
+from app.core.config import get_settings
 from app.models.student_chat_exchange import StudentChatExchange
 from app.models.user import User
-from app.schemas.identity import Role
+from app.schemas.identity import ConsentType, Role
 from app.services import chat_history_persistence
 from tests.session_support import sign_in_as
 
@@ -46,12 +48,21 @@ async def test_chat_history_is_private_and_deletions_are_scoped(db, app, monkeyp
         await session.commit()
 
     created["user"].extend([alice_id, bob_id])
+    permissions = {}
+    async with factory() as session:
+        for user_id in (alice_id, bob_id):
+            get_consent_repository(get_settings()).record(user_id, ConsentType.TERMS, True)
+            permissions[user_id] = await chat_history_persistence.history_permission(
+                session, user_id
+            )
+            assert permissions[user_id] is not None
 
     alice_request = f"alice-{uuid4().hex}"
     bob_request = f"bob-{uuid4().hex}"
 
     await chat_history_persistence.save_completed_exchange(
         student_id=alice_id,
+        permission=permissions[alice_id],
         session_id=None,
         request_id=alice_request,
         question="Alice's private question",
@@ -64,6 +75,7 @@ async def test_chat_history_is_private_and_deletions_are_scoped(db, app, monkeyp
 
     await chat_history_persistence.save_completed_exchange(
         student_id=bob_id,
+        permission=permissions[bob_id],
         session_id=None,
         request_id=bob_request,
         question="Bob's private question",
@@ -77,6 +89,7 @@ async def test_chat_history_is_private_and_deletions_are_scoped(db, app, monkeyp
     # Replaying Alice's request must not create a duplicate.
     await chat_history_persistence.save_completed_exchange(
         student_id=alice_id,
+        permission=permissions[alice_id],
         session_id=None,
         request_id=alice_request,
         question="Duplicate question",
@@ -189,10 +202,19 @@ async def test_chat_history_cap_is_per_student_and_preserves_latest(db, monkeypa
         await session.commit()
 
     created["user"].extend([alice_id, bob_id])
+    permissions = {}
+    async with factory() as session:
+        for user_id in (alice_id, bob_id):
+            get_consent_repository(get_settings()).record(user_id, ConsentType.TERMS, True)
+            permissions[user_id] = await chat_history_persistence.history_permission(
+                session, user_id
+            )
+            assert permissions[user_id] is not None
 
     async def save(student_id, request_id):
         await chat_history_persistence.save_completed_exchange(
             student_id=student_id,
+            permission=permissions[student_id],
             session_id=None,
             request_id=request_id,
             question=f"Question {request_id}",
@@ -235,3 +257,61 @@ async def test_chat_history_cap_is_per_student_and_preserves_latest(db, monkeypa
     }
     assert len(bob_rows) == 1
     assert bob_rows[0].request_id == "bob-1"
+
+
+@pytest.mark.parametrize("change", ["delete", "withdraw", "withdraw_and_regrant", "disable"])
+async def test_changes_during_stream_prevent_late_history_save(db, app, monkeypatch, change):
+    client, factory, created = db
+    student_id = uuid4()
+    async with factory() as session:
+        session.add(
+            User(
+                user_id=student_id,
+                name="History guard",
+                email=f"{student_id}@history.test",
+                role="student",
+            )
+        )
+        await session.commit()
+    created["user"].append(student_id)
+    sign_in_as(app, student_id, Role.STUDENT)
+    monkeypatch.setattr(chat_history_persistence, "get_session_factory", lambda: factory)
+
+    async with factory() as session:
+        permission = await chat_history_persistence.history_permission(session, student_id)
+        assert permission is not None
+
+    if change == "delete":
+        assert client.delete("/api/v1/me/chat-history").status_code == 204
+    elif change == "disable":
+        async with factory() as session:
+            user = await session.get(User, student_id)
+            user.active = False
+            await session.commit()
+    else:
+        consent = get_consent_repository(get_settings())
+        consent.record(student_id, ConsentType.TERMS, False)
+        if change == "withdraw_and_regrant":
+            consent.record(student_id, ConsentType.TERMS, True)
+
+    saved = await chat_history_persistence.save_completed_exchange(
+        student_id=student_id,
+        permission=permission,
+        session_id=None,
+        request_id=uuid4().hex,
+        question="Earlier question",
+        answer="Late answer",
+        source="materials",
+        citations=[],
+        follow_ups=[],
+        general=False,
+    )
+
+    assert saved is False
+    async with factory() as session:
+        assert (
+            await session.scalar(
+                select(StudentChatExchange.id).where(StudentChatExchange.student_id == student_id)
+            )
+            is None
+        )

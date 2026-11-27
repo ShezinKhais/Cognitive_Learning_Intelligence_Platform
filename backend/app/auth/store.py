@@ -220,6 +220,10 @@ class InMemoryConsentRepository:
 
         return record
 
+    def get(self, user_id: UUID, consent_type: ConsentType) -> ConsentRecord | None:
+        with self._lock:
+            return self._records.get((user_id, consent_type))
+
     def granted_for(
         self,
         user_id: UUID,

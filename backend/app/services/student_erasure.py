@@ -34,6 +34,7 @@ from app.models.student_response import StudentResponse
 from app.models.teams_participant_mapping import TeamsParticipantMapping
 from app.models.teams_user_mapping import TeamsUserMapping
 from app.models.user import User
+from app.services.chat_history_persistence import invalidate_history_writes
 
 DELETED_NAME = "Deleted student"
 
@@ -68,6 +69,7 @@ async def erase_student(db: AsyncSession, student_id: UUID) -> ErasureReport:
     if student is None:
         return ErasureReport()
     user_id = student.user_id
+    await invalidate_history_writes(db, user_id)
 
     answers = await _count(db, StudentResponse, StudentResponse.student_id, student_id)
     attention = await _count(

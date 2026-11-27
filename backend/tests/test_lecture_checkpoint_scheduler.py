@@ -28,7 +28,7 @@ pytestmark = pytest.mark.usefixtures("fake_session_repository")
         "cross_language_no_match",
     ],
 )
-async def test_automatic_delivery_falls_back_without_match(monkeypatch, reason):
+async def test_automatic_delivery_waits_without_match(monkeypatch, reason):
     room, events = make_room()
     row = make_row()
     row.question_selection_enabled = True
@@ -37,7 +37,7 @@ async def test_automatic_delivery_falls_back_without_match(monkeypatch, reason):
     staged = StagedQuestion(question_text="What are enzymes?")
     FakeRepository.staged.append(staged)
 
-    async def no_match(db, session, checkpoint_at):
+    async def no_match(db, session, checkpoint_at, *, semantic):
         assert session.session_id == row.session_id
         assert reason in (
             "transcription_disabled",
@@ -56,9 +56,9 @@ async def test_automatic_delivery_falls_back_without_match(monkeypatch, reason):
         live = room.activate(row.session_id)
         assert await room._deliver_on_schedule(live)
 
-        [event] = socket.of(ServerEventType.QUESTION_DELIVERED)
-        assert event["data"]["question_id"] == str(staged.question_id)
-        assert FakeRepository.staged == []
+        assert socket.of(ServerEventType.QUESTION_DELIVERED) == []
+        assert FakeRepository.staged == [staged]
+        assert live.countdown.due is not None
     finally:
         await room.shutdown()
 
@@ -73,7 +73,7 @@ async def test_automatic_delivery_uses_selected_question(monkeypatch):
     related = StagedQuestion(question_text="What are enzymes?")
     FakeRepository.staged.extend([unrelated, related])
 
-    async def select_enzyme(db, session, checkpoint_at) -> UUID:
+    async def select_enzyme(db, session, checkpoint_at, *, semantic) -> UUID:
         assert session.session_id == row.session_id
         return related.question_id
 

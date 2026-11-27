@@ -125,4 +125,5 @@ async def test_database_failure_does_not_interrupt_completed_stream(monkeypatch)
         )
     ]
 
-    assert result == events
+    assert result[:-1] == events[:-1]
+    assert json.loads(result[-1]) == {"type": "completed", "history_saved": False}

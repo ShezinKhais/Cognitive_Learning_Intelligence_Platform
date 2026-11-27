@@ -21,6 +21,7 @@ from app.api.deps import (
 from app.core.audit import audit_action
 from app.models.student_chat_exchange import StudentChatExchange
 from app.schemas.identity import Role
+from app.services.chat_history_persistence import invalidate_history_writes
 
 router = APIRouter(
     prefix="/me/chat-history",
@@ -120,6 +121,7 @@ async def delete_my_chat_history(
 ) -> None:
     """Delete all of this student's history, not anyone else's."""
     response.headers["Cache-Control"] = "no-store"
+    await invalidate_history_writes(db, principal.user_id)
     await db.execute(
         delete(StudentChatExchange).where(StudentChatExchange.student_id == principal.user_id)
     )
@@ -136,6 +138,7 @@ async def delete_my_chat_exchange(
 ) -> None:
     """Delete one owned exchange; never reveal whether another student's exists."""
     response.headers["Cache-Control"] = "no-store"
+    await invalidate_history_writes(db, principal.user_id)
     await db.execute(
         delete(StudentChatExchange).where(
             StudentChatExchange.student_id == principal.user_id,

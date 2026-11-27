@@ -46,7 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings, get_settings
 from app.core.database import get_session_factory
-from app.core.errors import ConflictError, RateLimitedError
+from app.core.errors import ConflictError, PermissionError_, RateLimitedError
 from app.models.question import Question
 from app.models.rag_chunk import RagChunk
 from app.models.session import Session
@@ -55,6 +55,7 @@ from app.schemas.content import MaterialStatus
 from app.services import student_review
 from app.services.ai_gateway import AiGateway, AiRequest, Priority, get_ai_gateway
 from app.services.discussion import notes_for
+from app.services.question_interaction import KINDS
 from app.services.retrieval import RetrievedChunk
 from app.services.source_labels import source_label
 from app.services.student_review import RevisionItem
@@ -395,6 +396,8 @@ async def prepare(
     if open_question_id is not None:
         row = await db.get(Question, open_question_id)
         if row is not None:
+            if row.question_type in KINDS:
+                raise PermissionError_("The tutor is available again when this checkpoint closes.")
             # The correct option comes from the stored question. The copy sent
             # to students does not carry it, and the guard needs it to see
             # that a reply has not given the answer away.

@@ -35,10 +35,12 @@ import type { SessionStatus } from './types'
 import type { AttentionSummary } from '../attention/signals'
 import { renewAfterRefusal, signOutToLogin } from '../realtime/tokenRefusal'
 import { roomSelection } from './breakoutRoom'
+import { completeAnswer } from './interactiveAnswer'
 
 interface AnswerSubmission {
   selected_option?: number
   free_text?: string
+  answer_order?: number[]
 }
 
 const MAX_RECONNECT_DELAY_MS = 10_000
@@ -645,7 +647,11 @@ export function useLiveSession(
 
     const answer: AnswerSubmission = {}
 
-    if (checkpoint.question.options?.length) {
+    if (checkpoint.question.interaction) {
+      const order = completeAnswer(checkpoint.question.interaction, checkpoint.freeText)
+      if (!order) return false
+      answer.answer_order = order
+    } else if (checkpoint.question.options?.length) {
       if (checkpoint.selectedOption === null) {
         return false
       }

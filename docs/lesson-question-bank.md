@@ -9,7 +9,10 @@ additional source validation, independent lesson copies and race tests.
 1. Open **Materials**, then the material's question review page.
 2. Choose **Write a question**. For an MCQ, provide distinct choices and select
    the correct one. For a written question, provide a reference answer and at
-   least one marking key point. A topic helps when preparing a lesson.
+   least one marking key point. For **Match the following**, enter distinct
+   pairs as `Term | Meaning`. For **Drag-and-drop ordering**, enter distinct
+   items in the correct sequence, one per line. Both take 2–8 entries and
+   provide a student-view preview. A topic helps when preparing a lesson.
 3. Optionally enter a source page/slide and an exact passage. Supplied references
    must match indexed content in that material. Without a reference, the question
    remains explicitly without a source; the system does not invent one.
@@ -46,9 +49,10 @@ this opt-in selection is saved.
    before starting. Only unused lesson copies are removed; bank originals and
    historical deliveries/responses are protected.
 
-This aligns checkpoints with the lecturer's chosen lesson. It does not infer
-what the lecturer has covered from microphone audio or automatically select a
-slide while presenting.
+While live transcription is on, the automatic scheduler can use recent
+captions to find a checkpoint from the selected set. It skips that interval
+when the evidence is missing, weak or ambiguous. Manual delivery remains
+available. Cross-language matching depends on the configured embedding model.
 
 ## Deployment and API
 
@@ -57,7 +61,10 @@ Apply `alembic upgrade head` before running this version. Migration
 retain their previous behavior. Question copies use the existing question table.
 For a release rollback, stop active classes first: the older release does not
 implement selected-only delivery. Downgrading removes the flag and retains
-question/history rows.
+question/history rows. Migration `f213b8a4d670` adds interactive question
+data and a counter used to invalidate pending chat-history writes. Downgrading
+past this newer migration is blocked while interactive questions exist, to
+protect their answer keys and response history.
 
 Staff-only, terms-protected, owner-checked endpoints:
 
@@ -70,7 +77,10 @@ Staff-only, terms-protected, owner-checked endpoints:
 - `PUT /sessions/{session_id}/question-plan`: confirm and save a prepared lesson.
 
 Plan reads are `no-store`. Answer keys/reference answers remain staff-only;
-student delivery payloads are unchanged. Plan writes are audited. A source ID
+student delivery includes shuffled choices for interactive questions. Students
+can order items by dragging or using Move up and Move down. The server grades
+both formats and reveals the solution after the answer window closes.
+Structured responses appear in review and reports. Plan writes are audited. A source ID
 outside the lesson's lecturer/course scope fails atomically without replacing
 an existing selection. Re-filing a selected material cannot bypass delivery or
 retrieval course boundaries.

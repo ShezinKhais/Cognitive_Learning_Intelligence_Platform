@@ -52,6 +52,10 @@ class User(Base):
         server_default="0",
     )
 
+    chat_history_generation: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+
     active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

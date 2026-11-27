@@ -1,3 +1,5 @@
+import { InteractiveCheckpointAnswer } from '../features/student/InteractiveCheckpointAnswer'
+import { completeAnswer } from '../features/student/interactiveAnswer'
 import DiscussionPanel from '../features/discussion/DiscussionPanel'
 import { liveAssistantVisible } from '../features/student/liveAssistantVisibility'
 
@@ -526,7 +528,9 @@ function CheckpointCard({
 
   const hasOptions = Boolean(question.options?.length)
 
-  const answerPresent = hasOptions
+  const answerPresent = question.interaction
+    ? completeAnswer(question.interaction, checkpoint.freeText) !== null
+    : hasOptions
     ? checkpoint.selectedOption !== null
     : checkpoint.freeText.trim().length > 0
 
@@ -598,7 +602,10 @@ function CheckpointCard({
           {question.prompt}
         </h2>
 
-        {hasOptions ? (
+        {question.interaction ? (
+          <InteractiveCheckpointAnswer interaction={question.interaction}
+            draft={checkpoint.freeText} disabled={!editable} onChange={onSetFreeText} />
+        ) : hasOptions ? (
           <fieldset
             className="mt-6 grid gap-3"
             disabled={!editable}
@@ -798,7 +805,7 @@ function CheckpointOutcome({
       </p>
 
       {feedback?.explanation && (
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+        <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground">
           {feedback.explanation}
         </p>
       )}

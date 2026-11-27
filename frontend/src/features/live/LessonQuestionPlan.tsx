@@ -84,6 +84,9 @@ export default function LessonQuestionPlan({ sessionId, onSaved, onPendingChange
       <fieldset disabled={saving || !saved.editable} className="mt-3">
         <legend className="sr-only">Question source</legend>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={selectedOnly} onChange={event => { setSelectedOnly(event.target.checked); setConfirmed(false) }} />Use only selected checkpoints in this lesson</label>
+        {selectedOnly && <p className="mt-1 text-xs text-muted-foreground">
+          Automatic delivery waits for recent transcript evidence. You can send a selected checkpoint manually.
+        </p>}
         <p className="mt-1 text-xs text-muted-foreground">When off, the existing course bank is used. When on, an empty or exhausted selection sends no other questions.</p>
         {selectedOnly && <>
           <h3 className="mt-4 text-sm font-bold">Selected ({selected.size}/{MAX_QUESTIONS})</h3>

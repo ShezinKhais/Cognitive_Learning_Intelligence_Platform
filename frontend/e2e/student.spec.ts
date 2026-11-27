@@ -677,3 +677,32 @@ test('a choice already given is remembered and the devices start by themselves',
   await page.getByRole('button', { name: 'Turn everything off' }).click()
   await expect(page.getByText('Camera: off. Microphone: off.')).toBeVisible()
 })
+
+test('history restoration can be retried and a save failure preserves the reply', async ({ page }) => {
+  let loads = 0
+  await page.route('**/me/chat-history?*', async route => {
+    loads++
+    await route.fulfill(loads === 1
+      ? { status: 503, json: {} }
+      : { json: { items: [], total: 0, offset: 0, limit: 100 } })
+  })
+  await page.route('**/sessions/phase8/chat', async route => {
+    const { request_id } = route.request().postDataJSON()
+    await route.fulfill({ contentType: 'application/x-ndjson', body: [
+      { type: 'accepted' },
+      { type: 'delta', text: 'Which idea could you try next?' },
+      { type: 'completed', history_saved: false },
+    ].map(event => JSON.stringify({ ...event, request_id })).join('\n') + '\n' })
+  })
+  await page.reload()
+  const retry = page.getByRole('button', { name: 'Retry loading previous conversations' })
+  await retry.click()
+  await expect.poll(() => loads).toBe(2)
+  await expect(retry).toHaveCount(0)
+  const input = page.getByLabel('Ask about this session')
+  await input.fill('Help me find my next step')
+  await input.press('Enter')
+  await expect(page.getByText('Which idea could you try next?')).toBeVisible()
+  await expect(page.getByText(/could not save it to your chat history/)).toBeVisible()
+  await expect(input).toBeEnabled()
+})

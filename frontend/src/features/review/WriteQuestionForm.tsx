@@ -1,7 +1,9 @@
+import { authoredItems } from './interactiveAuthoring'
 import { useId, useState, type FormEvent } from 'react'
 import { Plus, X } from 'lucide-react'
 
 import { ApiError, writeQuestion, type Difficulty, type Question, type QuestionType } from '../../api'
+import { InteractiveQuestionFields } from './InteractiveQuestionFields'
 import { buttonStyles } from '../../components/ui/button'
 
 const FIELD = 'mt-1 w-full rounded-md border border-input bg-input-background px-3 py-2'
@@ -19,6 +21,7 @@ export default function WriteQuestionForm({
   const id = useId()
   const [type, setType] = useState<QuestionType>('mcq')
   const [prompt, setPrompt] = useState('')
+  const [items, setItems] = useState('')
   const [options, setOptions] = useState(['', ''])
   const [correct, setCorrect] = useState(0)
   const [difficulty, setDifficulty] = useState<Difficulty>('medium')
@@ -41,6 +44,9 @@ export default function WriteQuestionForm({
     if (type === 'free_text' && (!model.trim() || keyPoints.length === 0)) {
       return setError('Add a model answer and at least one key point, so answers can be marked.')
     }
+    const interactive = type === 'matching' || type === 'ordering'
+    const interaction = interactive ? authoredItems(type, items) : null
+    if (interactive && !interaction) return setError('Enter 2–8 distinct, complete items.')
     setSaving(true)
     setError(null)
     writeQuestion(materialId, {
@@ -52,7 +58,7 @@ export default function WriteQuestionForm({
       source_excerpt: sourceExcerpt.trim() || undefined,
       ...(type === 'mcq'
         ? { options: filled, correct_option: correct }
-        : { reference_answer: model.trim(), key_points: keyPoints }),
+        : interaction ? { interaction } : { reference_answer: model.trim(), key_points: keyPoints }),
     }).then(onSaved, (caught: unknown) => {
       setSaving(false)
       setError(caught instanceof ApiError ? caught.message : 'The question could not be saved.')
@@ -64,12 +70,12 @@ export default function WriteQuestionForm({
       <h2 className="font-bold">Write a question</h2>
       <p className="mt-0.5 text-sm text-muted-foreground">It is ready to send as soon as you save it.</p>
 
-      <fieldset className="mt-3 flex gap-4 text-sm">
+      <fieldset className="mt-3 flex flex-wrap gap-4 text-sm">
         <legend className="sr-only">Question type</legend>
-        {(['mcq', 'free_text'] as const).map((kind) => (
+        {(['mcq', 'free_text', 'matching', 'ordering'] as const).map((kind) => (
           <label key={kind} className="flex items-center gap-2">
-            <input type="radio" name={`${id}-type`} checked={type === kind} onChange={() => setType(kind)} />
-            {kind === 'mcq' ? 'Multiple choice' : 'Written answer'}
+            <input type="radio" name={`${id}-type`} checked={type === kind} onChange={() => { setType(kind); setItems('') }} />
+            {{ mcq: 'Multiple choice', free_text: 'Written answer', matching: 'Match the following', ordering: 'Drag and drop ordering' }[kind]}
           </label>
         ))}
       </fieldset>
@@ -136,6 +142,9 @@ export default function WriteQuestionForm({
           )}
         </fieldset>
       )}
+
+      {(type === 'matching' || type === 'ordering') &&
+        <InteractiveQuestionFields kind={type} text={items} onChange={setItems} />}
 
       {type === 'free_text' && (
         <>

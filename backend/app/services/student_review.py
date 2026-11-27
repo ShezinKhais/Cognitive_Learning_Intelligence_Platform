@@ -193,6 +193,12 @@ def answer_text(response: StudentResponse, question: Question) -> str:
 
 
 def correct_answer(question: Question) -> str | None:
+    if getattr(question, "interaction", None):
+        from app.schemas.question_interaction import QuestionInteraction
+        from app.services.question_interaction import describe_answer
+
+        interaction = QuestionInteraction.model_validate(question.interaction)
+        return describe_answer(interaction, interaction.correct_order)
     if question.question_type == "mcq":
         index = question.correct_option
         if index is not None and question.options and 0 <= index < len(question.options):

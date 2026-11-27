@@ -120,6 +120,15 @@ export function parseLiveQuestion(value: unknown): LiveQuestion | null {
   )) return null
   if (value.source_slide !== null && !isNumber(value.source_slide)) return null
   if (!isSourceLabel(value.source_label)) return null
+  const interaction = value.interaction
+  if (interaction != null) {
+    if (!isRecord(interaction) || !Array.isArray(interaction.labels) || !Array.isArray(interaction.choices) ||
+      !interaction.labels.every((item) => typeof item === 'string') ||
+      !interaction.choices.every((item) => typeof item === 'string') ||
+      interaction.choices.length < 2 || interaction.choices.length > 8 ||
+      (interaction.kind !== 'matching' && interaction.kind !== 'ordering') ||
+      interaction.labels.length !== (interaction.kind === 'matching' ? interaction.choices.length : 0)) return null
+  }
 
   return value as unknown as LiveQuestion
 }
