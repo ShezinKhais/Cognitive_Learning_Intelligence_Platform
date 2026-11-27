@@ -6,6 +6,7 @@ change the tutor, source selection, guardrails, or lecturer controls.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -28,6 +29,7 @@ log = logging.getLogger("clip.tutor.history")
 
 # Keep storage bounded independently of time-based retention.
 MAX_HISTORY_PER_STUDENT = 500
+HISTORY_SAVE_TIMEOUT_SECONDS = 3
 
 
 async def history_permission(
@@ -37,7 +39,9 @@ async def history_permission(
     user = select(User.chat_history_generation).where(
         User.user_id == student_id, User.active.is_(True), User.role == "student"
     )
-    generation = await db.scalar(user.with_for_update() if lock else user)
+    # FOR NO KEY UPDATE serializes account changes and our writes while
+    # allowing a concurrent consent audit to reference the account by FK.
+    generation = await db.scalar(user.with_for_update(key_share=True) if lock else user)
     if generation is None:
         return None
     settings = get_settings()
@@ -101,8 +105,7 @@ async def save_completed_exchange(
     )
 
     async with get_session_factory()() as db:
-        # Serialize history writes for this student so concurrent saves
-        # cannot each leave more than the configured maximum.
+        # Serialize saves, deletion and account changes for this student.
         if await history_permission(db, student_id, lock=True) != permission:
             return False
 
@@ -139,7 +142,7 @@ async def save_completed_stream(
     source: str,
     permission: tuple[int, datetime] | None = None,
 ) -> AsyncIterator[bytes]:
-    """Forward original NDJSON and persist only after terminal completion.
+    """Forward NDJSON and flag an unsaved reply at terminal completion.
 
     Never hold a database connection while the model generates tokens.
     A storage failure must not turn a completed model reply into an
@@ -171,18 +174,19 @@ async def save_completed_stream(
         elif event_type == "completed" and not completed:
             completed = True
             try:
-                saved = await save_completed_exchange(
-                    student_id=student_id,
-                    session_id=session_id,
-                    request_id=request_id,
-                    question=question,
-                    answer="".join(answer_parts),
-                    source=source,
-                    citations=citations,
-                    follow_ups=follow_ups,
-                    general=general,
-                    permission=permission,
-                )
+                async with asyncio.timeout(HISTORY_SAVE_TIMEOUT_SECONDS):
+                    saved = await save_completed_exchange(
+                        student_id=student_id,
+                        session_id=session_id,
+                        request_id=request_id,
+                        question=question,
+                        answer="".join(answer_parts),
+                        source=source,
+                        citations=citations,
+                        follow_ups=follow_ups,
+                        general=general,
+                        permission=permission,
+                    )
             except Exception as exc:
                 saved = False
                 # The database driver hides SQL parameters. Do not log

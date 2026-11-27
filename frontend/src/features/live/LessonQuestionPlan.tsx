@@ -1,3 +1,4 @@
+import { solutionLines } from '../review/interactiveAuthoring'
 import { useEffect, useId, useState, type FormEvent } from 'react'
 import { apiAuthenticatedRequest, type Page, type Question } from '../../api'
 import { buttonStyles } from '../../components/ui/button'
@@ -103,7 +104,10 @@ export default function LessonQuestionPlan({ sessionId, onSaved, onPendingChange
               <label className="flex items-start gap-2 text-sm font-semibold"><input type="checkbox" checked={selected.has(sourceId(question))} disabled={!selected.has(sourceId(question)) && selected.size >= MAX_QUESTIONS} onChange={() => toggle(question)} />{question.prompt}</label>
               <p className="mt-1 text-xs text-muted-foreground">{question.material_title} · {question.topic ?? 'No topic'}</p>
               <details className="mt-2 text-sm"><summary className="cursor-pointer font-semibold">Review answer and source</summary>
-                <p className="mt-2">Reference answer: {question.type === 'mcq' ? question.options?.[question.correct_option ?? -1] ?? 'Unavailable' : question.reference_answer ?? 'Unavailable'}</p>
+                <p className="mt-2 whitespace-pre-wrap">Reference answer: {question.interaction
+                  ? `\n${solutionLines(question.interaction)}`
+                  : question.type === 'mcq' ? question.options?.[question.correct_option ?? -1] ?? 'Unavailable'
+                  : question.reference_answer ?? 'Unavailable'}</p>
                 {question.key_points?.length ? <ul className="list-disc pl-5">{question.key_points.map((point, index) => <li key={index}>{point}</li>)}</ul> : null}
                 <p>{question.source_slide ? `Page or slide ${question.source_slide}` : 'Page or slide unavailable'}</p>
                 <p className="whitespace-pre-wrap">{question.source_excerpt || 'No source passage attached. Verify the material before selecting.'}</p>

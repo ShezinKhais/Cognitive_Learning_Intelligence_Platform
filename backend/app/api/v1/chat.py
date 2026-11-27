@@ -100,6 +100,7 @@ async def session_chat(
             {"session_id": str(session_id), "reason": "learning_assistant_off"},
         )
 
+    permission = await chat_history_persistence.history_permission(db, principal.user_id)
     open_question_id = classroom.state(session_id, SessionStatus(live.status)).active_question_id
     context = await tutor_chat.prepare(db, live, principal.user_id, open_question_id)
     if payload.source == "discussion":
@@ -112,7 +113,6 @@ async def session_chat(
     limiter = tutor_chat.get_chat_limiter()
     limiter.admit(principal.user_id)
     try:
-        permission = await chat_history_persistence.history_permission(db, principal.user_id)
         revision = (
             await tutor_chat.prepare_revision(db, principal.user_id, payload.question, earlier)
             if payload.source == "materials" and live.status == SessionStatus.ENDED.value
