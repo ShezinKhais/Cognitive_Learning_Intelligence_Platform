@@ -19,3 +19,6 @@ workflow, expected result, actual result and any defect or retest link.
 The [release checks](../teams-release-acceptance.md) cover build and Teams
 package identity. Use redacted evidence and record deferred, blocked and
 failed cases as such.
+
+The [optional teaching pilot](teaching-pilot.md) covers lecturer usefulness
+and student revision outcomes under #259. Run it only if the team agrees.
