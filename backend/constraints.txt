@@ -4,9 +4,7 @@
 # rebuild of the same commit gets the same packages.
 #
 # To move a version: change it here, rebuild, run the suite and the deployed
-# checks (docs/teams-release-acceptance.md), then commit. The transcription
-# extra's own packages are not listed and still float; pin them the same way
-# from an image built with ENABLE_LIVE_TRANSCRIPTION=true before relying on it.
+# checks (docs/teams-release-acceptance.md), then commit.
 alembic==1.20.1
 annotated-doc==0.0.7
 annotated-types==0.8.0
@@ -64,3 +62,19 @@ uvloop==0.23.0
 watchfiles==1.3.0
 websockets==17.4
 xlsxwriter==3.3.3
+
+# Optional local speech extra. Resolved for CPython 3.12 Linux amd64 and arm64.
+av==19.0.2
+ctranslate2==4.9.1
+faster-whisper==1.2.1
+filelock==4.3.1
+flatbuffers==25.12.19
+fsspec==2026.9.0
+hf-xet==1.8.0
+huggingface-hub==2.5.0
+numpy==2.5.5
+onnxruntime==1.32.0
+packaging==26.4
+protobuf==7.36.2
+tokenizers==0.23.3
+tqdm==4.70.1

@@ -52,10 +52,13 @@ the model is missing; `(not pulled)` means Ollama answered without it.
   `nginx:1.31.7-alpine` and `pgvector/pgvector:pg16` (PostgreSQL 16.14), each
   the version the demo ran when the pins were taken.
 - Backend packages install from `backend/constraints.txt`, the exact versions of
-  that image; `pyproject.toml` keeps the ranges for development. Frontend
-  packages install with `npm ci` from `package-lock.json`.
-- The transcription extra's own packages are not in the constraints yet, so an
-  image built with `ENABLE_LIVE_TRANSCRIPTION=true` can still differ.
+  that image plus the optional speech pins. `pyproject.toml` keeps the ranges
+  for development. Frontend packages install with `npm ci` from
+  `package-lock.json`.
+- Builds with `ENABLE_LIVE_TRANSCRIPTION=true` use the same constraints for
+  the local speech runtime, including faster-whisper and its dependencies.
+  Resolve updates for both Linux amd64 and arm64. Record the prepared model
+  checksum separately with `scripts/check_live_speech.py`.
 - Ollama models are named by tag; the record above captures the digest that
   answered, which is what to compare between machines.
 
