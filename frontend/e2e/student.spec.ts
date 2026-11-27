@@ -680,11 +680,12 @@ test('a choice already given is remembered and the devices start by themselves',
 
 test('history restoration can be retried and a save failure preserves the reply', async ({ page }) => {
   let loads = 0
-  await page.route('**/me/chat-history?*', async route => {
+  let historyAvailable = false
+  await page.route(url => url.pathname.endsWith('/me/chat-history'), async route => {
     loads++
-    await route.fulfill(loads === 1
-      ? { status: 503, json: {} }
-      : { json: { items: [], total: 0, offset: 0, limit: 100 } })
+    await route.fulfill(historyAvailable
+      ? { json: { items: [], total: 0, offset: 0, limit: 200 } }
+      : { status: 503, json: {} })
   })
   await page.route('**/sessions/phase8/chat', async route => {
     const { request_id } = route.request().postDataJSON()
@@ -696,8 +697,11 @@ test('history restoration can be retried and a save failure preserves the reply'
   })
   await page.reload()
   const retry = page.getByRole('button', { name: 'Retry loading previous conversations' })
+  await expect(retry).toBeVisible()
+  const initialLoads = loads
+  historyAvailable = true
   await retry.click()
-  await expect.poll(() => loads).toBe(2)
+  await expect.poll(() => loads).toBe(initialLoads + 1)
   await expect(retry).toHaveCount(0)
   const input = page.getByLabel('Ask about this session')
   await input.fill('Help me find my next step')
