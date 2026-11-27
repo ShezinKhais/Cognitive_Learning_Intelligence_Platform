@@ -62,6 +62,7 @@ def test_broad_recaps_with_general_words_retain_chronological_notes():
     for question in (
         "Summarize the main points I missed",
         "Can you summarize the lecture so far?",
+        "Can you recap everything we covered?",
     ):
         result = discussion_chunks(notes, question, 6)
         assert [chunk.chunk_id for chunk in result] == [note.note_id for note in notes]

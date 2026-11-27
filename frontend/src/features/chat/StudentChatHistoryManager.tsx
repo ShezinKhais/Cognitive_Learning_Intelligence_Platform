@@ -10,7 +10,7 @@ import {
 const PAGE_SIZE = 20
 
 /** Student-owned conversation history. Never mounted on lecturer surfaces. */
-export function StudentChatHistoryManager() {
+export function StudentChatHistoryManager({ reloadAfterDelete = true }: { reloadAfterDelete?: boolean }) {
   const [items, setItems] = useState<SavedChatExchange[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -42,11 +42,11 @@ export function StudentChatHistoryManager() {
     setError(null)
     try {
       await deleteChatExchange(record.id)
-      // Reload the active chat as well, so a deleted conversation
-      // cannot remain visible in the current panel's React state.
-      window.location.reload()
+      if (reloadAfterDelete) window.location.reload()
+      else setItems((current) => current.filter((item) => item.id !== record.id))
     } catch {
       setError('Unable to delete the conversation. Please try again.')
+    } finally {
       setBusy(false)
     }
   }
@@ -61,9 +61,11 @@ export function StudentChatHistoryManager() {
     setError(null)
     try {
       await deleteAllChatHistory()
-      window.location.reload()
+      if (reloadAfterDelete) window.location.reload()
+      else setItems([])
     } catch {
       setError('Unable to clear your history. Please try again.')
+    } finally {
       setBusy(false)
     }
   }

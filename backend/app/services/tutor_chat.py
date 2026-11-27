@@ -243,12 +243,16 @@ def discussion_chunks(
         "discussion",
         "covered",
         "happened",
+        "regarding",
+        "concerning",
         "miss",
         "missed",
         "catch",
         "recap",
         "summarize",
         "summarise",
+        "everything",
+        "anything",
         "summary",
         "repeat",
         "latest",
@@ -301,6 +305,17 @@ def discussion_chunks(
     )
 
     wanted = terms(question)
+    # A named subject can be short (for example, “about TCP”). Keep it
+    # separate from the longer words used for matching notes.
+    topic_marker = re.search(
+        r"\b(?:about|regarding|concerning)\b|(?<!\w)عن(?!\w)",
+        question,
+        re.I,
+    )
+    explicit_topic = False
+    if topic_marker is not None:
+        subject = question[topic_marker.end() :].strip(" \t?!؟.,")
+        explicit_topic = bool(terms(subject) or re.fullmatch(r"[A-Z0-9]{2,}", subject))
 
     def overlap(note: DiscussionSource) -> int:
         return len(wanted & terms(note.text))
@@ -316,7 +331,7 @@ def discussion_chunks(
 
     if matches:
         chosen = matches[:limit]
-    elif wanted or not recap:
+    elif explicit_topic or wanted or not recap:
         # Do not invent evidence for a specifically named topic.
         chosen = []
     else:

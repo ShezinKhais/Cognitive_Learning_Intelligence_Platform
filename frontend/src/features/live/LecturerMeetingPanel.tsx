@@ -70,6 +70,7 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
   const [performance, setPerformance] = useState<PerformanceAverage | null>(null)
   const [performanceFailed, setPerformanceFailed] = useState(false)
   const [performanceLoaded, setPerformanceLoaded] = useState(false)
+  const [performanceRetry, setPerformanceRetry] = useState(0)
   const [acknowledging, setAcknowledging] = useState<string | null>(null)
 
   useDocumentTitle(details ? `Live, ${details.title}` : 'Live session')
@@ -139,7 +140,7 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
   // count and average marked checkpoint accuracy. No chatbot data is used.
   const openQuestionId = activeQuestion?.question_id ?? null
   useEffect(() => {
-    let cancelled = false
+    const request = new AbortController()
     let loading = false
     // Keep the previous average visible while a new question loads.
     // Only clear the question-specific response count.
@@ -148,11 +149,11 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
     if (status !== 'active' && status !== 'ended') return
 
     const load = async () => {
-      if (loading) return
+      if (loading || request.signal.aborted) return
       loading = true
       try {
-        const responses = await listAllResponses(sessionId)
-        if (cancelled) return
+        const responses = await listAllResponses(sessionId, request.signal)
+        if (request.signal.aborted) return
         setPerformance(averageStudentAccuracy(responses))
         setPerformanceFailed(false)
         setPerformanceLoaded(true)
@@ -160,7 +161,7 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
           ? responses.filter((response) => response.question_id === openQuestionId).length
           : null)
       } catch {
-        if (!cancelled) {
+        if (!request.signal.aborted) {
           setPerformanceFailed(true)
           setPerformanceLoaded(true)
         }
@@ -178,10 +179,10 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
       : null
 
     return () => {
-      cancelled = true
+      request.abort()
       if (timer !== null) window.clearInterval(timer)
     }
-  }, [sessionId, openQuestionId, status])
+  }, [sessionId, openQuestionId, status, performanceRetry])
 
   async function act(action: SessionLifecycleAction) {
     setActionError(null)
@@ -301,9 +302,22 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
             <div className="mt-3 border-t border-border pt-3">
               <p className="text-xs text-muted-foreground">Average checkpoint accuracy</p>
               {performanceFailed ? (
-                <p role="status" className="mt-1 text-sm text-muted-foreground">
-                  Results are temporarily unavailable.
-                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
+                  <p role="status" className="text-muted-foreground">
+                    Results are temporarily unavailable.
+                  </p>
+                  <button
+                    type="button"
+                    className="font-medium text-info underline"
+                    onClick={() => {
+                      setPerformanceFailed(false)
+                      setPerformanceLoaded(false)
+                      setPerformanceRetry((value) => value + 1)
+                    }}
+                  >
+                    Retry results
+                  </button>
+                </div>
               ) : !performanceLoaded ? (
                 <p role="status" className="mt-1 text-sm text-muted-foreground">
                   Loading results…

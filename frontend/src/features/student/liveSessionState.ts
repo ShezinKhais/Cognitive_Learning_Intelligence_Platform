@@ -27,6 +27,8 @@ export interface LiveSessionState {
   paused: boolean
   /** The lecturer's AI switches for the class. */
   ai: AiControls
+  /** True after the server sends the class-specific settings. */
+  hasSessionState: boolean
   participantCount: number
   questionsDelivered: number
   /** Questions this student's answer was stored for, this session. */
@@ -73,6 +75,7 @@ export function initialLiveSessionState(
     sessionStatus: status,
     paused,
     ai: ALL_AI_ON,
+    hasSessionState: false,
     participantCount: 0,
     questionsDelivered: 0,
     answeredIds: [],
@@ -202,6 +205,7 @@ export function liveSessionReducer(
         sessionStatus: action.payload.status,
         paused: sessionEnded ? false : action.payload.paused,
         ai: action.payload.ai,
+        hasSessionState: true,
         participantCount:
           sessionEnded ? 0 : action.payload.participant_count,
         questionsDelivered: action.payload.questions_delivered,

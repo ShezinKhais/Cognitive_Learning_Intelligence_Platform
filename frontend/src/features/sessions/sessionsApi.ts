@@ -78,11 +78,11 @@ export function getSession(id: string): Promise<SessionSummary> {
 
 /** Every response a session holds, read a page at a time. A student is
  * given only their own. */
-export async function listAllResponses(id: string): Promise<SessionResponse[]> {
+export async function listAllResponses(id: string, signal?: AbortSignal): Promise<SessionResponse[]> {
   const all: SessionResponse[] = []
   for (let offset = 0; ; offset += 200) {
-    const page = await apiAuthenticatedGet<Page<SessionResponse>>(
-      `${session(id)}/responses?limit=200&offset=${offset}`,
+    const page = await apiAuthenticatedRequest<Page<SessionResponse>>(
+      `${session(id)}/responses?limit=200&offset=${offset}`, { signal },
     )
     all.push(...page.items)
     if (all.length >= page.total || page.items.length === 0) return all

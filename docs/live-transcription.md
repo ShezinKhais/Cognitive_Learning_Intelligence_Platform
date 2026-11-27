@@ -87,6 +87,24 @@ docker compose -p clip-demo -f docker-compose.demo.yml --env-file deploy/demo.en
 docker compose -p clip-demo -f docker-compose.demo.yml --env-file deploy/demo.env up -d
 ```
 
+For a multilingual demo, prepare the pinned multilingual model into a separate
+directory. Mount that directory read-only using the optional Compose override:
+
+```sh
+cd backend
+python scripts/prepare_live_speech.py --model multilingual --output /absolute/multilingual-model
+cd ..
+export CLIP_WHISPER_MODEL_DIR=/absolute/multilingual-model
+export CLIP_WHISPER_LANGUAGE=auto
+docker compose -p clip-demo -f docker-compose.demo.yml -f docker-compose.whisper.yml --env-file deploy/demo.env up -d --build
+docker compose -p clip-demo -f docker-compose.demo.yml -f docker-compose.whisper.yml --env-file deploy/demo.env exec -T backend python scripts/check_live_speech.py
+```
+
+Use `CLIP_WHISPER_LANGUAGE=ar` for an Arabic class or `en` for an English class
+when the language is known. Use the multilingual model with `auto` or `ar`.
+The setup check loads the prepared local model and reports its checksum. It
+does not establish transcription accuracy or performance on the demo host.
+
 Run `alembic upgrade head` (the container entrypoint does this). It adds an origin
 label to existing discussion notes, which remain lecturer-reviewed. Use HTTPS in
 deployment; browser microphone capture works on HTTPS or localhost. The worklet

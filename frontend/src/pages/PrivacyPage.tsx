@@ -186,7 +186,7 @@ export default function PrivacyPage() {
           Completed private tutor conversations are stored separately from
           class records so you can revisit them across classes. They follow
           the configured retention period measured from when each exchange
-          was saved, and can be deleted sooner using your chatbot history
+          was saved, and can be deleted sooner from My data or the chatbot history
           controls. A student account can retain up to 500 completed chatbot
           exchanges. When this limit is exceeded, the oldest saved exchanges
           are automatically deleted. You can delete individual conversations

@@ -270,6 +270,9 @@ See [docs/governance.md](docs/governance.md).
 - Classes resume where they left off after a dropped connection
 - Free-text answers marked against the question's key points, in the background
 - Socratic chatbot that gives hints rather than answers, with the slides it used
+- Private completed tutor exchanges are saved to the student account for up to the configured
+  retention period (at most 90 days), capped at 500 exchanges. Students can delete them from
+  My data, including after withdrawing terms consent.
 - Live and post-session catch-up from lecturer-published discussion minutes, with time windows and source links
 - Optional live lecturer microphone transcription feeding student catch-up automatically, with explicit opt-in and local server speech processing
 - Optional post-meeting Teams transcript import and AI-drafted minutes, reviewed by the lecturer before publication

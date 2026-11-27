@@ -81,9 +81,12 @@ export function useSocraticChat(sessionId: string, discussionSince?: string, dis
         question,
         history: historyFor(state.exchanges),
         signal: nextController.signal,
-        onEvent: (event) => dispatch({ type: 'stream-event', event }),
+        onEvent: (event) => {
+          if (controller.current === nextController) dispatch({ type: 'stream-event', event })
+        },
       })
     } catch (caught: unknown) {
+      if (controller.current !== nextController) return
       if (nextController.signal.aborted) {
         dispatch({ type: 'cancelled-locally' })
       } else {

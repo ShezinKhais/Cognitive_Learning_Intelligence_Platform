@@ -137,7 +137,7 @@ export function LiveSessionPanel({
   }, [finished, onFinished, session.id])
   // The learning assistant is offered while the class runs, unless the
   // lecturer has turned it off for this class.
-  const assistant = liveAssistantVisible(
+  const assistant = state.hasSessionState && liveAssistantVisible(
     SOCRATIC_CHAT_ENABLED,
     state.ai.learning_assistant,
     state.sessionStatus,

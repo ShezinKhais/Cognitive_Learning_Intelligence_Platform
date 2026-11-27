@@ -147,3 +147,24 @@ test('a lost response after submission is reconciled without repeating the delet
   expect(posts).toBe(1)
   await expect(page.getByRole('button', { name: 'Send the request' })).toHaveCount(0)
 })
+
+test('a student can delete a saved tutor exchange from My data', async ({ page }) => {
+  const exchange = {
+    id: 'exchange-1', session_id: 'session-1', source: 'materials',
+    question: 'Help with recursion', answer: 'Start with the base case.',
+  }
+  await page.route('**/api/v1/me/deletion-request', route => route.fulfill(absent))
+  await page.route('**/api/v1/me/chat-history?*', route => route.fulfill({
+    json: { items: [exchange], total: 1, limit: 200, offset: 0, next_before: null },
+  }))
+  await page.route('**/api/v1/me/chat-history/exchange-1', route => {
+    expect(route.request().method()).toBe('DELETE')
+    return route.fulfill({ status: 204 })
+  })
+  await page.goto('/e2e/harness/index.html?socket=mydata')
+  await page.getByRole('button', { name: 'Manage saved conversations' }).click()
+  await expect(page.getByText(exchange.question)).toBeVisible()
+  page.once('dialog', dialog => dialog.accept())
+  await page.getByRole('button', { name: 'Delete saved conversation exchange-1' }).click()
+  await expect(page.getByText('No completed conversations have been saved yet.')).toBeVisible()
+})
