@@ -45,7 +45,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 from uuid import UUID
 
 import httpx
@@ -62,7 +62,7 @@ from app.models.user import User
 from app.schemas.meetings import meeting_id_for_thread
 from app.services import session_lifecycle
 from app.services.course_membership import my_courses
-from app.services.meeting_organiser import thread_in
+from app.services.meeting_organiser import lookup_short_meeting, short_meeting_id, thread_in
 from app.services.teams_meeting_flow import course_in_title
 from app.services.teams_notifications import panel_url
 from app.services.transcript_minutes import graph_token
@@ -89,8 +89,9 @@ MAX_PAGES = 20
 
 @dataclass(frozen=True)
 class Meeting:
-    thread: str
+    thread: str | None
     subject: str
+    short_id: str | None = None
 
 
 def upcoming_meetings(events: object) -> list[Meeting]:
@@ -105,12 +106,34 @@ def upcoming_meetings(events: object) -> list[Meeting]:
         online = event.get("onlineMeeting")
         join_url = online.get("joinUrl") if isinstance(online, dict) else None
         thread = thread_in(join_url) if isinstance(join_url, str) else None
-        if thread is None or thread in found:
+        short_id = short_meeting_id(join_url) if isinstance(join_url, str) and not thread else None
+        key = thread or short_id
+        if key is None or key in found:
             continue
         subject = event.get("subject")
         subject = subject.strip()[:200] if isinstance(subject, str) and subject.strip() else ""
-        found[thread] = Meeting(thread=thread, subject=subject or "Teams meeting")
+        found[key] = Meeting(thread=thread, subject=subject or "Teams meeting", short_id=short_id)
     return list(found.values())
+
+
+def is_clip_tab(tab: object, catalog: str, content: str) -> bool:
+    if not isinstance(tab, dict):
+        return False
+    app = tab.get("teamsApp")
+    if isinstance(app, dict) and app.get("id") == catalog:
+        return True
+    # Teams can omit the expanded app for a tab saved by the organiser.
+    config = tab.get("configuration")
+    if not isinstance(config, dict) or config.get("entityId") != TAB_ENTITY:
+        return False
+    actual = config.get("contentUrl")
+    if not isinstance(actual, str):
+        return False
+    try:
+        url, expected = urlsplit(actual), urlsplit(content)
+    except ValueError:
+        return False
+    return (url.scheme, url.netloc, url.path) == (expected.scheme, expected.netloc, expected.path)
 
 
 def tab_deep_link(app_id: str, thread: str) -> str:
@@ -201,13 +224,24 @@ class Graph:
 
     async def pin_tab(self, thread: str, catalog: str, base: str) -> None:
         tabs = f"{GRAPH}/chats/{quote(thread, safe='')}/tabs"
-        response = await self.client.get(tabs, headers=self.headers, params={"$expand": "teamsApp"})
-        response.raise_for_status()
-        for tab in response.json().get("value", []):
-            app = tab.get("teamsApp") if isinstance(tab, dict) else None
-            if isinstance(app, dict) and app.get("id") == catalog:
-                return
         content = panel_url(base, UUID(int=0), "/teams/meeting").split("?", 1)[0]
+        response = await self.client.get(tabs, headers=self.headers, params={"$expand": "teamsApp"})
+        for _ in range(MAX_PAGES):
+            response.raise_for_status()
+            body = response.json()
+            if not isinstance(body, dict) or not isinstance(body.get("value"), list):
+                raise ValueError("Teams did not return a complete tab list")
+            for tab in body["value"]:
+                if is_clip_tab(tab, catalog, content):
+                    return
+            following = body.get("@odata.nextLink")
+            if not following:
+                break
+            if not isinstance(following, str) or not following.startswith(f"{GRAPH}/"):
+                raise ValueError("Teams returned an unexpected tab list URL")
+            response = await self.client.get(following, headers=self.headers)
+        else:
+            raise ValueError("Teams returned too many tab pages")
         response = await self.client.post(
             tabs,
             headers=self.headers,
@@ -332,22 +366,33 @@ class MeetingWatch:
         if code is None:
             # Not a class: never installed into automatically.
             return False
+        thread = meeting.thread
+        if thread is None and meeting.short_id:
+            try:
+                thread = await lookup_short_meeting(
+                    graph.client, graph.headers, teams_user, meeting.short_id
+                )
+            except (httpx.HTTPError, ValueError) as exc:
+                log.info("Teams calendar link could not be resolved: %s", type(exc).__name__)
+        if thread is None:
+            return False
+
         assert self.catalog is not None
-        row = await db.get(TeamsAutoJoin, meeting.thread)
+        row = await db.get(TeamsAutoJoin, thread)
         if row is not None and row.tab_pinned:
             # Done before; if C.L.I.P was removed since, it stays removed.
             return False
         if row is None:
             known = await db.scalar(
                 select(TeamsMeetingReference.meeting_id).where(
-                    TeamsMeetingReference.meeting_id == meeting_id_for_thread(meeting.thread)
+                    TeamsMeetingReference.meeting_id == meeting_id_for_thread(thread)
                 )
             )
             if known is not None:
                 # Added by hand: the lecturer set this meeting up themselves.
                 return False
             try:
-                fresh = await graph.install(meeting.thread, self.catalog)
+                fresh = await graph.install(thread, self.catalog)
             except httpx.HTTPError as exc:
                 status = getattr(getattr(exc, "response", None), "status_code", None)
                 log.info(
@@ -355,7 +400,7 @@ class MeetingWatch:
                 )
                 return False
             row = TeamsAutoJoin(
-                chat_thread=meeting.thread,
+                chat_thread=thread,
                 tenant_id=settings.tenant_id,
                 tab_pinned=False,
                 notice_owed=fresh,
@@ -367,9 +412,16 @@ class MeetingWatch:
                 # Another worker got here first and carries it on.
                 await db.rollback()
                 return False
+        # Keep overlapping sweeps from both listing an empty set of tabs
+        # and then each creating one for the same meeting.
+        await db.refresh(row, with_for_update=True)
+        if row.tab_pinned:
+            await db.rollback()
+            return False
         try:
-            await graph.pin_tab(meeting.thread, self.catalog, settings.teams_app_base_url)
+            await graph.pin_tab(thread, self.catalog, settings.teams_app_base_url)
         except (httpx.HTTPError, ValueError) as exc:
+            await db.rollback()
             log.warning("the C.L.I.P tab was not pinned in a meeting: %s", type(exc).__name__)
             return False
         owed = row.notice_owed
@@ -379,11 +431,11 @@ class MeetingWatch:
         if owed:
             try:
                 await graph.notify(
-                    meeting.thread,
+                    thread,
                     teams_user,
                     meeting.subject,
                     notice_text(meeting.subject, code),
-                    tab_deep_link(settings.teams_app_id, meeting.thread),
+                    tab_deep_link(settings.teams_app_id, thread),
                 )
             except httpx.HTTPError as exc:
                 log.warning("the lecturer was not told about a meeting: %s", type(exc).__name__)

@@ -152,3 +152,40 @@ test('the compact Teams panel exposes both policies without hiding the class', a
   await expect(page.getByRole('link', { name: 'Terms of use', exact: true })).toHaveAttribute('href', '/terms')
   await expect(page.getByText('Waiting for the next checkpoint', { exact: true })).toBeVisible()
 })
+
+test('the Teams assistant back arrow returns focus to the live class', async ({ page }) => {
+  await page.routeWebSocket('**/ws/session', socket => socket.onMessage(raw => {
+    const message = JSON.parse(String(raw))
+    if (message.type !== 'auth') return
+    const id = message.data.session_id
+    const ts = new Date().toISOString()
+    socket.send(JSON.stringify({ type: 'ready', seq: 0, ts, data: {
+      user_id: 'student', session_id: id, resumed_from_seq: null, stream_id: 'back-test',
+    } }))
+    socket.send(JSON.stringify({ type: 'session.state', seq: 1, ts, data: {
+      session_id: id, status: 'active', paused: false, participant_count: 1,
+      active_question_id: null, questions_delivered: 0,
+    } }))
+  }))
+  await page.goto('/e2e/harness/index.html?socket=student-panel&compact=1')
+  await page.getByRole('tab', { name: 'Learning assistant' }).click()
+  const back = page.getByRole('button', { name: 'Back to live class' })
+  await back.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('tab', { name: 'Live class' })).toBeFocused()
+  await expect(page.getByText('Waiting for the next checkpoint', { exact: true })).toBeVisible()
+})
+
+test('the lecturer can open class tools and use the back arrow without leaving Teams', async ({ page }) => {
+  await page.route('**/api/v1/sessions/new-session', route => route.fulfill({ json: session() }))
+  await page.goto('/e2e/harness/index.html?socket=lecturer-panel')
+  const tools = page.getByRole('button', { name: 'Class tools' })
+  await tools.click()
+  await expect(page.getByRole('heading', { name: 'Class tools' })).toBeFocused()
+  await expect(page.getByRole('link', { name: 'Discussion minutes' })).toHaveAttribute('href', '/lecturer/sessions/new-session/notes')
+  const back = page.getByRole('button', { name: 'Back to live class' })
+  await back.focus()
+  await page.keyboard.press('Enter')
+  await expect(tools).toBeFocused()
+  await expect(page.getByRole('heading', { name: 'Newly started class' })).toBeVisible()
+})
