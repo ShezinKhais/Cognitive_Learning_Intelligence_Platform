@@ -200,8 +200,9 @@ inside Teams or paste the full invitation link. The normal meeting
 installation and organiser checks still apply.
 
 `TEAMS_AUTO_JOIN_ENABLED=true` in the demo environment file enables automatic
-installation for qualifying classes. Restart the Compose backend after changing
-it. Every
+installation for qualifying classes. Recreate the Compose backend with
+`docker compose -p clip-demo -f docker-compose.demo.yml --env-file deploy/demo.env up -d backend`
+after changing it. Every
 `TEAMS_AUTO_JOIN_INTERVAL_SECONDS` (300 by default) the backend reads the next
 `TEAMS_AUTO_JOIN_DAYS` (14) of each linked lecturer's calendar and, for each
 Teams meeting they organise whose title names one of their course codes, puts
