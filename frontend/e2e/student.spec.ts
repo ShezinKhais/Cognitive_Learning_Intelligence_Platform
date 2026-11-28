@@ -378,7 +378,7 @@ test('microphone denial and consent-save failure never strand the interface', as
   await showIndicators(page)
   await page.getByLabel('I opt in to microphone indicators').check()
   await page.getByRole('button', { name: 'Save my choice' }).click()
-  await expect(page.getByRole('alert')).toContainText('No device was started')
+  await expect(page.getByRole('region', { name: 'Optional local indicators' }).getByRole('alert')).toContainText('No device was started')
   expect(await page.evaluate(() => (window as any).probe.requests)).toBe(0)
   await page.unroute('**/api/v1/auth/consent')
   await page.getByRole('button', { name: 'Save my choice' }).click()
@@ -597,7 +597,7 @@ for (const sensor of ['camera', 'microphone'] as const) {
     await page.route('**/api/v1/auth/me', route => route.fulfill({ json: {
       id: 'student', role: 'student', consents: [],
     } }))
-    await expect(page.getByRole('alert')).toContainText('Monitoring consent is unavailable', { timeout: 10_000 })
+    await expect(page.getByRole('region', { name: 'Optional local indicators' }).getByRole('alert')).toContainText('Monitoring consent is unavailable', { timeout: 10_000 })
     await expect.poll(() => page.evaluate(() => (window as any).probe.tracks.every(
       (track: MediaStreamTrack) => track.readyState === 'ended',
     ))).toBe(true)
@@ -615,7 +615,7 @@ test('failed consent recheck releases the microphone while chat stays usable', a
   await page.getByRole('button', { name: 'Turn on' }).click()
   await expect(page.getByRole('button', { name: 'Stop microphone', exact: true })).toBeVisible({ timeout: 60_000 })
   await page.route('**/api/v1/auth/me', route => route.fulfill({ status: 503, json: {} }))
-  await expect(page.getByRole('alert')).toContainText('Consent could not be verified', { timeout: 10_000 })
+  await expect(page.getByRole('region', { name: 'Optional local indicators' }).getByRole('alert')).toContainText('Consent could not be verified', { timeout: 10_000 })
   await expect.poll(() => page.evaluate(() => (window as any).probe.tracks.every(
     (track: MediaStreamTrack) => track.readyState === 'ended',
   ))).toBe(true)
@@ -676,4 +676,37 @@ test('a choice already given is remembered and the devices start by themselves',
   await expect.poll(() => page.evaluate(() => (window as any).probe.requests)).toBeGreaterThan(0)
   await page.getByRole('button', { name: 'Turn everything off' }).click()
   await expect(page.getByText('Camera: off. Microphone: off.')).toBeVisible()
+})
+
+test('history restoration can be retried and a save failure preserves the reply', async ({ page }) => {
+  let loads = 0
+  let historyAvailable = false
+  await page.route(url => url.pathname.endsWith('/me/chat-history'), async route => {
+    loads++
+    await route.fulfill(historyAvailable
+      ? { json: { items: [], total: 0, offset: 0, limit: 200 } }
+      : { status: 503, json: {} })
+  })
+  await page.route('**/sessions/phase8/chat', async route => {
+    const { request_id } = route.request().postDataJSON()
+    await route.fulfill({ contentType: 'application/x-ndjson', body: [
+      { type: 'accepted' },
+      { type: 'delta', text: 'Which idea could you try next?' },
+      { type: 'completed', history_saved: false },
+    ].map(event => JSON.stringify({ ...event, request_id })).join('\n') + '\n' })
+  })
+  await page.reload()
+  const retry = page.getByRole('button', { name: 'Retry loading previous conversations' })
+  await expect(retry).toBeVisible()
+  const initialLoads = loads
+  historyAvailable = true
+  await retry.click()
+  await expect.poll(() => loads).toBe(initialLoads + 1)
+  await expect(retry).toHaveCount(0)
+  const input = page.getByLabel('Ask about this session')
+  await input.fill('Help me find my next step')
+  await input.press('Enter')
+  await expect(page.getByText('Which idea could you try next?')).toBeVisible()
+  await expect(page.getByText(/could not save it to your chat history/)).toBeVisible()
+  await expect(input).toBeEnabled()
 })

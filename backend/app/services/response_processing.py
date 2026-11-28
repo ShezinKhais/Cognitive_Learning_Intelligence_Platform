@@ -13,11 +13,14 @@ from app.core.errors import ValidationError
 from app.models.question import Question
 from app.schemas.content import QuestionStatus
 from app.schemas.events import FeedbackResultPayload
+from app.schemas.question_interaction import QuestionInteraction
+from app.services.question_interaction import KINDS, describe_answer
 from app.services.scoring import (
     build_mcq_feedback,
     feedback_payload,
     score_mcq,
 )
+from app.services.source_labels import question_source_label
 
 
 def _check_live_question(*, session_id: UUID, question: Question) -> None:
@@ -93,4 +96,14 @@ def process_submission(
             selected_option=selected_option,
         )
 
+    if question.question_type in KINDS:
+        interaction = QuestionInteraction.model_validate(question.interaction)
+        correct = free_text == describe_answer(interaction, interaction.correct_order)
+        return FeedbackResultPayload(
+            question_id=question.question_id,
+            correct=correct,
+            explanation="Correct." if correct else "Incorrect.",
+            source_slide=question.source_slide,
+            source_label=question_source_label(question),
+        )
     return FeedbackResultPayload(question_id=question.question_id, correct=None)

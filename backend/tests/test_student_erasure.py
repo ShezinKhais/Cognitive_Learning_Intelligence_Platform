@@ -25,12 +25,14 @@ from app.models.material import Material
 from app.models.question import Question
 from app.models.session import Session
 from app.models.student import Student
+from app.models.student_chat_exchange import StudentChatExchange
 from app.models.student_response import StudentResponse
 from app.models.teams_participant_mapping import TeamsParticipantMapping
 from app.models.teams_roster_sync import TeamsRosterSync
 from app.models.teams_user_mapping import TeamsUserMapping
 from app.models.user import User
 from app.repositories.audit_repository import list_events, record_event
+from app.services.student_data import export_student_data
 from app.services.student_erasure import erase_student
 
 from .database_support import require_database
@@ -241,6 +243,7 @@ async def test_a_students_own_data_is_erased(db, classroom):
         "teams_records": 2,
         "alerts": 0,
         "recommendations": 0,
+        "chatbot_exchanges": 0,
     }
 
 
@@ -314,6 +317,7 @@ async def test_erasing_a_student_twice_is_safe(db, classroom):
             "teams_records",
             "alerts",
             "recommendations",
+            "chatbot_exchanges",
         ),
         0,
     )
@@ -377,3 +381,85 @@ async def test_alerts_and_recommendations_about_the_student_are_deleted(db, clas
     # Nothing was merely unlinked: the leaver's rows are gone and the stayer's remain.
     assert await count(db, AIAlert, AIAlert.session_id, classroom.session) == 1
     assert await count(db, AIRecommendation, AIRecommendation.session_id, classroom.session) == 1
+
+
+def chat_exchange(user_id, question):
+    return StudentChatExchange(
+        student_id=user_id,
+        session_id=None,
+        request_id=uuid.uuid4().hex,
+        question=question,
+        answer=f"Private answer for {question}",
+        source="materials",
+        phase="completed",
+        citations=[],
+        follow_ups=[],
+        general=False,
+        explanation=None,
+    )
+
+
+async def test_chatbot_history_is_exported_only_for_its_owner(db, classroom, monkeypatch):
+    from app.services import student_data
+
+    # This test checks the main database only, not the optional
+    # separate archived-summary database.
+    monkeypatch.setattr(
+        student_data,
+        "resolve_history_factory",
+        lambda _history: None,
+    )
+
+    db.add_all(
+        [
+            chat_exchange(classroom.leaver_user, "Leaver's private question"),
+            chat_exchange(classroom.stayer_user, "Stayer's private question"),
+        ]
+    )
+    await db.flush()
+
+    exported = await export_student_data(db, classroom.leaver_user)
+
+    assert len(exported["chatbot_history"]) == 1
+    exchange = exported["chatbot_history"][0]
+
+    assert exchange["question"] == "Leaver's private question"
+    assert exchange["answer"] == ("Private answer for Leaver's private question")
+    assert exchange["session_id"] is None
+    assert exchange["created_at"] is not None
+    assert "Stayer's private question" not in str(exported)
+
+
+async def test_erasure_removes_private_chatbot_history(db, classroom):
+    db.add_all(
+        [
+            chat_exchange(classroom.leaver_user, "Erase this conversation"),
+            chat_exchange(classroom.stayer_user, "Keep this conversation"),
+        ]
+    )
+    await db.flush()
+
+    report = await erase_student(db, classroom.leaver)
+
+    assert report.chatbot_exchanges == 1
+
+    leaver_count = await count(
+        db,
+        StudentChatExchange,
+        StudentChatExchange.student_id,
+        classroom.leaver_user,
+    )
+    stayer_count = await count(
+        db,
+        StudentChatExchange,
+        StudentChatExchange.student_id,
+        classroom.stayer_user,
+    )
+
+    assert leaver_count == 0
+    assert stayer_count == 1
+
+    account = await db.get(User, classroom.leaver_user)
+    assert account is not None
+    assert account.active is False
+    assert account.name == "Deleted student"

@@ -201,3 +201,50 @@ test('denied review never opens material or discussion tutoring', async ({ page 
 })
 
 })
+
+test('ordering checkpoint can be answered with the keyboard in the compact panel', async ({ page }) => {
+  let submitted: number[] | undefined
+  await page.route('**/api/v1/auth/**', route => route.fulfill({ json: {
+    id: 'student', role: 'student', email: 'student@example.test',
+    full_name: 'Synthetic student', consents: ['terms'],
+  } }))
+  await page.routeWebSocket('**/ws/session', ws => {
+    const ts = new Date().toISOString()
+    ws.onMessage(message => {
+      const event = JSON.parse(String(message))
+      if (event.type === 'auth') {
+        ws.send(JSON.stringify({ type: 'ready', seq: 0, ts, data: {
+          user_id: 'student', session_id: 'completion-session',
+          resumed_from_seq: null, stream_id: 'interactive-test',
+        } }))
+        ws.send(JSON.stringify({ type: 'session.state', seq: 1, ts, data: {
+          session_id: 'completion-session', status: 'active', paused: false, participant_count: 1,
+          active_question_id: null, questions_delivered: 0,
+        } }))
+        ws.send(JSON.stringify({ type: 'question.delivered', seq: 2, ts, data: {
+          question_id: 'interactive-question', prompt: 'Order the study steps', options: null, source_slide: null,
+          closes_at: new Date(Date.now() + 60_000).toISOString(), window_seconds: 60,
+          interaction: { kind: 'ordering', labels: [], choices: ['Review', 'Read'] },
+        } }))
+      }
+      if (event.type === 'answer.submit') submitted = event.data.answer_order
+    })
+  })
+  await page.goto('/e2e/harness/index.html?socket=student-panel&compact=1')
+  await expect(page.getByRole('heading', { name: 'Order the study steps' })).toBeVisible()
+  const move = page.getByRole('button', { name: 'Move Read up' })
+  await move.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('list', { name: 'Your current order' }).getByRole('listitem').first()).toContainText('1. Read')
+  await expect(page.getByRole('button', { name: 'Move Read down' })).toBeFocused()
+  await expect(page.getByText('Read moved to position 1 of 2.')).toBeAttached()
+  await page.keyboard.press('Enter')
+  await expect(move).toBeFocused()
+  await expect(page.getByText('Read moved to position 2 of 2.')).toBeAttached()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name: 'Move Read down' })).toBeFocused()
+  const submit = page.getByRole('button', { name: 'Submit answer' })
+  await submit.focus()
+  await page.keyboard.press('Enter')
+  await expect.poll(() => submitted).toEqual([1, 0])
+})

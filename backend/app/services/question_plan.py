@@ -32,6 +32,7 @@ def question_out(question: Question, title: str) -> LessonQuestionOut:
         prompt=question.question_text,
         options=question.options,
         correct_option=question.correct_option,
+        interaction=question.interaction,
         reference_answer=question.reference_answer,
         key_points=question.key_points,
         topic=question.topic,

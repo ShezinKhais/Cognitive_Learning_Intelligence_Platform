@@ -29,6 +29,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.content import MaterialStatus
+from app.schemas.question_interaction import Index, PublicInteraction
 from app.schemas.session import EngagementStatus, SessionStatus, ShownText
 
 # Client to server fields are the one part of this contract an unauthenticated
@@ -140,6 +141,7 @@ class AnswerSubmitPayload(BaseModel):
     # min_length matters as much as max: an empty string satisfies "exactly one
     # is set" while carrying no answer at all.
     free_text: str | None = Field(default=None, min_length=1, max_length=MAX_FREE_TEXT_LENGTH)
+    answer_order: list[Index] | None = Field(default=None, min_length=2, max_length=8)
     client_elapsed_ms: int = Field(
         ge=0, description="Time from delivery to submit, measured on the client."
     )
@@ -153,9 +155,11 @@ class AnswerSubmitPayload(BaseModel):
         left the Phase 3 handler to discover an empty submission at scoring
         time and decide what a half-answered question counts as.
         """
-        answered = (self.selected_option is not None) + (self.free_text is not None)
+        answered = sum(
+            value is not None for value in (self.selected_option, self.free_text, self.answer_order)
+        )
         if answered != 1:
-            raise ValueError("set exactly one of selected_option or free_text")
+            raise ValueError("set exactly one of selected_option, free_text or answer_order")
         return self
 
 
@@ -280,7 +284,8 @@ class SessionStatePayload(BaseModel):
 class QuestionDeliveredPayload(BaseModel):
     question_id: UUID
     prompt: str
-    options: list[str] | None = Field(default=None, description="Null for free-text questions.")
+    options: list[str] | None = Field(default=None, description="Multiple-choice options.")
+    interaction: PublicInteraction | None = None
     closes_at: datetime
     window_seconds: int
     source_slide: int | None = None

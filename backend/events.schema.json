@@ -2,6 +2,25 @@
   "client_events": {
     "answer.submit": {
       "properties": {
+        "answer_order": {
+          "anyOf": [
+            {
+              "items": {
+                "exclusiveMaximum": 8,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "maxItems": 8,
+              "minItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Answer Order"
+        },
         "client_elapsed_ms": {
           "description": "Time from delivery to submit, measured on the client.",
           "minimum": 0,
@@ -673,11 +692,63 @@
       "type": "object"
     },
     "question.delivered": {
+      "$defs": {
+        "PublicInteraction": {
+          "properties": {
+            "choices": {
+              "items": {
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 8,
+              "minItems": 2,
+              "title": "Choices",
+              "type": "array"
+            },
+            "kind": {
+              "enum": [
+                "matching",
+                "ordering"
+              ],
+              "title": "Kind",
+              "type": "string"
+            },
+            "labels": {
+              "items": {
+                "maxLength": 180,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 8,
+              "title": "Labels",
+              "type": "array"
+            }
+          },
+          "required": [
+            "choices",
+            "kind"
+          ],
+          "title": "PublicInteraction",
+          "type": "object"
+        }
+      },
       "properties": {
         "closes_at": {
           "format": "date-time",
           "title": "Closes At",
           "type": "string"
+        },
+        "interaction": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PublicInteraction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "options": {
           "anyOf": [
@@ -692,7 +763,7 @@
             }
           ],
           "default": null,
-          "description": "Null for free-text questions.",
+          "description": "Multiple-choice options.",
           "title": "Options"
         },
         "prompt": {

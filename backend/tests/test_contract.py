@@ -26,6 +26,9 @@ EXPECTED_PATHS = {
     "/api/v1/sessions/{session_id}/discussion/{note_id}",
     # Phase 7 AI2: additive own-student review adapter; summary contract unchanged.
     "/api/v1/governance/history/{student_id}",
+    # Issue #328: private cross-class chatbot history, student only.
+    "/api/v1/me/chat-history",
+    "/api/v1/me/chat-history/{exchange_id}",
     "/api/v1/me/data",
     "/api/v1/me/deletion-request",
     "/api/v1/student-reviews",

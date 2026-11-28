@@ -26,7 +26,7 @@ from app.realtime.classroom import classroom
 from app.schemas.chat import ChatRequest
 from app.schemas.identity import ConsentType, Role
 from app.schemas.session import SessionStatus
-from app.services import discussion, session_lifecycle, tutor_chat
+from app.services import chat_history_persistence, discussion, session_lifecycle, tutor_chat
 from app.services.tutor_guardrails import EarlierTurn
 
 router = APIRouter(
@@ -46,8 +46,9 @@ _EVENTS = (
     "`citation` (`id`, `material_title`, `source_page`, `source_slide`, `excerpt`, "
     "optional `number`, `source_note_id` for discussion notes, and `source_session_id` for "
     "revision sources), "
-    "`follow_up` events carrying a `prompt`, and `completed`; or one of `unsupported` "
-    "(with a `reason`), `empty_retrieval` and `error` (with a `detail`)."
+    "`follow_up` events carrying a `prompt`, and `completed`. The completed event may contain "
+    "`history_saved: false` if the reply could not be stored. Other terminal events are "
+    "`unsupported` (with a `reason`), `empty_retrieval` and `error` (with a `detail`)."
 )
 
 
@@ -99,6 +100,7 @@ async def session_chat(
             {"session_id": str(session_id), "reason": "learning_assistant_off"},
         )
 
+    permission = await chat_history_persistence.history_permission(db, principal.user_id)
     open_question_id = classroom.state(session_id, SessionStatus(live.status)).active_question_id
     context = await tutor_chat.prepare(db, live, principal.user_id, open_question_id)
     if payload.source == "discussion":
@@ -124,11 +126,19 @@ async def session_chat(
         raise
 
     return StreamingResponse(
-        tutor_chat.TutorExchange(context).lines(
-            payload.request_id,
-            payload.question,
-            earlier,
-            revision=revision,
+        chat_history_persistence.save_completed_stream(
+            tutor_chat.TutorExchange(context).lines(
+                payload.request_id,
+                payload.question,
+                earlier,
+                revision=revision,
+            ),
+            student_id=principal.user_id,
+            session_id=session_id,
+            request_id=payload.request_id,
+            question=payload.question,
+            source=payload.source,
+            permission=permission,
         ),
         media_type=tutor_chat.NDJSON,
         headers={

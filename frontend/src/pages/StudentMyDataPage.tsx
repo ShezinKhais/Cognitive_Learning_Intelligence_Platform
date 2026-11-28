@@ -3,6 +3,7 @@ import { Download } from 'lucide-react'
 import { Link } from 'react-router'
 
 import { ApiError } from '../api'
+import { StudentChatHistoryManager } from '../features/chat/StudentChatHistoryManager'
 import { buttonStyles } from '../components/ui/button'
 import { PageBody, PageHeader, Panel, SkeletonRows, Tag, type Tone } from '../components/ui/primitives'
 import { sinceVerb } from '../features/format/relativeTime'
@@ -47,10 +48,31 @@ export default function StudentMyDataPage() {
       <PageBody>
         <div className="grid max-w-3xl gap-4">
           <ExportPanel />
+          <ChatHistoryPanel />
           <ErasurePanel />
         </div>
       </PageBody>
     </>
+  )
+}
+
+function ChatHistoryPanel() {
+  const [open, setOpen] = useState(false)
+  return (
+    <Panel title="Chat history">
+      <p className="text-sm text-muted-foreground">
+        Review or delete your saved tutor exchanges, even when the tutor is unavailable.
+      </p>
+      <button
+        type="button"
+        className={buttonStyles({ intent: 'secondary', className: 'mt-3' })}
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {open ? 'Hide saved conversations' : 'Manage saved conversations'}
+      </button>
+      {open && <StudentChatHistoryManager reloadAfterDelete={false} />}
+    </Panel>
   )
 }
 
@@ -84,8 +106,8 @@ function ExportPanel() {
   return (
     <Panel title="Download a copy">
       <p className="text-sm text-muted-foreground">
-        Your account, your answers, the prompts you were sent, your engagement and attention summaries, and any
-        requests you have made, as one JSON file.
+        Your account, your checkpoint answers, saved tutor exchanges, prompts, engagement and attention
+        summaries, and requests, as one JSON file.
       </p>
       {error && (
         <p role="alert" className="mt-3 text-sm text-critical">

@@ -10,6 +10,7 @@ import { useDocumentTitle } from '../../components/ui/useDocumentTitle'
 import { lecturerLiveSessionPath } from '../../teams/lecturerMeeting'
 import { statusLabel, statusTone } from '../sessions/format'
 import { getSession, listAllResponses, type SessionSummary } from '../sessions/sessionsApi'
+import { averageStudentAccuracy, type PerformanceAverage } from './lecturerPerformance'
 import AiControlsPanel from './AiControlsPanel'
 import LessonQuestionPlan from './LessonQuestionPlan'
 import ManualQuestionTrigger from './ManualQuestionTrigger'
@@ -66,6 +67,10 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
   const [confirmingEnd, setConfirmingEnd] = useState(false)
   const [secondsRemaining, setSecondsRemaining] = useState(0)
   const [answered, setAnswered] = useState<number | null>(null)
+  const [performance, setPerformance] = useState<PerformanceAverage | null>(null)
+  const [performanceFailed, setPerformanceFailed] = useState(false)
+  const [performanceLoaded, setPerformanceLoaded] = useState(false)
+  const [performanceRetry, setPerformanceRetry] = useState(0)
   const [acknowledging, setAcknowledging] = useState<string | null>(null)
 
   useDocumentTitle(details ? `Live, ${details.title}` : 'Live session')
@@ -124,25 +129,60 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
     return () => window.clearInterval(timer)
   }, [activeQuestion])
 
-  // Answers to the open question, re-read every few seconds as they arrive.
-  // Once it closes, the close event carries the final count.
-  const openQuestionId = activeQuestion?.question_id ?? null
   useEffect(() => {
     setAnswered(null)
-    if (!openQuestionId) return
-    let cancelled = false
-    const load = () =>
-      listAllResponses(sessionId).then(
-        (found) => !cancelled && setAnswered(found.filter((r) => r.question_id === openQuestionId).length),
-        () => undefined,
-      )
-    void load()
-    const timer = window.setInterval(load, 4000)
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
+    setPerformance(null)
+    setPerformanceFailed(false)
+    setPerformanceLoaded(false)
+  }, [sessionId])
+
+  // Reuse the lecturer-authorized response list for both the open-question
+  // count and average marked checkpoint accuracy. No chatbot data is used.
+  const openQuestionId = activeQuestion?.question_id ?? null
+  useEffect(() => {
+    const request = new AbortController()
+    let loading = false
+    // Keep the previous average visible while a new question loads.
+    // Only clear the question-specific response count.
+    setAnswered(null)
+
+    if (status !== 'active' && status !== 'ended') return
+
+    const load = async () => {
+      if (loading || request.signal.aborted) return
+      loading = true
+      try {
+        const responses = await listAllResponses(sessionId, request.signal)
+        if (request.signal.aborted) return
+        setPerformance(averageStudentAccuracy(responses))
+        setPerformanceFailed(false)
+        setPerformanceLoaded(true)
+        setAnswered(openQuestionId
+          ? responses.filter((response) => response.question_id === openQuestionId).length
+          : null)
+      } catch {
+        if (!request.signal.aborted) {
+          setPerformanceFailed(true)
+          setPerformanceLoaded(true)
+        }
+      } finally {
+        loading = false
+      }
     }
-  }, [sessionId, openQuestionId])
+
+    void load()
+
+    // A finished class needs one final snapshot, not ongoing polling.
+    // While teaching, poll only when a checkpoint is open.
+    const timer = status === 'active' && openQuestionId
+      ? window.setInterval(() => void load(), 4000)
+      : null
+
+    return () => {
+      request.abort()
+      if (timer !== null) window.clearInterval(timer)
+    }
+  }, [sessionId, openQuestionId, status, performanceRetry])
 
   async function act(action: SessionLifecycleAction) {
     setActionError(null)
@@ -257,6 +297,47 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
               </dd>
             </div>
           </dl>
+
+          {(status === 'active' || status === 'ended') && (
+            <div className="mt-3 border-t border-border pt-3">
+              <p className="text-xs text-muted-foreground">Average checkpoint accuracy</p>
+              {performanceFailed ? (
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
+                  <p role="status" className="text-muted-foreground">
+                    Results are temporarily unavailable.
+                  </p>
+                  <button
+                    type="button"
+                    className="font-medium text-info underline"
+                    onClick={() => {
+                      setPerformanceFailed(false)
+                      setPerformanceLoaded(false)
+                      setPerformanceRetry((value) => value + 1)
+                    }}
+                  >
+                    Retry results
+                  </button>
+                </div>
+              ) : !performanceLoaded ? (
+                <p role="status" className="mt-1 text-sm text-muted-foreground">
+                  Loading results…
+                </p>
+              ) : performance === null ? (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  No marked checkpoint answers yet.
+                </p>
+              ) : (
+                <p className="mt-1">
+                  <span className="text-xl font-bold tabular-nums">
+                    {Math.round(performance.average)}%
+                  </span>
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {performance.students} {performance.students === 1 ? 'student' : 'students'} with marked answers
+                  </span>
+                </p>
+              )}
+            </div>
+          )}
 
           {activeQuestion && (
             <p className="mt-3 text-sm" aria-live="polite">

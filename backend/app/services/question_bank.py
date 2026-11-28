@@ -23,7 +23,9 @@ from app.models.question import Question
 from app.models.rag_chunk import RagChunk
 from app.repositories.question_repository import validate_question_shape
 from app.schemas.content import QuestionCreateRequest, QuestionStatus, QuestionType
+from app.schemas.question_interaction import QuestionInteraction
 from app.services.material_edits import owned_material
+from app.services.question_interaction import KINDS, build_interaction
 
 
 async def write_question(
@@ -48,7 +50,15 @@ async def write_question(
                 {"field": "source_excerpt"},
             )
     prompt = payload.prompt.strip()
-    if payload.type == QuestionType.MCQ:
+    interaction = None
+    if payload.type in KINDS:
+        interaction = build_interaction(payload.type.value, payload.interaction).model_dump(
+            mode="json"
+        )
+        options, correct, reference, points = None, None, None, None
+    elif payload.interaction is not None:
+        raise ValidationError("Interactive choices belong to a matching or ordering question.")
+    elif payload.type == QuestionType.MCQ:
         if payload.options is None or payload.correct_option is None:
             raise ValidationError(
                 "A multiple choice question needs options and the correct one.", {}
@@ -77,6 +87,7 @@ async def write_question(
         status=QuestionStatus.STAGED.value,
         difficulty=payload.difficulty.value,
         options=options,
+        interaction=interaction,
         correct_option=correct,
         topic=(payload.topic or "").strip() or None,
         source_slide=payload.source_slide,
@@ -111,7 +122,9 @@ async def reuse_question(db: AsyncSession, principal: Principal, question: Quest
 def validate_reusable(question: Question) -> None:
     """Do not turn a malformed historical question into a new live checkpoint."""
     validate_question_shape(question.question_text, question.options, question.correct_option)
-    if question.question_type == QuestionType.MCQ.value:
+    if question.question_type in KINDS:
+        QuestionInteraction.model_validate(question.interaction)
+    elif question.question_type == QuestionType.MCQ.value:
         if question.correct_option is None or not question.options:
             raise ValidationError("An MCQ needs choices and a correct answer.")
     elif not (question.reference_answer or "").strip() or not any(
@@ -131,6 +144,7 @@ def copy_question(question: Question, reviewer_id: UUID) -> Question:
         status=QuestionStatus.STAGED.value,
         difficulty=question.difficulty,
         options=list(question.options) if question.options is not None else None,
+        interaction=question.interaction,
         correct_option=question.correct_option,
         topic=question.topic,
         source_slide=question.source_slide,

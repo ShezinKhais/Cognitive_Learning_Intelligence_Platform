@@ -752,3 +752,46 @@ test('a question and its feedback name the part of the file they came from', () 
   // An older server says nothing, and the page says what it always did.
   assert.equal(sourcePlace(undefined, 3), 'Slide 3')
 })
+
+test('learning assistant follows lecturer controls during a live session', () => {
+  let state = initialLiveSessionState('active')
+
+  // Preserve the original enabled default until session settings arrive.
+  assert.equal(state.ai.learning_assistant, true)
+
+  const sessionEvent = (enabled: boolean) => ({
+    session_id: 'session-1',
+    status: 'active' as const,
+    participant_count: 2,
+    active_question_id: null,
+    questions_delivered: 0,
+    paused: false,
+    ai: {
+      auto_checkpoints: true,
+      learning_assistant: enabled,
+      refocus_nudges: true,
+      engagement_estimates: true,
+    },
+  })
+
+  // Lecturer enables the chatbot.
+  state = liveSessionReducer(state, {
+    type: 'session-state',
+    payload: sessionEvent(true),
+  })
+  assert.equal(state.ai.learning_assistant, true)
+
+  // Lecturer disables it while students are connected.
+  state = liveSessionReducer(state, {
+    type: 'session-state',
+    payload: sessionEvent(false),
+  })
+  assert.equal(state.ai.learning_assistant, false)
+
+  // Lecturer enables it again without restarting the session.
+  state = liveSessionReducer(state, {
+    type: 'session-state',
+    payload: sessionEvent(true),
+  })
+  assert.equal(state.ai.learning_assistant, true)
+})

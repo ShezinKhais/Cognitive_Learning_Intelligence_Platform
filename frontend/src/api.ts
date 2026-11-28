@@ -492,7 +492,15 @@ export function apiUploadFile<T = TimetableImportResult>(
   )
 }
 
-export type QuestionType = 'mcq' | 'free_text'
+export type QuestionType = 'mcq' | 'free_text' | 'matching' | 'ordering'
+export interface InteractionInput {
+  labels: string[]
+  choices: string[]
+}
+export interface QuestionInteraction extends InteractionInput {
+  kind: 'matching' | 'ordering'
+  correct_order: number[]
+}
 
 export type QuestionStatus = 'draft' | 'approved' | 'rejected' | 'staged' | 'delivered'
 
@@ -506,6 +514,7 @@ export interface Question {
   id: string
   material_id: string
   type: QuestionType
+  interaction?: QuestionInteraction | null
   status: QuestionStatus
   difficulty: Difficulty
   prompt: string
@@ -538,6 +547,7 @@ export function listQuestions(
 }
 
 export interface ReviewQuestionPayload {
+  interaction?: InteractionInput
   status: ReviewDecision
   prompt?: string
   options?: string[]
@@ -571,6 +581,7 @@ export function regenerateQuestion(materialId: string, questionId: string): Prom
 }
 
 export interface WriteQuestionPayload {
+  interaction?: InteractionInput
   source_slide?: number
   source_excerpt?: string
   topic?: string

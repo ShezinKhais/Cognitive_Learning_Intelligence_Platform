@@ -28,8 +28,11 @@ from app.models.question import Question
 from app.realtime.recorders import ClosedQuestion, Submission
 from app.schemas.content import QuestionType
 from app.schemas.events import FeedbackResultPayload
+from app.schemas.question_interaction import QuestionInteraction
+from app.services.question_interaction import KINDS, describe_answer
 from app.services.response_processing import process_submission
 from app.services.scoring import build_mcq_reveal, feedback_payload, score_mcq
+from app.services.source_labels import question_source_label
 
 log = logging.getLogger("clip.live_recorder")
 
@@ -145,18 +148,33 @@ class LiveCloseRecorder:
         await self._store_close(closed)
 
         question = await self._get_question(closed.question_id)
-        if question is None or question.question_type != QuestionType.MCQ:
+        if question is None or question.question_type not in {QuestionType.MCQ, *KINDS}:
             # Free text has no single correct answer to reveal.
             return {}
 
         answers = await self._get_answers(closed.session_id, closed.question_id)
+        expected = None
+        if question.question_type in KINDS:
+            interaction = QuestionInteraction.model_validate(question.interaction)
+            expected = describe_answer(interaction, interaction.correct_order)
         reveals = {}
         # Only students the classroom accepted an answer from. A write that
         # timed out can still land, but that student was told it was not
         # saved, so a result for it would contradict what they saw.
         for user_id in closed.answered:
             stored = answers.get(user_id)
-            if stored is None or stored.selected_option is None:
+            if stored is None:
+                continue
+            if expected is not None and stored.free_text is not None:
+                reveals[user_id] = FeedbackResultPayload(
+                    question_id=question.question_id,
+                    correct=stored.free_text == expected,
+                    explanation=f"Correct answer:\n{expected}",
+                    source_slide=question.source_slide,
+                    source_label=question_source_label(question),
+                )
+                continue
+            if stored.selected_option is None:
                 continue
             try:
                 score = score_mcq(question, stored.selected_option)

@@ -999,3 +999,58 @@ async def test_a_staged_question_goes_back_to_review_until_a_class_claims_it(db_
         await _cleanup(session_factory, question_id)
         await _cleanup(session_factory, claimed_id)
         app.dependency_overrides.pop(get_principal, None)
+
+
+@pytest.mark.parametrize("kind", ["matching", "ordering"])
+async def test_lecturer_creates_and_edits_interactive_questions(db_client, app, kind):
+    test_client, session_factory = db_client
+    lecturer_id = uuid4()
+    material_id, seed_question = await _seed_question(session_factory, uploaded_by=lecturer_id)
+    try:
+        _as(app, lecturer_id, Role.LECTURER, "lecturer@uni.test")
+        url = f"/api/v1/materials/{material_id}/questions"
+        labels = ["First label", "Second label"] if kind == "matching" else []
+        original = ["First choice", "Second choice"]
+        response = test_client.post(
+            url,
+            json={
+                "type": kind,
+                "prompt": "Demonstrate your understanding",
+                "interaction": {"labels": labels, "choices": original},
+            },
+        )
+        assert response.status_code == 201, response.text
+        data = response.json()
+        interaction = data["interaction"]
+        assert interaction["kind"] == kind
+        assert interaction["labels"] == labels
+        assert [interaction["choices"][index] for index in interaction["correct_order"]] == original
+
+        item_url = f"{url}/{data['id']}"
+        edited = ["Edited first", "Edited second"]
+        blocked = test_client.patch(
+            item_url,
+            json={
+                "status": "draft",
+                "interaction": {"labels": labels, "choices": edited},
+            },
+        )
+        assert blocked.status_code == 409, blocked.text
+
+        response = test_client.patch(item_url, json={"status": "draft"})
+        assert response.status_code == 200, response.text
+        unchanged = response.json()["interaction"]
+        assert unchanged == interaction
+        response = test_client.patch(
+            item_url,
+            json={
+                "status": "approved",
+                "interaction": {"labels": labels, "choices": edited},
+            },
+        )
+        assert response.status_code == 200, response.text
+        interaction = response.json()["interaction"]
+        assert [interaction["choices"][index] for index in interaction["correct_order"]] == edited
+    finally:
+        await _cleanup_material(session_factory, material_id, seed_question)
+        app.dependency_overrides.pop(get_principal, None)

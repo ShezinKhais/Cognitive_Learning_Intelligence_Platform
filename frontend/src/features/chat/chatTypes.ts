@@ -51,11 +51,13 @@ export type ChatStreamEvent =
   | { type: 'follow_up'; request_id: string; prompt: string }
   | { type: 'unsupported'; request_id: string; reason: string }
   | { type: 'empty_retrieval'; request_id: string }
-  | { type: 'completed'; request_id: string }
+  | { type: 'completed'; request_id: string; history_saved?: false }
   | { type: 'cancelled'; request_id: string }
   | { type: 'error'; request_id: string | null; detail: string }
 
 export type ChatAction =
+  | { type: 'history-loaded'; exchanges: ChatExchange[] }
+  | { type: 'history-reset' }
   | { type: 'draft-changed'; value: string }
   | { type: 'submit-started'; id: string; question: string }
   | { type: 'stream-event'; event: ChatStreamEvent }

@@ -29,10 +29,12 @@ from app.models.attention_signal_summary import AttentionSignalSummary
 from app.models.dynamic_prompt import DynamicPrompt
 from app.models.engagement_record import EngagementRecord
 from app.models.student import Student
+from app.models.student_chat_exchange import StudentChatExchange
 from app.models.student_response import StudentResponse
 from app.models.teams_participant_mapping import TeamsParticipantMapping
 from app.models.teams_user_mapping import TeamsUserMapping
 from app.models.user import User
+from app.services.chat_history_persistence import invalidate_history_writes
 
 DELETED_NAME = "Deleted student"
 
@@ -46,6 +48,7 @@ class ErasureReport:
     teams_records: int = 0
     alerts: int = 0
     recommendations: int = 0
+    chatbot_exchanges: int = 0
 
     def as_counts(self) -> dict[str, int]:
         return asdict(self)
@@ -66,6 +69,7 @@ async def erase_student(db: AsyncSession, student_id: UUID) -> ErasureReport:
     if student is None:
         return ErasureReport()
     user_id = student.user_id
+    await invalidate_history_writes(db, user_id)
 
     answers = await _count(db, StudentResponse, StudentResponse.student_id, student_id)
     attention = await _count(
@@ -80,6 +84,12 @@ async def erase_student(db: AsyncSession, student_id: UUID) -> ErasureReport:
         delete(AIRecommendation).where(AIRecommendation.student_id == student_id)
     )
     alerts = await db.execute(delete(AIAlert).where(AIAlert.student_id == student_id))
+
+    # Erase conversations explicitly. Their foreign key belongs to the
+    # account, which remains anonymized rather than deleted.
+    chatbot_exchanges = await db.execute(
+        delete(StudentChatExchange).where(StudentChatExchange.student_id == user_id)
+    )
 
     await db.execute(delete(Student).where(Student.student_id == student_id))
 
@@ -106,4 +116,5 @@ async def erase_student(db: AsyncSession, student_id: UUID) -> ErasureReport:
         teams_records=(mappings.rowcount or 0) + (participants.rowcount or 0),
         alerts=alerts.rowcount or 0,
         recommendations=recommendations.rowcount or 0,
+        chatbot_exchanges=chatbot_exchanges.rowcount or 0,
     )

@@ -15,6 +15,12 @@ export default function PrivacyPage() {
           <li>Class activity: the sessions you joined, your answers to checkpoint questions, and any special consideration request you submit.</li>
           <li>Lecture material uploaded by lecturers, the questions generated from it, and lecturer-published discussion minutes.</li>
           <li>
+            Your completed tutor chatbot exchanges, including your questions,
+            answers and source references, are stored privately under your
+            student account so you can revisit them across classes and devices.
+            Lecturers cannot access your private chatbot conversations.
+          </li>
+          <li>
             If you turn on engagement monitoring: the camera and microphone readings described below, kept as one
             summary of numbers for each minute of a class.
           </li>
@@ -119,7 +125,7 @@ export default function PrivacyPage() {
           <li>Meeting video or recording files. The optional lecturer live-transcription feature processes short microphone audio chunks temporarily, as explained above.</li>
           <li>Teams meeting chat messages.</li>
           <li>Pictures of your face, or any biometric template.</li>
-          <li>Your conversations with the tutor. They are answered and then discarded; only the fact that a question was asked is logged.</li>
+          <li>Raw audio or video of your conversations with the tutor.</li>
         </ul>
       </PolicySection>
 
@@ -175,6 +181,16 @@ export default function PrivacyPage() {
           become eligible for automatic deletion {RETENTION_DAYS} days after it ends, including your answers,
           discussion minutes, engagement and attention summaries, prompts and alerts. Your university can set
           a shorter period. The purge may wait until the current class ends.
+        </p>
+        <p>
+          Completed private tutor conversations are stored separately from
+          class records so you can revisit them across classes. They follow
+          the configured retention period measured from when each exchange
+          was saved, and can be deleted sooner from My data or the chatbot history
+          controls. A student account can retain up to 500 completed chatbot
+          exchanges. When this limit is exceeded, the oldest saved exchanges
+          are automatically deleted. You can delete individual conversations
+          or all your saved history, even after withdrawing terms consent.
         </p>
         <p>
           Two things are kept after that:

@@ -270,6 +270,9 @@ See [docs/governance.md](docs/governance.md).
 - Classes resume where they left off after a dropped connection
 - Free-text answers marked against the question's key points, in the background
 - Socratic chatbot that gives hints rather than answers, with the slides it used
+- Private completed tutor exchanges are saved to the student account for up to the configured
+  retention period (at most 90 days), capped at 500 exchanges. Students can delete them from
+  My data, including after withdrawing terms consent.
 - Live and post-session catch-up from lecturer-published discussion minutes, with time windows and source links
 - Optional live lecturer microphone transcription feeding student catch-up automatically, with explicit opt-in and local server speech processing
 - Optional post-meeting Teams transcript import and AI-drafted minutes, reviewed by the lecturer before publication
@@ -577,7 +580,7 @@ rather than a component, so every phase ends with something that runs end to end
 | Local setup | [Getting started](#getting-started) |
 | Teams setup and roles | [Demo quickstart](docs/teams-demo-quickstart.md) and [tenant setup](docs/teams-tenant-setup.md) |
 | Release validation | [Teams release acceptance](docs/teams-release-acceptance.md) |
-| Test plan and execution evidence | [Evidence tracker](https://github.com/ShezinKhais/Cognitive_Learning_Intelligence_Platform/issues/175), [student browser test report](docs/phase8-ai2-test-report.md) and [database recovery evidence](docs/database-integrity-and-recovery.md) |
+| Test plan and execution evidence | [Evidence tracker](https://github.com/ShezinKhais/Cognitive_Learning_Intelligence_Platform/issues/175), [demo integration evidence](docs/evidence/demo-integration.md), [student browser test report](docs/phase8-ai2-test-report.md) and [database recovery evidence](docs/database-integrity-and-recovery.md) |
 | Security and privacy reviews | [Review index](docs/security/README.md) |
 
 ### Submitted documents

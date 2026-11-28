@@ -82,6 +82,7 @@ def _to_question_out(question) -> QuestionOut:  # noqa: ANN001 - app.models.Ques
         prompt=question.question_text,
         options=question.options,
         correct_option=question.correct_option,
+        interaction=question.interaction,
         topic=question.topic,
         reference_answer=question.reference_answer,
         key_points=question.key_points,
@@ -289,6 +290,7 @@ async def review_question(
         prompt=payload.prompt,
         options=payload.options,
         correct_option=payload.correct_option,
+        interaction=payload.interaction,
         difficulty=payload.difficulty.value if payload.difficulty else None,
     )
 

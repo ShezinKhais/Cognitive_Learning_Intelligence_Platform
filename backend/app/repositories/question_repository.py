@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import ConflictError, ValidationError
 from app.models.material import Material
 from app.models.question import Question
+from app.schemas.question_interaction import InteractionInput
+from app.services.question_interaction import KINDS, build_interaction
 
 # The contract's own docstring on QuestionStatus says delivery only ever
 # happens from STAGED, so nothing reaches a class without a lecturer
@@ -244,6 +246,7 @@ class QuestionRepository:
         options: list[str] | None = None,
         correct_option: int | None = None,
         difficulty: str | None = None,
+        interaction: InteractionInput | None = None,
         flush: bool = True,
     ) -> Question:
         """Mutate a question in place per a review decision and flush.
@@ -299,7 +302,11 @@ class QuestionRepository:
                 {"current_status": current},
             )
 
-        editing = prompt is not None or options is not None or correct_option is not None
+        editing = any(value is not None for value in (prompt, options, correct_option, interaction))
+        if question.question_type in KINDS and (options is not None or correct_option is not None):
+            raise ValidationError("Use interactive choices to edit this question.")
+        if interaction is not None and question.question_type not in KINDS:
+            raise ValidationError("This question does not support interactive choices.")
         if editing and current in {"staged", "delivered"}:
             raise ConflictError(
                 f"Cannot edit a question that is already '{current}'.",
@@ -333,6 +340,11 @@ class QuestionRepository:
             question.correct_option = correct_option
         if difficulty is not None:
             question.difficulty = difficulty
+
+        if interaction is not None:
+            question.interaction = build_interaction(
+                question.question_type, interaction
+            ).model_dump(mode="json")
 
         self.session.add(question)
         if flush:

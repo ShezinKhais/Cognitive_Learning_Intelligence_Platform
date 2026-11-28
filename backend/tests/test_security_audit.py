@@ -49,6 +49,15 @@ PUBLIC = {
 
 # Served to a signed-in student who has withdrawn the terms, and why.
 NO_CONSENT_NEEDED = {
+    ("GET", "/api/v1/me/chat-history"): (
+        "students retain access to their private saved conversations"
+    ),
+    ("DELETE", "/api/v1/me/chat-history"): (
+        "students can erase their history after withdrawing terms"
+    ),
+    ("DELETE", "/api/v1/me/chat-history/{exchange_id}"): (
+        "students can erase individual exchanges after withdrawal"
+    ),
     ("GET", "/api/v1/me/data"): "a student can always take a copy of their own data",
     ("POST", "/api/v1/me/deletion-request"): "a student can always ask to be erased",
     ("GET", "/api/v1/me/deletion-request"): "a student can always see where that request stands",
@@ -65,6 +74,10 @@ ADMIN_ONLY = "admins"
 MEMBER = "a member of the session, decided in the handler"
 
 AUDIENCE = {
+    # Issue #328: private student-owned chatbot history.
+    ("GET", "/api/v1/me/chat-history"): STUDENT_ONLY,
+    ("DELETE", "/api/v1/me/chat-history"): STUDENT_ONLY,
+    ("DELETE", "/api/v1/me/chat-history/{exchange_id}"): STUDENT_ONLY,
     ("GET", "/api/v1/sessions/{session_id}/discussion/automatic-transcripts"): STAFF,
     ("PUT", "/api/v1/sessions/{session_id}/discussion/automatic-transcripts"): STAFF,
     (

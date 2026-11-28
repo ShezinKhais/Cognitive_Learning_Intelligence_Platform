@@ -46,16 +46,34 @@ compare the package lists before calling it an app difference. A model shown
 as `(could not reach Ollama)` means the record could not ask Ollama, not that
 the model is missing; `(not pulled)` means Ollama answered without it.
 
+### If saved conversations fail to load
+
+Run the revision comparison above before investigating the student account.
+A frontend with the history panel needs a backend from the same build and the
+chat-history migration applied. If the revisions differ, rebuild and deploy
+both services from the same commit, then run the comparison again. If they
+match, use `record_release.py` to compare the database revision with the code
+head and check the backend error for the failed request.
+
+In the browser Network panel, record the status for
+`GET /api/v1/me/chat-history`. A 404 indicates the route was unavailable at
+that origin, a 401 or 403 points to authentication or role access, and a 5xx
+requires the backend error to diagnose. Share the status, build and time.
+Keep private chat content and credentials out of shared evidence.
+
 ### What makes a rebuild the same
 
 - Base images are pinned by digest: `python:3.12.16-slim`, `node:24.22.3-alpine`,
   `nginx:1.31.7-alpine` and `pgvector/pgvector:pg16` (PostgreSQL 16.14), each
   the version the demo ran when the pins were taken.
 - Backend packages install from `backend/constraints.txt`, the exact versions of
-  that image; `pyproject.toml` keeps the ranges for development. Frontend
-  packages install with `npm ci` from `package-lock.json`.
-- The transcription extra's own packages are not in the constraints yet, so an
-  image built with `ENABLE_LIVE_TRANSCRIPTION=true` can still differ.
+  that image plus the optional speech pins. `pyproject.toml` keeps the ranges
+  for development. Frontend packages install with `npm ci` from
+  `package-lock.json`.
+- Builds with `ENABLE_LIVE_TRANSCRIPTION=true` use the same constraints for
+  the local speech runtime, including faster-whisper and its dependencies.
+  Resolve updates for both Linux amd64 and arm64. Record the prepared model
+  checksum separately with `scripts/check_live_speech.py`.
 - Ollama models are named by tag; the record above captures the digest that
   answered, which is what to compare between machines.
 

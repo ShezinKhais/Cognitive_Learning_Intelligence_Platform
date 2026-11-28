@@ -65,8 +65,11 @@ export function parseChatStreamEvent(value: unknown): ChatStreamEvent | null {
   if (!type || requestId === null && type !== 'error') return null
 
   switch (type) {
-    case 'accepted':
     case 'completed':
+      return requestId
+        ? { type, request_id: requestId, ...(item.history_saved === false ? { history_saved: false as const } : {}) }
+        : null
+    case 'accepted':
     case 'cancelled':
       return requestId ? { type, request_id: requestId } : null
     case 'delta': {

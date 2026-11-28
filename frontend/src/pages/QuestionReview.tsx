@@ -1,3 +1,5 @@
+import { authoredItems, solutionLines } from '../features/review/interactiveAuthoring'
+import { InteractiveQuestionFields } from '../features/review/InteractiveQuestionFields'
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react'
 import { Check, PenLine } from 'lucide-react'
 import { Link, useParams } from 'react-router'
@@ -474,6 +476,8 @@ function QuestionCard({
   onAdded: (fresh: Question) => void
 }) {
   const isMcq = question.type === 'mcq'
+  const interaction = question.interaction
+  const [interactiveText, setInteractiveText] = useState('')
 
   const [editing, setEditing] = useState(false)
   const [prompt, setPrompt] = useState(question.prompt)
@@ -491,6 +495,7 @@ function QuestionCard({
     // and reopening it kept whatever was typed before cancelling, since
     // useState's initial value only applies once per component instance.
     setPrompt(question.prompt)
+    setInteractiveText(solutionLines(interaction))
     setOptions(question.options ?? [])
     setCorrectOption(question.correct_option ?? 0)
     setDifficulty(question.difficulty)
@@ -535,7 +540,7 @@ function QuestionCard({
 
   async function act(
     status: ReviewDecision,
-    extra?: { prompt?: string; options?: string[]; correct_option?: number; difficulty?: Difficulty },
+    extra?: Omit<Parameters<typeof reviewQuestion>[2], 'status'>,
   ) {
     setBusy(true)
     setError(null)
@@ -552,6 +557,12 @@ function QuestionCard({
   }
 
   function saveAndApprove() {
+    if (interaction) {
+      const items = authoredItems(interaction.kind, interactiveText)
+      if (!items) { setError('Enter 2–8 distinct, complete items.'); return }
+      void act('approved', { prompt, difficulty, interaction: items })
+      return
+    }
     // Only send MCQ fields for an actual MCQ. A free-text question has no
     // options or correct_option, and submitting options=[] / correct_
     // option=0 for one would silently turn it into what looks like an MCQ
@@ -645,7 +656,14 @@ function QuestionCard({
         </div>
       )}
 
-      {!isMcq && (
+      {interaction && (editing
+        ? <InteractiveQuestionFields kind={interaction.kind} text={interactiveText} onChange={setInteractiveText} />
+        : <div className="mt-3 rounded-md bg-muted/40 p-3 text-sm">
+          <p className="font-semibold">{interaction.kind === 'matching' ? 'Correct pairs' : 'Correct order'}</p>
+          <p className="mt-1 whitespace-pre-wrap">{solutionLines(interaction)}</p>
+        </div>)}
+
+      {!isMcq && !interaction && (
         <div className="mt-3 rounded-md bg-muted/40 p-3 text-sm">
           <p className="font-semibold">Reference answer</p>
           <p className="mt-1 whitespace-pre-wrap">{question.reference_answer || 'No reference answer is available. Review before using this question.'}</p>
@@ -763,6 +781,7 @@ function QuestionCard({
                   type="button"
                   disabled={busy}
                   onClick={regenerate}
+                  hidden={!!interaction}
                   title="Replace this draft with a new question from the same page"
                   className={buttonStyles({ intent: 'quiet' })}
                 >

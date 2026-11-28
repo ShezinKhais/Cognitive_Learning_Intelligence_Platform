@@ -1,0 +1,19 @@
+[Unit]
+Description=C.L.I.P. external readiness watcher
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+EnvironmentFile=/etc/clip/readiness-watch.env
+ExecStart=/usr/bin/python3 /opt/clip-monitor/watch_readiness.py ${CLIP_READINESS_URL}
+Restart=on-failure
+RestartSec=10s
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target

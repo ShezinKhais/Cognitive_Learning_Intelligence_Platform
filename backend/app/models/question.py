@@ -19,7 +19,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func, select
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, column_property, mapped_column
 
 from app.core.database import Base
@@ -96,6 +96,8 @@ class Question(Base):
         ARRAY(String),
         nullable=True,
     )
+
+    interaction: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
 
     correct_option: Mapped[int | None] = mapped_column(
         Integer,

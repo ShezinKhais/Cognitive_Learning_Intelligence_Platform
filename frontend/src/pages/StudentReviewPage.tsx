@@ -1,4 +1,5 @@
 import { SocraticChatPanel } from '../features/chat/SocraticChatPanel'
+import { StudentChatHistoryManager } from '../features/chat/StudentChatHistoryManager'
 import DiscussionPanel from '../features/discussion/DiscussionPanel'
 import { useId, useState } from 'react'
 import { ChevronDown, FileText } from 'lucide-react'
@@ -32,6 +33,12 @@ export function StudentReviewHistoryPage() {
         description="Go back over your own answers, with the slides each question came from."
       />
       <PageBody>
+        <section
+          aria-label="Your private chatbot history"
+          className="mb-6"
+        >
+          <StudentChatHistoryManager />
+        </section>
         {error ? (
           // The list has no one session to be missing, so a 404 here means
           // the route itself is not on this server.

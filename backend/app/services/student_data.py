@@ -28,6 +28,7 @@ from app.models.dynamic_prompt import DynamicPrompt
 from app.models.engagement_record import EngagementRecord
 from app.models.missed_response import MissedResponse
 from app.models.student import Student
+from app.models.student_chat_exchange import StudentChatExchange
 from app.models.student_response import StudentResponse
 from app.models.user import User
 from app.repositories.audit_repository import record_event
@@ -178,6 +179,30 @@ async def export_student_data(
         )
     ]
 
+    # Conversations are owned by user_id, not by the student's
+    # current course or the session's lecturer.
+    chatbot_history = [
+        {
+            "id": _id(exchange.id),
+            "session_id": _id(exchange.session_id),
+            "request_id": exchange.request_id,
+            "question": exchange.question,
+            "answer": exchange.answer,
+            "source": exchange.source,
+            "phase": exchange.phase,
+            "citations": exchange.citations,
+            "follow_ups": exchange.follow_ups,
+            "general": exchange.general,
+            "explanation": exchange.explanation,
+            "created_at": _when(exchange.created_at),
+        }
+        for exchange in await db.scalars(
+            select(StudentChatExchange)
+            .where(StudentChatExchange.student_id == user_id)
+            .order_by(StudentChatExchange.created_at)
+        )
+    ]
+
     summaries = []
     factory = resolve_history_factory(history)
     if factory is not None:
@@ -235,4 +260,5 @@ async def export_student_data(
         "missed_responses": missed,
         "deletion_requests": requests,
         "history": summaries,
+        "chatbot_history": chatbot_history,
     }

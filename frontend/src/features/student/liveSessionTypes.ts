@@ -1,4 +1,4 @@
-
+import type { InteractiveCheckpoint } from './interactiveAnswer'
 import type { SessionStatus } from './types'
 
 export type LiveConnectionStatus =
@@ -42,7 +42,9 @@ export function sourcePlace(label: SourceLabel | null | undefined, number: numbe
   return `${label ?? 'Slide'} ${number}`
 }
 
+
 export interface LiveQuestion {
+  interaction?: InteractiveCheckpoint | null
   question_id: string
   prompt: string
   options: string[] | null
