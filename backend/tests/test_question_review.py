@@ -1024,13 +1024,23 @@ async def test_lecturer_creates_and_edits_interactive_questions(db_client, app, 
         interaction = data["interaction"]
         assert interaction["kind"] == kind
         assert interaction["labels"] == labels
-        assert interaction["choices"] != original
         assert [interaction["choices"][index] for index in interaction["correct_order"]] == original
 
         item_url = f"{url}/{data['id']}"
+        edited = ["Edited first", "Edited second"]
+        blocked = test_client.patch(
+            item_url,
+            json={
+                "status": "draft",
+                "interaction": {"labels": labels, "choices": edited},
+            },
+        )
+        assert blocked.status_code == 409, blocked.text
+
         response = test_client.patch(item_url, json={"status": "draft"})
         assert response.status_code == 200, response.text
-        edited = ["Edited first", "Edited second"]
+        unchanged = response.json()["interaction"]
+        assert unchanged == interaction
         response = test_client.patch(
             item_url,
             json={

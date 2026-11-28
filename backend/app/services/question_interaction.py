@@ -22,9 +22,9 @@ def build_interaction(kind: str, payload: InteractionInput | None) -> QuestionIn
     if kind == "matching" and any("|" in item for item in payload.labels + payload.choices):
         raise ValidationError("Matching terms and meanings cannot contain the pair separator |.")
     permutation = list(range(len(payload.choices)))
+    # Keep all permutations possible. For two items, ruling out the authored
+    # order would make swapping the choices a guaranteed correct answer.
     SystemRandom().shuffle(permutation)
-    if permutation == sorted(permutation):
-        permutation = permutation[1:] + permutation[:1]
     return QuestionInteraction(
         kind=kind,
         labels=payload.labels,
