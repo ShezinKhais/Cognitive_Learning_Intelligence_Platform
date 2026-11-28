@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { BellRing, ExternalLink, Pause, Play, Square, X } from 'lucide-react'
+import { ArrowLeft, BellRing, ExternalLink, Pause, Play, Settings2, Square, X } from 'lucide-react'
 
 import { ApiError } from '../../api'
 import { buttonStyles } from '../../components/ui/button'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
-import { Tag } from '../../components/ui/primitives'
+import { Panel, Tag } from '../../components/ui/primitives'
 import { useDocumentTitle } from '../../components/ui/useDocumentTitle'
 import { lecturerLiveSessionPath } from '../../teams/lecturerMeeting'
 import { statusLabel, statusTone } from '../sessions/format'
@@ -14,6 +14,7 @@ import { averageStudentAccuracy, type PerformanceAverage } from './lecturerPerfo
 import AiControlsPanel from './AiControlsPanel'
 import LessonQuestionPlan from './LessonQuestionPlan'
 import ManualQuestionTrigger from './ManualQuestionTrigger'
+import RoomsPanel from './RoomsPanel'
 import TeamsUpdatesSection from './TeamsUpdatesSection'
 import ShareToStageButton from './ShareToStageButton'
 import { initialLifecycle, lifecycleReducer } from './panelLifecycle'
@@ -54,8 +55,18 @@ function secondsUntilClose(question: LiveQuestion | null): number {
  * presenting is easy to miss.
  */
 export default function LecturerMeetingPanel({ sessionId }: { sessionId: string }) {
-  const { connectionStatus, sessionState, activeQuestion, closedQuestion, alerts, sessionNotice, acknowledgeAlert } =
+  const { connectionStatus, sessionState, activeQuestion, closedQuestion, alerts, rooms, sessionNotice, acknowledgeAlert } =
     useLiveSession(sessionId)
+
+  const [showTools, setShowTools] = useState(false)
+  const toolsTrigger = useRef<HTMLButtonElement>(null)
+  const toolsHeading = useRef<HTMLHeadingElement>(null)
+  const movedView = useRef(false)
+  useEffect(() => {
+    if (!movedView.current) return
+    const destination = showTools ? toolsHeading.current : toolsTrigger.current
+    destination?.focus()
+  }, [showTools])
 
   const [lessonPlanPending, setLessonPlanPending] = useState(false)
   const [details, setDetails] = useState<SessionSummary | null>(null)
@@ -237,6 +248,14 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
           )}
         </header>
 
+        {!showTools && (
+          <button ref={toolsTrigger} type="button" className={buttonStyles({ intent: 'secondary', className: 'w-full' })}
+            onClick={() => { movedView.current = true; setShowTools(true) }}>
+            <Settings2 size={16} aria-hidden />
+            Class tools
+          </button>
+        )}
+        <div className="space-y-4" hidden={showTools}>
         {connectionStatus !== 'connected' && status !== 'ended' && status !== 'cancelled' && (
           <p role="status" className="text-sm text-muted-foreground">
             {connectionStatus === 'connecting' ? 'Connecting…' : 'Reconnecting… the counts may be behind.'}
@@ -426,10 +445,6 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
           )}
         </section>
 
-        {(live || status === 'prepared') && (
-          <AiControlsPanel sessionId={sessionId} courseCode={details?.course_code} compact />
-        )}
-
         <section aria-labelledby="panel-alerts" className="rounded-lg border border-border bg-card p-3">
           <h2 id="panel-alerts" className="font-bold">
             Alerts
@@ -460,18 +475,39 @@ export default function LecturerMeetingPanel({ sessionId }: { sessionId: string 
           )}
         </section>
 
-        {(live || status === 'prepared') && <TeamsUpdatesSection sessionId={sessionId} />}
-        {live && <ShareToStageButton sessionId={sessionId} />}
+        </div>
 
-        <a
-          href={dashboard}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={buttonStyles({ intent: 'secondary', className: 'w-full' })}
-        >
-          Open the full dashboard
-          <ExternalLink size={14} aria-hidden />
-        </a>
+        <section className="space-y-4" aria-labelledby="teams-class-tools" hidden={!showTools}>
+          <button type="button" className={buttonStyles({ intent: 'quiet' })}
+            onClick={() => { movedView.current = true; setShowTools(false) }}>
+            <ArrowLeft size={16} aria-hidden />
+            Back to live class
+          </button>
+          <h2 id="teams-class-tools" ref={toolsHeading} tabIndex={-1} className="text-lg font-bold">Class tools</h2>
+          {(live || status === 'prepared') && (
+            <AiControlsPanel sessionId={sessionId} courseCode={details?.course_code} compact />
+          )}
+          {(live || status === 'prepared') && <TeamsUpdatesSection sessionId={sessionId} />}
+          {live && <ShareToStageButton sessionId={sessionId} />}
+          {live && (rooms.length > 0
+            ? <RoomsPanel rooms={rooms} />
+            : <Panel title="Breakout rooms">
+                <p className="text-sm text-muted-foreground">Room activity appears when students join their assigned rooms.</p>
+              </Panel>)}
+          <nav aria-label="Lecturer workspace" className="grid gap-2">
+            <a href={dashboard} target="_blank" rel="noopener noreferrer"
+              className={buttonStyles({ intent: 'secondary', className: 'w-full' })}>
+              Open the full dashboard
+              <ExternalLink size={14} aria-hidden />
+            </a>
+            <a href={`/lecturer/sessions/${encodeURIComponent(sessionId)}/notes`}
+              target="_blank" rel="noopener noreferrer"
+              className={buttonStyles({ intent: 'quiet', className: 'w-full' })}>
+              Discussion minutes
+              <ExternalLink size={14} aria-hidden />
+            </a>
+          </nav>
+        </section>
       </div>
 
       <ConfirmDialog

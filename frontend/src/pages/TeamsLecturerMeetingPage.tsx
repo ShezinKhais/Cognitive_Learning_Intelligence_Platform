@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { ArrowLeft, RefreshCw } from 'lucide-react'
+
+import { buttonStyles } from '../components/ui/button'
 
 import { ApiError, apiAuthenticatedGet } from '../api'
 import LecturerMeetingPanel from '../features/live/LecturerMeetingPanel'
@@ -48,6 +51,7 @@ export default function TeamsLecturerMeetingPage() {
     shownSessionId.current = sessionId
   }, [sessionId])
   const [isLoading, setIsLoading] = useState(true)
+  const [lookupAttempt, setLookupAttempt] = useState(0)
   const [error, setError] = useState<string | null>(null)
   // The meeting has no session of the lecturer's yet: offer to link one.
   const [unlinked, setUnlinked] = useState(false)
@@ -133,7 +137,7 @@ export default function TeamsLecturerMeetingPage() {
       'C.L.I.P could not determine the Microsoft Teams meeting.',
     )
     setIsLoading(false)
-  }, [hintedSessionId, meetingId, teams.status])
+  }, [hintedSessionId, lookupAttempt, meetingId, teams.status])
 
   /*
    * The meeting can move on while this panel is open, and nothing tells it.
@@ -201,6 +205,7 @@ export default function TeamsLecturerMeetingPage() {
     return (
       <MeetingSessionPicker
         meetingId={meetingId}
+        onBack={inDialog ? () => { closeTeamsDialog() } : undefined}
         onLinked={(linked) => {
           // From the pop-up, the class is set up: back to the call.
           if (inDialog && closeTeamsDialog()) return
@@ -226,6 +231,20 @@ export default function TeamsLecturerMeetingPage() {
             {error ??
               'No authorised C.L.I.P session is linked to this Teams meeting.'}
           </p>
+          {meetingId && (
+            <button type="button" className={buttonStyles({ intent: 'secondary', className: 'mt-3' })}
+              onClick={() => setLookupAttempt((value) => value + 1)}>
+              <RefreshCw size={16} aria-hidden />
+              Try again
+            </button>
+          )}
+          {inDialog && (
+            <button type="button" className={buttonStyles({ intent: 'quiet', className: 'mt-3' })}
+              onClick={() => closeTeamsDialog()}>
+              <ArrowLeft size={16} aria-hidden />
+              Back to the meeting
+            </button>
+          )}
         </section>
       </main>
     )

@@ -17,6 +17,7 @@ import httpx
 import pytest
 from sqlalchemy import delete, select
 
+from app.api.deps import Principal
 from app.auth.store import LECTURER_ID, get_consent_repository
 from app.core.config import get_settings
 from app.core.errors import ConflictError, ValidationError
@@ -27,7 +28,7 @@ from app.models.teams_meeting_reference import TeamsMeetingReference
 from app.models.teams_roster_sync import TeamsRosterSync
 from app.models.teams_user_mapping import TeamsUserMapping
 from app.realtime.classroom import classroom
-from app.schemas.identity import ConsentType
+from app.schemas.identity import ConsentType, Role
 from app.schemas.meetings import TeamsActivity, meeting_chat_thread, meeting_id_for_thread
 from app.schemas.session import SessionStatus
 from app.services import teams_meeting_flow as flow_module
@@ -633,6 +634,38 @@ async def test_a_short_link_says_how_to_link_instead(world) -> None:
             await meeting_for_join_link(
                 db, "https://teams.microsoft.com/meet/123456789?p=abc", world["settings"]
             )
+
+
+async def test_short_link_runs_through_the_existing_bot_installation_check(world, monkeypatch):
+    from app.services import meeting_organiser
+
+    thread = f"19:meeting_{uuid4().hex}@thread.v2"
+    principal = Principal(
+        user_id=world["lecturer"], role=Role.LECTURER, email="lecturer@test.example"
+    )
+
+    async def resolve(db, caller, settings, short_id):
+        assert caller is principal and short_id == "123456789012"
+        return thread
+
+    async def fetch(settings, service_url, meeting_id):
+        assert meeting_id == meeting_id_for_thread(thread)
+        return {"organizer": {"aadObjectId": world["organiser"]}}
+
+    monkeypatch.setattr(meeting_organiser, "resolve_short_meeting", resolve)
+    async with world["factory"]() as db:
+        found = await meeting_for_join_link(
+            db,
+            "https://teams.microsoft.com/meet/123456789012?p=example",
+            world["settings"],
+            fetch=fetch,
+            principal=principal,
+        )
+        assert found == meeting_id_for_thread(thread)
+        await db.execute(
+            delete(TeamsMeetingReference).where(TeamsMeetingReference.meeting_id == found)
+        )
+        await db.commit()
 
 
 async def test_a_meeting_clip_is_in_is_linked_though_the_bot_never_heard_from_it(world) -> None:

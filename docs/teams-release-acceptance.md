@@ -152,6 +152,8 @@ Use this list with actual results, per client and release:
 | SPEECH-03 | In separate trials stop, hide the page, lose the microphone, pause and end. Check track shutdown, publication stops, and no restart without explicit action. Check any already-committing final segment. | Not run |
 | GRAPH-01 | End the meeting; record notification and draft arrival times. Before publishing, confirm the student cannot see or retrieve the draft. Publish, correct and remove a note and recheck student retrieval. | Not run |
 | GRAPH-02 | Exercise the existing manual-import fallback and confirm only transcript text is imported. Verify no Teams recording download or persisted lecturer audio. | Not run |
+| TEAM-04 | With automatic installation enabled, create a meeting as a linked lecturer and include one of their course codes in the title. After the configured sweep, verify that exactly one C.L.I.P tab opens the class. Repeat with a tab already added manually. | Not run |
+| TEAM-05 | Paste the organiser's short Teams link into a prepared class. Verify that it resolves with the tenant's Graph application access policy, then repeat with the full link. Use a student and lecturer to check the side-panel back buttons and lecturer class tools. | Not run |
 | TEAM-03 | End and open the student's review in the tested Teams client and supported web browser. Record any unsupported meeting/client types. | Not run |
 
 Attach redacted observations to #239/#234 and link them in #175 with test date,

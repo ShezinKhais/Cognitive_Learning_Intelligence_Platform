@@ -57,7 +57,9 @@ async def link_meeting_by_join_link(
     starting starts the class, the class starting opens C.L.I.P for everyone
     in the call, and the class ends with the meeting or once everyone has
     left it."""
-    meeting_id = await meeting_organiser.meeting_for_join_link(db, payload.join_url, settings)
+    meeting_id = await meeting_organiser.meeting_for_join_link(
+        db, payload.join_url, settings, principal=principal
+    )
     await meeting_organiser.require_organiser(db, principal, meeting_id, settings)
     return await session_lifecycle.link_meeting(db, principal, meeting_id, payload.session_id)
 

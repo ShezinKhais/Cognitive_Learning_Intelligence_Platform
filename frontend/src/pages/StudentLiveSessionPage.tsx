@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Clock3,
   MessagesSquare,
+  ArrowLeft,
   Paperclip,
   RefreshCw,
   Users,
@@ -21,6 +22,7 @@ import { BackLink } from '../components/ui/primitives'
 import { useDocumentTitle } from '../components/ui/useDocumentTitle'
 import {
   useEffect,
+  useRef,
   useState,
 } from 'react'
 import {
@@ -112,6 +114,14 @@ export function LiveSessionPanel({
   clip?: boolean
 }) {
   const [activeView, setActiveView] = useState<'class' | 'chat'>('class')
+  const tabs = useRef<HTMLDivElement>(null)
+  const returningToClass = useRef(false)
+  useEffect(() => {
+    if (activeView === 'class' && returningToClass.current) {
+      returningToClass.current = false
+      tabs.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus()
+    }
+  }, [activeView])
   const teams = useTeams()
   const {
     state,
@@ -270,6 +280,7 @@ export function LiveSessionPanel({
 
         {assistant && !dialog && (
           <Reveal index={1} enabled={clip}>
+          <div ref={tabs}>
           <SegmentedTabs
             label="Student session tools"
             value={activeView}
@@ -289,6 +300,7 @@ export function LiveSessionPanel({
               },
             ]}
           />
+          </div>
           </Reveal>
         )}
 
@@ -407,6 +419,17 @@ export function LiveSessionPanel({
 
         {assistant && !dialog && (
           <div className="mt-5" hidden={activeView !== 'chat'}>
+            {compact && (
+              <button type="button" className={buttonStyles({ intent: 'quiet', className: 'mb-2' })}
+                onClick={() => {
+                  returningToClass.current = true
+                  setActiveView('class')
+                }}
+              >
+                <ArrowLeft size={16} aria-hidden />
+                Back to live class
+              </button>
+            )}
             <SocraticChatPanel
               key={session.id}
               sessionId={session.id}

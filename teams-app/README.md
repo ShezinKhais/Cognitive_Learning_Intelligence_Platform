@@ -191,10 +191,18 @@ Without anything set up, a lecturer adds C.L.I.P to each meeting from Apps.
 After that nothing else is needed: the bot knows the meeting from its chat,
 the organiser joining a meeting with no class gets a pop-up asking whether
 it is one, and the meeting's link can still be pasted on the website. A
-short invitation link (`teams.microsoft.com/meet/<number>`) names no meeting
-and is refused with a message saying to link from Teams instead.
+short invitation link (`teams.microsoft.com/meet/<number>`) is resolved by
+Microsoft Graph for the signed-in meeting organiser. The app uses the meeting
+number and discards the passcode. Short links require `OnlineMeetings.Read.All`
+(application permission) and a Teams application access policy granting
+C.L.I.P access for the organiser. With those unavailable, link using C.L.I.P
+inside Teams or paste the full invitation link. The normal meeting
+installation and organiser checks still apply.
 
-`TEAMS_AUTO_JOIN_ENABLED=true` removes that step for classes. Every
+`TEAMS_AUTO_JOIN_ENABLED=true` in the demo environment file enables automatic
+installation for qualifying classes. Recreate the Compose backend with
+`docker compose -p clip-demo -f docker-compose.demo.yml --env-file deploy/demo.env up -d backend`
+after changing it. Every
 `TEAMS_AUTO_JOIN_INTERVAL_SECONDS` (300 by default) the backend reads the next
 `TEAMS_AUTO_JOIN_DAYS` (14) of each linked lecturer's calendar and, for each
 Teams meeting they organise whose title names one of their course codes, puts
@@ -225,6 +233,13 @@ test tenant. `TEAMS_CATALOG_APP_ID` is the app's id in the organisation's
 catalog (Teams admin center, Manage apps, C.L.I.P, App ID), not the manifest
 id. The activity notice needs the manifest's `activities` entry, so upload
 `clip.zip` again after this version (0.3.8).
+
+The sweep reuses an existing C.L.I.P tab it can identify and serializes
+tab creation across sweeps. If the meeting already has duplicate tabs,
+the organiser can remove the extra tab in Teams. The sweep does not remove
+meeting tabs. For a fresh meeting that still lacks C.L.I.P after the next
+sweep, check the course code in the title, the organiser's linked account,
+and the tenant app permissions, or add C.L.I.P from the meeting's Apps menu.
 
 ## Not done yet
 

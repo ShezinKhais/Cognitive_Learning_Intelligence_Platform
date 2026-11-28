@@ -23,7 +23,8 @@ from __future__ import annotations
 
 import logging
 import re
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlsplit
+from uuid import UUID
 
 import httpx
 from sqlalchemy import func, select
@@ -122,17 +123,24 @@ def thread_in(join_url: str) -> str | None:
 
 # The short links Outlook and new Teams put in invitations
 # (teams.microsoft.com/meet/<number>?p=<passcode>) carry no meeting chat.
-_SHORT_LINK = re.compile(r"^https://teams\.(microsoft|live)\.com/meet/\d+", re.I)
+_SHORT_PATH = re.compile(r"/meet/([0-9]{6,32})/?")
 
 
-def is_short_link(join_url: str) -> bool:
-    return bool(_SHORT_LINK.match(join_url.strip()))
+def short_meeting_id(join_url: str) -> str | None:
+    try:
+        url = urlsplit(join_url.strip())
+    except ValueError:
+        return None
+    if url.scheme != "https" or url.netloc.lower() != "teams.microsoft.com":
+        return None
+    match = _SHORT_PATH.fullmatch(url.path)
+    return match.group(1) if match else None
 
 
 SHORT_LINK_MESSAGE = (
-    "That is a short Teams link, which does not say which meeting it is. Open the "
-    "meeting in Teams and link it from C.L.I.P in the meeting, or copy its full link "
-    "(it starts https://teams.microsoft.com/l/meetup-join/)."
+    "This is a short Teams link. Open the meeting, add C.L.I.P from Apps if needed, "
+    "and use the C.L.I.P panel to link your class. You can also paste a full "
+    "teams.microsoft.com/l/meetup-join/ link here."
 )
 NOT_IN_MEETING_MESSAGE = (
     "C.L.I.P is not in this meeting yet. Open the meeting in Teams, add C.L.I.P "
@@ -140,8 +148,69 @@ NOT_IN_MEETING_MESSAGE = (
 )
 
 
+async def lookup_short_meeting(
+    client: httpx.AsyncClient, headers: dict[str, str], teams_user: str, short_id: str
+) -> str | None:
+    """Resolve a meeting through the signed-in organiser's tenant account."""
+    organiser = str(UUID(teams_user))
+    if not re.fullmatch(r"[0-9]{6,32}", short_id):
+        return None
+    response = await client.get(
+        f"https://graph.microsoft.com/v1.0/users/{organiser}/onlineMeetings",
+        headers=headers,
+        params={"$filter": f"joinMeetingIdSettings/joinMeetingId eq '{short_id}'"},
+    )
+    if response.status_code in (403, 404):
+        return None
+    response.raise_for_status()
+    body = response.json()
+    matches = body.get("value") if isinstance(body, dict) else None
+    if not isinstance(matches, list) or len(matches) != 1 or body.get("@odata.nextLink"):
+        return None
+    meeting = matches[0]
+    if not isinstance(meeting, dict):
+        return None
+    current = meeting
+    for key in ("participants", "organizer", "identity", "user"):
+        current = current.get(key) if isinstance(current, dict) else None
+    if not isinstance(current, dict) or str(current.get("id", "")).lower() != organiser:
+        return None
+    chat = meeting.get("chatInfo")
+    thread = chat.get("threadId") if isinstance(chat, dict) else None
+    if isinstance(thread, str) and MEETING_THREAD.fullmatch(thread):
+        return thread
+    web_url = meeting.get("joinWebUrl")
+    return thread_in(web_url) if isinstance(web_url, str) else None
+
+
+async def resolve_short_meeting(
+    db: AsyncSession, principal: Principal, settings: Settings, short_id: str
+) -> str | None:
+    # Use the same tenant credentials as transcript imports. The Graph
+    # access policy and our organiser check both apply to the lookup.
+    from app.services.transcript_minutes import graph_token
+
+    teams_user = await TeamsUserMappingRepository(db).teams_user_for(
+        tenant_id=settings.tenant_id, user_id=principal.user_id
+    )
+    if teams_user is None:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=5, follow_redirects=False) as client:
+            headers = {"Authorization": f"Bearer {await graph_token(client, settings)}"}
+            return await lookup_short_meeting(client, headers, teams_user, short_id)
+    except (httpx.HTTPError, ServiceUnavailableError, ValueError) as exc:
+        log.info("Teams short-link lookup failed: %s", type(exc).__name__)
+        return None
+
+
 async def meeting_for_join_link(
-    db: AsyncSession, join_url: str, settings: Settings, fetch=None
+    db: AsyncSession,
+    join_url: str,
+    settings: Settings,
+    fetch=None,
+    *,
+    principal: Principal | None = None,
 ) -> str:
     """The meeting id for the meeting this join link opens.
 
@@ -150,9 +219,12 @@ async def meeting_for_join_link(
     to a meeting without C.L.I.P is refused with what to do about it.
     """
     thread = thread_in(join_url)
-    if thread is None:
-        if is_short_link(join_url):
+    if thread is None and (short_id := short_meeting_id(join_url)):
+        if principal is not None and settings.teams_notifications_enabled:
+            thread = await resolve_short_meeting(db, principal, settings, short_id)
+        if thread is None:
             raise ValidationError(SHORT_LINK_MESSAGE)
+    if thread is None:
         raise ValidationError(
             "That is not a Teams meeting link. Copy it from the meeting's "
             "invitation: Join the meeting now."

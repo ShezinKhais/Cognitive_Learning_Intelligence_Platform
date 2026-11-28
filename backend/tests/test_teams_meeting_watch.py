@@ -5,6 +5,7 @@ Owner: General CS, Phase 8. Microsoft Graph is faked; nothing leaves the test.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import random
 from datetime import UTC, datetime
@@ -317,4 +318,71 @@ async def test_clip_removed_from_a_meeting_by_hand_stays_removed(lecturer) -> No
     graph.tabs.clear()
     assert await MeetingWatch().sweep(lecturer["settings"], graph, None, lecturer["factory"]) == 0
     assert graph.installed == [] and graph.tabs == []
+    assert len(graph.notices) == 1
+
+
+@pytest.mark.parametrize("existing_page", [None, 1, 2])
+async def test_pin_tab_recognises_existing_tabs_by_configuration_across_pages(existing_page):
+    base = "https://clip.example"
+    seen = []
+    config = {"entityId": "clip.meeting", "contentUrl": f"{base}/teams/meeting"}
+    tab = {"configuration": config}
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        seen.append(request.method)
+        if request.method == "POST":
+            assert (
+                json.loads(request.content)["configuration"]["contentUrl"] == config["contentUrl"]
+            )
+            return httpx.Response(201)
+        if "$skiptoken" in request.url.params:
+            return httpx.Response(200, json={"value": [tab] if existing_page == 2 else []})
+        if existing_page == 1:
+            payload = {"value": [tab]}
+        else:
+            next_page = f"{GRAPH}{request.url.path.removeprefix('/v1.0')}?$skiptoken=next"
+            payload = {"value": [], "@odata.nextLink": next_page}
+        return httpx.Response(200, json=payload)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(answer)) as client:
+        await Graph(client, "token").pin_tab(_thread(), "catalog", base)
+    assert seen == {None: ["GET", "GET", "POST"], 1: ["GET"], 2: ["GET", "GET"]}[existing_page]
+
+
+def test_calendar_retains_short_organiser_links_for_later_resolution() -> None:
+    short = "123456789012"
+    event = _event(None, onlineMeeting={"joinUrl": f"https://teams.microsoft.com/meet/{short}?p=x"})
+    meetings = upcoming_meetings([event, event])
+    assert len(meetings) == 1
+    assert meetings[0].thread is None and meetings[0].short_id == short
+
+
+async def test_incomplete_install_is_pinned_only_once_by_overlapping_sweeps(lecturer):
+    thread = _thread()
+    settings = lecturer["settings"]
+    factory = lecturer["factory"]
+    async with factory() as db:
+        db.add(TeamsAutoJoin(chat_thread=thread, tenant_id=settings.tenant_id, notice_owed=True))
+        await db.commit()
+
+    graph = _Graph({lecturer["aad"]: [_class(lecturer, thread)]})
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    original_pin = graph.pin_tab
+
+    async def hold_pin(*args):
+        entered.set()
+        await release.wait()
+        await original_pin(*args)
+
+    graph.pin_tab = hold_pin
+    first = asyncio.create_task(MeetingWatch().sweep(settings, graph, None, factory))
+    second = asyncio.create_task(MeetingWatch().sweep(settings, graph, None, factory))
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=5)
+    finally:
+        release.set()
+        results = await asyncio.wait_for(asyncio.gather(first, second), timeout=5)
+    assert sorted(results) == [0, 1]
+    assert graph.tabs == [thread]
     assert len(graph.notices) == 1

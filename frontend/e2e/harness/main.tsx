@@ -1,6 +1,7 @@
 import CourseRostersPage from '../../src/pages/CourseRostersPage'
 import SessionReportPage from '../../src/pages/SessionReportPage'
 import { ToastProvider } from '../../src/components/ui/toast'
+import LecturerMeetingPanel from '../../src/features/live/LecturerMeetingPanel'
 import StudentMyDataPage from '../../src/pages/StudentMyDataPage'
 import { BrowserRouter, Link, MemoryRouter, Route, Routes } from 'react-router'
 import DiscussionPanel from '../../src/features/discussion/DiscussionPanel'
@@ -61,6 +62,9 @@ createRoot(document.getElementById('root')!).render(
     id: 'completion-session', course_code: 'SYNTHETIC', title: 'Student completion regression',
     lecturer_id: 'lecturer', status: 'active',
   }} compact={new URLSearchParams(window.location.search).get('compact') === '1'} /></TeamsProvider></MemoryRouter> :
+  socket === 'lecturer-panel' ? <MemoryRouter><TeamsProvider>
+    <LecturerMeetingPanel sessionId="new-session" />
+  </TeamsProvider></MemoryRouter> :
   socket === 'course-rosters' ? <MemoryRouter><ToastProvider><CourseRostersPage /></ToastProvider></MemoryRouter> :
   socket === 'session-results' ? <MemoryRouter initialEntries={['/lecturer/sessions/report-fixture']}><Routes>
     <Route path="/lecturer/sessions/:sessionId" element={<SessionReportPage />} />

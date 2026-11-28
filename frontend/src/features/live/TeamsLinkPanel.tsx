@@ -124,13 +124,13 @@ export default function TeamsLinkPanel({
               type="url"
               value={link}
               disabled={saving}
-              placeholder="https://teams.microsoft.com/l/meetup-join/..."
+              placeholder="https://teams.microsoft.com/meet/..."
               onChange={(event) => setLink(event.target.value)}
               className="mt-1 w-full rounded-md border border-input bg-input-background px-2.5 py-1.5 text-sm"
             />
           </label>
           <p className="mt-1.5 text-xs text-muted-foreground">
-            Add C.L.I.P to the meeting in Teams first (Apps, then C.L.I.P), then paste its link here.
+            Paste the link from the invitation. If C.L.I.P is missing, open the meeting in Teams and add it from Apps, then try again.
           </p>
           {error && (
             <p role="alert" className="mt-1.5 text-xs text-critical">

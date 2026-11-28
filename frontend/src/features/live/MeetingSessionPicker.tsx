@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link2, Play } from 'lucide-react'
+import { ArrowLeft, Link2, Play } from 'lucide-react'
 
 import { ApiError, apiAuthenticatedGet, apiAuthenticatedRequest } from '../../api'
 import { buttonStyles } from '../../components/ui/button'
@@ -25,9 +25,11 @@ const FIELD = 'mt-1 w-full rounded-md border border-input bg-background px-3 py-
 export default function MeetingSessionPicker({
   meetingId,
   onLinked,
+  onBack,
 }: {
   meetingId: string
   onLinked: (sessionId: string) => void
+  onBack?: () => void
 }) {
   const [sessions, setSessions] = useState<SessionSummary[] | null>(null)
   const [linking, setLinking] = useState<string | null>(null)
@@ -103,6 +105,13 @@ export default function MeetingSessionPicker({
   return (
     <main className="min-h-screen bg-background px-3 py-4">
       <div className="mx-auto max-w-md">
+        {onBack && (
+          <button type="button" onClick={onBack}
+            className={buttonStyles({ intent: 'quiet', className: 'mb-2' })}>
+            <ArrowLeft size={16} aria-hidden />
+            Back to the meeting
+          </button>
+        )}
         <h1 className="text-lg font-bold">C.L.I.P in this meeting</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           It then starts and ends with the meeting, and its controls appear here.
